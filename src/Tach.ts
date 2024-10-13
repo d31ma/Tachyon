@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { watch } from "node:fs";
-import { exists } from "node:fs/promises";
 import Silo from "@vyckr/byos";
 import { Glob, Server } from "bun";
 
@@ -39,8 +38,63 @@ const Tach = {
 
     routesPath: process.env.LAMBDA_TASK_ROOT ? `${process.env.LAMBDA_TASK_ROOT}/routes` : `${process.cwd()}/routes`,
 
-    hasMiddleware: await exists(`${process.env.LAMBDA_TASK_ROOT || process.cwd()}/routes/middleware.ts`) || await exists(`${process.env.LAMBDA_TASK_ROOT || process.cwd()}/routes/middleware.js`) ,
+    proxyMod: null,
 
+    async proxy(req: Request, server?: Server) {
+
+        const request = req.clone()
+
+        const logs: _log[] = []
+
+        const url = new URL(req.url)
+        
+        const startTime = Date.now()
+
+        const ipAddress = server && server.requestIP ? server.requestIP(req)!.address : '0.0.0.0'
+
+        return await Tach.context.run(logs, async () => {
+
+            let res: Response
+
+            try {
+
+                const data = await Tach.processRequest(req, { ipAddress, request: req, requestTime: startTime, logs, slugs: new Map<string, any>() })
+    
+                res = Tach.processResponse(200, data)
+
+                if(logs.length > 0 && Tach.saveLogs && Tach.dbPath) await Promise.all(logs.map(log => { 
+                                        return Silo.putData(Tach.logsTableName, { ipAddress, path: url.pathname, method: req.method, ...log })
+                                    }))
+            
+                if(!Tach.isAsyncIterator(data)) {
+
+                    const status = res.status
+                    const response_size = typeof data !== "undefined" ? String(data).length : 0
+                    const url = new URL(req.url)
+                    const method = req.method
+                    const date = Date.now()
+                    const duration = date - startTime
+                    
+                    console.info(`"${method} ${url.pathname}" ${status} - ${duration}ms - ${response_size} byte(s)`)
+                
+                    if(Tach.dbPath && Tach.saveStats) await Silo.putData(Tach.statsTableName, { ipAddress, cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
+                }
+
+            } catch(e) {
+
+                const method = request.method
+
+                await Tach.logError(e as Error, ipAddress, url, method, logs, startTime)
+
+                if(Tach.dbPath && Tach.saveStats) await Silo.putData(Tach.statsTableName, { ipAddress, cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
+
+                res = Response.json({ detail: (e as Error).message }, { status: (e as Error).cause as number ?? 500, headers: Tach.headers })
+            }
+            
+            return res
+        })
+    },
+    
     pathsMatch(routeSegs: string[], pathSegs: string[]) {
 
         if (routeSegs.length !== pathSegs.length) {
@@ -114,43 +168,35 @@ const Tach = {
 
     formatMsg(...msg: any[]) {
 
-        if(msg instanceof Set) return "\n" + JSON.stringify(Array.from(msg), null, 2)
-        
-        else if(msg instanceof Map) return "\n" + JSON.stringify(Object.fromEntries(msg), null, 2)
+        const formatted: string[] = []
 
-        else if(msg instanceof FormData) {
-            const formEntries: Record<string, any> = {}
-            msg.forEach((val, key) => formEntries[key] = val)
-            return "\n" + JSON.stringify(formEntries, null, 2)
+        for(const arg of msg) {
+
+            if(arg instanceof Set) formatted.push(JSON.stringify(Array.from(arg), null, 2))
+
+            else if(arg instanceof Map) formatted.push(JSON.stringify(Object.fromEntries(arg), null, 2))
+
+            else if(arg instanceof FormData) {
+                const formEntries: Record<string, any> = {}
+                arg.forEach((val, key) => formEntries[key] = val)
+                formatted.push(JSON.stringify(formEntries, null, 2))
+            }
+
+            else if(Array.isArray(arg) || (typeof arg === 'object' && !Array.isArray(arg)) || (typeof arg === 'object' && arg !== null)) formatted.push(JSON.stringify(arg, null, 2))
+
+            else formatted.push(arg)
         }
 
-        else if(Array.isArray(msg) 
-            || (typeof msg === 'object' && !Array.isArray(msg))
-            || (typeof msg === 'object' && msg !== null)) return "\n" + JSON.stringify(msg, null, 2) 
-
-        return msg
+        return formatted.join('\n\n')
     },
 
     configLogger() {
-
-        const logger = console.log
-
-        function log(...args: any[]): void {
-
-            if (!args.length) {
-                return;
-            }
-
-            const messages = args.map(arg => Bun.inspect(arg).replace(/\n/g, "\r"));
-
-            logger(...messages);
-        }
 
         const reset = '\x1b[0m'
 
         console.info = (...args: any[]) => {
             const info = `[${Tach.formatDate()}]\x1b[32m INFO${reset} (${process.pid}) ${Tach.formatMsg(...args)}`
-            log(info)
+            console.log(info)
             if(Tach.context.getStore()) {
                 const logWriter = Tach.context.getStore()
                 if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${info.replace(reset, '').replace('\x1b[32m', '')}\n`, type: "info" })
@@ -159,7 +205,7 @@ const Tach = {
 
         console.error = (...args: any[]) => {
             const err = `[${Tach.formatDate()}]\x1b[31m ERROR${reset} (${process.pid}) ${Tach.formatMsg(...args)}`
-            log(err)
+            console.log(err)
             if(Tach.context.getStore()) {
                 const logWriter = Tach.context.getStore()
                 if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${err.replace(reset, '').replace('\x1b[31m', '')}\n`, type: "error" })
@@ -168,7 +214,7 @@ const Tach = {
 
         console.debug = (...args: any[]) => {
             const bug = `[${Tach.formatDate()}]\x1b[36m DEBUG${reset} (${process.pid}) ${Tach.formatMsg(...args)}`
-            log(bug)
+            console.log(bug)
             if(Tach.context.getStore()) {
                 const logWriter = Tach.context.getStore()
                 if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${bug.replace(reset, '').replace('\x1b[36m', '')}\n`, type: "debug" })
@@ -177,7 +223,7 @@ const Tach = {
 
         console.warn = (...args: any[]) => {
             const warn = `[${Tach.formatDate()}]\x1b[33m WARN${reset} (${process.pid}) ${Tach.formatMsg(...args)}`
-            log(warn)
+            console.log(warn)
             if(Tach.context.getStore()) {
                 const logWriter = Tach.context.getStore()
                 if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${warn.replace(reset, '').replace('\x1b[33m', '')}\n`, type: "warn" })
@@ -186,7 +232,7 @@ const Tach = {
 
         console.trace = (...args: any[]) => {
             const trace = `[${Tach.formatDate()}]\x1b[35m TRACE${reset} (${process.pid}) ${Tach.formatMsg(...args)}`
-            log(trace)
+            console.log(trace)
             if(Tach.context.getStore()) {
                 const logWriter = Tach.context.getStore()
                 if(logWriter && Tach.dbPath && Tach.saveLogs) logWriter.push({ date: Date.now(), msg: `${trace.replace(reset, '').replace('\x1b[35m', '')}\n`, type: "trace" })
@@ -234,19 +280,9 @@ const Tach = {
 
         if(searchParams.size > 0) queryParams = Tach.parseKVParams(searchParams)
 
-        const middlewarePath = await exists(`${Tach.routesPath}/middleware.ts`) ? `${Tach.routesPath}/middleware.ts` : `${Tach.routesPath}/middleware.js`
-
         if(params.length > 0 && !queryParams && !data) {
 
-            let res = undefined
-
-            if(Tach.hasMiddleware) {
-
-                const middleware = (await import(middlewarePath)).default
-
-                res = await middleware(async () => handler(...params, context))
-            
-            } else res = await handler(...params, context)
+            const res = await handler(...params, context)
 
             await Tach.logRequest(request, 200, context)
 
@@ -254,15 +290,7 @@ const Tach = {
 
         } else if(params.length === 0 && queryParams && !data) {
 
-            let res = undefined
-
-            if(Tach.hasMiddleware) {
-
-                const middleware = (await import(middlewarePath)).default
-
-                res = await middleware(async () => handler(queryParams, context))
-            
-            } else res = await handler(queryParams, context)
+            const res = await handler(queryParams, context)
 
             await Tach.logRequest(request, 200, context)
 
@@ -270,15 +298,7 @@ const Tach = {
 
         } else if(params.length === 0 && !queryParams && data) {
 
-            let res = undefined
-
-            if(Tach.hasMiddleware) {
-
-                const middleware = (await import(middlewarePath)).default
-
-                res = await middleware(async () => handler(data, context))
-
-            } else res = await handler(data, context)
+            const res = await handler(data, context)
 
             await Tach.logRequest(request, 200, context, await body.text())
 
@@ -286,15 +306,7 @@ const Tach = {
 
         } else if(params.length > 0 && queryParams && !data) {
 
-            let res = undefined
-
-            if(Tach.hasMiddleware) {
-
-                const middleware = (await import(middlewarePath)).default
-
-                res = await middleware(async () => handler(...params, queryParams, context))
-            
-            } else res = await handler(...params, queryParams, context)
+            const res = await handler(...params, queryParams, context)
 
             await Tach.logRequest(request, 200, context)
 
@@ -302,15 +314,7 @@ const Tach = {
         
         } else if(params.length > 0 && !queryParams && data) {
 
-            let res = undefined
-
-            if(Tach.hasMiddleware) {
-
-                const middleware = (await import(middlewarePath)).default
-
-                res = await middleware(async () => handler(...params, data, context))
-            
-            } else res = await handler(...params, data, context)
+            const res = await handler(...params, data, context)
 
             await Tach.logRequest(request, 200, context, await body.text())
 
@@ -318,15 +322,7 @@ const Tach = {
 
         } else if(params.length === 0 && data && queryParams) {
 
-            let res = undefined
-
-            if(Tach.hasMiddleware) {
-
-                const middleware = (await import(middlewarePath)).default
-
-                res = await middleware(async () => handler(queryParams, data, context))
-            
-            } else res = await handler(queryParams, data, context)
+            const res = await handler(queryParams, data, context)
 
             await Tach.logRequest(request, 200, context, await body.text())
 
@@ -334,15 +330,7 @@ const Tach = {
         
         } else if(params.length > 0 && data && queryParams) {
 
-            let res = undefined
-
-            if(Tach.hasMiddleware) {
-
-                const middleware = (await import(middlewarePath)).default
-
-                res = await middleware(async () => handler(...params, queryParams, data, context))
-            
-            } else res = await handler(...params, queryParams, data, context)
+            const res = await handler(...params, queryParams, data, context)
 
             await Tach.logRequest(request, 200, context, await body.text())
 
@@ -350,15 +338,7 @@ const Tach = {
         
         } else {
 
-            let res = undefined
-
-            if(Tach.hasMiddleware) {
-
-                const middleware = (await import(middlewarePath)).default
-
-                res = await middleware(async () => handler(context))
-            
-            } else res = await handler(context)
+            const res = await handler(context)
 
             await Tach.logRequest(request, 200, context)
 
@@ -419,57 +399,14 @@ const Tach = {
 
     async fetch(req: Request, server: Server) {
 
-        const request = req.clone()
+        if(Tach.proxyMod) {
 
-        const logs: _log[] = []
+            const middleware = (Tach.proxyMod as any).default
 
-        const url = new URL(req.url)
-        
-        const startTime = Date.now()
+            if(middleware) return await middleware(req, Tach.proxy)
+        }
 
-        const ipAddress = server.requestIP ? server.requestIP(req)!.address : '0.0.0.0'
-
-        return await Tach.context.run(logs, async () => {
-
-            let res: Response
-
-            try {
-
-                const data = await Tach.processRequest(req, { ipAddress, request: req, requestTime: startTime, logs, slugs: new Map<string, any>() })
-    
-                res = Tach.processResponse(200, data)
-
-                if(logs.length > 0 && Tach.saveLogs && Tach.dbPath) await Promise.all(logs.map(log => { 
-                                        return Silo.putData(Tach.logsTableName, { ipAddress, path: url.pathname, method: req.method, ...log })
-                                    }))
-            
-                if(!Tach.isAsyncIterator(data)) {
-
-                    const status = res.status
-                    const response_size = typeof data !== "undefined" ? String(data).length : 0
-                    const url = new URL(req.url)
-                    const method = req.method
-                    const date = Date.now()
-                    const duration = date - startTime
-                    
-                    console.info(`"${method} ${url.pathname}" ${status} - ${duration}ms - ${response_size} byte(s)`)
-                
-                    if(Tach.dbPath && Tach.saveStats) await Silo.putData(Tach.statsTableName, { ipAddress, cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
-                }
-
-            } catch(e) {
-
-                const method = request.method
-
-                await Tach.logError(e as Error, ipAddress, url, method, logs, startTime)
-
-                if(Tach.dbPath && Tach.saveStats) await Silo.putData(Tach.statsTableName, { ipAddress, cpu: process.cpuUsage(), memory: process.memoryUsage(), date: Date.now() })
-
-                res = Response.json({ detail: (e as Error).message }, { status: (e as Error).cause as number ?? 500, headers: Tach.headers })
-            }
-            
-            return res
-        })
+        return await Tach.proxy(req, server)
     },
 
     async validateRoutes(route?: string) {
@@ -525,6 +462,10 @@ const Tach = {
         const routes = Array.from(new Glob(`**/*/index.{ts,js}`).scanSync({ cwd: Tach.routesPath }))
         
         for(const route of routes) await validateRoute(route)
+
+        const proxy = Array.from(new Glob(`**/proxy.{ts,js}`).scanSync({ cwd: Tach.routesPath }))
+
+        if(proxy[0]) Tach.proxyMod = await import(`${Tach.routesPath}/${proxy[0]}`)
     },
 
     parseParams(input: string[]) {
