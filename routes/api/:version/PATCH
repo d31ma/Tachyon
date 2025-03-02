@@ -1,0 +1,24 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use JSON;
+use Data::Dumper;
+
+print "Executing Perl...\n";
+
+# Create JSON decoder object
+my $json = JSON->new;
+
+# Decode the JSON argument
+my $ctx = $json->decode(<STDIN>);
+
+$ctx->{message} = "Hello from Perl!";
+
+# Open file for writing
+open(my $file, '>', "/tmp/$$") or die "Cannot open file: $!";
+
+# Write JSON encoded response to file
+print $file $json->encode($ctx);
+
+# Close file
+close($file);

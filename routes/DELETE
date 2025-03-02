@@ -1,0 +1,18 @@
+#!/usr/bin/env dart
+import 'dart:convert'; 
+import 'dart:io'; 
+
+void main() async { 
+
+	print('Executing Dart...');
+
+	await for (final line in stdin.transform(utf8.decoder).transform(const LineSplitter())) {
+    
+    var ctx = jsonDecode(line);
+
+		ctx["message"] = "Hello from Dart!";
+
+		await File('/tmp/$pid').writeAsString(jsonEncode(ctx));
+  }
+}
+

@@ -1,0 +1,28 @@
+<script>
+    const { default: dayjs } = await import('/modules/dayjs.js')
+
+    console.log(dayjs().format())
+    document.title = "Home"
+ 
+    console.log("Hello from JavaScript")
+
+    let greeting = "Hello from HTML!"
+
+    const arr = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+    const start = 5
+</script>
+
+<h1>${greeting}</h1>
+<input type="text" placeholder="Write Something" :value="greeting" @input="(value) => greeting = value" />
+<br/>
+<ty-counter :count="start" />
+<ty-loop :for="const num of arr">
+    <ty-logic :if="num % 5 === 0">
+        <p>Half way there! Number ${num}</p>
+    </ty-logic>
+    <ty-logic :else>
+        <p>Number ${num}</p>
+    </ty-logic>
+</ty-loop>
+<ty-counter :count="start" />

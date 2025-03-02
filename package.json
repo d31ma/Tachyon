@@ -1,26 +1,22 @@
 {
   "name": "@vyckr/tachyon",
-  "version": "0.2.0",
-  "devDependencies": {
-    "@types/node": "^20.4.2",
-    "bun-types": "^1.1.21"
-  },
-  "dependencies": {
-    "@vyckr/byos": "^0.1.0"
-  },
-  "exports": {
-    ".": {
-      "types": "./types/index.d.ts"
-    }
-  },
-  "bin": {
-    "tach": "./src/Yon.ts"
-  },
-  "type": "module",
-  "license": "MIT",
+  "version": "0.4.0",
+  "author": "Chidelma",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Chidelma/Tachyon.git"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.4",
+    "@types/deno": "^2.0.0",
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^20.4.2"
+  },
+  "bin": {
+    "tach": "./src/index.ts"
+  },
+  "bugs": {
+    "url": "https://github.com/Chidelma/Tachyon/issues"
   },
   "keywords": [
     "tachyon",
@@ -29,8 +25,10 @@
     "typescript",
     "bun"
   ],
-  "author": "Chidelma",
-  "bugs": {
-    "url": "https://github.com/Chidelma/Tachyon/issues"
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "dayjs": "^1.11.13",
+    "jsdom": "^26.0.0"
   }
 }
