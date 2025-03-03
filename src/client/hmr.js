@@ -8,5 +8,5 @@ ws.onopen = () => {
 
 ws.onmessage = (event) => {
     console.log('HMR Update');
-    setPageTemplate(window.location.pathname)
+    window.location.reload()
 }

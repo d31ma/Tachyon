@@ -85,23 +85,45 @@ const server = Bun.serve({
     development: process.env.NODE_ENV === 'development'
 })
 
-watcher(Router.routesPath, { recursive: true }, () => {
-    queueMicrotask(async () => {
-        await configureRoutes()
-        server.reload({
-            routes: Router.reqRoutes
-        })
-    })
-})
+if(server.development) {
 
-watcher(Router.componentsPath, { recursive: true }, () => {
-    queueMicrotask(async () => {
-        await configureRoutes()
-        server.reload({
-            routes: Router.reqRoutes
-        })
+    const socket = Bun.serve({
+        fetch(req) {
+            socket.upgrade(req)
+            return undefined
+        },
+        websocket: {
+            open(ws) {
+                console.info("HMR Enabled")
+    
+                watcher(Router.routesPath, { recursive: true }, () => {
+                    queueMicrotask(async () => {
+                        console.info("HMR Update")
+                        await configureRoutes()
+                        server.reload({ routes: Router.reqRoutes })
+                        ws.send('')
+                    })
+                })
+                
+                watcher(Router.componentsPath, { recursive: true }, () => {
+                    queueMicrotask(async () => {
+                        console.info("HMR Update")
+                        await configureRoutes()
+                        server.reload({ routes: Router.reqRoutes })
+                        ws.send('')
+                    })
+                })
+            },
+            message(ws, message) {
+                
+            },
+            close(ws, code, reason) {
+                console.info(`HMR Closed ${code} ${reason}`)
+            },
+        },
+        port: 9876
     })
-})
+}
 
 const elapsed = Date.now() - start
 

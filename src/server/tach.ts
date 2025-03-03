@@ -158,7 +158,7 @@ export default class Tach {
 
     static createServerRoutes() {
 
-        for(let [route, methods] of Router.allRoutes) {
+        for(const [route, methods] of Router.allRoutes) {
 
             const serverRoute = async (request: BunRequest, server: Server) => {
 

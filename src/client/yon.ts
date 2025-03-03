@@ -26,9 +26,9 @@ export default class Yon {
             GET: async () => new Response(await Bun.file(`${import.meta.dir}/render.js`).bytes(), { headers: { 'Content-Type': 'application/javascript' } })
         }
 
-        // Router.reqRoutes["/hmr.js"] = {
-        //     GET: async () => new Response(await Bun.file(`${import.meta.dir}/hmr.js`).bytes(), { headers: { 'Content-Type': 'application/javascript' } })
-        // }
+        Router.reqRoutes["/hmr.js"] = {
+            GET: async () => new Response(await Bun.file(`${import.meta.dir}/hmr.js`).bytes(), { headers: { 'Content-Type': 'application/javascript' } })
+        }
 
         Router.reqRoutes["/routes.json"] = {
             GET: async () => new Response(await Bun.file(`${import.meta.dir}/routes.json`).bytes(), { headers: { 'Content-Type': 'application/json' } })
@@ -51,6 +51,8 @@ export default class Yon {
         })
         
         await Promise.all([Yon.bundleDependencies(), Yon.bundleComponents(), Yon.bundlePages()])
+        
+        Yon.emitter.removeAllListeners('style')
         
         if(styles) {
             Router.reqRoutes["/styles.css"] = {
