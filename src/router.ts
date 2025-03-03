@@ -11,7 +11,7 @@ export interface _ctx {
 
 export default class Router {
 
-    static readonly reqRoutes: Record<string, Record<string, (req: BunRequest, server: Server) => Promise<Response> | Response>> = {}
+    static readonly reqRoutes: Record<string, Record<string, (req?: BunRequest, server?: Server) => Promise<Response> | Response>> = {}
 
     static readonly allRoutes = new Map<string, Set<string>>()
 

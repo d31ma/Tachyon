@@ -13,7 +13,8 @@
     "@types/node": "^20.4.2"
   },
   "bin": {
-    "tach": "./src/index.ts"
+    "tach": "./src/serve.ts",
+    "yon": "./src/client/dist.ts"
   },
   "bugs": {
     "url": "https://github.com/Chidelma/Tachyon/issues"

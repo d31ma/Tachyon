@@ -160,30 +160,30 @@ export default class Tach {
 
         for(const [route, methods] of Router.allRoutes) {
 
-            const serverRoute = async (request: BunRequest, server: Server) => {
+            const serverRoute = async (request?: BunRequest, server?: Server) => {
 
                 const start = Date.now()
         
                 let res: Response
                 let bodySize: number
-                const path = new URL(request.url).pathname
+                const path = new URL(request!.url).pathname
                 const body = `/tmp/${Bun.randomUUIDv7()}`
 
                 try {
 
-                    const accept = request.headers.get('accept') || ''
+                    const accept = request!.headers.get('accept') || ''
 
                     if(accept.includes('text/html')) {
-                        return new Response(await Bun.file(`${import.meta.dir}/../client/index.html`).text(), { status: 200, headers: { 'Content-Type': 'text/html' } })  
+                        return new Response(await Bun.file(`${import.meta.dir}/../client/dev.html`).text(), { status: 200, headers: { 'Content-Type': 'text/html' } })  
                     }
 
-                    request.blob().then(async blob => {
+                    request!.blob().then(async blob => {
                         if(blob.size > 0) await Bun.write(body, blob)
                     })
 
-                    const { handler, ctx } = Router.processRequest(request, route,  { 
-                        request: Router.parseRequest(request),
-                        ipAddress: server.requestIP(request) ? server.requestIP(request)!.address : '0.0.0.0',
+                    const { handler, ctx } = Router.processRequest(request!, route,  { 
+                        request: Router.parseRequest(request!),
+                        ipAddress: server?.requestIP(request!) ? server.requestIP(request!)!.address : '0.0.0.0',
                         body
                     })
 
@@ -208,7 +208,7 @@ export default class Tach {
                 }
 
                 const status = res.status
-                const method = request.method
+                const method = request!.method
                 const duration = Date.now() - start
 
                 console.info(`${path} - ${method} - ${status} - ${duration}ms - ${bodySize} byte(s)`)

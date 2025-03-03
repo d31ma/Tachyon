@@ -250,6 +250,8 @@ export default class Yon {
         
         for(const route of routes) {
 
+            await Router.validateRoute(route)
+
             const data = await Bun.file(`${Router.routesPath}/${route}`).text()
 
             const { html, script, style } = Yon.extractComponents(data)
