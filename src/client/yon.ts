@@ -253,8 +253,10 @@ export default class Yon {
 
             for(const route of routes) {
 
+                const file = Bun.file(`${Router.assetsPath}/${route}`)
+
                 Router.reqRoutes[`/assets/${route}`] = {
-                    GET: async () => new Response(await Bun.file(`${Router.assetsPath}/${route}`).text())
+                    GET: async () => new Response(await file.bytes(), { headers: { 'Content-Type': file.type }})
                 }
             }
         }
