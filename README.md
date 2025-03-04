@@ -1,17 +1,13 @@
 # Tachyon
 
-Tachyon is a simple to use API framework built with TypeScript (Bun), which was inspired by Fastly  and FastAPI (Python). Tachyon aim to provide a simple and intuitive API framework for building serverless applications and abstracts away the complexity of configuations, letting you focus on building your application.
+Tachyon is a simple to use API framework built with TypeScript (Bun). Tachyon aim to provide a simple and intuitive API framework for building serverless applications and abstracts away the complexity of configuations, letting you focus on building your application.
 
 ## Features
 
-- Has BYOS [(Bring Your Own Storage)](https://github.com/Chidelma/BYOS) integration
-- Use of decorators for routes
 - Customizable methods for routes
-- AWS Lambda support [(Docker)](https://hub.docker.com/repository/docker/iyormobi/tachyon/general)
 - Use of file-system based routing
 - Hot reloading of routes in development mode
 - Supports dynamic routes
-- Supports Async Iterators (Streaming)
 
 ## Installation
 
@@ -25,74 +21,102 @@ The .env file should be in the root directory of your project. The following env
 ```
 # Tachyon environment variables
 PORT=8000 (optional)
+NODE_ENV=development|production (optional)
+HOSTNAME=127.0.0.1 (optional)
 ALLOW_HEADERS=* (optional)
 ALLOW_ORGINS=* (optional)
 ALLOW_CREDENTIALS=true|false (optional)
 ALLOW_EXPOSE_HEADERS=* (optional)
 ALLOW_MAX_AGE=3600 (optional)
 ALLOW_METHODS=GET,POST,PUT,DELETE,PATCH (optional)
-PRODUCTION=true|false (optional)
-SAVE_LOGS=true|false (optional)
-SAVE_STATS=true|false (optional)
-SAVE_REQUESTS=true|false (optional)
-SAVE_ERRORS=true|false (optional)
-
-# BYOS environment variables
-DB_DIR=/path/to/disk/database (required)
-SCHEMA=LOOSE|STRICT (optional)
-LOGGING=true|false (optional)
-SCHEMA_PATH=/path/to/schema/directory (required if SCHEMA is set to STRICT)
-MEM_DR=/path/to/memory/database (optional)
-S3_REGION=region (optional)
-S3_INDEX_BUCKET=bucket (required)
-S3_DATA_BUCKET=bucket (required)
-S3_ENDPOINT=https//example.com (optional)
 ```
 
-## Usage/Example
-
-Make sure you have set the 'SCHEMA_PATH' if 'SCHEMA' is set to 'STRICT'. The schema path should be a directory containing the declaration files. for example:
-
-```
-/path/to/schema/directory
-    /users.d.ts
-```
 ### Requirements
 - Make sure to have a 'routes' directory in the root of your project
-- Dynamic routes should be enclosed in square brackets
-- The first parameter should NOT be a dynamic route (e.g. /[version]/doc/index.ts)
-- All dynamic routes should be within odd indexes (e.g. /v1/[path]/login/[id]/name/index.ts)
-- The last parameter in the route should not be a dynamic route (e.g. /v1/[path]/login/[id]/name/index.ts)
+- Dynamic routes should start with a colon `:`
+- The first parameter should NOT be a dynamic route (e.g. /:version/doc/GET)
+- All dynamic routes should be within odd indexes (e.g. /v1/:path/login/:id/POST)
+- The last parameter in the route should always be a capitalized method as a file name without file extension (e.g. /v1/:path/login/:id/name/DELETE)
+- Front-end Pages end with capitalized `HTML` filename (e.g. /v1/HTML)
+- Node modules should be imported dynamically with `modules` prefix (e.g. const { default: dayjs } = await import(`/modules/dayjs.js`))
+- Components should be in the `components` folder and end with `.html` extension (e.g. /components/counter.html)
+- First line of the file should be a shebang for the executable file (e.g. #!/usr/bin/env python3)
+- Request context can be retrieved by extracting the last element in args and parsing it.
+- Response of executable script must be in a String format and must written to the `/tmp` folder with the the process ID as the file name (e.g. `/tmp/1234`).
+- Use the exit method of the executable script with a status code to end the process of the executable script
+
+### Examples
+
+
+```html
+<!-- /routes/HTML  -->
+<script>
+    // top-level await
+    const { default: dayjs } = await import("/modules/dayjs.js")
+
+    console.log(dayjs().format())
+
+    const greeting = "Hello World!"
+</script>
+
+<p>${greeting}</p>
+```
 
 ```typescript
-// routes/v1/[collection]/doc/index.ts
-import Silo from "@vyckr/byos"
-imoprt { VALIDATE } from "../utils/decorators"
+// routes/v1/:collection/GET
 
-export default class Users {
+#!/usr/bin/env bun
 
-    static collection = "[collection]"
+for await(const chunk of Bun.stdin.stream()) {
 
-    @VALIDATE
-    async GET({ slugs }) {
-        return await Silo.findDocs(slugs.get(this.collection), { $limit: 10 })
-    }
+    console.log("Executing Bun....");
 
-    @VALIDATE
-    async POST(user: _user, { slugs }) {
-        return await Silo.putData(slugs.get(this.collection), { name: user.name, age: user.age })
-    }
+    const data = new TextDecoder().decode(chunk)
 
-    @VALIDATE
-    async PATCH(user: _user, { slugs }) {
-        return await Silo.patchDoc(slugs.get(this.collection), { $set: { name: user.name, age: user.age } })
-    }
+    const ctx = JSON.parse(data)
 
-    @VALIDATE
-    async DELETE(id: string, { slugs }) {
-        await Silo.delDoc(slugs.get(this.collection), id)
-    }   
+    ctx.message = "Hello from Bun!"
+
+    const response = JSON.stringify(ctx)
+
+    await Bun.write(`/tmp/${process.pid}`, response)
 }
+```
+
+```python
+# routes/v1/:collection/POST
+
+#!/usr/bin/env python3
+import json
+import sys
+import os
+
+print("Executing Python....")
+
+ctx = json.loads(sys.stdin.read())
+
+ctx["message"] = "Hello from Python!"
+
+file = open(f"/tmp/{os.getpid()}", "w")
+
+file.write(json.dumps(ctx))
+
+file.close()
+```
+
+```ruby
+# routes/v1/:collection/DELETE
+
+#!/usr/bin/env ruby
+require 'json'
+
+puts "Executing Ruby...."
+
+ctx = JSON.parse(ARGF.read)
+
+ctx["message"] = "Hello from Ruby!"
+
+File.write("/tmp/#{Process.pid}", JSON.unparse(ctx))
 ```
 
 To run the application, you can use the following command:
@@ -104,19 +128,25 @@ bun tach
 To invoke the API endpoints, you can use the following commands:
 
 ```bash
-curl -X GET http://localhost:8000/v1/users/doc
+curl -X GET http://localhost:8000/v1/users
 ```
 
 ```bash
-curl -X POST http://localhost:8000/v1/users/doc -d '{"name": "John Doe", "age": 30}'
+curl -X POST http://localhost:8000/v1/users -d '{"name": "John Doe", "age": 30}'
 ```
 
 ```bash
-curl -X PATCH http://localhost:8000/v1/users/doc -d '{"name": "Jane Doe", "age": 31}'
+curl -X PATCH http://localhost:8000/v1/users -d '{"name": "Jane Doe", "age": 31}'
 ```
 
 ```bash
-curl -X DELETE http://localhost:8000/v1/users/doc/5e8b0a9c-c0d1-4d3b-a0b1-e2d8e0e9a1c0
+curl -X DELETE http://localhost:8000/v1/users/5e8b0a9c-c0d1-4d3b-a0b1-e2d8e0e9a1c0
+```
+
+To to build front-end assets into a `dist` folder, use the following command:
+
+```bash 
+bun yon
 ```
 
 # License

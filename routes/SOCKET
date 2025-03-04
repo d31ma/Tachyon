@@ -1,0 +1,26 @@
+#!/usr/bin/env -S deno run --allow-env --allow-write
+import { pid } from 'node:process';
+import { sleep } from "https://deno.land/x/sleep/mod.ts"
+
+console.log("Executing Deno Socket....");
+
+const ctx = JSON.parse("{}")
+
+ctx.message = "Hello from Deno!"
+
+const response = JSON.stringify(ctx)
+
+const max = 2
+
+let start = 0
+
+while(start < max) {
+
+    await Deno.writeTextFile(`/tmp/${pid}`, response)
+
+    await sleep(0.1)
+
+    start++
+}
+
+export {}

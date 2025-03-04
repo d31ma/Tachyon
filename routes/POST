@@ -1,0 +1,32 @@
+#!/usr/bin/env -S java --source 22 --class-path /Users/iyor/Library/CloudStorage/Dropbox/myProjects/TACHYON/lib/gson-2.3.jar
+
+import java.io.*;
+import com.google.gson.JsonParser;
+
+public class POST {
+    public static void main(String[] args) {
+
+        System.out.println("Executing Java...");
+
+        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+
+        try {
+
+            var ctx = new JsonParser().parse(br.readLine()).getAsJsonObject();
+
+            ctx.addProperty("message", "Hello from Java!");
+
+            long pid = ProcessHandle.current().pid();
+
+            try (FileWriter file = new FileWriter("/tmp/" + pid)) {
+                file.write(ctx.toString());
+                file.flush();
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error writing to file: " + e.getMessage());
+        } catch (Exception e) {
+            System.err.println("Error processing JSON: " + e.getMessage());
+        }
+    }
+}
