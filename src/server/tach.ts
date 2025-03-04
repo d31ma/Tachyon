@@ -231,6 +231,12 @@ export default class Tach {
             }
 
             if(Router.reqRoutes['//*']) delete Router.reqRoutes['//*']
+
+            if(!Router.reqRoutes['/']) {
+                Router.reqRoutes['/'] = {
+                    GET: serverRoute    
+                }
+            }
         }
     }
 }
