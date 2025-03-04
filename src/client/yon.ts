@@ -274,7 +274,7 @@ export default class Yon {
 
                 const { html, script, style } = Yon.extractComponents(data)
                 
-                await Yon.addToStatix(html, script, style, `${route}.${script.lang || 'js'}`, 'pages')
+                await Yon.addToStatix(html, script, style, `${route}.${script?.lang || 'js'}`, 'pages')
             }
         }
 
