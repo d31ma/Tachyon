@@ -174,7 +174,7 @@ function setPageTemplate(pathname) {
         url = `${handler}/HTML.js`
     
     } catch(err) {
-        url = `/${err.cause}.js`
+        url = `/404.js`
     }
 
     import(`/pages${url}`).then(async module => {
@@ -219,7 +219,7 @@ function getHandler(pathname) {
         const slugMap = routes.get(bestMatchKey) ?? {}
 
         Object.entries(slugMap).forEach(([key, idx]) => {
-            key = key.replace('[', '').replace(']', '')
+            key = key.replace(':', '')
             slugs[key] = paths[idx]
         })
     }

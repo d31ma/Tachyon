@@ -15,7 +15,7 @@ export default class Router {
 
     static readonly allRoutes = new Map<string, Set<string>>()
 
-    static readonly routeSlugs = new Map<string, Map<string, number>>()
+    static readonly routeSlugs: Record<string, Record<string, number>> = {}
 
     static readonly routesPath = `${process.cwd()}/routes`
     static readonly componentsPath = `${process.cwd()}/components`
@@ -37,7 +37,7 @@ export default class Router {
     
         const pattern = /^:.*/
 
-        const slugs = new Map<string, number>()
+        const slugs: Record<string, number> = {}
 
         if(pattern.test(paths[0])) throw new Error(`Invalid route ${route}`)
 
@@ -47,7 +47,7 @@ export default class Router {
                 throw new Error(`Invalid route ${route}`)
             }
 
-            if(pattern.test(path)) slugs.set(path, idx)
+            if(pattern.test(path)) slugs[path] = idx
         })
 
         const staticPath = paths.filter((path) => !pattern.test(path)).join(',')
@@ -66,7 +66,7 @@ export default class Router {
 
         Router.allRoutes.get(route)?.add(method)
 
-        if(slugs.size > 0 || method === 'HTML') Router.routeSlugs.set(route, slugs)
+        if(Object.keys(slugs).length > 0 || method === 'HTML') Router.routeSlugs[route] = slugs
     }
 
     static parseRequest(request: BunRequest) {

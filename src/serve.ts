@@ -123,6 +123,20 @@ if(server.development) {
         },
         port: 9876
     })
+
+    watcher(Router.routesPath, { recursive: true }, () => {
+        queueMicrotask(async () => {
+            await configureRoutes()
+            server.reload({ routes: Router.reqRoutes })
+        })
+    })
+    
+    watcher(Router.componentsPath, { recursive: true }, () => {
+        queueMicrotask(async () => {
+            await configureRoutes()
+            server.reload({ routes: Router.reqRoutes })
+        })
+    })
 }
 
 const elapsed = Date.now() - start

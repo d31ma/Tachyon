@@ -15,7 +15,7 @@ export default class Yon {
         
         const url = new URL(request.url)
 
-        const params = url.pathname.slice(route.length).split('/')
+        const params = url.pathname.split('/').slice(route.split('/').length)
 
         return { params: Router.parseParams(params) }
     }
@@ -42,8 +42,6 @@ export default class Yon {
             }
         }
 
-        await Bun.write(Bun.file(`${import.meta.dir}/routes.json`), JSON.stringify(Object.fromEntries(Router.routeSlugs)))
-
         let styles = ''
         
         Yon.emitter.addListener('style', (msg) => {
@@ -51,6 +49,8 @@ export default class Yon {
         })
         
         await Promise.all([Yon.bundleDependencies(), Yon.bundleComponents(), Yon.bundlePages()])
+        
+        await Bun.write(Bun.file(`${import.meta.dir}/routes.json`), JSON.stringify(Router.routeSlugs))
         
         Yon.emitter.removeAllListeners('style')
         
@@ -259,7 +259,9 @@ export default class Yon {
             await Yon.addToStatix(html, script, style, `${route}.${script.lang || 'js'}`, 'pages')
         }
 
-        const data = await Bun.file(`${import.meta.dir}/404.html`).text()
+        const nfFile = Bun.file(`${process.cwd()}/404.html`)
+
+        const data = await nfFile.exists() ? await nfFile.text() : await Bun.file(`${import.meta.dir}/404.html`).text()
 
         const { html, script, style } = Yon.extractComponents(data)
         
