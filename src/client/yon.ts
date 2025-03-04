@@ -2,6 +2,7 @@ import { JSDOM } from 'jsdom'
 import Router from "../router.js";
 import { EventEmitter } from 'node:stream';
 import { BunRequest } from 'bun';
+import { exists } from 'node:fs/promises';
 
 export default class Yon {
 
@@ -246,29 +247,35 @@ export default class Yon {
 
     private static async bundleAssets() {
 
-        const routes = Array.from(new Bun.Glob(`**/*`).scanSync({ cwd: Router.assetsPath }))
+        if(await exists(Router.assetsPath)) {
 
-        for(const route of routes) {
+            const routes = Array.from(new Bun.Glob(`**/*`).scanSync({ cwd: Router.assetsPath }))
 
-            Router.reqRoutes[`/assets/${route}`] = {
-                GET: async () => new Response(await Bun.file(`${Router.assetsPath}/${route}`).text())
+            for(const route of routes) {
+
+                Router.reqRoutes[`/assets/${route}`] = {
+                    GET: async () => new Response(await Bun.file(`${Router.assetsPath}/${route}`).text())
+                }
             }
         }
     }
 
     private static async bundlePages() {
 
-        const routes = Array.from(new Bun.Glob(`**/${Yon.htmlMethod}`).scanSync({ cwd: Router.routesPath }))
+        if(await exists(Router.routesPath)) {
+
+            const routes = Array.from(new Bun.Glob(`**/${Yon.htmlMethod}`).scanSync({ cwd: Router.routesPath }))
         
-        for(const route of routes) {
+            for(const route of routes) {
 
-            await Router.validateRoute(route)
+                await Router.validateRoute(route)
 
-            const data = await Bun.file(`${Router.routesPath}/${route}`).text()
+                const data = await Bun.file(`${Router.routesPath}/${route}`).text()
 
-            const { html, script, style } = Yon.extractComponents(data)
-            
-            await Yon.addToStatix(html, script, style, `${route}.${script.lang || 'js'}`, 'pages')
+                const { html, script, style } = Yon.extractComponents(data)
+                
+                await Yon.addToStatix(html, script, style, `${route}.${script.lang || 'js'}`, 'pages')
+            }
         }
 
         const nfFile = Bun.file(`${process.cwd()}/404.html`)
@@ -282,21 +289,24 @@ export default class Yon {
 
     private static async bundleComponents() {
 
-        const components = Array.from(new Bun.Glob(`**/*.html`).scanSync({ cwd: Router.componentsPath }))
+        if(await exists(Router.componentsPath)) {
 
-        for(let comp of components) {
+            const components = Array.from(new Bun.Glob(`**/*.html`).scanSync({ cwd: Router.componentsPath }))
 
-            const folders = comp.split('/')
+            for(let comp of components) {
 
-            const filename = folders[folders.length - 1].replace('.html', '')
+                const folders = comp.split('/')
 
-            Yon.compMapping.set(filename, comp.replace('.html', '.js'))
+                const filename = folders[folders.length - 1].replace('.html', '')
 
-            const data = await Bun.file(`${Router.componentsPath}/${comp}`).text()
+                Yon.compMapping.set(filename, comp.replace('.html', '.js'))
 
-            const { html, script, style } = Yon.extractComponents(data)
-            
-            await Yon.addToStatix(html, script, style, comp, 'components')
+                const data = await Bun.file(`${Router.componentsPath}/${comp}`).text()
+
+                const { html, script, style } = Yon.extractComponents(data)
+                
+                await Yon.addToStatix(html, script, style, comp, 'components')
+            }
         }
     }
 
