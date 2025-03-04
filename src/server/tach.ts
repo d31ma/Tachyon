@@ -158,6 +158,8 @@ export default class Tach {
 
     static createServerRoutes() {
 
+        if(!Router.allRoutes.has('/')) Router.allRoutes.set('/', new Set(['GET']))
+
         for(const [route, methods] of Router.allRoutes) {
 
             const serverRoute = async (request?: BunRequest, server?: Server) => {
@@ -231,12 +233,6 @@ export default class Tach {
             }
 
             if(Router.reqRoutes['//*']) delete Router.reqRoutes['//*']
-
-            if(!Router.reqRoutes['/']) {
-                Router.reqRoutes['/'] = {
-                    GET: serverRoute    
-                }
-            }
         }
     }
 }
