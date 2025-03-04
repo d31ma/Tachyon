@@ -4,7 +4,7 @@ import Router, { _ctx } from "./router.js"
 import Yon from "./client/yon.js"
 import { Logger } from "./server/logger.js"
 import { ServerWebSocket } from "bun"
-import { watch } from "fs/promises"
+import { watch, exists } from "fs/promises"
 import { watch as watcher } from "node:fs";
 
 type WebSocketData = {
@@ -93,26 +93,32 @@ if(server.development) {
             return undefined
         },
         websocket: {
-            open(ws) {
+            async open(ws) {
                 console.info("HMR Enabled")
-    
-                watcher(Router.routesPath, { recursive: true }, () => {
-                    queueMicrotask(async () => {
-                        console.info("HMR Update")
-                        await configureRoutes()
-                        server.reload({ routes: Router.reqRoutes })
-                        ws.send('')
+
+                if(await exists(Router.routesPath)) {
+
+                    watcher(Router.routesPath, { recursive: true }, () => {
+                        queueMicrotask(async () => {
+                            console.info("HMR Update")
+                            await configureRoutes()
+                            server.reload({ routes: Router.reqRoutes })
+                            ws.send('')
+                        })
                     })
-                })
-                
-                watcher(Router.componentsPath, { recursive: true }, () => {
-                    queueMicrotask(async () => {
-                        console.info("HMR Update")
-                        await configureRoutes()
-                        server.reload({ routes: Router.reqRoutes })
-                        ws.send('')
+                }
+
+                if(await exists(Router.componentsPath)) {
+
+                    watcher(Router.componentsPath, { recursive: true }, () => {
+                        queueMicrotask(async () => {
+                            console.info("HMR Update")
+                            await configureRoutes()
+                            server.reload({ routes: Router.reqRoutes })
+                            ws.send('')
+                        })
                     })
-                })
+                }
             },
             message(ws, message) {
                 
@@ -124,21 +130,30 @@ if(server.development) {
         port: 9876
     })
 
-    watcher(Router.routesPath, { recursive: true }, () => {
-        queueMicrotask(async () => {
-            await configureRoutes()
-            server.reload({ routes: Router.reqRoutes })
+
+    if(await exists(Router.routesPath)) {
+
+        watcher(Router.routesPath, { recursive: true }, () => {
+            queueMicrotask(async () => {
+                await configureRoutes()
+                server.reload({ routes: Router.reqRoutes })
+            })
         })
-    })
-    
-    watcher(Router.componentsPath, { recursive: true }, () => {
-        queueMicrotask(async () => {
-            await configureRoutes()
-            server.reload({ routes: Router.reqRoutes })
+    }
+
+    if(await exists(Router.componentsPath)) {
+
+        watcher(Router.componentsPath, { recursive: true }, () => {
+            queueMicrotask(async () => {
+                await configureRoutes()
+                server.reload({ routes: Router.reqRoutes })
+            })
         })
-    })
+    }
 }
 
 const elapsed = Date.now() - start
 
 console.info(`Live Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit) - ${elapsed.toFixed(2)}ms`)
+
+console.info(`Available Routes:\n\t${Object.keys(Router.reqRoutes).join('\n\t')}`)
