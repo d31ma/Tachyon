@@ -19,6 +19,7 @@ export default class Router {
 
     static readonly routesPath = `${process.cwd()}/routes`
     static readonly componentsPath = `${process.cwd()}/components`
+    static readonly assetsPath = `${process.cwd()}/assets`
 
     private static readonly allMethods = process.env.ALLOW_METHODS ? process.env.ALLOW_METHODS.split(',') : ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']
 

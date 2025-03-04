@@ -48,7 +48,7 @@ export default class Yon {
             styles += `${msg}\n`
         })
         
-        await Promise.all([Yon.bundleDependencies(), Yon.bundleComponents(), Yon.bundlePages()])
+        await Promise.all([Yon.bundleDependencies(), Yon.bundleComponents(), Yon.bundlePages(), Yon.bundleAssets()])
         
         await Bun.write(Bun.file(`${import.meta.dir}/routes.json`), JSON.stringify(Router.routeSlugs))
         
@@ -241,6 +241,18 @@ export default class Yon {
 
         Router.reqRoutes[`/${dir}/${route}`] = {
             GET: () => new Response(result.outputs[0], { headers: { 'Content-Type': 'application/javascript' } })
+        }
+    }
+
+    private static async bundleAssets() {
+
+        const routes = Array.from(new Bun.Glob(`**/*`).scanSync({ cwd: Router.assetsPath }))
+
+        for(const route of routes) {
+
+            Router.reqRoutes[`/assets/${route}`] = {
+                GET: async () => new Response(await Bun.file(`${Router.assetsPath}/${route}`).text())
+            }
         }
     }
 
