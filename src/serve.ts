@@ -156,4 +156,4 @@ const elapsed = Date.now() - start
 
 console.info(`Live Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit) - ${elapsed.toFixed(2)}ms`)
 
-console.info(`Available Routes:\n\t${Object.keys(Router.reqRoutes).join('\n\t')}`)
+// console.info(`Available Routes:\n\t${Object.keys(Router.reqRoutes).join('\n\t')}`)
