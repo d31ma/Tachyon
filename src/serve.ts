@@ -87,6 +87,8 @@ const server = Bun.serve({
 
 if(server.development) {
 
+    let websocket: ServerWebSocket<unknown>;
+
     const socket = Bun.serve({
         fetch(req) {
             socket.upgrade(req)
@@ -95,30 +97,7 @@ if(server.development) {
         websocket: {
             async open(ws) {
                 console.info("HMR Enabled")
-
-                if(await exists(Router.routesPath)) {
-
-                    watcher(Router.routesPath, { recursive: true }, () => {
-                        queueMicrotask(async () => {
-                            console.info("HMR Update")
-                            await configureRoutes()
-                            server.reload({ routes: Router.reqRoutes })
-                            ws.send('')
-                        })
-                    })
-                }
-
-                if(await exists(Router.componentsPath)) {
-
-                    watcher(Router.componentsPath, { recursive: true }, () => {
-                        queueMicrotask(async () => {
-                            console.info("HMR Update")
-                            await configureRoutes()
-                            server.reload({ routes: Router.reqRoutes })
-                            ws.send('')
-                        })
-                    })
-                }
+                websocket = ws
             },
             message(ws, message) {
                 
@@ -130,13 +109,14 @@ if(server.development) {
         port: 9876
     })
 
-
     if(await exists(Router.routesPath)) {
 
         watcher(Router.routesPath, { recursive: true }, () => {
             queueMicrotask(async () => {
+                console.info("HMR Update")
                 await configureRoutes()
                 server.reload({ routes: Router.reqRoutes })
+                if(websocket) websocket.send('')
             })
         })
     }
@@ -147,6 +127,7 @@ if(server.development) {
             queueMicrotask(async () => {
                 await configureRoutes()
                 server.reload({ routes: Router.reqRoutes })
+                if(websocket) websocket.send('')
             })
         })
     }
@@ -155,5 +136,3 @@ if(server.development) {
 const elapsed = Date.now() - start
 
 console.info(`Live Server is running on http://${server.hostname}:${server.port} (Press CTRL+C to quit) - ${elapsed.toFixed(2)}ms`)
-
-// console.info(`Available Routes:\n\t${Object.keys(Router.reqRoutes).join('\n\t')}`)

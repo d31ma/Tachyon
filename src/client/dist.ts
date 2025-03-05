@@ -12,7 +12,7 @@ for(const route in Router.reqRoutes) {
 
     const res = await Router.reqRoutes[route][`GET`]()
 
-    await Bun.write(Bun.file(`${process.cwd()}/dist/${route}`), await res.text())
+    await Bun.write(Bun.file(`${process.cwd()}/dist/${route}`), await res.blob())
 }
 
 await Bun.write(Bun.file(`${process.cwd()}/dist/index.html`), await Bun.file(`${import.meta.dir}/prod.html`).text())
