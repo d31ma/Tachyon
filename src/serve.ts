@@ -87,6 +87,8 @@ const server = Bun.serve({
 
 if(server.development) {
 
+    let timeout: Timer
+
     let websocket: ServerWebSocket<unknown>;
 
     const socket = Bun.serve({
@@ -112,23 +114,30 @@ if(server.development) {
     if(await exists(Router.routesPath)) {
 
         watcher(Router.routesPath, { recursive: true }, () => {
-            queueMicrotask(async () => {
+
+            if(timeout) clearTimeout(timeout)
+
+            timeout = setTimeout(async () => {
                 console.info("HMR Update")
                 await configureRoutes()
                 server.reload({ routes: Router.reqRoutes })
                 if(websocket) websocket.send('')
-            })
+            }, 1500)
         })
     }
 
     if(await exists(Router.componentsPath)) {
 
         watcher(Router.componentsPath, { recursive: true }, () => {
-            queueMicrotask(async () => {
+
+            if(timeout) clearTimeout(timeout)
+
+            timeout = setTimeout(async () => {
+                console.info("HMR Update")
                 await configureRoutes()
                 server.reload({ routes: Router.reqRoutes })
                 if(websocket) websocket.send('')
-            })
+            }, 1500)
         })
     }
 }

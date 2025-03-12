@@ -222,7 +222,7 @@ export default class Tach {
 
                 if(method !== 'HTML' && method !== 'SOCKET') {
 
-                    if(!Router.reqRoutes[route]) {
+                    if(!Router.reqRoutes[route] || !Router.reqRoutes[`${route}/*`]) {
                         Router.reqRoutes[route] = {}
                         Router.reqRoutes[`${route}/*`] = {}
                     }
