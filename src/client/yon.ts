@@ -1,14 +1,11 @@
 import { JSDOM } from 'jsdom'
 import Router from "../router.js";
-import { EventEmitter } from 'node:stream';
 import { BunRequest } from 'bun';
 import { exists } from 'node:fs/promises';
 
 export default class Yon {
 
     private static htmlMethod = 'HTML'
-
-    private static emitter = new EventEmitter()
 
     private static compMapping = new Map<string, string>()
 
@@ -42,24 +39,10 @@ export default class Yon {
                 GET: async () => new Response(await main.bytes(),  { headers: { 'Content-Type': 'application/javascript' } })
             }
         }
-
-        let styles = ''
-        
-        Yon.emitter.addListener('style', (msg) => {
-            styles += `${msg}\n`
-        })
         
         await Promise.all([Yon.bundleDependencies(), Yon.bundleComponents(), Yon.bundlePages(), Yon.bundleAssets()])
         
         await Bun.write(Bun.file(`${import.meta.dir}/routes.json`), JSON.stringify(Router.routeSlugs))
-        
-        Yon.emitter.removeAllListeners('style')
-        
-        if(styles) {
-            Router.reqRoutes["/styles.css"] = {
-                GET: () => new Response(styles, { headers: { 'Content-Type': 'text/css' }})
-            }
-        }
     }
 
     private static extractComponents(data: string) {
@@ -68,113 +51,112 @@ export default class Yon {
 
         html.innerHTML = data
 
-        const scripts = html.querySelectorAll('script')
-
-        const script = scripts[0]
-
-        scripts.forEach(s => s.remove())
-
-        const styles = html.querySelectorAll('style')
-
-        const style = styles[0]
-
-        styles.forEach(s => s.remove())
-
-        return { html, script, style }
+        return { html, script:  html.querySelectorAll('script')[0] }
     }
 
-    private static parseHTML(elements: HTMLCollection, imports: Map<string, Set<string>> = new Map<string, Set<string>>()) {
+    private static parseHTML(elements: HTMLDivElement, imports: Map<string, Set<string>> = new Map<string, Set<string>>()) {
 
         const parsed: { static?: string, render?: string, element?: string }[] = []
+        
+        for (const element of elements.children) {
 
-        for (const element of elements) {
+            if(element.tagName !== "SCRIPT") {
 
-            if(element.tagName.startsWith('TY-')) {
+                if(element.tagName.startsWith('TY-')) {
 
-                const component = element.tagName.split('-')[1].toLowerCase()
-
-                if(component === 'loop') {
-                    const attribute = element.attributes[0];
-                    if (attribute.name === ':for') parsed.push({ render: `for(${attribute.value}) {`})
-                } else if(component === "logic") {
-                    const attribute = element.attributes[0]
-                    if (attribute.name === ':if') parsed.push({ render: `if(${attribute.value}) {`});
-                    if (attribute.name === ':else-if') parsed.push({ render: `else if(${attribute.value}) {`});
-                    if (attribute.name === ':else') parsed.push({ render: `else {`});
-                } else {
-
-                    const exports: string[] = []
-
-                    const filepath = Yon.compMapping.get(component)
-
-                    if(filepath) {
-
-                        for(let i = 0; i < element.attributes.length; i++) {
-
-                            if(element.attributes[i].name.startsWith(':')) {
-                                const propName = element.attributes[i].name.slice(1)
-                                exports.push(`${propName} = ${"${" + element.attributes[i].value + "}"}`)
+                    const component = element.tagName.split('-')[1].toLowerCase()
+    
+                    if(component === 'loop') {
+                        const attribute = element.attributes[0];
+                        if (attribute.name === ':for') parsed.push({ render: `for(${attribute.value}) {`})
+                    } else if(component === "logic") {
+                        const attribute = element.attributes[0]
+                        if (attribute.name === ':if') parsed.push({ render: `if(${attribute.value}) {`});
+                        if (attribute.name === ':else-if') parsed.push({ render: `else if(${attribute.value}) {`});
+                        if (attribute.name === ':else') parsed.push({ render: `else {`});
+                    } else {
+    
+                        const exports: string[] = []
+    
+                        const filepath = Yon.compMapping.get(component)
+    
+                        if(filepath) {
+    
+                            for(let i = 0; i < element.attributes.length; i++) {
+    
+                                if(element.attributes[i].name.startsWith(':')) {
+                                    const propName = element.attributes[i].name.slice(1)
+                                    exports.push(`${propName} = ${"${" + element.attributes[i].value + "}"}`)
+                                } else {
+                                    const propName = element.attributes[i].name
+                                    exports.push(`${propName} = "${element.attributes[i].value}"`)
+                                }
+                            }
+    
+                            if(imports.has(filepath)) {
+    
+                                if(!imports.get(filepath)?.has(component)) {
+                                    parsed.push({ static: `const { default: ${component} } = import('/components/${filepath}')`})
+                                    imports.get(filepath)?.add(component)
+                                }
+    
                             } else {
-                                const propName = element.attributes[i].name
-                                exports.push(`${propName} = "${element.attributes[i].value}"`)
+    
+                                parsed.push({ static: `const { default: ${component} } = await import('/components/${filepath}')`})
+                                imports.set(filepath, new Set<string>([component]))
                             }
+    
+                            const hash = Bun.randomUUIDv7().split('-')[1]
+    
+                            parsed.push({ static: `const comp_${hash} = await ${component}(\`${exports.join(';')}\`)`})
+
+                            parsed.push({ render: `elements += "<div>"` })
+    
+                            parsed.push({ render: `elements += comp_${hash}(execute && execute.compId === "ty-${hash}" ? execute : null).replaceAll('class="', 'class="ty-${hash} ')`})
+                        
+                            parsed.push({ render: `elements += "</div>"` })
                         }
-
-                        if(imports.has(filepath)) {
-
-                            if(!imports.get(filepath)?.has(component)) {
-                                parsed.push({ static: `const { default: ${component} } = import('/components/${filepath}')`})
-                                imports.get(filepath)?.add(component)
-                            }
-
-                        } else {
-
-                            parsed.push({ static: `const { default: ${component} } = await import('/components/${filepath}')`})
-                            imports.set(filepath, new Set<string>([component]))
+                    }
+    
+                    const temp = new JSDOM('').window.document.createElement('div');
+                    temp.innerHTML = element.innerHTML
+    
+                    parsed.push(...this.parseHTML(temp, imports))
+    
+                    if(component === "loop" || component === "logic") parsed.push({ render: '}'})
+    
+                } else if(element.tagName === "STYLE") {
+    
+                    element.innerHTML = `@scope { ${element.innerHTML} }`
+    
+                    parsed.push({ element: `\`${element.outerHTML}\`` })
+    
+                } else {
+    
+                    for(let i = 0; i < element.attributes.length; i++) {
+    
+                        const attr = element.attributes[i]
+    
+                        if(attr.name.startsWith(':')) {
+    
+                            const attrName = attr.name.slice(1)
+    
+                            element.removeAttribute(attr.name)
+                            element.setAttribute(attrName, "${" + attr.value + "}")
                         }
-
-                        const hash = Bun.randomUUIDv7().split('-')[1]
-
-                        parsed.push({ static: `const comp_${hash} = await ${component}(\`${exports.join(';')}\`)`})
-
-                        parsed.push({ render: `elements += comp_${hash}(execute && execute.compId === "ty-${hash}" ? execute : null).replaceAll('class="', 'class="ty-${hash} ')`})
                     }
+    
+                    parsed.push({ element: `\`${element.outerHTML}\`` })
                 }
-
-                const temp = new JSDOM('').window.document.createElement('div');
-                temp.innerHTML = element.innerHTML
-
-                parsed.push(...this.parseHTML(temp.children, imports))
-
-                if(component === "loop" || component === "logic") parsed.push({ render: '}'})
-
-            } else {
-
-                for(let i = 0; i < element.attributes.length; i++) {
-
-                    const attr = element.attributes[i]
-
-                    if(attr.name.startsWith(':')) {
-
-                        const attrName = attr.name.slice(1)
-
-                        element.removeAttribute(attr.name)
-                        element.setAttribute(attrName, "${" + attr.value + "}")
-                    }
-                }
-
-                parsed.push({ element: `\`${element.outerHTML}\`` })
             }
         }
 
         return parsed
     }
 
-    private static createJSData(html: { static?: string, render?: string, element?: string }[], scriptTag?: HTMLScriptElement, style?: HTMLStyleElement) {
+    private static createJSData(html: { static?: string, render?: string, element?: string }[], scriptTag?: HTMLScriptElement) {
 
         const hash = Bun.randomUUIDv7().split('-')[3]
-
-        if(style && style.innerHTML) Yon.emitter.emit('style', `@scope (.ty-${hash}) { ${style.innerHTML} }`)
 
         const outers: string[] = []
         const inners: string[] = []
@@ -184,7 +166,7 @@ export default class Yon {
             if(h.element) {
                 const temp = new JSDOM('').window.document.createElement('div');
                 temp.innerHTML = h.element
-                temp.children[0].classList.add(`ty-${hash}`)
+                if(temp.children[0].tagName !== 'STYLE') temp.children[0].classList.add(`ty-${hash}`)
                 inners.push(`elements += ${temp.innerHTML}`)
             }
             if(h.render) inners.push(h.render)
@@ -219,11 +201,11 @@ export default class Yon {
         `
     }
 
-    private static async addToStatix(html: HTMLDivElement, script: HTMLScriptElement, style: HTMLStyleElement, route: string, dir: 'pages' | 'components') {
+    private static async addToStatix(html: HTMLDivElement, script: HTMLScriptElement, route: string, dir: 'pages' | 'components') {
+        
+        const module = Yon.parseHTML(html)
 
-        const module = Yon.parseHTML(html.children)
-
-        const jsData = Yon.createJSData(module, script, style)
+        const jsData = Yon.createJSData(module, script)
 
         route = route.replace('.html', `.${script?.lang || 'js'}`)
 
@@ -274,9 +256,9 @@ export default class Yon {
 
                 const data = await Bun.file(`${Router.routesPath}/${route}`).text()
 
-                const { html, script, style } = Yon.extractComponents(data)
+                const { html, script } = Yon.extractComponents(data)
                 
-                await Yon.addToStatix(html, script, style, `${route}.${script?.lang || 'js'}`, 'pages')
+                await Yon.addToStatix(html, script, `${route}.${script?.lang || 'js'}`, 'pages')
             }
         }
 
@@ -284,9 +266,9 @@ export default class Yon {
 
         const data = await nfFile.exists() ? await nfFile.text() : await Bun.file(`${import.meta.dir}/404.html`).text()
 
-        const { html, script, style } = Yon.extractComponents(data)
+        const { html, script } = Yon.extractComponents(data)
         
-        await Yon.addToStatix(html, script, style, '404.html', 'pages')
+        await Yon.addToStatix(html, script, '404.html', 'pages')
     }
 
     private static async bundleComponents() {
@@ -305,9 +287,9 @@ export default class Yon {
 
                 const data = await Bun.file(`${Router.componentsPath}/${comp}`).text()
 
-                const { html, script, style } = Yon.extractComponents(data)
+                const { html, script } = Yon.extractComponents(data)
                 
-                await Yon.addToStatix(html, script, style, comp, 'components')
+                await Yon.addToStatix(html, script, comp, 'components')
             }
         }
     }
