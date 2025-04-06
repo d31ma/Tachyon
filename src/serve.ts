@@ -27,59 +27,59 @@ await configureRoutes()
 
 const server = Bun.serve({
     routes: Router.reqRoutes,
-    // websocket: {
-    //     async open(ws: ServerWebSocket<WebSocketData>) {
+    websocket: {
+        async open(ws: ServerWebSocket<WebSocketData>) {
 
-    //         const { handler, path } = ws.data
+            const { handler, path } = ws.data
 
-    //         const proc = Bun.spawn({
-    //             cmd: [handler],
-    //             stdout: 'inherit',
-    //             stderr: "pipe",
-    //             stdin: "pipe"
-    //         })
+            const proc = Bun.spawn({
+                cmd: [handler],
+                stdout: 'inherit',
+                stderr: "pipe",
+                stdin: "pipe"
+            })
  
-    //         Tach.webSockets.set(ws, proc)
+            Tach.webSockets.set(ws, proc)
 
-    //         console.info(`WebSocket Connected - ${path} - ${proc.pid}`)
+            console.info(`WebSocket Connected - ${path} - ${proc.pid}`)
 
-    //         for await(const ev of watch(`/tmp`)) {
+            for await(const ev of watch(`/tmp`)) {
 
-    //             if(ev.filename === proc.pid.toString()) {
+                if(ev.filename === proc.pid.toString()) {
 
-    //                 const status = ws.send(Bun.mmap(`/tmp/${proc.pid}`))
+                    const status = ws.send(Bun.mmap(`/tmp/${proc.pid}`))
 
-    //                 console.info(`WebSocket Message Sent - ${path} - ${proc.pid} - ${status} byte(s)`)
-    //             }
-    //         }
-    //     },
-    //     async message(ws: ServerWebSocket<WebSocketData>, message: string) {
+                    console.info(`WebSocket Message Sent - ${path} - ${proc.pid} - ${status} byte(s)`)
+                }
+            }
+        },
+        async message(ws: ServerWebSocket<WebSocketData>, message: string) {
 
-    //         const proc = Tach.webSockets.get(ws)!
+            const proc = Tach.webSockets.get(ws)!
 
-    //         const { ctx, path } = ws.data
+            const { ctx, path } = ws.data
 
-    //         ctx.body = message
+            ctx.body = message
 
-    //         proc.stdin.write(JSON.stringify(ctx))
+            proc.stdin.write(JSON.stringify(ctx))
 
-    //         proc.stdin.flush()
+            proc.stdin.flush()
 
-    //         console.info(`WebSocket Message Received - ${path} - ${proc.pid} - ${message.length} byte(s)`)
-    //     },
-    //     close(ws, code, reason) {
+            console.info(`WebSocket Message Received - ${path} - ${proc.pid} - ${message.length} byte(s)`)
+        },
+        close(ws, code, reason) {
 
-    //         const { path } = ws.data
+            const { path } = ws.data
 
-    //         const proc = Tach.webSockets.get(ws)!
+            const proc = Tach.webSockets.get(ws)!
 
-    //         proc.stdin.end()
+            proc.stdin.end()
 
-    //         Tach.webSockets.delete(ws)
+            Tach.webSockets.delete(ws)
 
-    //         console.info(`WebSocket Disconnected - ${path} - ${proc.pid} - Code (${code}): ${reason}`)
-    //     },
-    // },
+            console.info(`WebSocket Disconnected - ${path} - ${proc.pid} - Code (${code}): ${reason}`)
+        },
+    },
     port: process.env.PORT || 8080,
     hostname: process.env.HOSTNAME || '0.0.0.0',
     development: process.env.NODE_ENV === 'development'
