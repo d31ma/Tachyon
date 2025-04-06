@@ -186,21 +186,25 @@ export default class Yon {
                         .replaceAll(/`<\/ty-(\w+)\s*>`/g, '')
                         .replaceAll(/`<ty-([a-zA-Z0-9-]+)(?:\s+([^>]*))>`/g, (match, component, atrributes) => {
                          
-                            const matches = atrributes.matchAll(/([a-zA-Z0-9-]+)="([^"]*)"/g)
+                            const matches = atrributes.matchAll(/([a-zA-Z0-9-@]+)="([^"]*)"/g)
 
-                            const exports: string[] = []
-                            
-                            for(const [_, key, value] of matches) {
-                                exports.push(`${key}=${value}`)
-                            }
-                            
+                            const props: string[] = []
+                            const events: string[] = []
+
                             const hash = Bun.randomUUIDv7().split('-')[3]
                             
+                            for(const [_, key, value] of matches) {
+                                if(key.startsWith('@')) events.push(`${key}="${value.replace(/(ty_invokeEvent\(')([^"]+)(',[^)]+\))/g, `$1${hash}$3`)}"`)
+                                else props.push(`${key}=${value}`)
+                            }
+
+                            const genId = "${ty_generateId('" + hash + "', 'id')}"
+                            
                             return `
-                                elements += '<div>'
+                                elements += \`<div id="${genId}" ${events.join(' ')}>\`
 
                                 if(!compRenders.has('${hash}')) {
-                                    render = await ${component}(\`${exports.join(';')}\`)
+                                    render = await ${component}(\`${props.join(';')}\`)
                                     elements += await render(elemId, event, '${hash}')
                                     compRenders.set('${hash}', render)
                                 } else {

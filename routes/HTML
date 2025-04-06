@@ -28,6 +28,10 @@
     function removeTodo(index) {
         todos = todos.filter((_, i) => i !== index)
     }
+
+    function propEvent() {
+      console.log('prop event')
+    }
 </script>
 
 <h1>Yon Framework Test</h1>
@@ -66,7 +70,7 @@
     </div>
 </ty-logic>
 
-<ty-clicker :clicks="count"/>
+<ty-clicker :clicks="count" @click="propEvent()"/>
 
 <style>
     body {
