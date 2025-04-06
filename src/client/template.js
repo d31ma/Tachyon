@@ -1,12 +1,14 @@
 export default async function(props) {
 
+    // imports
+
     // script
 
     if(props) props.split(';').map(prop => eval(prop))
 
-    // imports
+    const compRenders = new Map()
 
-    return function(identifers, event, compId) {
+    return async function(elemId, event, compId) {
 
         const elemIds = new Map()
 
@@ -34,7 +36,7 @@ export default async function(props) {
 
         const ty_invokeEvent = (hash, action) => {
             
-            if(identifers && identifers.elementId === ty_generateId(hash, '@')) {
+            if(elemId === ty_generateId(hash, '@')) {
                 
                 if(event && !action.endsWith(')')) {
                     return `${action}('${event}')`
@@ -46,7 +48,7 @@ export default async function(props) {
 
         const ty_assignValue = (hash, variable) => {
 
-            if(identifers && identifers.elementId === ty_generateId(hash, 'bind') && event) {
+            if(elemId === ty_generateId(hash, 'bind') && event) {
                 return `${variable} = '${event.value}'`
             }
 
@@ -54,6 +56,8 @@ export default async function(props) {
         }
 
         let elements = '';
+
+        let render;
 
         // inners
 

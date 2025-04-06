@@ -89,7 +89,7 @@ function addEvents(elements?: HTMLCollection) {
                       selectionStart = (e.target as HTMLInputElement).selectionStart;
                     }
 
-                    mergeBodyHTML(render({ elementId }))
+                    mergeBodyHTML(await render(elementId))
                 }
 
                 element.addEventListener(event, elementEvents[`${element.id}_${event}`])
@@ -111,7 +111,7 @@ function addEvents(elements?: HTMLCollection) {
 
                     const evt = { value: (ev.target as any).value, defaultValue: (ev.target as any).defaultValue }
 
-                    mergeBodyHTML(render({ elementId }, evt))
+                    mergeBodyHTML(await render(elementId, evt))
                 }
             }
         }
@@ -127,7 +127,7 @@ async function onClickEvent(ev: MouseEvent) {
         if(url.origin !== location.origin) return
         ev.preventDefault()
         setPageTemplate(url.pathname)
-    } else mergeBodyHTML(render())
+    } else mergeBodyHTML(await render())
 }
 
 function setPageTemplate(pathname: string) {    
@@ -150,7 +150,7 @@ function setPageTemplate(pathname: string) {
         window.history.replaceState({}, '', pathname)
         render = await module.default()
         madeRequest = true
-        mergeBodyHTML(render())
+        mergeBodyHTML(await render())
         madeRequest = false
     })
 }
@@ -253,7 +253,7 @@ Object.keys(window).forEach(key => {
                     setPageTemplate(window.location.pathname)
                     break
                 default:
-                    mergeBodyHTML(render())
+                    mergeBodyHTML(await render())
                     break
             }
         })
@@ -374,17 +374,21 @@ function updateAttributes(oldElement: Element, newElement: Element): void {
   for (const attr of Array.from(oldElement.attributes)) {
     if (!newElement.hasAttribute(attr.name)) {
       oldElement.removeAttribute(attr.name);
-    }
+    } 
   }
   
   // Add or update attributes from newElement
   for (const attr of Array.from(newElement.attributes)) {
-    if (oldElement.getAttribute(attr.name) !== attr.value && !attr.name.startsWith('@')) {
-      oldElement.setAttribute(attr.name, attr.value);
+    // Use strict equality to ensure empty strings are properly handled
+    if (!attr.name.startsWith('@') && 
+        (oldElement.getAttribute(attr.name) !== attr.value || 
+         (!oldElement.hasAttribute(attr.name) && attr.value === ""))) {
+      if(oldElement.children.length === 0) {
+        oldElement.outerHTML = newElement.outerHTML
+      } else oldElement.setAttribute(attr.name, attr.value)
     }
   }
 }
-
 /**
  * Helper function to check if two nodes are of the same type
  * @param {Node} oldNode - The old node

@@ -86,7 +86,11 @@ export default class Yon {
                 continue; // Skip script tags as they're handled separately
             }
 
-            const hash = Bun.randomUUIDv7().split('-')[3]
+            if(element.tagName === 'STYLE') {
+                element.innerHTML = `@scope { ${element.innerHTML} }`
+                parsed.push({ element: `\`${element.outerHTML}\`` })
+                continue
+            }
 
             if(element.tagName.startsWith('TY') && !element.tagName.endsWith('LOOP') && !element.tagName.endsWith('LOGIC')) {
                 
@@ -108,33 +112,10 @@ export default class Yon {
                         parsed.push({ static: `const { default: ${component} } = await import('/components/${filepath}')`})
                         imports.set(filepath, new Set<string>([component]))
                     }
-
-                    const exports: string[] = []
-
-                    for(let i = 0; i < element.attributes.length; i++) {
-    
-                        if(element.attributes[i].name.startsWith(':')) {
-                            const propName = element.attributes[i].name.slice(1)
-                            exports.push(`${propName} = ${"${" + element.attributes[i].value + "}"}`)
-                        } else {
-                            const propName = element.attributes[i].name
-                            exports.push(`${propName} = "${element.attributes[i].value}"`)
-                        }
-                    }
-
-                    parsed.push({ static: `const ty_${hash} = await ${component}(\`${exports.join(';')}\`)`})
-
-                    parsed.push({ element: `<ty-${hash} />` })
                 }
-
-                continue
             }
 
-            if(element.tagName === 'STYLE') {
-                element.innerHTML = `@scope { ${element.innerHTML} }`
-                parsed.push({ element: `\`${element.outerHTML}\`` })
-                continue
-            }
+            const hash = Bun.randomUUIDv7().split('-')[3]
 
             if(!element.id && !element.tagName.startsWith('TY-')) {
                 element.setAttribute(':id', "ty_generateId('" + hash + "', 'id')")
@@ -203,11 +184,33 @@ export default class Yon {
                         })
                         .replaceAll(/:([^"]*)="([^"]*)"/g, '$1="${$2}"')
                         .replaceAll(/`<\/ty-(\w+)\s*>`/g, '')
-                        .replaceAll(/<ty-([a-z0-9]+) \/>/g, (match, hash) => `
+                        .replaceAll(/`<ty-([a-zA-Z0-9-]+)(?:\s+([^>]*))>`/g, (match, component, atrributes) => {
+                         
+                            const matches = atrributes.matchAll(/([a-zA-Z0-9-]+)="([^"]*)"/g)
+
+                            const exports: string[] = []
+                            
+                            for(const [_, key, value] of matches) {
+                                exports.push(`${key}=${value}`)
+                            }
+                            
+                            const hash = Bun.randomUUIDv7().split('-')[3]
+                            
+                            return `
                                 elements += '<div>'
-                                elements += ty_${hash}(identifers, event, '${hash}')
+
+                                if(!compRenders.has('${hash}')) {
+                                    render = await ${component}(\`${exports.join(';')}\`)
+                                    elements += await render(elemId, event, '${hash}')
+                                    compRenders.set('${hash}', render)
+                                } else {
+                                    render = compRenders.get('${hash}')
+                                    elements += await render(elemId, event, '${hash}')
+                                }
+
                                 elements += '</div>'
-                        `)
+                            `
+                        })
                         
     }
 
