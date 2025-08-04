@@ -1,135 +1,82 @@
 <script>
-    document.title = "Home"
+  document.title = "Home";
 
-    let count = 0
-    let showInfo = false
-    let newTodo = ''
-    let todos = [
-        { text: "Learn Yon framework", completed: false },
-        { text: "Build an application", completed: false }
-    ]
+  let count = 0;
+  let showInfo = false;
+  let newTodo = "";
+  let todos = [
+    { text: "Learn Yon framework", completed: false },
+    { text: "Build an application", completed: false },
+  ];
 
-    let componentTitle = "Component Test"
-    let componentDesc = "This tests custom components in Yon"
+  let componentTitle = "Component Test";
+  let componentDesc = "This tests custom components in Yon";
 
-    function addTodo() {
-        if (newTodo) {
-            todos = [...todos, { text: newTodo, completed: false }]
-            newTodo = ''
-        }
+  function addTodo() {
+    if (newTodo) {
+      todos = [...todos, { text: newTodo, completed: false }];
+      newTodo = "";
     }
+  }
 
-    function toggleTodo(index) {
-        todos = todos.map((todo, i) => 
-            i === index ? { ...todo, completed: !todo.completed } : todo
-        )
-    }
+  function toggleTodo(index) {
+    todos = todos.map((todo, i) =>
+      i === index ? { ...todo, completed: !todo.completed } : todo
+    );
+  }
 
-    function removeTodo(index) {
-        todos = todos.filter((_, i) => i !== index)
-    }
-
-    function propEvent() {
-      console.log('prop event')
-    }
+  function removeTodo(index) {
+    todos = todos.filter((_, i) => i !== index);
+  }
 </script>
 
 <h1>Yon Framework Test</h1>
 
-<ty-clicker :clicks="count"/>
-  
-<div class="card">
-    <h2>Counter Example</h2>
+<ty-clicker :clicks="count" />
+
+<vc-card title="Counter Example" elevation="1">
+  <div slot="content">
+    <vc-btn @click="count++">Increment</vc-btn>
     <p>Count: <span>{count}</span></p>
-    <button @click="count++">Increment</button>
-    <button @click="count--">Decrement</button>
-</div>
+    <vc-btn @click="count--">Decrement</vc-btn>
+  </div>
+</vc-card>
 
 <h2>Todo List</h2>
-<input type="text" placeholder="Add new todo" :value="newTodo" />
-<button @click="addTodo()">Add</button>
+<vc-text-field label="Add new todo" :value="newTodo"></vc-text-field>
+<vc-btn @click="addTodo()">Add</vc-btn>
 
-<ty-loop :for="let i = 0; i < todos.length; i++">
-    <div class="todo-item">
-        <input type="checkbox" :checked="todos[i].completed" @change="toggleTodo(i)" />
-        <span :class="todos[i].completed ? 'completed' : ''">{todos[i].text}</span>
-        <button @click="removeTodo(i)" style="margin-left: auto; background-color: #ef4444;">Remove</button>
-    </div>
-</ty-loop>
+<vc-list>
+  <ty-loop :for="let i = 0; i < todos.length; i++">
+    <vc-list-item>
+      <vc-checkbox
+        :label="todos[i].text"
+        @change="toggleTodo(i)"
+        :checked="todos[i].completed"
+      ></vc-checkbox>
+      <vc-btn @click="removeTodo(i)" color="secondary" size="small"> Remove </vc-btn>
+    </vc-list-item>
+  </ty-loop>
+</vc-list>
 
 <ty-logic :if="showInfo">
-    <div class="card">
-        <h2>Framework Info</h2>
-        <p>This is testing the conditional rendering feature of the Yon framework.</p>
-        <button @click="showInfo = false">Hide Info</button>
+  <vc-card title="Framework Info" elevation="1">
+    <div slot="content">
+      <p>
+        This is testing the conditional rendering feature of the Yon framework.
+      </p>
     </div>
+    <div slot="actions">
+      <vc-btn @click="showInfo = false">Hide Info</vc-btn>
+    </div>
+  </vc-card>
 </ty-logic>
 <ty-logic :else>
-    <div class="card">
-        <button @click="showInfo = true">Show Info</button>
+  <vc-card elevation="1">
+    <div slot="actions">
+      <vc-btn @click="showInfo = true">Show Info</vc-btn>
     </div>
+  </vc-card>
 </ty-logic>
 
-<ty-clicker :clicks="count" @click="propEvent()"/>
-
-<style>
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.5;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 1rem;
-      color: #333;
-      background-color: #f5f5f5;
-    }
-
-    .card {
-      background-color: white;
-      border-radius: 8px;
-      padding: 1.5rem;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      margin-bottom: 1rem;
-    }
-
-    h1 {
-      color: #2563eb;
-    }
-
-    button {
-      background-color: #2563eb;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      padding: 0.5rem 1rem;
-      cursor: pointer;
-      font-size: 1rem;
-    }
-
-    button:hover {
-      background-color: #1d4ed8;
-    }
-
-    input {
-      padding: 0.5rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      margin-right: 0.5rem;
-      font-size: 1rem;
-    }
-
-    .todo-item {
-      display: flex;
-      align-items: center;
-      padding: 0.5rem;
-      border-bottom: 1px solid #eee;
-    }
-
-    .todo-item:last-child {
-      border-bottom: none;
-    }
-
-    .completed {
-      text-decoration: line-through;
-      opacity: 0.7;
-    }
-</style>
+<ty-clicker :clicks="count" />

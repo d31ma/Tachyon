@@ -1,7 +1,18 @@
-import { JSDOM } from 'jsdom'
 import Router from "../router.js";
 import { BunRequest } from 'bun';
 import { exists } from 'node:fs/promises';
+
+interface ParsedElement {
+    static?: string;
+    render?: string;
+    element?: string;
+}
+
+interface ComponentData {
+    html: string;
+    script?: string;
+    scriptLang?: string;
+}
 
 export default class Yon {
 
@@ -49,105 +60,162 @@ export default class Yon {
         await Bun.write(Bun.file(`${import.meta.dir}/routes.json`), JSON.stringify(Router.routeSlugs))
     }
 
-    private static extractComponents(data: string) {
+    private static async extractComponents(data: string): Promise<ComponentData> {
+        let htmlContent = '';
+        let scriptContent = '';
+        let scriptLang = 'js';
 
-        const html = new JSDOM('').window.document.createElement('div')
+        const rewriter = new HTMLRewriter()
+            .on('script', {
+                element(element) {
+                    const lang = element.getAttribute('lang');
+                    if (lang) {
+                        scriptLang = lang;
+                    }
+                },
+                text(text) {
+                    scriptContent += text.text;
+                }
+            })
+            .on('*', {
+                element(element) {
+                    if (element.tagName !== 'script') {
+                        // Keep non-script elements for HTML content
+                        element.onEndTag(() => {
+                            // This will be handled by the final transform
+                        });
+                    } else {
+                        // Remove script tags from HTML content
+                        element.remove();
+                    }
+                }
+            });
 
-        html.innerHTML = data
+        // First pass: extract script content and remove script tags
+        const withoutScripts = rewriter.transform(new Response(data));
+        htmlContent = await withoutScripts.text();
 
-        return { html, script:  html.querySelectorAll('script')[0] }
+        return {
+            html: htmlContent,
+            script: scriptContent || undefined,
+            scriptLang
+        };
     }
 
     private static parseHTML(
-        elements: HTMLCollection,
+        htmlContent: string,
         imports: Map<string, Set<string>> = new Map<string, Set<string>>()
-    ): Array<{ static?: string; render?: string; element?: string }> {
+    ): Promise<Array<ParsedElement>> {
         
-        const parsed: Array<{ static?: string; render?: string; element?: string }> = [];
-        
-        const parseAttrs = (attrs: NamedNodeMap, hash: string) => Array.from(attrs).map(attr => {
+        return new Promise((resolve) => {
+            const parsed: Array<ParsedElement> = [];
+            const elementStack: Array<{tagName: string, hash: string, attributes: string[]}> = [];
             
-            if(attr.name.startsWith('@')) {
-                return `${attr.name}="` + "${eval(ty_invokeEvent('" + hash + "', '" + attr.value + "'))}" + '"'
-            }
+            const parseAttrs = (attrs: {[key: string]: string}, hash: string): string[] => {
+                return Object.entries(attrs).map(([name, value]) => {
+                    if(name.startsWith('@')) {
+                        return `${name}="` + "${eval(ty_invokeEvent('" + hash + "', '" + value + "'))}" + '"'
+                    }
 
-            if(attr.name === ":value") {
-                return `${attr.name.replace(':', '')}="` + "${eval(ty_assignValue('" + hash + "', '" + attr.value + "'))}" + '"'
-            }
-            
-            return `${attr.name}="${attr.value}"`
-        })
+                    if(name === ":value") {
+                        return `${name.replace(':', '')}="` + "${eval(ty_assignValue('" + hash + "', '" + value + "'))}" + '"'
+                    }
+                    
+                    return `${name}="${value}"`
+                });
+            };
 
-        const interpolateText = (textContext: string) => textContext.replace(/\{([^{}]+)\}/g, '${$1}').replace(/\{\{([^{}]+)\}\}/g, '{${$1}}')
-        
-        for (const element of Array.from(elements)) {
+            const interpolateText = (textContext: string) => 
+                textContext.replace(/\{([^{}]+)\}/g, '${$1}').replace(/\{\{([^{}]+)\}\}/g, '{${$1}}');
 
-            if (element.tagName === "SCRIPT") {
-                continue; // Skip script tags as they're handled separately
-            }
-
-            if(element.tagName === 'STYLE') {
-                element.innerHTML = `@scope { ${element.innerHTML} }`
-                parsed.push({ element: `\`${element.outerHTML}\`` })
-                continue
-            }
-
-            if(element.tagName.startsWith('TY') && !element.tagName.endsWith('LOOP') && !element.tagName.endsWith('LOGIC')) {
-                
-                const component = element.tagName.split('-')[1].toLowerCase()
-
-                const filepath = Yon.compMapping.get(component)
-
-                if(filepath) {
-
-                    if(imports.has(filepath)) {
-    
-                        if(!imports.get(filepath)?.has(component)) {
-                            parsed.push({ static: `const { default: ${component} } = import('/components/${filepath}')`})
-                            imports.get(filepath)?.add(component)
+            const rewriter = new HTMLRewriter()
+                .on('script', {
+                    element(element) {
+                        element.remove();
+                    }
+                })
+                .on('style', {
+                    element(element) {
+                        // Handle style elements
+                    },
+                    text(text) {
+                        parsed.push({ element: `\`<style>@scope { ${text.text} }</style>\`` });
+                    }
+                })
+                .on('*', {
+                    element(element) {
+                        const tagName = element.tagName.toUpperCase();
+                        
+                        if (tagName === 'SCRIPT' || tagName === 'STYLE') {
+                            return;
                         }
 
-                    } else {
+                        const hash = Bun.randomUUIDv7().split('-')[3];
+                        const attributes: Record<string, string> = {}
 
-                        parsed.push({ static: `const { default: ${component} } = await import('/components/${filepath}')`})
-                        imports.set(filepath, new Set<string>([component]))
+                        Array.from(element.attributes).map(attr => {
+                            const [name, value] = attr
+                            attributes[name] = value
+                        })
+
+                        // Handle custom attributes (this is a limitation of HTMLRewriter)
+                        // You might need to parse these manually from the original HTML
+
+                        if(tagName.startsWith('TY') && !tagName.endsWith('LOOP') && !tagName.endsWith('LOGIC')) {
+                            const component = tagName.split('-')[1]?.toLowerCase();
+                            const filepath = Yon.compMapping.get(component || '');
+
+                            if(filepath && component) {
+                                if(imports.has(filepath)) {
+                                    if(!imports.get(filepath)?.has(component)) {
+                                        parsed.push({ static: `const { default: ${component} } = import('/components/${filepath}')`});
+                                        imports.get(filepath)?.add(component);
+                                    }
+                                } else {
+                                    parsed.push({ static: `const { default: ${component} } = await import('/components/${filepath}')`});
+                                    imports.set(filepath, new Set<string>([component]));
+                                }
+                            }
+                        }
+
+                        if(!attributes.id && !tagName.startsWith('TY-')) {
+                            attributes[':id'] = "ty_generateId('" + hash + "', 'id')";
+                        }
+
+                        const parsedAttrs = parseAttrs(attributes, hash);
+                        elementStack.push({tagName: tagName.toLowerCase(), hash, attributes: parsedAttrs});
+
+                        if (element.selfClosing) {
+                            parsed.push({ element: `\`<${tagName.toLowerCase()} ${parsedAttrs.join(" ")} />\`` });
+                            elementStack.pop();
+                        } else {
+                            parsed.push({ element: `\`<${tagName.toLowerCase()} ${parsedAttrs.join(" ")}>\`` });
+                        }
+                    },
+                    text(text) {
+                        if (text.text.trim()) {
+                            parsed.push({ element: `\`${interpolateText(text.text)}\`` });
+                        }
                     }
-                }
-            }
+                })
+                .on('*', {
+                    element(element) {
+                        element.onEndTag(() => {
+                            const current = elementStack.pop();
+                            if (current && !element.selfClosing) {
+                                parsed.push({ element: `\`</${current.tagName}>\`` });
+                            }
+                        });
+                    }
+                });
 
-            const hash = Bun.randomUUIDv7().split('-')[3]
-
-            if(!element.id && !element.tagName.startsWith('TY-')) {
-                element.setAttribute(':id', "ty_generateId('" + hash + "', 'id')")
-            }
-            
-            if(element.children.length > 0) {
-
-                const text = Array.from(element.childNodes).reduce((a, b) => {
-                    return a + (b.nodeType === 3 ? b.textContent : '')
-                }, '')
-
-                parsed.push({ element: `\`<${element.tagName.toLowerCase()} ${parseAttrs(element.attributes, hash).join(" ")}>\`` })
-                if(text) parsed.push({ element: `\`${interpolateText(text)}\`` })
-                parsed.push(...this.parseHTML(element.children, imports))
-                parsed.push({ element: `\`</${element.tagName.toLowerCase()}>\`` })
-
-            } else {
-
-                if(element.outerHTML.includes('</')) {
-                    parsed.push({ element: `\`<${element.tagName.toLowerCase()} ${parseAttrs(element.attributes, hash).join(" ")}>\`` })
-                    if(element.textContent) parsed.push({ element: `\`${interpolateText(element.textContent)}\`` })
-                    parsed.push({ element: `\`</${element.tagName.toLowerCase()}>\`` })
-                } else {
-                    parsed.push({ element: `\`<${element.tagName.toLowerCase()} ${parseAttrs(element.attributes, hash).join(" ")} />\`` })
-                }
-            }
-        }
-    
-        return parsed;
+            rewriter.transform(new Response(htmlContent)).text().then(() => {
+                resolve(parsed);
+            });
+        });
     }
 
-    private static async createJSData(html: { static?: string, render?: string, element?: string }[], scriptTag?: HTMLScriptElement) {
+    private static async createJSData(html: ParsedElement[], scriptContent?: string) {
 
         const inners: string[] = []
         const outers: string[] = []
@@ -164,7 +232,7 @@ export default class Yon {
         const tempFile = await Bun.file(`${import.meta.dir}/template.js`).text()
         
         return tempFile.replaceAll('// imports', outers.join('\n'))
-                        .replaceAll('// script', scriptTag?.innerHTML ?? '')
+                        .replaceAll('// script', scriptContent ?? '')
                         .replaceAll('// inners', inners.join('\n'))
                         .replaceAll(/`<ty-loop :for="(.*?)">`|`<\/ty-loop>`/g, (match, p1) => {
                             if(p1) return `for(${p1}) {`
@@ -175,6 +243,7 @@ export default class Yon {
                             else return '}'
                         })
                         .replaceAll(/`<ty-logic :else-if="(.*?)">`|`<\/ty-logic>`/g, (match, p1) => {
+                            
                             if(p1) return `else if(${p1}) {`
                             else return '}'
                         })
@@ -218,13 +287,13 @@ export default class Yon {
                         
     }
 
-    private static async addToStatix(html: HTMLDivElement, script: HTMLScriptElement, route: string, dir: 'pages' | 'components') {
+    private static async addToStatix(componentData: ComponentData, route: string, dir: 'pages' | 'components') {
         
-        const module = Yon.parseHTML(html.children)
+        const module = await Yon.parseHTML(componentData.html)
 
-        const jsData = await Yon.createJSData(module, script)
+        const jsData = await Yon.createJSData(module, componentData.script)
 
-        route = route.replace('.html', `.${script?.lang || 'js'}`)
+        route = route.replace('.html', `.${componentData.scriptLang || 'js'}`)
 
         await Bun.write(Bun.file(`/tmp/${route}`), jsData)
 
@@ -273,9 +342,9 @@ export default class Yon {
 
                 const data = await Bun.file(`${Router.routesPath}/${route}`).text()
 
-                const { html, script } = Yon.extractComponents(data)
+                const componentData = await Yon.extractComponents(data)
                 
-                await Yon.addToStatix(html, script, `${route}.${script?.lang || 'js'}`, 'pages')
+                await Yon.addToStatix(componentData, `${route}.${componentData.scriptLang || 'js'}`, 'pages')
             }
         }
 
@@ -283,9 +352,9 @@ export default class Yon {
 
         const data = await nfFile.exists() ? await nfFile.text() : await Bun.file(`${import.meta.dir}/404.html`).text()
 
-        const { html, script } = Yon.extractComponents(data)
+        const componentData = await Yon.extractComponents(data)
         
-        await Yon.addToStatix(html, script, '404.html', 'pages')
+        await Yon.addToStatix(componentData, '404.html', 'pages')
     }
 
     private static async bundleComponents() {
@@ -304,9 +373,9 @@ export default class Yon {
 
                 const data = await Bun.file(`${Router.componentsPath}/${comp}`).text()
 
-                const { html, script } = Yon.extractComponents(data)
+                const componentData = await Yon.extractComponents(data)
                 
-                await Yon.addToStatix(html, script, comp, 'components')
+                await Yon.addToStatix(componentData, comp, 'components')
             }
         }
     }

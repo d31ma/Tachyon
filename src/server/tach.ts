@@ -135,7 +135,8 @@ export default class Tach {
 
         let exitCode = await proc.exited
 
-        if(exitCode !== 0 && proc.stderr.length > 0) {
+        const stderrContent = await new Response(proc.stderr).text();
+        if(exitCode !== 0 && stderrContent.length > 0) {
             exitCode = exitCode < 0 || (exitCode > 0 && exitCode < 100) || exitCode > 599 ? 500 : exitCode
             return { status: exitCode, body: proc.stderr.toString() }
         }

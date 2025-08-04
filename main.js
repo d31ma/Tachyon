@@ -1,13 +1,4 @@
-const link = document.createElement("link")
-link.href = "https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
-link.href = "stylesheet"
-document.head.appendChild(link)
-
 const script = document.createElement('script')
 script.type = "module"
-script.src = "https://esm.run/@material/web/all.js"
+script.src = "https://cdn.jsdelivr.net/npm/@vyckr/yon-ui@1.0.4/dist/yon-ui.min.js"
 document.head.appendChild(script)
-
-import("https://esm.run/@material/web/typography/md-typescale-styles.js").then(module => {
-    document.adoptedStyleSheets.push(module.styles.styleSheet)
-})
