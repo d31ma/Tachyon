@@ -122,9 +122,52 @@ export default class Validate {
      * populated during `validateRoutes()` — instead of re-reading OPTIONS
      * files from disk.
      */
+    /**
+     * Tries to match `body` against each numeric status-code schema defined for
+     * the route/method in the OPTIONS file. Returns the first matching code, or
+     * `null` if no numeric schemas are defined or none match.
+     */
+    static matchStatusCode(handler: string, body: string): number | null {
+        const parts        = handler.split('/')
+        const method       = parts.pop()!
+        const absoluteDir  = parts.join('/')
+        const relativeRoute = absoluteDir.replace(Router.routesPath, '') || '/'
+
+        const schema = Router.routeConfigs[relativeRoute] as unknown as Record<string, Record<string, Record<string, unknown>>>
+        if (!schema) return null
+
+        const methodSchema = schema[method]
+        if (!methodSchema) return null
+
+        const statusCodes = Object.keys(methodSchema)
+            .filter(k => /^\d{3}$/.test(k))
+            .map(Number)
+            .sort((a, b) => a - b)
+
+        if (statusCodes.length === 0) return null
+
+        let parsed: Record<string, unknown>
+        try {
+            const p = JSON.parse(body)
+            if (typeof p !== 'object' || p === null || Array.isArray(p)) return null
+            parsed = p
+        } catch {
+            return null
+        }
+
+        for (const code of statusCodes) {
+            try {
+                Validate.validateObject({ ...parsed }, methodSchema[String(code)], relativeRoute, relativeRoute)
+                return code
+            } catch {}
+        }
+
+        return null
+    }
+
     static async validateData(
         route: string,
-        io:    'req' | 'err' | 'res',
+        io:    string,
         data:  Record<string, unknown> | string,
     ) {
         const parts        = route.split('/')

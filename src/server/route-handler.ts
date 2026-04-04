@@ -140,7 +140,8 @@ export default class Router {
         const blob = await request.blob()
 
         if (blob.size > 0) {
-            stdin.body = blob.type.endsWith('json') ? await blob.json() : await blob.text()
+            const contentType = request.headers.get('content-type') ?? ''
+            stdin.body = contentType.includes('json') ? await blob.json() : await blob.text()
         }
 
         const searchParams = new URL(request.url).searchParams

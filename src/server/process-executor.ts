@@ -170,15 +170,19 @@ export default class Tach {
 
         const { body, status } = await Tach.getResponse([handler], stdin, context, config)
 
+        const matchedStatus = body ? Validate.matchStatusCode(handler, body) : null
+        const finalStatus   = matchedStatus ?? status
+
         if (process.env.VALIDATE !== undefined) {
+            const ioKey = matchedStatus ? String(matchedStatus) : (status === 200 ? "res" : "err")
             try {
-                await Validate.validateData(handler, status === 200 ? "res" : "err", body!)
+                await Validate.validateData(handler, ioKey, body!)
             } catch (e) {
                 return Response.json({ detail: (e as Error).message }, { status: 422, headers: Router.headers })
             }
         }
 
-        return new Response(body, { status, headers: Router.headers })
+        return new Response(body, { status: finalStatus, headers: Router.headers })
     }
 
     /**

@@ -1,0 +1,19 @@
+{
+    "GET": {
+        "200": {
+            "items": [""]
+        }
+    },
+    "POST": {
+        "201": {
+            "id": "string",
+            "name": "string"
+        },
+        "400": {
+            "detail": "string"
+        }
+    },
+    "DELETE": {
+        "204": {}
+    }
+}

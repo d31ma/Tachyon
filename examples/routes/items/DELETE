@@ -1,0 +1,8 @@
+#!/usr/bin/env node
+
+const chunks = []
+process.stdin.on('data', c => chunks.push(c))
+process.stdin.on('end', () => {
+    // 204 No Content — empty body matches the "204": {} schema
+    process.stdout.write(JSON.stringify({}))
+})
