@@ -21,6 +21,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Install example dependencies
+        run: cd examples && bun install --frozen-lockfile
+
       - name: Install Playwright Chromium
         run: bunx playwright install chromium
 
