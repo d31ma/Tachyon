@@ -5,7 +5,7 @@ import Router from "../server/route-handler.js"
 import Yon from "../compiler/template-compiler.js"
 import "../server/console-logger.js"
 import { watch } from "fs"
-import { exists } from "fs/promises"
+import { access } from "fs/promises"
 import type { Middleware } from "../server/route-handler.js"
 
 /** Debounce delay (ms) applied to file-watcher events before triggering an HMR reload */
@@ -13,11 +13,15 @@ const HMR_DEBOUNCE_MS = 1000
 
 const start = Date.now()
 
+async function pathExists(path: string): Promise<boolean> {
+    try { await access(path); return true } catch { return false }
+}
+
 async function loadMiddleware() {
     const extensions = ['.ts', '.js']
     for (const ext of extensions) {
         const filePath = `${Router.middlewarePath}${ext}`
-        if (await exists(filePath)) {
+        if (await pathExists(filePath)) {
             const mod = await import(filePath)
             Router.middleware = (mod.default ?? mod) as Middleware
             return
@@ -67,8 +71,8 @@ const server = Bun.serve({
                     }, HMR_DEBOUNCE_MS)
                 }
 
-                if (await exists(Router.routesPath))     watch(Router.routesPath,     { recursive: true }, onFileChange)
-                if (await exists(Router.componentsPath)) watch(Router.componentsPath, { recursive: true }, onFileChange)
+                if (await pathExists(Router.routesPath))     watch(Router.routesPath,     { recursive: true }, onFileChange)
+                if (await pathExists(Router.componentsPath)) watch(Router.componentsPath, { recursive: true }, onFileChange)
             }
         }), { headers: { "Content-Type": "text/event-stream" } })
     },

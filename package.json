@@ -18,6 +18,7 @@
     "scripts": {
         "start": "bun src/cli/serve.ts",
         "bundle": "bun src/cli/bundle.ts",
+        "typecheck": "tsc --noEmit",
         "test": "bun test"
     },
     "files": [
@@ -45,6 +46,7 @@
         "@types/bun": "^1.3.4",
         "@types/deno": "^2.0.0",
         "@types/node": "^20.4.2",
-        "playwright": "^1.59.1"
+        "playwright": "^1.59.1",
+        "typescript": "^6.0.2"
     }
 }
