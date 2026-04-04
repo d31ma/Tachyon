@@ -302,7 +302,7 @@ describe('Response body content', () => {
         const body1 = await res1.json()
         const res2 = await authFetch('/api', { method: 'POST' })
         const body2 = await res2.json()
-        // .NET handler says C#, Python handler says Python
+        // Node.js handler says Node.js, Python handler says Python
         expect(body1.message).not.toEqual(body2.message)
     })
 })
