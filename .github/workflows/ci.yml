@@ -38,3 +38,6 @@ jobs:
 
       - name: Run tests
         run: bun test
+        env:
+          HOSTNAME: 127.0.0.1
+          BASIC_AUTH: admin:pass

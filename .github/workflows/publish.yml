@@ -32,8 +32,9 @@ jobs:
 
       - name: Run tests
         run: bun test
-
-  publish:
+        env:
+          HOSTNAME: 127.0.0.1
+          BASIC_AUTH: admin:pass
     name: Publish to npm
     runs-on: ubuntu-latest
     needs: test
