@@ -1,25 +1,25 @@
 {
     "DELETE": {
-        "res": {
+        "200": {
             "message": "string"
         },
-        "err": {
+        "500": {
             "detail": "string"
         }
     },
     "GET": {
-        "res": {
+        "200": {
             "message": "string"
         },
-        "err": {
+        "500": {
             "detail": "string"
         }
     },
     "PATCH": {
-        "res": {
+        "200": {
             "message": "string"
         },
-        "err": {
+        "500": {
             "detail": "string"
         }
     }

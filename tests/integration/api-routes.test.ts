@@ -227,12 +227,12 @@ describe('OPTIONS route', () => {
         expect(body).toHaveProperty('PATCH')
     })
 
-    test('OPTIONS schema has res and err keys', async () => {
+    test('OPTIONS schema has numeric status code keys', async () => {
         const res = await fetch(`${BASE_URL}/`, { method: 'OPTIONS' })
         const body = await res.json()
-        expect(body.GET).toHaveProperty('res')
-        expect(body.GET).toHaveProperty('err')
-        expect(body.GET.res).toHaveProperty('message')
+        expect(body.GET).toHaveProperty('200')
+        expect(body.GET).toHaveProperty('500')
+        expect(body.GET['200']).toHaveProperty('message')
     })
 })
 
