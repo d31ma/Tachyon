@@ -1,0 +1,30 @@
+#!/usr/bin/env rust-script
+//! ```cargo
+//! [dependencies]
+//! serde_json = "1.0.135"
+//! ```
+use std::io::{self, BufReader};
+use std::collections::HashMap;
+use serde_json::{Value, Result};
+
+fn main() -> Result<()> {
+
+    println!("Executing Rust...");
+
+    let stdin = io::stdin();
+
+    let reader = BufReader::new(stdin.lock());
+
+    // Deserialize the JSON from stdin into your struct
+    let request: HashMap<String, Value> = serde_json::from_reader(reader)?;
+
+    // Print the parsed data
+    println!("{:?}", request["context"]);
+
+    let mut response = HashMap::new();
+    response.insert("message", "Hello from Rust!");
+
+    print!("{:?}", response);
+
+    Ok(())
+}

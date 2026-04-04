@@ -1,3 +1,7 @@
 node_modules
 .env
 dist
+test-results
+.DS_Store
+src/runtime/route-manifest.json
+src/runtime/layout-manifest.json

@@ -1,0 +1,12 @@
+#!/usr/bin/env php
+<?php
+
+echo "Executing PHP..." . PHP_EOL;
+
+$request = json_decode(fgets(STDIN));
+
+echo json_encode($request->context) . PHP_EOL;
+
+echo json_encode(array('message' => 'Hello from PHP!'));
+
+?>

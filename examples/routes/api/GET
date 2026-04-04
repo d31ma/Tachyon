@@ -1,0 +1,24 @@
+#!/usr/bin/env dotnet-script
+#r "nuget: System.Text.Json, 9.0.0"
+using System;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.IO;
+
+Console.WriteLine("Executing .NET Script...");
+
+// Parse the JSON context
+var request = JsonNode.Parse(Console.ReadLine())?.AsObject();
+
+Console.WriteLine(request["context"].ToJsonString(new JsonSerializerOptions
+{
+    WriteIndented = false
+}));
+
+// Create a new empty JsonObject
+var result = new JsonObject();
+
+// Add the message
+result["message"] = "Hello from C#!";
+
+Console.Write(result.ToJsonString());
