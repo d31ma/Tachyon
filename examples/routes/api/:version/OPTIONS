@@ -1,0 +1,26 @@
+{
+    "DELETE": {
+        "res": {
+            "message": "string"
+        },
+        "err": {
+            "detail": "string"
+        }
+    },
+    "GET": {
+        "res": {
+            "message": "string"
+        },
+        "err": {
+            "detail": "string"
+        }
+    },
+    "PATCH": {
+        "res": {
+            "message": "string"
+        },
+        "err": {
+            "detail": "string"
+        }
+    }
+}

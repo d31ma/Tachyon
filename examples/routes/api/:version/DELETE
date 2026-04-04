@@ -1,0 +1,10 @@
+#!/usr/bin/env ruby
+require 'json'
+
+puts "Executing Ruby..."
+
+request = JSON.parse(ARGF.read)
+
+puts request["context"]
+
+print JSON.unparse({ message: "Hello from Ruby!" })

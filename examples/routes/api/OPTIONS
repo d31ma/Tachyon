@@ -1,0 +1,26 @@
+{
+    "PUT": {
+        "res": {
+            "message": "string"
+        },
+        "err": {
+            "detail": "string"
+        }
+    },
+    "GET": {
+        "res": {
+            "message": "string"
+        },
+        "err": {
+            "detail": "string"
+        }
+    },
+    "POST": {
+        "res": {
+            "message": "string"
+        },
+        "err": {
+            "detail": "string"
+        }
+    }
+}

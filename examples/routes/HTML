@@ -1,0 +1,260 @@
+<script>
+  document.title = "Home — Tachyon Playground";
+
+  const { default: dayjs } = await import('/modules/dayjs.js');
+
+  let greeting = "Welcome to Tachyon";
+  let lastUpdated = dayjs().format('MMM D, YYYY h:mm A');
+
+  let tasks = [
+    { text: "Define API routes as plain executables", done: true },
+    { text: "Build reactive pages with Yon templates", done: true },
+    { text: "Mix in Shoelace web components", done: false },
+    { text: "Deploy to production", done: false },
+  ];
+
+  let newTask = "";
+  let filter = "all";
+  let showAbout = false;
+
+  function addTask() {
+    if (newTask.trim()) {
+      tasks = [...tasks, { text: newTask.trim(), done: false }];
+      newTask = "";
+      lastUpdated = dayjs().format('MMM D, YYYY h:mm A');
+    }
+  }
+
+  function toggle(index) {
+    tasks = tasks.map((t, i) =>
+      i === index ? { ...t, done: !t.done } : t
+    );
+  }
+
+  function remove(index) {
+    tasks = tasks.filter((_, i) => i !== index);
+  }
+
+  function filtered() {
+    if (filter === "done") return tasks.filter(t => t.done);
+    if (filter === "pending") return tasks.filter(t => !t.done);
+    return tasks;
+  }
+
+  function doneCount() {
+    return tasks.filter(t => t.done).length;
+  }
+
+  function pendingCount() {
+    return tasks.filter(t => !t.done).length;
+  }
+
+  function percent() {
+    return tasks.length ? Math.round((doneCount() / tasks.length) * 100) : 0;
+  }
+</script>
+
+<style>
+  .home { max-width: 800px; }
+
+  .hero {
+    margin-bottom: 1.5rem;
+    padding: 2rem;
+    background: linear-gradient(135deg, var(--sl-color-primary-600) 0%, var(--sl-color-purple-700) 100%);
+    border-radius: var(--sl-border-radius-large);
+    color: #fff;
+  }
+  .hero h1 { font-size: 1.8rem; margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem; }
+  .hero p { opacity: 0.85; font-size: var(--sl-font-size-small); margin-top: 0.5rem; }
+  .hero-actions { margin-top: 1rem; display: flex; gap: 0.5rem; }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .stat-card {
+    padding: 1rem 1.25rem;
+    border-radius: var(--sl-border-radius-large);
+    background: var(--sl-color-neutral-0);
+    border: 1px solid var(--sl-color-neutral-200);
+  }
+  .stat-label {
+    font-size: var(--sl-font-size-x-small);
+    color: var(--sl-color-neutral-500);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-top: 0.15rem;
+  }
+
+  .task-panel sl-card { width: 100%; }
+  .task-panel sl-card::part(body) { padding: 0; }
+
+  .task-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--sl-color-neutral-200);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .task-header h2 { font-size: var(--sl-font-size-medium); margin: 0; }
+
+  .add-row {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--sl-color-neutral-200);
+    align-items: flex-end;
+  }
+  .add-row sl-input { flex: 1; }
+
+  .task-list { list-style: none; padding: 0; margin: 0; }
+  .task-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1.25rem;
+    border-bottom: 1px solid var(--sl-color-neutral-100);
+    transition: background 0.1s;
+  }
+  .task-item:hover { background: var(--sl-color-neutral-50); }
+  .task-item:last-child { border-bottom: none; }
+
+  .task-text { flex: 1; font-size: var(--sl-font-size-small); }
+
+  .empty-state {
+    padding: 2rem;
+    text-align: center;
+    color: var(--sl-color-neutral-400);
+    font-size: var(--sl-font-size-small);
+  }
+
+  .component-section { margin-top: 1.5rem; }
+  .component-section h2 {
+    font-size: var(--sl-font-size-medium);
+    margin-bottom: 0.75rem;
+  }
+  .component-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+
+  .feature-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  .feature-item { display: flex; align-items: center; gap: 0.75rem; }
+  .feature-item sl-icon { color: var(--sl-color-success-600); font-size: 1.2rem; }
+</style>
+
+<div class="home">
+
+  <div class="hero">
+    <h1>
+      <sl-icon name="lightning-charge-fill"></sl-icon>
+      {greeting}
+    </h1>
+    <p>A polyglot, file-system-routed full-stack framework for Bun — write API handlers in any language, build reactive UIs with zero config.</p>
+    <div class="hero-actions">
+      <sl-button variant="default" size="small" @click="showAbout = !showAbout">
+        <sl-icon slot="prefix" name="info-circle"></sl-icon>
+        About
+      </sl-button>
+      <sl-button variant="default" size="small" href="/api">
+        <sl-icon slot="prefix" name="broadcast"></sl-icon>
+        API Tester
+      </sl-button>
+    </div>
+  </div>
+
+  <logic :if="showAbout">
+    <sl-alert variant="primary" open>
+      <sl-icon slot="icon" name="stars"></sl-icon>
+      <strong>What makes Tachyon special?</strong>
+      <div class="feature-list">
+        <div class="feature-item"><sl-icon name="check-circle-fill"></sl-icon> Route handlers can be Bun, Python, Java, Rust, Ruby, Perl, C#, Dart, PHP — any executable</div>
+        <div class="feature-item"><sl-icon name="check-circle-fill"></sl-icon> File-system routing with dynamic segments, validation schemas, and middleware</div>
+        <div class="feature-item"><sl-icon name="check-circle-fill"></sl-icon> Reactive Yon templates with two-way binding, loops, conditionals, and scoped styles</div>
+        <div class="feature-item"><sl-icon name="check-circle-fill"></sl-icon> Works seamlessly with web component libraries like Shoelace</div>
+        <div class="feature-item"><sl-icon name="check-circle-fill"></sl-icon> Persistent layouts with <code>&lt;slot /&gt;</code> that survive SPA navigation</div>
+      </div>
+    </sl-alert>
+    <br />
+  </logic>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-label">Completed</div>
+      <div class="stat-value">{doneCount()}</div>
+      <sl-progress-bar :value="percent()"></sl-progress-bar>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Pending</div>
+      <div class="stat-value">{pendingCount()}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total</div>
+      <div class="stat-value">{tasks.length}</div>
+    </div>
+  </div>
+
+  <div class="task-panel">
+    <sl-card>
+      <div class="task-header">
+        <h2>Tasks <sl-badge variant="neutral" pill>{lastUpdated}</sl-badge></h2>
+        <sl-button-group>
+          <sl-button size="small" @click="filter = `all`">All</sl-button>
+          <sl-button size="small" @click="filter = `pending`">Pending</sl-button>
+          <sl-button size="small" @click="filter = `done`">Done</sl-button>
+        </sl-button-group>
+      </div>
+
+      <div class="add-row">
+        <sl-input placeholder="What needs to be done?" size="small" :value="newTask"></sl-input>
+        <sl-button variant="primary" size="small" @click="addTask()">
+          <sl-icon slot="prefix" name="plus-lg"></sl-icon>
+          Add
+        </sl-button>
+      </div>
+
+      <logic :if="filtered().length > 0">
+        <ul class="task-list">
+          <loop :for="let i = 0; i < filtered().length; i++">
+            <li class="task-item">
+              <sl-checkbox :checked="filtered()[i].done" @click="toggle(tasks.indexOf(filtered()[i]))"></sl-checkbox>
+              <span class="task-text">
+                <logic :if="filtered()[i].done">
+                  <s>{filtered()[i].text}</s>
+                  <sl-badge variant="success" pill>done</sl-badge>
+                </logic>
+                <logic :if="!filtered()[i].done">
+                  {filtered()[i].text}
+                </logic>
+              </span>
+              <sl-icon-button name="x-lg" label="Remove" @click="remove(tasks.indexOf(filtered()[i]))"></sl-icon-button>
+            </li>
+          </loop>
+        </ul>
+      </logic>
+      <logic :if="filtered().length === 0">
+        <div class="empty-state">
+          <sl-icon name="inbox" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></sl-icon>
+          No tasks match this filter.
+        </div>
+      </logic>
+    </sl-card>
+  </div>
+
+  <div class="component-section">
+    <h2>Custom Yon Components</h2>
+    <div class="component-grid">
+      <clicker_ :clicks="doneCount()" />
+      <clicker_ lazy :clicks="pendingCount()" />
+    </div>
+  </div>
+
+</div>

@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+import sys, json
+
+print("Executing Python (versioned)...")
+
+request = json.loads(sys.stdin.readline())
+print(json.dumps(request["context"]))
+
+result = {"message": "Hello from Python (versioned)!"}
+sys.stdout.write(json.dumps(result))

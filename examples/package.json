@@ -1,0 +1,7 @@
+{
+  "name": "tachyon-examples",
+  "private": true,
+  "dependencies": {
+    "dayjs": "^1.11.13"
+  }
+}

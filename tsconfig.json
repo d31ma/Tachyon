@@ -11,7 +11,10 @@
         "noFallthroughCasesInSwitch": true,
         "noImplicitReturns": true,
         "forceConsistentCasingInFileNames": true,
-        "types": ["@types/bun", "@types/node", "@types/deno"],
-        "isolatedModules": true
-    }
-  }
+        "types": ["@types/bun", "@types/node"],
+        "isolatedModules": true,
+        "skipLibCheck": true
+    },
+    "include": ["src/**/*.ts"],
+    "exclude": ["node_modules", "dist", "bin", "examples", "tests"]
+}

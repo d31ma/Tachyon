@@ -1,13 +1,19 @@
 # Tachyon
 
-Tachyon is a simple to use API framework built with TypeScript (Bun). Tachyon aim to provide a simple and intuitive API framework for building serverless applications and abstracts away the complexity of configuations, letting you focus on building your application.
+Tachyon is a **polyglot, file-system-routed full-stack framework for [Bun](https://bun.sh)**. It lets you define API routes as plain executable files written in any language, and build reactive front-end pages with a lightweight HTML template syntax — all without configuration.
 
 ## Features
 
-- Customizable methods for routes
-- Use of file-system based routing
-- Hot reloading of routes in development mode
-- Supports dynamic routes
+- **File-system routing** — routes are directories; HTTP methods are files
+- **Polyglot handlers** — write routes in Bun, Python, Ruby, Go, Rust, Java, or any language with a shebang
+- **Reactive front-end (Yon)** — HTML templates with bindings, loops, conditionals, and custom components
+- **Lazy component loading** — defer component rendering until visible with `IntersectionObserver`
+- **NPM dependency bundling** — use npm packages in front-end code via `/modules/` imports
+- **Hot Module Replacement** — watches `routes/` and `components/` and reloads on change
+- **Custom 404 page** — drop a `404.html` in your project root to override the default
+- **Schema validation** — per-route request/response validation via `OPTIONS` files
+- **Auth** — built-in Basic Auth and JWT decoding
+- **Streaming** — SSE responses via `Accept: text/event-stream`
 
 ## Installation
 
@@ -15,140 +21,254 @@ Tachyon is a simple to use API framework built with TypeScript (Bun). Tachyon ai
 bun add @vyckr/tachyon
 ```
 
-## Configuration
+## Quick Start
 
-The .env file should be in the root directory of your project. The following environment variables:
-```
-# Tachyon environment variables
-PORT=8000 (optional)
-NODE_ENV=development|production (optional)
-HOSTNAME=127.0.0.1 (optional)
-ALLOW_HEADERS=* (optional)
-ALLOW_ORGINS=* (optional)
-ALLOW_CREDENTIALS=true|false (optional)
-ALLOW_EXPOSE_HEADERS=* (optional)
-ALLOW_MAX_AGE=3600 (optional)
-ALLOW_METHODS=GET,POST,PUT,DELETE,PATCH (optional)
+```bash
+# Start the development server (expects routes/ in the current directory)
+tach.serve
+
+# Build front-end assets into dist/
+tach.bundle
 ```
 
-### Requirements
-- Make sure to have a 'routes' directory in the root of your project
-- Dynamic routes should start with a colon `:`
-- The first parameter should NOT be a dynamic route (e.g. /:version/doc/GET)
-- All dynamic routes should be within odd indexes (e.g. /v1/:path/login/:id/POST)
-- The last parameter in the route should always be a capitalized method as a file name without file extension (e.g. /v1/:path/login/:id/name/DELETE)
-- Front-end Pages end with capitalized `HTML` filename (e.g. /v1/HTML)
-- Node modules should be imported dynamically with `modules` prefix (e.g. const { default: dayjs } = await import(`/modules/dayjs.js`))
-- Components should be in the `components` folder and end with `.html` extension (e.g. /components/counter.html)
-- First line of the file should be a shebang for the executable file (e.g. #!/usr/bin/env python3)
-- Request context can be retrieved by extracting the last element in args and parsing it.
-- Response of executable script must be in a String format and must written to the `/tmp` folder with the the process ID as the file name (e.g. `/tmp/1234`).
-- Use the exit method of the executable script with a status code to end the process of the executable script
+Or via npm scripts if you declare them in your own `package.json`:
 
-### Examples
-
-
-```html
-<!-- /routes/HTML  -->
-<script>
-    // top-level await
-    const { default: dayjs } = await import("/modules/dayjs.js")
-
-    console.log(dayjs().format())
-
-    const greeting = "Hello World!"
-</script>
-
-<p>${greeting}</p>
-```
-
-```typescript
-// routes/v1/:collection/GET
-
-#!/usr/bin/env bun
-
-for await(const chunk of Bun.stdin.stream()) {
-
-    console.log("Executing Bun....");
-
-    const data = new TextDecoder().decode(chunk)
-
-    const ctx = JSON.parse(data)
-
-    ctx.message = "Hello from Bun!"
-
-    const response = JSON.stringify(ctx)
-
-    await Bun.write(`/tmp/${process.pid}`, response)
+```json
+{
+  "scripts": {
+    "start":  "tach.serve",
+    "bundle": "tach.bundle"
+  }
 }
 ```
 
-```python
-# routes/v1/:collection/POST
+## Configuration
 
-#!/usr/bin/env python3
-import json
-import sys
-import os
+Create a `.env` file in your project root. All variables are optional.
 
-print("Executing Python....")
+```env
+PORT=8000
+HOSTNAME=127.0.0.1
+TIMEOUT=70
+DEV=true
 
-ctx = json.loads(sys.stdin.read())
+# CORS
+ALLOW_HEADERS=*
+ALLOW_ORIGINS=*
+ALLOW_CREDENTIALS=false
+ALLOW_EXPOSE_HEADERS=*
+ALLOW_MAX_AGE=3600
+ALLOW_METHODS=GET,POST,PUT,DELETE,PATCH,OPTIONS
 
-ctx["message"] = "Hello from Python!"
+# Auth
+BASIC_AUTH=username:password
 
-file = open(f"/tmp/{os.getpid()}", "w")
+# Validation (set to any value to enable)
+VALIDATE=true
 
-file.write(json.dumps(ctx))
-
-file.close()
+# Custom route/asset paths (defaults to <cwd>/routes, <cwd>/components, <cwd>/assets)
+ROUTES_PATH=
+COMPONENTS_PATH=
+ASSETS_PATH=
 ```
 
+## Route Structure
+
+```
+routes/
+  GET               →  GET  /
+  POST              →  POST /
+  api/
+    GET             →  GET  /api
+    :version/
+      GET           →  GET  /api/:version
+      DELETE        →  DELETE /api/:version
+  dashboard/
+    HTML            →  front-end page at /dashboard
+  OPTIONS           →  schema file (optional, enables validation)
+```
+
+### Requirements
+
+- Every route handler is an **executable file** — include a shebang on the first line
+- The last path segment must be an **uppercase HTTP method** (e.g. `GET`, `POST`, `DELETE`) or `HTML` for a front-end page
+- Dynamic segments start with `:` (e.g. `:version`, `:id`)
+- The first path segment must **not** be dynamic
+- Adjacent dynamic segments are not allowed (e.g. `/:a/:b/GET` is invalid)
+- Node modules must be imported dynamically with the `/modules/` prefix: `await import('/modules/dayjs.js')`
+- Components live in `components/` and must have a `.html` extension
+
+### Request Context
+
+Every handler receives the full request context on `stdin` as a JSON object:
+
+```json
+{
+  "headers": { "content-type": "application/json" },
+  "body":    { "name": "Alice" },
+  "query":   { "page": 1 },
+  "paths":   { "version": "v2" },
+  "context": {
+    "ipAddress": "127.0.0.1",
+    "bearer":    { "header": {}, "payload": {}, "signature": "..." }
+  }
+}
+```
+
+### Route Handler Examples
+
+**Bun (TypeScript)**
+```typescript
+// routes/v1/:collection/GET
+#!/usr/bin/env bun
+
+const { body, paths, context } = await Bun.stdin.json()
+
+const response = { collection: paths.collection, from: context.ipAddress }
+
+Bun.stdout.write(JSON.stringify(response))
+```
+
+**Python**
+```python
+# routes/v1/:collection/POST
+#!/usr/bin/env python3
+import json, sys
+
+stdin = json.loads(sys.stdin.read())
+sys.stdout.write(json.dumps({ "message": "Hello from Python!" }))
+```
+
+**Ruby**
 ```ruby
 # routes/v1/:collection/DELETE
-
 #!/usr/bin/env ruby
 require 'json'
 
-puts "Executing Ruby...."
-
-ctx = JSON.parse(ARGF.read)
-
-ctx["message"] = "Hello from Ruby!"
-
-File.write("/tmp/#{Process.pid}", JSON.unparse(ctx))
+stdin = JSON.parse(ARGF.read)
+print JSON.generate({ message: "Hello from Ruby!" })
 ```
 
-To run the application, you can use the following command:
+### Schema Validation
 
-```bash 
-bun tach
+Place an `OPTIONS` file in any route directory to enable validation:
+
+```json
+{
+  "POST": {
+    "req": {
+      "name":   "string",
+      "age?":   0
+    },
+    "res": {
+      "message": "string"
+    },
+    "err": {
+      "detail": "string"
+    }
+  }
+}
 ```
 
-To invoke the API endpoints, you can use the following commands:
+Nullable fields are suffixed with `?`. Set `VALIDATE=true` in your `.env` to enable.
+
+## Front-end Pages (Yon)
+
+Create an `HTML` file inside any route directory to define a front-end page:
+
+```html
+<!-- routes/HTML -->
+<script>
+  document.title = "Home"
+  let count = 0
+</script>
+
+<h1>Count: {count}</h1>
+<button @click="count++">Increment</button>
+```
+
+### Template Syntax
+
+| Syntax | Description |
+|--------|-------------|
+| `{expr}` | Interpolate expression |
+| `@event="handler()"` | Event binding |
+| `:prop="value"` | Bind attribute to expression |
+| `:value="variable"` | Two-way input binding |
+| `<loop :for="...">` | Loop block |
+| `<logic :if="...">` | Conditional block |
+| `<myComp_ prop=val />` | Custom component (trailing `_`) |
+| `<myComp_ lazy />` | Lazy-loaded component (renders when visible) |
+
+### Custom Components
+
+```html
+<!-- components/counter.html -->
+<script>
+  let count = 0
+</script>
+
+<button @click="count++">Clicked {count} times</button>
+```
+
+Use in a page:
+
+```html
+<counter_ />
+```
+
+### Lazy Loading
+
+Add the `lazy` attribute to defer a component's loading until it scrolls into view. The component renders a lightweight placeholder and uses `IntersectionObserver` to load the module on demand.
+
+```html
+<!-- Eager (default) — loaded immediately -->
+<counter_ />
+
+<!-- Lazy — loaded when visible in the viewport -->
+<counter_ lazy />
+```
+
+Lazy components are fully interactive once loaded — event delegation and state management work identically to eager components.
+
+### NPM Modules in Front-end Code
+
+Any package listed in your project's `dependencies` is automatically bundled and served at `/modules/<name>.js`. Import them dynamically in your `<script>` blocks:
+
+```html
+<script>
+  const { default: dayjs } = await import('/modules/dayjs.js')
+  let timestamp = dayjs().format('MMM D, YYYY h:mm A')
+</script>
+
+<p>Last updated: {timestamp}</p>
+```
+
+### Custom 404 Page
+
+Place a `404.html` file in your project root to override the default 404 page. It uses the same Yon template syntax:
+
+```html
+<!-- 404.html -->
+<script>
+  document.title = "Not Found"
+</script>
+
+<h1>Oops!</h1>
+<p>This page doesn't exist.</p>
+<a href="/">Go home</a>
+```
+
+If no custom `404.html` is found, Tachyon serves a built-in styled 404 page.
+
+## Building for Production
 
 ```bash
-curl -X GET http://localhost:8000/v1/users
+tach.bundle
 ```
 
-```bash
-curl -X POST http://localhost:8000/v1/users -d '{"name": "John Doe", "age": 30}'
-```
+Outputs compiled assets to `dist/`.
 
-```bash
-curl -X PATCH http://localhost:8000/v1/users -d '{"name": "Jane Doe", "age": 31}'
-```
+## License
 
-```bash
-curl -X DELETE http://localhost:8000/v1/users/5e8b0a9c-c0d1-4d3b-a0b1-e2d8e0e9a1c0
-```
-
-To to build front-end assets into a `dist` folder, use the following command:
-
-```bash 
-bun yon
-```
-
-# License
-
-Tachyon is licensed under the MIT License.
+MIT
