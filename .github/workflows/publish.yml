@@ -35,6 +35,8 @@ jobs:
         env:
           HOSTNAME: 127.0.0.1
           BASIC_AUTH: admin:pass
+
+  publish:
     name: Publish to npm
     runs-on: ubuntu-latest
     needs: test
