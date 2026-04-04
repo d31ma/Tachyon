@@ -548,6 +548,112 @@ describe('Route validation', () => {
 })
 
 // ===========================================================================
+// Status Code Routing — /items example
+// ===========================================================================
+describe('Status code routing (/items)', () => {
+    test('GET /items returns 200 with items array', async () => {
+        const res = await authFetch('/items')
+        expect(res.status).toEqual(200)
+        const body = await res.json()
+        expect(body).toHaveProperty('items')
+        expect(Array.isArray(body.items)).toBe(true)
+    })
+
+    test('POST /items with valid body returns 201', async () => {
+        const res = await authFetch('/items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: 'sprocket' }),
+        })
+        expect(res.status).toEqual(201)
+        const body = await res.json()
+        expect(body).toHaveProperty('id')
+        expect(body.name).toBe('sprocket')
+    })
+
+    test('POST /items with missing name returns 400', async () => {
+        const res = await authFetch('/items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        })
+        expect(res.status).toEqual(400)
+        const body = await res.json()
+        expect(body).toHaveProperty('detail')
+    })
+
+    test('DELETE /items returns 204 with empty body', async () => {
+        const res = await authFetch('/items', { method: 'DELETE' })
+        expect(res.status).toEqual(204)
+    })
+})
+
+// ===========================================================================
+// Validate.matchStatusCode (unit-level)
+// ===========================================================================
+describe('Validate.matchStatusCode', () => {
+    const FAKE_ROUTES_PATH = '/fake/routes'
+
+    async function setup() {
+        const Router   = (await import('../../src/server/route-handler.js')).default
+        const Validate = (await import('../../src/server/schema-validator.js')).default
+
+        // Override routesPath so handler paths resolve correctly
+        Object.defineProperty(Router, 'routesPath', { value: FAKE_ROUTES_PATH, configurable: true })
+
+        return { Router, Validate }
+    }
+
+    test('returns matching status code when body fits schema', async () => {
+        const { Router, Validate } = await setup()
+        Router.routeConfigs['/items'] = { POST: { '201': { id: 'string', name: 'string' } } } as never
+        const handler = `${FAKE_ROUTES_PATH}/items/POST`
+        expect(Validate.matchStatusCode(handler, JSON.stringify({ id: 'abc', name: 'widget' }))).toBe(201)
+    })
+
+    test('returns first schema match in ascending order', async () => {
+        const { Router, Validate } = await setup()
+        Router.routeConfigs['/items'] = {
+            POST: {
+                '200': { message: 'string' },
+                '201': { id: 'string' },
+            }
+        } as never
+        const handler = `${FAKE_ROUTES_PATH}/items/POST`
+        // body matches 200 schema first
+        expect(Validate.matchStatusCode(handler, JSON.stringify({ message: 'ok' }))).toBe(200)
+    })
+
+    test('returns null when no numeric schemas are defined', async () => {
+        const { Router, Validate } = await setup()
+        Router.routeConfigs['/legacy'] = { GET: { res: { message: 'string' } } } as never
+        const handler = `${FAKE_ROUTES_PATH}/legacy/GET`
+        expect(Validate.matchStatusCode(handler, JSON.stringify({ message: 'ok' }))).toBeNull()
+    })
+
+    test('returns null when no schema matches', async () => {
+        const { Router, Validate } = await setup()
+        Router.routeConfigs['/strict'] = { POST: { '201': { id: 'string' } } } as never
+        const handler = `${FAKE_ROUTES_PATH}/strict/POST`
+        // body has wrong shape — no match
+        expect(Validate.matchStatusCode(handler, JSON.stringify({ message: 'hello' }))).toBeNull()
+    })
+
+    test('returns null for non-JSON body', async () => {
+        const { Router, Validate } = await setup()
+        Router.routeConfigs['/text'] = { GET: { '200': { message: 'string' } } } as never
+        const handler = `${FAKE_ROUTES_PATH}/text/GET`
+        expect(Validate.matchStatusCode(handler, 'plain text')).toBeNull()
+    })
+
+    test('returns null when route config is missing', async () => {
+        const { Validate } = await setup()
+        const handler = `${FAKE_ROUTES_PATH}/nonexistent/GET`
+        expect(Validate.matchStatusCode(handler, JSON.stringify({ message: 'ok' }))).toBeNull()
+    })
+})
+
+// ===========================================================================
 // Router.parseParams (unit-level)
 // ===========================================================================
 describe('Router.parseParams', () => {

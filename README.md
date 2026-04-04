@@ -12,6 +12,7 @@ Tachyon is a **polyglot, file-system-routed full-stack framework for [Bun](https
 - **Hot Module Replacement** — watches `routes/` and `components/` and reloads on change
 - **Custom 404 page** — drop a `404.html` in your project root to override the default
 - **Schema validation** — per-route request/response validation via `OPTIONS` files
+- **Status code routing** — map response schemas to HTTP status codes; the framework picks the code automatically
 - **Auth** — built-in Basic Auth and JWT decoding
 - **Streaming** — SSE responses via `Accept: text/event-stream`
 
@@ -171,6 +172,28 @@ Place an `OPTIONS` file in any route directory to enable validation:
 ```
 
 Nullable fields are suffixed with `?`. Set `VALIDATE=true` in your `.env` to enable.
+
+### Status Code Routing
+
+Instead of `res`/`err`, you can key response schemas by HTTP status code. Tachyon matches the handler's JSON output against each schema in ascending order — the first match determines the response status code.
+
+```json
+{
+  "POST": {
+    "req": { "name": "string" },
+    "201": { "id": "string", "name": "string" },
+    "400": { "detail": "string" },
+    "503": { "detail": "string", "retryAfter": 0 }
+  },
+  "DELETE": {
+    "204": {}
+  }
+}
+```
+
+Handlers write their normal JSON to stdout — no changes required. The framework determines the status code from whichever schema the output matches. If no numeric schemas are defined, the default behaviour applies (stdout → 200, stderr → 500).
+
+When `VALIDATE=true` is set, the matched schema is also used for strict validation.
 
 ## Front-end Pages (Yon)
 
