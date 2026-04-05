@@ -372,17 +372,34 @@ function navigate(pathname: string) {
   };
 
   if (layoutPath && layoutChanged) {
-    import(layoutPath).then(async (mod) => {
+    Promise.all([
+      import(layoutPath),
+      import(pageURL),
+    ]).then(async ([layoutMod, pageMod]) => {
       currentLayoutPath = layoutPath;
-      layoutRender = await mod.default();
+      layoutRender = await layoutMod.default();
+
+      if (location.pathname !== pathname) history.pushState({}, '', pathname);
+      else history.replaceState({}, '', pathname);
+      pageRender = await pageMod.default();
+
       freshNavigation = true;
       previousHTML = '';
-      try {
-        document.body.innerHTML = await layoutRender!();
-      } finally {
-        freshNavigation = false;
-      }
-      await loadPage();
+      lazyLoaded.clear();
+      lazyRenders.clear();
+
+      // Render layout and page content in one DOM write to eliminate CLS
+      const layoutHTML = await layoutRender!();
+      const pageHTML = await pageRender();
+      previousHTML = pageHTML;
+
+      const tempDoc = parser.parseFromString(`<body>${layoutHTML}</body>`, 'text/html');
+      const slot = tempDoc.getElementById('ty-layout-slot');
+      if (slot) slot.innerHTML = pageHTML;
+      document.body.innerHTML = tempDoc.body.innerHTML;
+
+      postPatch();
+      freshNavigation = false;
     });
   } else if (!layoutPath && currentLayoutPath) {
     // Leaving a layout
