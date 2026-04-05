@@ -240,10 +240,11 @@ export default class Yon {
 
         let code = await Bun.file(TEMPLATE_PATH).text();
 
-        code = code
-            .replaceAll('// imports', statics.join('\n'))
-            .replaceAll('// script', scriptContent ?? '')
-            .replaceAll('// inners', body.join('\n'));
+        // Use split/join instead of replaceAll to avoid $ being interpreted
+        // as special replacement patterns (e.g. $` inserts pre-match string)
+        code = code.split('// imports').join(statics.join('\n'));
+        code = code.split('// script').join(scriptContent ?? '');
+        code = code.split('// inners').join(body.join('\n'));
 
         // Transform control flow tags to JS
         code = code
