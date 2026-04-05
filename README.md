@@ -13,7 +13,8 @@ Tachyon is a **polyglot, file-system-routed full-stack framework for [Bun](https
 - **Custom 404 page** — drop a `404.html` in your project root to override the default
 - **Schema validation** — per-route request/response validation via `OPTIONS` files
 - **Status code routing** — map response schemas to HTTP status codes; the framework picks the code automatically
-- **Auth** — built-in Basic Auth and JWT decoding
+- **Auth** — built-in Basic Auth (timing-safe) and JWT decoding with expiry enforcement
+- **Security headers** — X-Frame-Options, X-Content-Type-Options, HSTS, CSP, and Referrer-Policy sent on every response
 - **Streaming** — SSE responses via `Accept: text/event-stream`
 
 ## Installation
@@ -53,19 +54,27 @@ HOSTNAME=127.0.0.1
 TIMEOUT=70
 DEV=true
 
-# CORS
-ALLOW_HEADERS=*
-ALLOW_ORIGINS=*
+# CORS — restrict to explicit origins in production; never combine * with credentials
+ALLOW_HEADERS=Content-Type,Authorization
+ALLOW_ORIGINS=https://yourdomain.com
 ALLOW_CREDENTIALS=false
-ALLOW_EXPOSE_HEADERS=*
+ALLOW_EXPOSE_HEADERS=
 ALLOW_MAX_AGE=3600
 ALLOW_METHODS=GET,POST,PUT,DELETE,PATCH,OPTIONS
 
-# Auth
-BASIC_AUTH=username:password
+# Auth — generate strong credentials; never commit real values
+BASIC_AUTH=
 
 # Validation (set to any value to enable)
 VALIDATE=true
+
+# Security
+# Override the default CSP if your app loads scripts/styles from external origins
+CONTENT_SECURITY_POLICY=default-src 'self'
+# Maximum ms a handler process may run before it is killed (default: 30000)
+HANDLER_TIMEOUT_MS=30000
+# Maximum length of any single route or query parameter value (default: 1000)
+MAX_PARAM_LENGTH=1000
 
 # Custom route/asset paths (defaults to <cwd>/routes, <cwd>/components, <cwd>/assets)
 ROUTES_PATH=
@@ -111,10 +120,17 @@ Every handler receives the full request context on `stdin` as a JSON object:
   "paths":   { "version": "v2" },
   "context": {
     "ipAddress": "127.0.0.1",
-    "bearer":    { "header": {}, "payload": {}, "signature": "..." }
+    "bearer": {
+      "header":   { "alg": "HS256", "typ": "JWT" },
+      "payload":  { "sub": "42", "exp": 1999999999 },
+      "signature": "...",
+      "verified": false
+    }
   }
 }
 ```
+
+> **Note:** `context.bearer` is decoded but the signature is **not** verified. `verified` is always `false`. Do not trust claims in `bearer.payload` without out-of-band verification (e.g. via middleware that calls a trusted auth service). Tokens with an expired `exp` claim are rejected before reaching your handler. Use the [`jose`](https://github.com/panva/jose) library for full JWT verification.
 
 ### Route Handler Examples
 
@@ -291,6 +307,25 @@ tach.bundle
 ```
 
 Outputs compiled assets to `dist/`.
+
+## Security
+
+Tachyon applies the following protections by default:
+
+| Area | Protection |
+|------|-----------|
+| **Response headers** | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Strict-Transport-Security`, `Content-Security-Policy`, `Referrer-Policy` on every response |
+| **Basic Auth** | Credential comparison uses `timingSafeEqual` to prevent timing oracle attacks |
+| **JWT** | Tokens with an expired `exp` claim are rejected; signature is decoded but not verified (see note above) |
+| **Process timeout** | Handler processes that exceed `HANDLER_TIMEOUT_MS` are killed automatically |
+| **Parameter limits** | Query and path parameters exceeding `MAX_PARAM_LENGTH` characters return HTTP 400 |
+| **Error responses** | Unhandled server errors return a generic message; internal details are logged server-side only |
+| **CORS** | Wildcard `ALLOW_ORIGINS=*` combined with `ALLOW_CREDENTIALS=true` is not recommended — set explicit origins in production |
+
+For production deployments:
+- Set `BASIC_AUTH` to a strong credential — never use a default value
+- Set `ALLOW_ORIGINS` to your application's domain instead of `*`
+- Consider adding a reverse proxy (nginx, Caddy) to enforce HTTPS and add rate limiting
 
 ## License
 

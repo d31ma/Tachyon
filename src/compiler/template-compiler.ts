@@ -119,9 +119,9 @@ export default class Yon {
 
             const formatAttr = (name: string, value: string, hash: string): string => {
                 if (name.startsWith('@'))
-                    return `${name}="\${eval(ty_invokeEvent('${hash}', '${value}'))}"`;
+                    return `${name}="\${ty_invokeEvent('${hash}', '${value}')}"`;
                 if (name === ':value')
-                    return `value="\${eval(ty_assignValue('${hash}', '${value}'))}"`;
+                    return `value="\${ty_assignValue('${hash}', '${value}')}"`;
                 return `${name}="${value}"`;
             };
 
@@ -266,24 +266,28 @@ export default class Yon {
                 if (key.startsWith('@')) {
                     events.push(`${key}="${value.replace(/(ty_invokeEvent\(')([^"]+)(',[^)]+\))/g, `$1${hash}$3`)}"`);
                 } else {
-                    props.push(`${key}=${value}`);
+                    // Convert template-literal expr "${foo()}" → foo(), static value → JSON literal
+                    const expr = value.startsWith('${') && value.endsWith('}')
+                        ? value.slice(2, -1)
+                        : JSON.stringify(value);
+                    props.push(`"${key}": ${expr}`);
                 }
             }
 
             const genId = "${ty_generateId('" + hash + "', 'id')}";
+            const propsObj = props.length ? `{${props.join(', ')}}` : 'null';
 
             if (isLazy) {
                 const filepath = Yon.compMapping.get(component);
-                const propsEncoded = props.length ? props.join(';') : '';
                 return `
-                elements += \`<div id="${genId}" data-lazy-component="${component}" data-lazy-path="/components/${filepath}" data-lazy-props="${propsEncoded}" ${events.join(' ')}></div>\`
+                elements += \`<div id="${genId}" data-lazy-component="${component}" data-lazy-path="/components/${filepath}" data-lazy-props="\${${props.length ? `encodeURIComponent(JSON.stringify(${propsObj}))` : "''"}}\" ${events.join(' ')}></div>\`
                 `;
             }
 
             return `
                 elements += \`<div id="${genId}" ${events.join(' ')}>\`
                 if(!compRenders.has('${hash}')) {
-                    render = await ${component}(\`${props.join(';')}\`)
+                    render = await ${component}(${propsObj})
                     elements += await render(elemId, event, '${hash}')
                     compRenders.set('${hash}', render)
                 } else {

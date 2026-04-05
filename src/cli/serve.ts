@@ -23,7 +23,13 @@ async function loadMiddleware() {
         const filePath = `${Router.middlewarePath}${ext}`
         if (await pathExists(filePath)) {
             const mod = await import(filePath)
-            Router.middleware = (mod.default ?? mod) as Middleware
+            const loaded = mod.default ?? mod
+            if (typeof loaded !== 'object' || loaded === null ||
+                (loaded.before !== undefined && typeof loaded.before !== 'function') ||
+                (loaded.after  !== undefined && typeof loaded.after  !== 'function')) {
+                throw new Error(`Middleware at '${filePath}' must export an object with optional before/after functions`)
+            }
+            Router.middleware = loaded as Middleware
             return
         }
     }
