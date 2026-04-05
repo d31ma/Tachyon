@@ -219,7 +219,7 @@ export default class Tach {
                 header:     JSON.parse(atob(header)),
                 payload:    decodedPayload,
                 signature,
-                verified:   false, // Signature NOT verified — do not trust claims without separate verification
+                verified:   false as const, // Signature NOT verified — do not trust claims without separate verification
             }
         } catch {
             console.warn(`Failed to decode JWT — malformed base64 or JSON payload`, process.pid)
