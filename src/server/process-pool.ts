@@ -1,3 +1,4 @@
+import { existsSync } from 'fs'
 import Router from "./route-handler.js"
 
 /** A Bun subprocess with all three stdio channels opened as pipes. */
@@ -43,7 +44,8 @@ export default class Pool {
         for (const [route, methods] of Router.allRoutes) {
             for (const method of methods) {
                 if (method === 'HTML' || method === 'OPTIONS') continue
-                Pool.prewarmHandler(`${Router.routesPath}${route}/${method}`)
+                const handler = `${Router.routesPath}${route === '/' ? '' : route}/${method}`
+                if (existsSync(handler)) Pool.prewarmHandler(handler)
             }
         }
     }
