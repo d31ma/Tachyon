@@ -7,6 +7,8 @@ export interface RequestContext {
         header: Record<string, unknown>
         payload: Record<string, unknown>
         signature: string
+        /** Always false — signature is decoded but NOT cryptographically verified */
+        verified: false
     }
 }
 
@@ -64,7 +66,13 @@ export default class Router {
         "Access-Control-Allow-Credential": process.env.ALLOW_CREDENTIALS || "false",
         "Access-Control-Expose-Headers":   process.env.ALLOW_EXPOSE_HEADERS || "",
         "Access-Control-Max-Age":          process.env.ALLOW_MAX_AGE     || "",
-        "Access-Control-Allow-Methods":    process.env.ALLOW_METHODS     || ""
+        "Access-Control-Allow-Methods":    process.env.ALLOW_METHODS     || "",
+        // Security headers
+        "X-Frame-Options":                 "DENY",
+        "X-Content-Type-Options":          "nosniff",
+        "Strict-Transport-Security":       "max-age=31536000; includeSubDomains",
+        "Content-Security-Policy":         process.env.CONTENT_SECURITY_POLICY || "default-src 'self'",
+        "Referrer-Policy":                 "strict-origin-when-cross-origin",
     }
 
     /**
@@ -153,17 +161,24 @@ export default class Router {
         return { handler: `${Router.routesPath}${route}/${request.method}`, stdin, config: requestConfig }
     }
 
+    /** Maximum allowed length for any single route or query parameter value. */
+    static readonly MAX_PARAM_LENGTH = Number(process.env.MAX_PARAM_LENGTH) || 1000
+
     /**
      * Coerces an array of string path segments into their native types
      * (number, boolean, null, undefined, or string).
      * @param input - Raw string segments from the URL path
      * @returns Typed parameter values
+     * @throws Response with status 400 if any segment exceeds MAX_PARAM_LENGTH
      */
     static parseParams(input: string[]): (string | boolean | number | null | undefined)[] {
 
         const params: (string | boolean | number | null | undefined)[] = []
 
         for (const param of input) {
+            if (param.length > Router.MAX_PARAM_LENGTH) {
+                throw Response.json({ error: 'Parameter too long' }, { status: 400 })
+            }
 
             const num = Number(param)
 
@@ -189,6 +204,10 @@ export default class Router {
         const params: Record<string, unknown> = {}
 
         for (const [key, val] of input) {
+
+            if (typeof val === "string" && val.length > Router.MAX_PARAM_LENGTH) {
+                throw Response.json({ error: 'Parameter too long' }, { status: 400 })
+            }
 
             if (typeof val === "string") {
 

@@ -200,7 +200,8 @@ const lazyObserver = new IntersectionObserver((entries) => {
 async function loadLazyComponent(el: HTMLElement) {
   const path = el.dataset.lazyComponent!;
   const modulePath = el.dataset.lazyPath!;
-  const props = el.dataset.lazyProps || '';
+  const propsRaw = el.dataset.lazyProps || '';
+  const props = propsRaw ? JSON.parse(decodeURIComponent(propsRaw)) : null;
 
   try {
     const mod = await import(modulePath);

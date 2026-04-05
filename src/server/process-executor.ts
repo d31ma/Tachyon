@@ -1,4 +1,5 @@
 import { BunRequest, Server } from "bun";
+import { timingSafeEqual } from "node:crypto";
 import Router, { RequestContext, RouteOptions, RequestPayload, RouteResponse } from "./route-handler.js";
 import Pool from "./process-pool.js";
 import Validate from "./schema-validator.js";
@@ -118,11 +119,15 @@ export default class Tach {
     }
 
     private static isAuthorizedClient(authorization: string | undefined, basicAuth: string): boolean {
-        if (authorization) {
-            const [, hash] = authorization.split(' ')
-            return hash === btoa(basicAuth)
-        }
-        return false
+        if (!authorization) return false
+        const [, provided] = authorization.split(' ')
+        if (!provided) return false
+        const expected = btoa(basicAuth)
+        // Timing-safe comparison prevents brute-force timing oracle attacks
+        const a = Buffer.from(expected)
+        const b = Buffer.from(provided)
+        if (a.length !== b.length) return false
+        return timingSafeEqual(a, b)
     }
 
     private static async serveRequest(
@@ -187,7 +192,9 @@ export default class Tach {
 
     /**
      * Decodes a Bearer JWT from an Authorization header.
-     * Returns `undefined` if absent, not Bearer, or the payload is malformed.
+     * WARNING: The signature is NOT verified. Route handlers must not trust claims
+     * without out-of-band verification (e.g. via a middleware that calls a trusted
+     * auth service). Rejects tokens whose `exp` claim is in the past.
      * @param authorization - The raw `Authorization` header value
      */
     private static decodeJWT(authorization: string | undefined) {
@@ -200,10 +207,19 @@ export default class Tach {
         const [header, payload, signature] = token.split('.')
 
         try {
+            const decodedPayload: Record<string, unknown> = JSON.parse(atob(payload))
+
+            // Reject expired tokens even without full signature verification
+            if (typeof decodedPayload.exp === 'number' && decodedPayload.exp < Math.floor(Date.now() / 1000)) {
+                console.warn(`Rejected expired JWT (exp=${decodedPayload.exp})`, process.pid)
+                return undefined
+            }
+
             return {
-                header:    JSON.parse(atob(header)),
-                payload:   JSON.parse(atob(payload)),
+                header:     JSON.parse(atob(header)),
+                payload:    decodedPayload,
                 signature,
+                verified:   false, // Signature NOT verified — do not trust claims without separate verification
             }
         } catch {
             console.warn(`Failed to decode JWT — malformed base64 or JSON payload`, process.pid)
@@ -263,9 +279,12 @@ export default class Tach {
                     }
 
                 } catch (err) {
-                    res = err instanceof Response
-                        ? err
-                        : Response.json({ detail: (err as Error).message }, { status: 400, headers: Router.headers })
+                    if (err instanceof Response) {
+                        res = err
+                    } else {
+                        console.error('[process-executor] Unhandled error:', err, process.pid)
+                        res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.headers })
+                    }
                 }
 
                 console.info(`${path} - ${request!.method} - ${res.status} - ${Date.now() - start}ms`, process.pid)

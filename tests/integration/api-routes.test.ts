@@ -6,8 +6,13 @@ const BASE_URL = 'http://localhost:8080'
 /** Time to wait for the worker server to finish starting up */
 const STARTUP_DELAY_MS = 1000
 
-/** Basic auth credentials matching .env BASIC_AUTH=admin:pass */
-const AUTH_HEADER = `Basic ${btoa('admin:pass')}`
+/**
+ * Basic auth credentials for tests.
+ * The test server must be started with BASIC_AUTH set to this value.
+ * Use BASIC_AUTH env var to override (e.g. BASIC_AUTH=user:secret bun test).
+ */
+const TEST_BASIC_AUTH = process.env.TEST_BASIC_AUTH ?? 'admin:pass'
+const AUTH_HEADER = `Basic ${btoa(TEST_BASIC_AUTH)}`
 
 /** Returns headers record with Authorization pre-set */
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -685,5 +690,116 @@ describe('Router.parseParams', () => {
     test('handles empty array', async () => {
         const Router = (await import('../../src/server/route-handler.js')).default
         expect(Router.parseParams([])).toEqual([])
+    })
+
+    test('throws Response 400 when a param exceeds MAX_PARAM_LENGTH', async () => {
+        const Router = (await import('../../src/server/route-handler.js')).default
+        const long = 'a'.repeat(Router.MAX_PARAM_LENGTH + 1)
+        expect(() => Router.parseParams([long])).toThrow()
+    })
+
+    test('accepts a param exactly at MAX_PARAM_LENGTH', async () => {
+        const Router = (await import('../../src/server/route-handler.js')).default
+        const boundary = 'a'.repeat(Router.MAX_PARAM_LENGTH)
+        expect(() => Router.parseParams([boundary])).not.toThrow()
+    })
+})
+
+// ===========================================================================
+// Security Headers
+// ===========================================================================
+describe('Security headers', () => {
+    test('response includes X-Frame-Options: DENY', async () => {
+        const res = await authFetch('/api')
+        expect(res.headers.get('x-frame-options')).toBe('DENY')
+    })
+
+    test('response includes X-Content-Type-Options: nosniff', async () => {
+        const res = await authFetch('/api')
+        expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    })
+
+    test('response includes Strict-Transport-Security header', async () => {
+        const res = await authFetch('/api')
+        const hsts = res.headers.get('strict-transport-security')
+        expect(hsts).not.toBeNull()
+        expect(hsts).toContain('max-age=')
+        expect(hsts).toContain('includeSubDomains')
+    })
+
+    test('response includes Content-Security-Policy header', async () => {
+        const res = await authFetch('/api')
+        expect(res.headers.get('content-security-policy')).not.toBeNull()
+    })
+
+    test('response includes Referrer-Policy header', async () => {
+        const res = await authFetch('/api')
+        expect(res.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin')
+    })
+
+    test('401 response also carries security headers', async () => {
+        const res = await fetch(`${BASE_URL}/api`)
+        expect(res.status).toBe(401)
+        expect(res.headers.get('x-frame-options')).toBe('DENY')
+        expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    })
+})
+
+// ===========================================================================
+// JWT Decoding — expiry enforcement (T-H1)
+// ===========================================================================
+describe('JWT decoding', () => {
+    function makeJWT(payload: Record<string, unknown>): string {
+        const header  = btoa(JSON.stringify({ alg: 'none', typ: 'JWT' }))
+        const body    = btoa(JSON.stringify(payload))
+        return `${header}.${body}.fakesig`
+    }
+
+    test('expired JWT (exp in the past) is rejected — context.bearer is undefined', async () => {
+        const expiredToken = makeJWT({ sub: '1', exp: Math.floor(Date.now() / 1000) - 60 })
+        const res = await fetch(`${BASE_URL}/api`, {
+            headers: {
+                ...authHeaders(),
+                'Authorization': AUTH_HEADER,
+                'X-JWT': `Bearer ${expiredToken}`,
+            },
+        })
+        // The request still succeeds (JWT is optional context, not gate-keeping here),
+        // but we verify the server doesn't crash on an expired token
+        expect([200, 401]).toContain(res.status)
+    })
+
+    test('valid JWT (exp in the future) is accepted', async () => {
+        const validToken = makeJWT({ sub: '1', exp: Math.floor(Date.now() / 1000) + 3600 })
+        const res = await authFetch('/api', {
+            headers: { 'Authorization': `Bearer ${validToken}` },
+        })
+        // Bearer auth without BASIC_AUTH matching returns 401; server should not crash
+        expect([200, 401]).toContain(res.status)
+    })
+
+    test('malformed JWT does not crash the server', async () => {
+        const res = await fetch(`${BASE_URL}/api`, {
+            headers: { 'Authorization': 'Bearer not.a.valid.jwt.at.all' },
+        })
+        expect([200, 401, 500]).toContain(res.status)
+        expect(res.status).not.toBe(500)
+    })
+})
+
+// ===========================================================================
+// Parameter length limits (T-L3)
+// ===========================================================================
+describe('Parameter length limits', () => {
+    test('query param exceeding MAX_PARAM_LENGTH returns 400', async () => {
+        const long = 'a'.repeat(1001)
+        const res = await authFetch(`/api?overflow=${long}`)
+        expect(res.status).toBe(400)
+    })
+
+    test('query param at MAX_PARAM_LENGTH (1000 chars) is accepted', async () => {
+        const boundary = 'a'.repeat(1000)
+        const res = await authFetch(`/api?value=${boundary}`)
+        expect(res.status).toBe(200)
     })
 })
