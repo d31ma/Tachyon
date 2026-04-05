@@ -331,6 +331,12 @@ function syncAttributes(oldEl: Element, newEl: Element) {
 
 // ── Navigation / Routing ───────────────────────────────────────────────────────
 function navigate(pathname: string) {
+  // Normalize trailing slash (e.g. Amplify 301s /docs → /docs/)
+  if (pathname !== '/' && pathname.endsWith('/')) {
+    pathname = pathname.slice(0, -1);
+    history.replaceState({}, '', pathname);
+  }
+
   let handler: string;
   let pageURL: string;
 
@@ -396,7 +402,7 @@ function resolveHandler(pathname: string): string {
   let bestLen = -1;
 
   for (const [routeKey] of routes) {
-    const routeSegs = routeKey.split('/');
+    const routeSegs = routeKey.split('/').slice(1);
     if (routeSegs.length > segments.length) continue;
 
     const slugMap = routes.get(routeKey) ?? {};

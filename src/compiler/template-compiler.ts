@@ -65,10 +65,12 @@ export default class Yon {
             }
         }
 
-        // Bundle all client assets in parallel
+        // Components must be registered before pages/layouts compile so that
+        // compMapping is fully populated when import statements are generated.
+        await Yon.bundleComponents()
+
         await Promise.all([
             Yon.bundleDependencies(),
-            Yon.bundleComponents(),
             Yon.bundleLayouts(),
             Yon.bundlePages(),
             Yon.bundleAssets()
