@@ -1,6 +1,6 @@
 {
     "name": "@vyckr/tachyon",
-    "version": "1.3.2",
+    "version": "1.3.3",
     "description": "A polyglot, file-system-routed full-stack framework for Bun",
     "author": "Chidelma",
     "license": "MIT",
