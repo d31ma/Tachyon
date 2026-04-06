@@ -252,7 +252,7 @@
   <div class="component-section">
     <h2>Custom Yon Components</h2>
     <div class="component-grid">
-      <clicker_ :clicks="doneCount()" />
+      <ui-clicker :clicks="doneCount()" />
       <clicker_ lazy :clicks="pendingCount()" />
     </div>
   </div>

@@ -423,6 +423,12 @@ describe('Component bundling', () => {
         expect(res.status).toEqual(200)
         expect(res.headers.get('content-type')).toContain('javascript')
     })
+
+    test('GET /components/ui/clicker.js returns JavaScript for nested components', async () => {
+        const res = await fetch(`${BASE_URL}/components/ui/clicker.js`)
+        expect(res.status).toEqual(200)
+        expect(res.headers.get('content-type')).toContain('javascript')
+    })
 })
 
 // ===========================================================================

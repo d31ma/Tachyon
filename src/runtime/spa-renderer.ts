@@ -1,3 +1,12 @@
+import {
+  cleanBooleanAttrs,
+  findEventTarget,
+  morphChildren,
+  parseFragment,
+  parseParams,
+  resolveHandler,
+} from './dom-helpers.js';
+
 type RenderFn = (elementId?: string | null, eventDetail?: unknown) => Promise<string>;
 
 // ── State ──────────────────────────────────────────────────────────────────────
@@ -12,8 +21,6 @@ const routes = new Map<string, Record<string, number>>();
 const layouts: Record<string, string> = {};
 const slugs: Record<string, string> = {};
 let params: (string | number | boolean | null | undefined)[] = [];
-
-const parser = new DOMParser();
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────────
 Promise.all([
@@ -61,15 +68,6 @@ for (const eventName of ['input', 'change', 'sl-input', 'sl-change'] as const) {
 
 window.addEventListener('popstate', () => navigate(location.pathname));
 
-// ── Event helpers ──────────────────────────────────────────────────────────────
-function findEventTarget(el: Element | null, eventName: string): Element | null {
-  while (el && el !== document.body) {
-    if (el.hasAttribute(`@${eventName}`)) return el;
-    el = el.parentElement;
-  }
-  return null;
-}
-
 function dispatchAction(el: Element) {
   rerender(el.id);
 }
@@ -92,7 +90,9 @@ async function rerender(triggerId: string, eventDetail?: unknown) {
     const render = lazyRenders.get(lazyContainer.id) as RenderFn;
     await render(triggerId, eventDetail);
     const html = await render();
-    morphChildren(lazyContainer, parseFragment(html));
+    morphChildren(lazyContainer, parseFragment(html), {
+      preserveElement: (el) => lazyRenders.has(el.id)
+    });
     postPatch();
     return;
   }
@@ -157,7 +157,9 @@ function patchSlot(html: string) {
   if (freshNavigation) {
     slot.innerHTML = html;
   } else {
-    morphChildren(slot, parseFragment(html));
+    morphChildren(slot, parseFragment(html), {
+      preserveElement: (el) => lazyRenders.has(el.id)
+    });
   }
   postPatch();
 }
@@ -169,16 +171,11 @@ function patchBody(html: string) {
   if (freshNavigation) {
     document.body.innerHTML = html;
   } else {
-    morphChildren(document.body, parseFragment(html));
+    morphChildren(document.body, parseFragment(html), {
+      preserveElement: (el) => lazyRenders.has(el.id)
+    });
   }
   postPatch();
-}
-
-function parseFragment(html: string): DocumentFragment {
-  const doc = parser.parseFromString(`<body>${html}</body>`, 'text/html');
-  const frag = document.createDocumentFragment();
-  while (doc.body.firstChild) frag.appendChild(doc.body.firstChild);
-  return frag;
 }
 
 // ── Lazy Component Loading ─────────────────────────────────────────────────────
@@ -240,95 +237,6 @@ function postPatch() {
   freshNavigation = false;
 }
 
-/** Remove boolean HTML attributes that are explicitly "false" */
-function cleanBooleanAttrs() {
-  const all = document.body.querySelectorAll('*');
-  for (const el of all) {
-    for (const attr of Array.from(el.attributes)) {
-      if (attr.name.endsWith('ed') && attr.value === 'false')
-        el.removeAttribute(attr.name);
-    }
-  }
-}
-
-// ── DOM Morphing ───────────────────────────────────────────────────────────────
-// Efficient keyed reconciliation: matches nodes by id, then by tag+position.
-function morphChildren(parent: Element | DocumentFragment, desired: DocumentFragment) {
-  const oldNodes = Array.from(parent.childNodes);
-  const newNodes = Array.from(desired.childNodes);
-
-  const maxLen = Math.max(oldNodes.length, newNodes.length);
-
-  for (let i = 0; i < maxLen; i++) {
-    const oldChild = oldNodes[i];
-    const newChild = newNodes[i];
-
-    if (!oldChild && newChild) {
-      parent.appendChild(newChild.cloneNode(true));
-      continue;
-    }
-    if (oldChild && !newChild) {
-      parent.removeChild(oldChild);
-      continue;
-    }
-    if (!oldChild || !newChild) continue;
-
-    if (!isSameNode(oldChild, newChild)) {
-      parent.replaceChild(newChild.cloneNode(true), oldChild);
-      continue;
-    }
-
-    // Text nodes
-    if (oldChild.nodeType === Node.TEXT_NODE) {
-      if (oldChild.textContent !== newChild.textContent)
-        oldChild.textContent = newChild.textContent;
-      continue;
-    }
-
-    // Element nodes — sync attributes then recurse
-    if (oldChild.nodeType === Node.ELEMENT_NODE) {
-      // Preserve lazy-loaded components — the page render outputs an empty placeholder
-      // but the live DOM has the loaded component content
-      if (lazyRenders.has((oldChild as Element).id)) continue;
-
-      syncAttributes(oldChild as Element, newChild as Element);
-      // Convert newChild children to a fragment for recursion
-      const childFrag = document.createDocumentFragment();
-      while (newChild.firstChild) childFrag.appendChild(newChild.firstChild);
-      morphChildren(oldChild as Element, childFrag);
-    }
-  }
-
-  // Trim excess old nodes
-  while (parent.childNodes.length > newNodes.length) {
-    parent.removeChild(parent.lastChild!);
-  }
-}
-
-function isSameNode(a: Node, b: Node): boolean {
-  if (a.nodeType !== b.nodeType) return false;
-  if (a.nodeType === Node.ELEMENT_NODE) {
-    const ae = a as Element, be = b as Element;
-    if (ae.tagName !== be.tagName) return false;
-    // Prefer matching by id for keyed reconciliation
-    if (ae.id && be.id) return ae.id === be.id;
-  }
-  return true;
-}
-
-function syncAttributes(oldEl: Element, newEl: Element) {
-  // Remove stale attributes (skip event attributes — they're declarative)
-  for (const attr of Array.from(oldEl.attributes)) {
-    if (!attr.name.startsWith('@') && !newEl.hasAttribute(attr.name))
-      oldEl.removeAttribute(attr.name);
-  }
-  // Add/update attributes
-  for (const attr of Array.from(newEl.attributes)) {
-    if (!attr.name.startsWith('@') && oldEl.getAttribute(attr.name) !== attr.value)
-      oldEl.setAttribute(attr.name, attr.value);
-  }
-}
-
 // ── Navigation / Routing ───────────────────────────────────────────────────────
 function navigate(pathname: string) {
   // Normalize trailing slash (e.g. Amplify 301s /docs → /docs/)
@@ -341,7 +249,7 @@ function navigate(pathname: string) {
   let pageURL: string;
 
   try {
-    handler = resolveHandler(pathname);
+    handler = resolvePageHandler(pathname);
     pageURL = `/pages${handler === '/' ? '' : handler}/HTML.js`;
   } catch {
     pageURL = '/pages/404.js';
@@ -393,7 +301,7 @@ function navigate(pathname: string) {
       const pageHTML = await pageRender();
       previousHTML = pageHTML;
 
-      const tempDoc = parser.parseFromString(`<body>${layoutHTML}</body>`, 'text/html');
+      const tempDoc = new DOMParser().parseFromString(`<body>${layoutHTML}</body>`, 'text/html');
       const slot = tempDoc.getElementById('ty-layout-slot');
       if (slot) slot.innerHTML = pageHTML;
       document.body.innerHTML = tempDoc.body.innerHTML;
@@ -411,53 +319,12 @@ function navigate(pathname: string) {
   }
 }
 
-function resolveHandler(pathname: string): string {
-  if (pathname === '/') return pathname;
+function resolvePageHandler(pathname: string): string {
+  const handler = resolveHandler(pathname, routes, slugs);
+  if (handler === '/') return handler;
 
   const segments = pathname.split('/').slice(1);
-  let bestKey = '';
-  let bestLen = -1;
-
-  for (const [routeKey] of routes) {
-    const routeSegs = routeKey.split('/').slice(1);
-    if (routeSegs.length > segments.length) continue;
-
-    const slugMap = routes.get(routeKey) ?? {};
-    let match = true;
-
-    for (let i = 0; i < routeSegs.length; i++) {
-      if (!slugMap[routeSegs[i]] && routeSegs[i] !== segments[i]) {
-        match = false;
-        break;
-      }
-    }
-
-    if (match && routeSegs.length > bestLen) {
-      bestKey = routeKey;
-      bestLen = routeSegs.length;
-    }
-  }
-
-  if (!bestKey) throw new Error(`Route ${pathname} not found`);
-
-  // Set slugs and params
-  const slugMap = routes.get(bestKey) ?? {};
-  for (const [key, idx] of Object.entries(slugMap)) {
-    slugs[key.replace(':', '')] = segments[idx];
-  }
-  params = parseParams(segments.slice(bestLen));
-
-  return bestKey;
-}
-
-function parseParams(input: string[]) {
-  return input.map(p => {
-    const n = Number(p);
-    if (!Number.isNaN(n)) return n;
-    if (p === 'true') return true;
-    if (p === 'false') return false;
-    if (p === 'null') return null;
-    if (p === 'undefined') return undefined;
-    return p;
-  });
+  const routeSegs = handler.split('/').slice(1);
+  params = parseParams(segments.slice(routeSegs.length));
+  return handler;
 }
