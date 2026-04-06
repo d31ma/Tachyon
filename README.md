@@ -20,7 +20,7 @@ Tachyon is a **polyglot, file-system-routed full-stack framework for [Bun](https
 ## Installation
 
 ```bash
-bun add @vyckr/tachyon
+bun add @delma/tachyon
 ```
 
 ## Quick Start
