@@ -30,11 +30,51 @@ export default class Yon {
     private static readonly layoutMethod = 'LAYOUT'
     private static readonly compMapping = new Map<string, string>()
     private static layoutMapping: Record<string, string> = {}
+    private static readonly nativeTags = new Set([
+        'a', 'abbr', 'address', 'area', 'article', 'aside', 'audio', 'b', 'base', 'bdi', 'bdo',
+        'blockquote', 'body', 'br', 'button', 'canvas', 'caption', 'cite', 'code', 'col',
+        'colgroup', 'data', 'datalist', 'dd', 'del', 'details', 'dfn', 'dialog', 'div', 'dl',
+        'dt', 'em', 'embed', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2',
+        'h3', 'h4', 'h5', 'h6', 'head', 'header', 'hgroup', 'hr', 'html', 'i', 'iframe', 'img',
+        'input', 'ins', 'kbd', 'label', 'legend', 'li', 'link', 'main', 'map', 'mark', 'menu',
+        'meta', 'meter', 'nav', 'noscript', 'object', 'ol', 'optgroup', 'option', 'output', 'p',
+        'picture', 'pre', 'progress', 'q', 'rp', 'rt', 'ruby', 's', 'samp', 'script', 'search',
+        'section', 'select', 'slot', 'small', 'source', 'span', 'strong', 'style', 'sub',
+        'summary', 'sup', 'table', 'tbody', 'td', 'template', 'textarea', 'tfoot', 'th', 'thead',
+        'time', 'title', 'tr', 'track', 'u', 'ul', 'var', 'video', 'wbr',
+        'svg', 'g', 'path', 'circle', 'ellipse', 'line', 'polygon', 'polyline', 'rect', 'defs',
+        'lineargradient', 'radialgradient', 'stop', 'symbol', 'use', 'clippath', 'mask', 'text',
+        'tspan', 'foreignobject', 'animate', 'animatemotion', 'animatetransform', 'pattern',
+        'marker', 'filter', 'feblend', 'fecolormatrix', 'fecomponenttransfer', 'fecomposite',
+        'feconvolvematrix', 'fediffuselighting', 'fedisplacementmap', 'fedistantlight',
+        'fedropshadow', 'feflood', 'fefunca', 'fefuncb', 'fefuncg', 'fefuncr', 'fegaussianblur',
+        'feimage', 'femerge', 'femergenode', 'femorphology', 'feoffset', 'fepointlight',
+        'fespecularlighting', 'fespotlight', 'fetile', 'feturbulence'
+    ])
 
     static getParams(request: BunRequest, route: string) {
         const url = new URL(request.url)
         const params = url.pathname.split('/').slice(route.split('/').length)
         return { params: Router.parseParams(params) }
+    }
+
+    private static normalizeComponentName(route: string): string {
+        const segments = route.replace('.html', '').split('/').filter(Boolean)
+        if (segments[segments.length - 1] === 'index') segments.pop()
+        return segments.join('-').toLowerCase()
+    }
+
+    private static resolveComponentName(tagName: string): string | null {
+        const normalized = tagName.toLowerCase()
+
+        if (normalized.endsWith('_')) {
+            const legacyName = normalized.slice(0, -1)
+            return Yon.compMapping.has(legacyName) ? legacyName : null
+        }
+
+        if (Yon.nativeTags.has(normalized)) return null
+
+        return Yon.compMapping.has(normalized) ? normalized : null
     }
 
     static async createStaticRoutes() {
@@ -164,26 +204,27 @@ export default class Yon {
 
                         for (const [name, value] of element.attributes) attrs[name] = value;
 
+                        const resolvedComponent = Yon.resolveComponentName(tagLower);
+
                         // Component import
-                        if (tag.endsWith('_')) {
-                            const compName = tagLower.slice(0, -1);
-                            const filepath = Yon.compMapping.get(compName);
+                        if (resolvedComponent) {
+                            const filepath = Yon.compMapping.get(resolvedComponent);
                             const isLazy = 'lazy' in attrs;
 
-                            if (filepath && compName && !isLazy) {
+                            if (filepath && !isLazy) {
                                 const existing = imports.get(filepath);
-                                if (!existing || !existing.has(compName)) {
+                                if (!existing || !existing.has(resolvedComponent)) {
                                     const keyword = existing ? 'const' : 'const';
                                     const awaitPrefix = existing ? '' : 'await ';
-                                    parsed.push({ static: `${keyword} { default: ${compName} } = ${awaitPrefix}import('/components/${filepath}')` });
-                                    if (existing) existing.add(compName);
-                                    else imports.set(filepath, new Set([compName]));
+                                    parsed.push({ static: `${keyword} { default: ${resolvedComponent.replaceAll('-', '_')} } = ${awaitPrefix}import('/components/${filepath}')` });
+                                    if (existing) existing.add(resolvedComponent);
+                                    else imports.set(filepath, new Set([resolvedComponent]));
                                 }
                             }
                         }
 
                         // Auto-generate id for non-control, non-component elements
-                        if (!attrs.id && !tag.endsWith('_') && tag !== 'LOOP' && tag !== 'LOGIC') {
+                        if (!attrs.id && !resolvedComponent && tag !== 'LOOP' && tag !== 'LOGIC') {
                             attrs[':id'] = `ty_generateId('${hash}', 'id')`;
                         }
 
@@ -191,7 +232,8 @@ export default class Yon {
                         tagStack.push(tagLower);
 
                         if (element.selfClosing) {
-                            parsed.push({ element: `\`<${tagLower} ${attrStr} />\`` });
+                            const tagName = resolvedComponent ? `${resolvedComponent}_` : tagLower;
+                            parsed.push({ element: `\`<${tagName} ${attrStr} />\`` });
                             tagStack.pop();
                         } else {
                             parsed.push({ element: `\`<${tagLower} ${attrStr}>\`` });
@@ -209,7 +251,7 @@ export default class Yon {
                         const tag = element.tagName.toUpperCase();
                         if (tag === 'SCRIPT' || tag === 'STYLE') return;
                         element.onEndTag(() => {
-                            const tagName = tagStack.pop();
+                    const tagName = tagStack.pop();
                             if (tagName) parsed.push({ element: `\`</${tagName}>\`` });
                         });
                     }
@@ -230,7 +272,7 @@ export default class Yon {
                 // Control flow and component tags are raw JS, not concatenated
                 if (el.element.includes('<loop') || el.element.includes('</loop') ||
                     el.element.includes('<logic') || el.element.includes('</logic') ||
-                    /<([A-Za-z0-9-]+)_\s+([^/>]*)\/>/.test(el.element)) {
+                    /<([A-Za-z0-9-]+)_\s*([^/>]*)\/>/.test(el.element)) {
                     body.push(el.element);
                 } else {
                     body.push(`elements+=${el.element}`);
@@ -257,12 +299,13 @@ export default class Yon {
         code = code.replaceAll(/:(\w[\w-]*)="([^"]*)"/g, '$1="${$2}"');
 
         // Transform component invocations
-        code = code.replaceAll(/`<([A-Za-z0-9-]+)_\s+([^/>]*)\/>`/g, (_, component, attrStr) => {
+        code = code.replaceAll(/`<([A-Za-z0-9-]+)_\s*([^/>]*)\/>`/g, (_, component, attrStr) => {
             const matches = attrStr.matchAll(/([a-zA-Z0-9-@]+)="([^"]*)"/g);
             const props: string[] = [];
             const events: string[] = [];
             const hash = genHash();
             const isLazy = /\blazy\b/.test(attrStr);
+            const renderName = component.replaceAll('-', '_');
 
             for (const [, key, value] of matches) {
                 if (key === 'lazy') continue;
@@ -290,7 +333,7 @@ export default class Yon {
             return `
                 elements += \`<div id="${genId}" ${events.join(' ')}>\`
                 if(!compRenders.has('${hash}')) {
-                    render = await ${component}(${propsObj})
+                    render = await ${renderName}(${propsObj})
                     elements += await render(elemId, event, '${hash}')
                     compRenders.set('${hash}', render)
                 } else {
@@ -373,8 +416,14 @@ export default class Yon {
         if (!await exists(Router.componentsPath)) return;
 
         for (const comp of new Bun.Glob('**/*.html').scanSync({ cwd: Router.componentsPath })) {
-            const filename = comp.split('/').pop()!.replace('.html', '');
-            Yon.compMapping.set(filename, comp.replace('.html', '.js'));
+            const componentName = Yon.normalizeComponentName(comp);
+            const modulePath = comp.replace('.html', '.js');
+
+            if (Yon.compMapping.has(componentName) && Yon.compMapping.get(componentName) !== modulePath) {
+                throw new Error(`Duplicate component name '${componentName}' for '${comp}' and '${Yon.compMapping.get(componentName)}'`)
+            }
+
+            Yon.compMapping.set(componentName, modulePath);
             const data = await Yon.extractComponents(await Bun.file(`${Router.componentsPath}/${comp}`).text());
             await Yon.registerModule(data, comp, 'components');
         }
