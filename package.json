@@ -1,6 +1,6 @@
 {
     "name": "@delma/tachyon",
-    "version": "1.5.0",
+    "version": "1.5.1",
     "description": "A polyglot, file-system-routed full-stack framework for Bun",
     "author": "Chidelma",
     "license": "MIT",
@@ -39,6 +39,7 @@
         "type": "git",
         "url": "git+https://github.com/Chidelma/Tachyon.git"
     },
+    "homepage": "https://tachyon.del.ma",
     "bugs": {
         "url": "https://github.com/Chidelma/Tachyon/issues"
     },
