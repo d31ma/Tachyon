@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { GlobalRegistrator } from '@happy-dom/global-registrator'
+import { Window } from 'happy-dom'
 import {
     cleanBooleanAttrs,
     findEventTarget,
@@ -9,12 +9,38 @@ import {
     resolveHandler,
 } from '../../src/runtime/dom-helpers.js'
 
+let previousGlobals: Record<string, unknown>
+
 beforeAll(() => {
-    GlobalRegistrator.register()
+    const windowInstance = new Window()
+
+    previousGlobals = {
+        window: globalThis.window,
+        document: globalThis.document,
+        DOMParser: globalThis.DOMParser,
+        Node: globalThis.Node,
+        Element: globalThis.Element,
+        DocumentFragment: globalThis.DocumentFragment,
+        SyntaxError: globalThis.SyntaxError,
+    }
+
+    Object.assign(windowInstance, {
+        SyntaxError,
+    })
+
+    Object.assign(globalThis, {
+        window: windowInstance,
+        document: windowInstance.document,
+        DOMParser: windowInstance.DOMParser,
+        Node: windowInstance.Node,
+        Element: windowInstance.Element,
+        DocumentFragment: windowInstance.DocumentFragment,
+        SyntaxError,
+    })
 })
 
 afterAll(() => {
-    GlobalRegistrator.unregister()
+    Object.assign(globalThis, previousGlobals)
 })
 
 describe('findEventTarget', () => {

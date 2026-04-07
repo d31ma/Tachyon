@@ -9,6 +9,7 @@ Tachyon is a **polyglot, file-system-routed full-stack framework for [Bun](https
 - **Reactive front-end (Yon)** — HTML templates with bindings, loops, conditionals, and custom components
 - **Lazy component loading** — defer component rendering until visible with `IntersectionObserver`
 - **NPM dependency bundling** — use npm packages in front-end code via `/modules/` imports
+- **Static HTML export** — `tach.bundle` prerenders each `HTML` route into `dist/**/index.html` for static hosting
 - **Hot Module Replacement** — watches `routes/` and `components/` and reloads on change
 - **Custom 404 page** — drop a `404.html` in your project root to override the default
 - **Schema validation** — per-route request/response validation via `OPTIONS` files
@@ -29,8 +30,20 @@ bun add @delma/tachyon
 # Start the development server (expects routes/ in the current directory)
 tach.serve
 
-# Build front-end assets into dist/
+# Start the dev server and keep dist/ refreshed for frontend/static preview work
+tach.serve --bundle-watch
+
+# Scaffold a new app
+tach.init my-app
+
+# Build front-end assets into dist/ and prerender HTML routes
 tach.bundle
+
+# Rebuild dist/ automatically while source files change
+tach.bundle --watch
+
+# Preview the built dist/ output locally
+tach.preview
 ```
 
 Or via npm scripts if you declare them in your own `package.json`:
@@ -43,6 +56,24 @@ Or via npm scripts if you declare them in your own `package.json`:
   }
 }
 ```
+
+## Scaffolding a New App
+
+```bash
+bunx @delma/tachyon tach.init my-app
+cd my-app
+bun install
+bun run start
+```
+
+`tach.init` creates a starter project with:
+
+- `routes/HTML`, `routes/LAYOUT`, and `routes/GET`
+- a sample `components/hero.html`
+- `main.js`
+- `.env.example`
+- `amplify.yml`
+- `package.json` scripts for `start`, `bundle`, and `preview`
 
 ## Configuration
 
@@ -226,6 +257,26 @@ Create an `HTML` file inside any route directory to define a front-end page:
 <button @click="count++">Increment</button>
 ```
 
+When you run `tach.bundle`, Tachyon compiles these pages into browser modules and also prerenders static HTML files such as:
+
+```text
+dist/
+  index.html
+  dashboard/index.html
+  pages/HTML.js
+  pages/dashboard/HTML.js
+```
+
+That means the bundled output is directly usable on static hosts while still keeping the SPA runtime available for client-side navigation and interactivity.
+
+To preview the generated `dist/` output locally, run:
+
+```bash
+tach.preview
+```
+
+`tach.preview` serves exact bundle assets such as `/main.js` and also resolves nested route files like `/docs` to `dist/docs/index.html`.
+
 ### Template Syntax
 
 | Syntax | Description |
@@ -306,7 +357,89 @@ If no custom `404.html` is found, Tachyon serves a built-in styled 404 page.
 tach.bundle
 ```
 
-Outputs compiled assets to `dist/`.
+Outputs compiled assets to `dist/`, including prerendered route files such as `dist/index.html` and `dist/docs/index.html`.
+
+To preview the built output locally:
+
+```bash
+tach.preview
+```
+
+If you want to serve `dist/` with Bun's HTML/static tooling during development, keep the bundle fresh with:
+
+```bash
+tach.bundle --watch
+```
+
+That watch mode rebuilds `dist/` when files change in:
+
+- `routes/`
+- `components/`
+- `assets/`
+- `main.js`
+- `package.json`
+
+This is the mode to pair with a static server that watches `dist/`.
+
+If you are building a full-stack Tachyon app but also want `dist/` kept up to date for frontend previewing, use:
+
+```bash
+tach.serve --bundle-watch
+```
+
+That runs the normal Tachyon dev server and a background bundle watcher together.
+
+### Static Hosting
+
+The bundled output is designed to work on static hosts:
+
+- `dist/index.html` serves the root route
+- nested pages are emitted as `dist/<route>/index.html`
+- browser modules and assets are emitted alongside them in `dist/pages`, `dist/layouts`, `dist/components`, `dist/assets`, and `dist/modules`
+
+That means you can deploy `dist/` directly to platforms like Amplify, Netlify, Cloudflare Pages, GitHub Pages, or any CDN/object-store static host.
+
+### AWS Amplify
+
+An example Amplify build file is included at [examples/amplify.yml](/Users/iyor/Library/CloudStorage/Dropbox/myProjects/TACHYON/examples/amplify.yml).
+
+Typical project setup:
+
+```yaml
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - curl -fsSL https://bun.sh/install | bash
+        - export PATH="$HOME/.bun/bin:$PATH"
+        - bun install --frozen-lockfile
+    build:
+      commands:
+        - export PATH="$HOME/.bun/bin:$PATH"
+        - bunx @delma/tachyon tach.bundle
+  artifacts:
+    baseDirectory: dist
+    files:
+      - '**/*'
+```
+
+If your app depends on a local `main.js`, components, layouts, or nested `HTML` routes, `tach.bundle` will include them automatically.
+
+### Recommended Deploy Flow
+
+```bash
+tach.bundle
+tach.preview
+```
+
+Use `tach.preview` to verify:
+
+- `/` resolves to the prerendered homepage
+- nested routes like `/docs` resolve to `dist/docs/index.html`
+- assets such as `/main.js` and `/assets/*` load correctly
+
+Once that looks good, deploy the `dist/` directory.
 
 ## Security
 

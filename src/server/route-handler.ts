@@ -56,6 +56,13 @@ export default class Router {
 
     static readonly routeConfigs: Record<string, Record<string, RouteOptions>> = {}
 
+    static resetStaticState() {
+        for (const key of Object.keys(Router.reqRoutes)) delete Router.reqRoutes[key]
+        Router.allRoutes.clear()
+        for (const key of Object.keys(Router.routeSlugs)) delete Router.routeSlugs[key]
+        for (const key of Object.keys(Router.routeConfigs)) delete Router.routeConfigs[key]
+    }
+
     private static readonly allMethods = process.env.ALLOW_METHODS
         ? process.env.ALLOW_METHODS.split(',')
         : ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD']

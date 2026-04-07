@@ -22,14 +22,25 @@ const layouts: Record<string, string> = {};
 const slugs: Record<string, string> = {};
 let params: (string | number | boolean | null | undefined)[] = [];
 
+async function loadManifests() {
+  const [routeData, layoutData] = await Promise.all([
+    fetch('/routes.json').then(r => r.json()),
+    fetch('/layouts.json').then(r => r.json()),
+  ]);
+
+  routes.clear();
+  for (const [path, s] of Object.entries(routeData)) {
+    routes.set(path, s as Record<string, number>);
+  }
+
+  for (const key of Object.keys(layouts)) delete layouts[key];
+  Object.assign(layouts, layoutData);
+}
+
 // ── Bootstrap ──────────────────────────────────────────────────────────────────
 Promise.all([
-  fetch('/routes.json').then(r => r.json()),
-  fetch('/layouts.json').then(r => r.json()),
-]).then(([routeData, layoutData]) => {
-  for (const [path, s] of Object.entries(routeData))
-    routes.set(path, s as Record<string, number>);
-  Object.assign(layouts, layoutData);
+  loadManifests(),
+]).then(() => {
   navigate(location.pathname);
 });
 
@@ -318,6 +329,7 @@ function navigate(pathname: string) {
     loadPage();
   }
 }
+
 
 function resolvePageHandler(pathname: string): string {
   const handler = resolveHandler(pathname, routes, slugs);
