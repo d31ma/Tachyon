@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import net from 'node:net'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -44,9 +45,31 @@ async function waitFor(check: () => Promise<boolean>, timeoutMs = 15000, interva
     throw new Error(`Condition not met within ${timeoutMs}ms`)
 }
 
+async function getFreePort() {
+    return await new Promise<number>((resolve, reject) => {
+        const server = net.createServer()
+
+        server.once('error', reject)
+        server.listen(0, '127.0.0.1', () => {
+            const address = server.address()
+            if (!address || typeof address === 'string') {
+                server.close()
+                reject(new Error('Failed to resolve an ephemeral port'))
+                return
+            }
+
+            const { port } = address
+            server.close((error) => {
+                if (error) reject(error)
+                else resolve(port)
+            })
+        })
+    })
+}
+
 test('tach.preview --watch serves initial bundle and rebuilds on HTML route changes', { timeout: 20000 }, async () => {
     const root = await createExampleApp()
-    const port = 32000 + Math.floor(Math.random() * 2000)
+    const port = await getFreePort()
     const preview = Bun.spawn(
         ['bun', path.join(import.meta.dir, '../../src/cli/preview.ts'), '--watch'],
         {

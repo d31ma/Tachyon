@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import net from 'node:net'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -42,52 +43,101 @@ async function waitFor(check: () => Promise<boolean>, timeoutMs = 15000, interva
     const start = Date.now()
 
     while (Date.now() - start < timeoutMs) {
-        if (await check()) return
+        if (await check()) return true
         await Bun.sleep(intervalMs)
     }
 
-    throw new Error(`Condition not met within ${timeoutMs}ms`)
+    return false
 }
 
-test('tach.serve --full starts the app server and preview server together', { timeout: 20000 }, async () => {
+async function getFreePort() {
+    return await new Promise<number>((resolve, reject) => {
+        const server = net.createServer()
+
+        server.once('error', reject)
+        server.listen(0, '127.0.0.1', () => {
+            const address = server.address()
+            if (!address || typeof address === 'string') {
+                server.close()
+                reject(new Error('Failed to resolve an ephemeral port'))
+                return
+            }
+
+            const { port } = address
+            server.close((error) => {
+                if (error) reject(error)
+                else resolve(port)
+            })
+        })
+    })
+}
+
+test('tach.serve --full serves frontend and backend responses from the same port', { timeout: 40000 }, async () => {
     const root = await createExampleApp()
-    const apiPort = 34000 + Math.floor(Math.random() * 1000)
-    const previewPort = apiPort + 1000
+    const port = await getFreePort()
+    const env = {
+        ...process.env,
+        PORT: String(port),
+        HOST: '127.0.0.1',
+        DEV: 'true',
+    } as Record<string, string>
+
+    delete env.BASIC_AUTH
+    delete env.VALIDATE
+
+    let lastSnapshot = 'no attempts yet'
 
     const proc = Bun.spawn(
         ['bun', path.join(import.meta.dir, '../../src/cli/serve.ts'), '--full'],
         {
             cwd: root,
-            env: {
-                ...process.env,
-                PORT: String(apiPort),
-                PREVIEW_PORT: String(previewPort),
-                HOST: '127.0.0.1',
-                PREVIEW_HOST: '127.0.0.1',
-                DEV: 'true',
-            },
-            stdout: 'ignore',
-            stderr: 'ignore'
+            env,
+            stdout: 'pipe',
+            stderr: 'pipe'
         }
     )
 
     processes.push(proc)
 
-    await waitFor(async () => {
+    const ok = await waitFor(async () => {
         try {
-            const [apiRes, previewRes] = await Promise.all([
-                fetch(`http://127.0.0.1:${apiPort}/routes.json`),
-                fetch(`http://127.0.0.1:${previewPort}/`)
+            const [frontendRes, apiRes] = await Promise.all([
+                fetch(`http://127.0.0.1:${port}/`, {
+                    headers: { accept: 'text/html' }
+                }),
+                fetch(`http://127.0.0.1:${port}/`, {
+                    headers: { accept: 'application/json' }
+                })
             ])
 
-            return apiRes.ok
-                && (await apiRes.text()).includes('"/"')
-                && previewRes.ok
-                && (await previewRes.text()).includes('Fixture Home')
+            const htmlOk = frontendRes.ok
+                && (await frontendRes.text()).includes('Fixture Home')
+            const apiOk = apiRes.ok
+                && (await apiRes.text()).includes('"fixture":"api"')
+
+            lastSnapshot = JSON.stringify({
+                htmlStatus: frontendRes.status,
+                apiStatus: apiRes.status,
+                htmlOk,
+                apiOk,
+            })
+
+            return htmlOk && apiOk
         } catch {
+            lastSnapshot = 'request connection failed'
             return false
         }
-    })
+    }, 30000)
+
+    if (!ok) {
+        proc.kill()
+        await proc.exited.catch(() => {})
+        const stdout = await new Response(proc.stdout).text()
+        const stderr = await new Response(proc.stderr).text()
+        throw new Error(
+            `serve --full did not become ready. last=${lastSnapshot}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`
+        )
+    }
 
     expect(proc.exitCode).toBeNull()
 })

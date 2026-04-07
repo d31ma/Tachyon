@@ -15,7 +15,12 @@ function shouldTreatAsAsset(pathname: string) {
     return basename.includes('.')
 }
 
-export async function resolvePreviewFile(distPath: string, pathname: string) {
+export async function resolvePreviewFile(
+    distPath: string,
+    pathname: string,
+    options: { allowRootFallback?: boolean } = {}
+) {
+    const allowRootFallback = options.allowRootFallback ?? true
     const normalized = pathname === '/' ? '/' : pathname.replace(/\/+$/, '') || '/'
 
     const directFile = path.join(distPath, normalized === '/' ? 'index.html' : normalized.slice(1))
@@ -25,11 +30,33 @@ export async function resolvePreviewFile(distPath: string, pathname: string) {
         const nestedIndex = path.join(distPath, normalized === '/' ? 'index.html' : normalized.slice(1), 'index.html')
         if (await pathExists(nestedIndex)) return nestedIndex
 
-        const rootIndex = path.join(distPath, 'index.html')
-        if (await pathExists(rootIndex)) return rootIndex
+        if (allowRootFallback) {
+            const rootIndex = path.join(distPath, 'index.html')
+            if (await pathExists(rootIndex)) return rootIndex
+        }
     }
 
     return null
+}
+
+export async function serveStaticPreviewRequest(
+    distPath: string,
+    req: Request,
+    options: { allowRootFallback?: boolean } = {}
+) {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return null
+
+    const url = new URL(req.url)
+    const filePath = await resolvePreviewFile(distPath, url.pathname, options)
+
+    if (!filePath) return null
+
+    const file = Bun.file(filePath)
+    const body = await file.bytes()
+
+    return new Response(body, {
+        headers: file.type ? { 'Content-Type': file.type } : undefined
+    })
 }
 
 export async function createStaticPreviewServer(
@@ -40,16 +67,8 @@ export async function createStaticPreviewServer(
         port: options.port ?? Number(process.env.PORT || 3000),
         hostname: options.hostname ?? process.env.HOST ?? '127.0.0.1',
         async fetch(req) {
-            const url = new URL(req.url)
-            const filePath = await resolvePreviewFile(distPath, url.pathname)
-
-            if (!filePath) return new Response('Not Found', { status: 404 })
-
-            const file = Bun.file(filePath)
-            const body = await file.bytes()
-            return new Response(body, {
-                headers: file.type ? { 'Content-Type': file.type } : undefined
-            })
+            return await serveStaticPreviewRequest(distPath, req)
+                ?? new Response('Not Found', { status: 404 })
         }
     })
 

@@ -10,7 +10,6 @@ dist
 .DS_Store
 `,
     '.env.example': `PORT=8000
-PREVIEW_PORT=3000
 HOST=127.0.0.1
 HOSTNAME=127.0.0.1
 DEV=true
@@ -41,7 +40,7 @@ bun run serve
 bun run serve --full
 \`\`\`
 
-The bundled output is written to \`dist/\`.
+The bundled output is written to \`dist/\`. \`bun run serve --full\` serves the frontend and backend on the same port.
 `,
     'amplify.yml': `version: 1
 frontend:
