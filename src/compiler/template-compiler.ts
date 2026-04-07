@@ -242,10 +242,10 @@ export default class Yon {
                 return titleState.value
             },
             restore() {
-                if (previousDocument === undefined) delete globalThis.document
+                if (previousDocument === undefined) Reflect.deleteProperty(globalThis as Record<string, unknown>, 'document')
                 else Object.assign(globalThis, { document: previousDocument })
 
-                if (previousWindow === undefined) delete globalThis.window
+                if (previousWindow === undefined) Reflect.deleteProperty(globalThis as Record<string, unknown>, 'window')
                 else Object.assign(globalThis, { window: previousWindow })
             }
         }

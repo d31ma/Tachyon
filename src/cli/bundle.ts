@@ -287,7 +287,7 @@ if (!watchMode) {
 
     let pendingChange: ChangeKind | null = null
 
-    const mergeChanges = (current: ChangeKind | null, next: ChangeKind) => {
+    const mergeChanges = (current: ChangeKind | null, next: ChangeKind): ChangeKind => {
         if (!current) return next
         if (current.type === 'full' || next.type === 'full') return { type: 'full', relative: next.relative }
         if (current.type === next.type && current.relative === next.relative) return current
@@ -318,7 +318,11 @@ if (!watchMode) {
                 building = false
                 if (queued) {
                     queued = false
-                    schedule()
+                    pendingChange = mergeChanges(
+                        pendingChange,
+                        { type: 'full', relative: 'queued-change' }
+                    )
+                    schedule(process.cwd(), 'change')
                 }
             }
         }, WATCH_DEBOUNCE_MS)
