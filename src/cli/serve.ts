@@ -6,7 +6,9 @@ import Yon from "../compiler/template-compiler.js"
 import "../server/console-logger.js"
 import { watch } from "fs"
 import { access } from "fs/promises"
+import path from "node:path"
 import type { Middleware } from "../server/route-handler.js"
+import { serveStaticPreviewRequest } from "../runtime/static-preview.js"
 
 /** Debounce delay (ms) applied to file-watcher events before triggering an HMR reload */
 const HMR_DEBOUNCE_MS = 1000
@@ -15,7 +17,8 @@ const fullModeEnabled = process.argv.includes('--full')
 
 const start = Date.now()
 let bundleWatcher: Bun.Subprocess | null = null
-let previewWatcher: Bun.Subprocess | null = null
+const distPath = path.join(process.cwd(), 'dist')
+const bundleCliPath = `${import.meta.dir}/bundle.ts`
 
 async function pathExists(path: string): Promise<boolean> {
     try { await access(path); return true } catch { return false }
@@ -46,39 +49,35 @@ async function configureRoutes(isReload = false) {
     await Router.validateRoutes()
     Tach.createServerRoutes()
     Pool.prewarmAllHandlers()
-    await Yon.createStaticRoutes()
+    if (!fullModeEnabled) {
+        await Yon.createStaticRoutes()
+    }
+}
+
+if (fullModeEnabled) {
+    const { runBuild } = await import('./bundle.js')
+    await runBuild()
+    Router.resetStaticState()
 }
 
 await configureRoutes()
 
-if (bundleWatchEnabled) {
-    bundleWatcher = Bun.spawn(
-        ['bun', `${import.meta.dir}/bundle.ts`, '--watch'],
-        {
-            cwd: process.cwd(),
-            stdout: 'inherit',
-            stderr: 'inherit'
-        }
-    )
+if (bundleWatchEnabled || fullModeEnabled) {
+    bundleWatcher = Bun.spawn(['bun', bundleCliPath, '--watch'], {
+        cwd: process.cwd(),
+        stdout: 'inherit',
+        stderr: 'inherit'
+    })
 }
 
 if (fullModeEnabled) {
-    const previewPort = process.env.PREVIEW_PORT || '3000'
-    const previewHost = process.env.PREVIEW_HOST || process.env.HOST || process.env.HOSTNAME || '127.0.0.1'
-
-    previewWatcher = Bun.spawn(
-        ['bun', `${import.meta.dir}/preview.ts`, '--watch'],
-        {
-            cwd: process.cwd(),
-            env: {
-                ...process.env,
-                PORT: previewPort,
-                HOST: previewHost,
-            },
-            stdout: 'inherit',
-            stderr: 'inherit'
-        }
-    )
+    Tach.setFrontendRequestHandler((request) => serveStaticPreviewRequest(
+        distPath,
+        request,
+        { allowRootFallback: false }
+    ))
+} else {
+    Tach.setFrontendRequestHandler(null)
 }
 
 let debounceTimer: Timer
@@ -87,6 +86,10 @@ const server = Bun.serve({
     idleTimeout: process.env.TIMEOUT ? Number(process.env.TIMEOUT) : 0,
 
     fetch(req, server) {
+        if (fullModeEnabled) {
+            return serveStaticPreviewRequest(distPath, req, { allowRootFallback: true })
+                .then((response) => response ?? new Response("Not Found", { status: 404 }))
+        }
 
         if (new URL(req.url).pathname !== "/hmr") {
             return new Response("Not Found", { status: 404 })
@@ -129,7 +132,6 @@ process.on('SIGINT', () => {
     clearTimeout(debounceTimer)
     Pool.clearWarmedProcesses()
     bundleWatcher?.kill()
-    previewWatcher?.kill()
     server.stop()
     process.exit(0)
 })
@@ -138,7 +140,6 @@ process.on('SIGTERM', () => {
     clearTimeout(debounceTimer)
     Pool.clearWarmedProcesses()
     bundleWatcher?.kill()
-    previewWatcher?.kill()
     server.stop()
     process.exit(0)
 })

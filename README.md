@@ -289,9 +289,7 @@ bun run serve --full
 - `bun run bundle` builds the app into `dist/`
 - `bun run preview` serves `dist/` and rebuilds it when frontend files change
 - `bun run serve` starts the Tachyon app server only
-- `bun run serve --full` starts the app server and the frontend preview together
-
-By default, `serve --full` uses `PORT` for the app server and `PREVIEW_PORT` for the preview server. `PREVIEW_PORT` defaults to `3000`.
+- `bun run serve --full` serves the frontend bundle and backend API routes from the same port
 
 ### Template Syntax
 
@@ -409,7 +407,7 @@ If you are building a full-stack Tachyon app and want the app server plus the fr
 tach.serve --full
 ```
 
-That runs the normal Tachyon dev server and a background frontend preview process together.
+That runs the normal Tachyon dev server while also serving the bundled frontend from `dist/` on the same port. Browser-style `Accept: text/html` requests receive the frontend, while API-style requests still hit the route handlers.
 If you only need the static frontend preview workflow, `tach.preview --watch` is the simpler option.
 
 ### Static Hosting

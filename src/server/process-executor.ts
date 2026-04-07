@@ -8,6 +8,9 @@ import './console-logger.js'
 export default class Tach {
 
     private static readonly STREAM_MIME_TYPE = "text/event-stream"
+    private static frontendRequestHandler:
+        | ((request: BunRequest) => Promise<Response | null>)
+        | null = null
 
     /**
      * Shared decoder instance — safe to reuse since we call decode() without
@@ -130,6 +133,12 @@ export default class Tach {
         return timingSafeEqual(a, b)
     }
 
+    static setFrontendRequestHandler(
+        handler: ((request: BunRequest) => Promise<Response | null>) | null
+    ) {
+        Tach.frontendRequestHandler = handler
+    }
+
     private static async serveRequest(
         handler:  string,
         stdin:    RequestPayload,
@@ -245,6 +254,9 @@ export default class Tach {
 
                 try {
                     if (request!.headers.get('accept')?.includes('text/html')) {
+                        const frontendResponse = await Tach.frontendRequestHandler?.(request!)
+                        if (frontendResponse) return frontendResponse
+
                         return new Response(
                             await Bun.file(`${import.meta.dir}/../runtime/shells/development.html`).text(),
                             { status: 200, headers: { 'Content-Type': 'text/html' } }
