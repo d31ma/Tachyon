@@ -1,6 +1,8 @@
 import Router from "../server/route-handler.js";
 import { BunRequest } from 'bun';
-import { exists } from 'node:fs/promises';
+import { exists, mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 interface ParsedElement {
     static?: string;
@@ -17,6 +19,7 @@ const TEMPLATE_PATH = `${import.meta.dir}/render-template.js`;
 const ROUTES_JSON_PATH = `${import.meta.dir}/../runtime/route-manifest.json`;
 const LAYOUTS_JSON_PATH = `${import.meta.dir}/../runtime/layout-manifest.json`;
 const NOT_FOUND_PATH = `${import.meta.dir}/../runtime/shells/not-found.html`;
+const PRODUCTION_SHELL_PATH = `${import.meta.dir}/../runtime/shells/production.html`;
 
 const jsResponse = (body: BodyInit) =>
     new Response(body, { headers: { 'Content-Type': 'application/javascript' } });
@@ -51,6 +54,8 @@ export default class Yon {
         'feimage', 'femerge', 'femergenode', 'femorphology', 'feoffset', 'fepointlight',
         'fespecularlighting', 'fespotlight', 'fetile', 'feturbulence'
     ])
+
+    private static readonly routeTitleFallback = "Tachyon"
 
     static getParams(request: BunRequest, route: string) {
         const url = new URL(request.url)
@@ -121,6 +126,235 @@ export default class Yon {
             Bun.write(Bun.file(ROUTES_JSON_PATH), JSON.stringify(Router.routeSlugs)),
             Bun.write(Bun.file(LAYOUTS_JSON_PATH), JSON.stringify(Yon.layoutMapping))
         ])
+    }
+
+    private static normalizeScopedStyles(html: string) {
+        return html.replace(/<style>([\s\S]*?)<\/style>/g, (_match, css: string) => {
+            const trimmed = css.trim();
+
+            if (trimmed === "@scope {  }" || trimmed === "@scope {}") {
+                return "";
+            }
+
+            if (trimmed.startsWith("@scope {") && trimmed.endsWith("}")) {
+                const inner = trimmed.slice("@scope {".length, -1).trim();
+                return `<style>${inner}</style>`;
+            }
+
+            return `<style>${css}</style>`;
+        });
+    }
+
+    private static escapeHTML(value: string) {
+        return value
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+    }
+
+    private static resolveLayout(pathname: string): string | null {
+        if (pathname !== '/') {
+            const segments = pathname.split('/').filter(Boolean)
+            for (let count = segments.length; count > 0; count -= 1) {
+                const prefix = `/${segments.slice(0, count).join('/')}`
+                if (Yon.layoutMapping[prefix]) return Yon.layoutMapping[prefix]
+            }
+        }
+
+        return Yon.layoutMapping['/'] ?? null
+    }
+
+    private static async rewriteAbsoluteImports(filePath: string, distPath: string) {
+        const source = await readFile(filePath, 'utf8')
+        const fileDir = path.dirname(filePath)
+
+        const rewritten = source.replace(
+            /import\("(?<spec>\/(?:components|modules)\/[^"]+)"\)/g,
+            (_match, spec: string) => {
+                const relative = path.relative(fileDir, path.join(distPath, spec.slice(1))).replaceAll(path.sep, '/')
+                const normalized = relative.startsWith('.') ? relative : `./${relative}`
+                return `import("${normalized}")`
+            }
+        )
+
+        if (rewritten !== source) await writeFile(filePath, rewritten)
+    }
+
+    private static installPrerenderGlobals() {
+        const previousDocument = globalThis.document
+        const previousWindow = globalThis.window
+
+        const titleState = { value: '' }
+        const documentStub = {
+            title: '',
+            head: {
+                appendChild() { return null }
+            },
+            body: {
+                appendChild() { return null }
+            },
+            documentElement: {
+                dataset: {} as Record<string, string>,
+                style: {} as Record<string, string>,
+                classList: {
+                    add() {},
+                    remove() {},
+                    toggle() { return false }
+                },
+                setAttribute(name: string, value: string) {
+                    this.dataset[name] = value
+                },
+                removeAttribute(name: string) {
+                    delete this.dataset[name]
+                }
+            },
+            createElement() {
+                return {
+                    setAttribute() {},
+                    appendChild() {},
+                    rel: '',
+                    type: '',
+                    href: ''
+                }
+            }
+        }
+
+        Object.defineProperty(documentStub, 'title', {
+            configurable: true,
+            enumerable: true,
+            get() {
+                return titleState.value
+            },
+            set(value: string) {
+                titleState.value = String(value)
+            }
+        })
+
+        Object.assign(globalThis, {
+            document: documentStub,
+            window: globalThis
+        })
+
+        return {
+            get title() {
+                return titleState.value
+            },
+            restore() {
+                if (previousDocument === undefined) Reflect.deleteProperty(globalThis as Record<string, unknown>, 'document')
+                else Object.assign(globalThis, { document: previousDocument })
+
+                if (previousWindow === undefined) Reflect.deleteProperty(globalThis as Record<string, unknown>, 'window')
+                else Object.assign(globalThis, { window: previousWindow })
+            }
+        }
+    }
+
+    private static async renderPageDocument(
+        distPath: string,
+        pathname: string,
+        shellHTML: string
+    ) {
+        const pageFile = pathname === '/'
+            ? path.join(distPath, 'pages', 'HTML.js')
+            : path.join(distPath, 'pages', pathname.slice(1), 'HTML.js')
+
+        await Yon.rewriteAbsoluteImports(pageFile, distPath)
+
+        const layoutRoute = Yon.resolveLayout(pathname)
+        const layoutFile = layoutRoute
+            ? path.join(distPath, layoutRoute.slice(1))
+            : null
+
+        if (layoutFile) await Yon.rewriteAbsoluteImports(layoutFile, distPath)
+
+        const prerender = Yon.installPrerenderGlobals()
+
+        try {
+            const pageModule = await import(pathToFileURL(pageFile).href)
+            const pageFactory = await pageModule.default()
+            const pageHTML = await pageFactory()
+
+            let layoutHTML = ''
+
+            if (layoutFile) {
+                const layoutModule = await import(pathToFileURL(layoutFile).href)
+                const layoutFactory = await layoutModule.default()
+                layoutHTML = await layoutFactory()
+            }
+
+            const bodyHTML = layoutHTML
+                ? layoutHTML.replace('<div id="ty-layout-slot"></div>', `<div id="ty-layout-slot">${pageHTML}</div>`)
+                : pageHTML
+
+            const title = Yon.escapeHTML(prerender.title || Yon.routeTitleFallback)
+            const withTitle = shellHTML.replace(/<title>.*?<\/title>/, `<title>${title}</title>`)
+            const withBody = withTitle.replace('<body></body>', `<body>${bodyHTML}</body>`)
+            return `${Yon.normalizeScopedStyles(withBody)}\n`
+        } finally {
+            prerender.restore()
+        }
+    }
+
+    static async prerenderStaticPages(distPath: string) {
+        const htmlRoutes = Yon.getHtmlRoutes()
+        await Yon.prerenderRoutes(distPath, htmlRoutes)
+    }
+
+    static getHtmlRoutes() {
+        return Array
+            .from(Router.allRoutes.entries())
+            .filter(([, methods]) => methods.has(Yon.htmlMethod))
+            .map(([route]) => route)
+    }
+
+    static async prerenderRoutes(distPath: string, routes: string[]) {
+        const shellHTML = await Bun.file(PRODUCTION_SHELL_PATH).text()
+
+        for (const route of routes) {
+            const outputFile = route === '/'
+                ? path.join(distPath, 'index.html')
+                : path.join(distPath, route.slice(1), 'index.html')
+
+            const html = await Yon.renderPageDocument(distPath, route, shellHTML)
+            await mkdir(path.dirname(outputFile), { recursive: true })
+            await writeFile(outputFile, html)
+        }
+    }
+
+    static async bundlePageFile(route: string) {
+        await Router.validateRoute(route)
+        const data = await Yon.extractComponents(await Bun.file(`${Router.routesPath}/${route}`).text())
+        await Yon.registerModule(data, `${route}.${data.scriptLang || 'js'}`, 'pages')
+    }
+
+    static async bundleLayoutFile(layout: string) {
+        const prefix = layout === Yon.layoutMethod ? '/' : `/${layout.replace(`/${Yon.layoutMethod}`, '')}`
+        const data = await Yon.extractComponents(await Bun.file(`${Router.routesPath}/${layout}`).text())
+        const layoutRoute = layout === Yon.layoutMethod ? Yon.layoutMethod : layout
+        await Yon.registerModule(data, `${layoutRoute}.${data.scriptLang || 'js'}`, 'layouts')
+        Yon.layoutMapping[prefix] = `/layouts/${layoutRoute}.js`
+    }
+
+    static async bundleComponentFile(comp: string) {
+        const componentName = Yon.normalizeComponentName(comp)
+        const modulePath = comp.replace('.html', '.js')
+
+        if (Yon.compMapping.has(componentName) && Yon.compMapping.get(componentName) !== modulePath) {
+            throw new Error(`Duplicate component name '${componentName}' for '${comp}' and '${Yon.compMapping.get(componentName)}'`)
+        }
+
+        Yon.compMapping.set(componentName, modulePath)
+        const data = await Yon.extractComponents(await Bun.file(`${Router.componentsPath}/${comp}`).text())
+        await Yon.registerModule(data, comp, 'components')
+    }
+
+    static async bundleAssetFile(route: string) {
+        const file = Bun.file(`${Router.assetsPath}/${route}`)
+        Router.reqRoutes[`/assets/${route}`] = {
+            GET: async () => new Response(await file.bytes(), { headers: { 'Content-Type': file.type } })
+        }
     }
 
     // ── Template extraction ────────────────────────────────────────────────────
@@ -385,9 +619,7 @@ export default class Yon {
     private static async bundlePages() {
         if (await exists(Router.routesPath)) {
             for (const route of new Bun.Glob(`**/${Yon.htmlMethod}`).scanSync({ cwd: Router.routesPath })) {
-                await Router.validateRoute(route);
-                const data = await Yon.extractComponents(await Bun.file(`${Router.routesPath}/${route}`).text());
-                await Yon.registerModule(data, `${route}.${data.scriptLang || 'js'}`, 'pages');
+                await Yon.bundlePageFile(route);
             }
         }
 
@@ -404,11 +636,7 @@ export default class Yon {
         if (!await exists(Router.routesPath)) return;
 
         for (const layout of new Bun.Glob(`**/${Yon.layoutMethod}`).scanSync({ cwd: Router.routesPath })) {
-            const prefix = layout === Yon.layoutMethod ? '/' : `/${layout.replace(`/${Yon.layoutMethod}`, '')}`;
-            const data = await Yon.extractComponents(await Bun.file(`${Router.routesPath}/${layout}`).text());
-            const layoutRoute = layout === Yon.layoutMethod ? Yon.layoutMethod : layout;
-            await Yon.registerModule(data, `${layoutRoute}.${data.scriptLang || 'js'}`, 'layouts');
-            Yon.layoutMapping[prefix] = `/layouts/${layoutRoute}.js`;
+            await Yon.bundleLayoutFile(layout);
         }
     }
 
@@ -416,16 +644,7 @@ export default class Yon {
         if (!await exists(Router.componentsPath)) return;
 
         for (const comp of new Bun.Glob('**/*.html').scanSync({ cwd: Router.componentsPath })) {
-            const componentName = Yon.normalizeComponentName(comp);
-            const modulePath = comp.replace('.html', '.js');
-
-            if (Yon.compMapping.has(componentName) && Yon.compMapping.get(componentName) !== modulePath) {
-                throw new Error(`Duplicate component name '${componentName}' for '${comp}' and '${Yon.compMapping.get(componentName)}'`)
-            }
-
-            Yon.compMapping.set(componentName, modulePath);
-            const data = await Yon.extractComponents(await Bun.file(`${Router.componentsPath}/${comp}`).text());
-            await Yon.registerModule(data, comp, 'components');
+            await Yon.bundleComponentFile(comp);
         }
     }
 

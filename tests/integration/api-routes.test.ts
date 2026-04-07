@@ -1,10 +1,11 @@
-import { test, beforeAll, expect, describe } from 'bun:test'
+import { test, beforeAll, afterAll, expect, describe } from 'bun:test'
 
 /** Base URL for the local test server */
-const BASE_URL = 'http://localhost:8080'
+const TEST_PORT = '18080'
+const BASE_URL = `http://localhost:${TEST_PORT}`
 
-/** Time to wait for the worker server to finish starting up */
-const STARTUP_DELAY_MS = 1000
+/** Time to wait for the test server to finish starting up */
+const STARTUP_TIMEOUT_MS = 10_000
 
 /**
  * Basic auth credentials for tests.
@@ -13,6 +14,10 @@ const STARTUP_DELAY_MS = 1000
  */
 const TEST_BASIC_AUTH = process.env.TEST_BASIC_AUTH ?? 'admin:pass'
 const AUTH_HEADER = `Basic ${btoa(TEST_BASIC_AUTH)}`
+let serverProcess: Bun.Subprocess | null = null
+const PROJECT_ROOT = `${import.meta.dir}/../..`
+const EXAMPLES_DIR = `${PROJECT_ROOT}/examples`
+const SERVE_SCRIPT = `${PROJECT_ROOT}/src/cli/serve.ts`
 
 /** Returns headers record with Authorization pre-set */
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -28,8 +33,42 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 }
 
 beforeAll(async () => {
-    new Worker('./tests/integration/server-worker.ts').postMessage({ script: './src/cli/serve.ts', cwd: './examples' })
-    await Bun.sleep(STARTUP_DELAY_MS)
+    serverProcess = Bun.spawn(['bun', SERVE_SCRIPT], {
+        cwd: EXAMPLES_DIR,
+        env: {
+            ...process.env,
+            PORT: TEST_PORT,
+            HOSTNAME: '127.0.0.1',
+            BASIC_AUTH: TEST_BASIC_AUTH,
+        },
+        stdout: 'inherit',
+        stderr: 'inherit'
+    })
+
+    const startedAt = Date.now()
+
+    while (Date.now() - startedAt < STARTUP_TIMEOUT_MS) {
+        if (serverProcess.exitCode !== null) {
+            throw new Error(`Test server exited early with code ${serverProcess.exitCode}`)
+        }
+
+        try {
+            const response = await fetch(`${BASE_URL}/routes.json`)
+            if (response.ok) return
+        } catch {
+            // Server is still starting.
+        }
+
+        await Bun.sleep(200)
+    }
+
+    throw new Error(`Timed out waiting for test server on ${BASE_URL}`)
+})
+
+afterAll(async () => {
+    serverProcess?.kill()
+    await Bun.sleep(200)
+    serverProcess = null
 })
 
 // ===========================================================================

@@ -10,8 +10,10 @@ import type { Middleware } from "../server/route-handler.js"
 
 /** Debounce delay (ms) applied to file-watcher events before triggering an HMR reload */
 const HMR_DEBOUNCE_MS = 1000
+const bundleWatchEnabled = process.argv.includes('--bundle-watch')
 
 const start = Date.now()
+let bundleWatcher: Bun.Subprocess | null = null
 
 async function pathExists(path: string): Promise<boolean> {
     try { await access(path); return true } catch { return false }
@@ -46,6 +48,17 @@ async function configureRoutes(isReload = false) {
 }
 
 await configureRoutes()
+
+if (bundleWatchEnabled) {
+    bundleWatcher = Bun.spawn(
+        ['bun', `${import.meta.dir}/bundle.ts`, '--watch'],
+        {
+            cwd: process.cwd(),
+            stdout: 'inherit',
+            stderr: 'inherit'
+        }
+    )
+}
 
 let debounceTimer: Timer
 
@@ -94,6 +107,7 @@ console.info(`Server running on http://${server.hostname}:${server.port} — sta
 process.on('SIGINT', () => {
     clearTimeout(debounceTimer)
     Pool.clearWarmedProcesses()
+    bundleWatcher?.kill()
     server.stop()
     process.exit(0)
 })
@@ -101,6 +115,7 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
     clearTimeout(debounceTimer)
     Pool.clearWarmedProcesses()
+    bundleWatcher?.kill()
     server.stop()
     process.exit(0)
 })

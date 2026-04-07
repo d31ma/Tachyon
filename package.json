@@ -1,6 +1,6 @@
 {
     "name": "@delma/tachyon",
-    "version": "1.5.2",
+  "version": "1.6.0",
     "description": "A polyglot, file-system-routed full-stack framework for Bun",
     "author": "Chidelma",
     "license": "MIT",
@@ -12,12 +12,17 @@
         "./compiler": "./src/compiler/template-compiler.ts"
     },
     "bin": {
+        "tach.init": "./src/cli/init.ts",
         "tach.serve": "./src/cli/serve.ts",
-        "tach.bundle": "./src/cli/bundle.ts"
+        "tach.bundle": "./src/cli/bundle.ts",
+        "tach.preview": "./src/cli/preview.ts"
     },
     "scripts": {
+        "init": "bun src/cli/init.ts",
         "start": "bun src/cli/serve.ts",
         "bundle": "bun src/cli/bundle.ts",
+        "bundle:watch": "bun src/cli/bundle.ts --watch",
+        "preview": "bun src/cli/preview.ts",
         "typecheck": "tsc --noEmit",
         "test": "bun test"
     },
