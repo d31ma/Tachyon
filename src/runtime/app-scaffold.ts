@@ -1,7 +1,7 @@
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const version = '1.5.2'
+const version = '1.7.0'
 
 const files = {
     '.gitignore': `node_modules
@@ -10,6 +10,8 @@ dist
 .DS_Store
 `,
     '.env.example': `PORT=8000
+PREVIEW_PORT=3000
+HOST=127.0.0.1
 HOSTNAME=127.0.0.1
 DEV=true
 `,
@@ -18,9 +20,9 @@ DEV=true
         private: true,
         type: 'module',
         scripts: {
-            start: 'tach.serve',
+            serve: 'tach.serve',
             bundle: 'tach.bundle',
-            preview: 'tach.preview',
+            preview: 'tach.preview --watch',
             test: 'bun test'
         },
         devDependencies: {
@@ -33,9 +35,10 @@ DEV=true
 
 \`\`\`bash
 bun install
-bun run start
 bun run bundle
 bun run preview
+bun run serve
+bun run serve --full
 \`\`\`
 
 The bundled output is written to \`dist/\`.

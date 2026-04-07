@@ -20,6 +20,7 @@ const ROUTES_JSON_PATH = `${import.meta.dir}/../runtime/route-manifest.json`;
 const LAYOUTS_JSON_PATH = `${import.meta.dir}/../runtime/layout-manifest.json`;
 const NOT_FOUND_PATH = `${import.meta.dir}/../runtime/shells/not-found.html`;
 const PRODUCTION_SHELL_PATH = `${import.meta.dir}/../runtime/shells/production.html`;
+const PRERENDER_WORKER_PATH = `${import.meta.dir}/../runtime/prerender-worker.ts`;
 
 const jsResponse = (body: BodyInit) =>
     new Response(body, { headers: { 'Content-Type': 'application/javascript' } });
@@ -31,6 +32,8 @@ export default class Yon {
 
     private static readonly htmlMethod = 'HTML'
     private static readonly layoutMethod = 'LAYOUT'
+    private static readonly prerenderRenderConcurrency = 4
+    private static readonly prerenderWriteConcurrency = 8
     private static readonly compMapping = new Map<string, string>()
     private static layoutMapping: Record<string, string> = {}
     private static readonly nativeTags = new Set([
@@ -297,6 +300,55 @@ export default class Yon {
         }
     }
 
+    static async renderPageDocumentForWorker(
+        distPath: string,
+        pathname: string,
+        shellHTML: string,
+        layoutMapping: Record<string, string>
+    ) {
+        const previousLayoutMapping = Yon.layoutMapping
+        Yon.layoutMapping = { ...layoutMapping }
+
+        try {
+            return await Yon.renderPageDocument(distPath, pathname, shellHTML)
+        } finally {
+            Yon.layoutMapping = previousLayoutMapping
+        }
+    }
+
+    private static async renderPageDocumentIsolated(
+        distPath: string,
+        pathname: string,
+        shellHTML: string
+    ) {
+        const proc = Bun.spawn(['bun', PRERENDER_WORKER_PATH], {
+            cwd: process.cwd(),
+            stdin: 'pipe',
+            stdout: 'pipe',
+            stderr: 'pipe',
+        })
+
+        proc.stdin.write(JSON.stringify({
+            distPath,
+            pathname,
+            shellHTML,
+            layoutMapping: Yon.layoutMapping,
+        }))
+        proc.stdin.end()
+
+        const [stdout, stderr, exitCode] = await Promise.all([
+            new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
+            proc.exited,
+        ])
+
+        if (exitCode !== 0) {
+            throw new Error(stderr.trim() || `Prerender worker exited with code ${exitCode}`)
+        }
+
+        return stdout
+    }
+
     static async prerenderStaticPages(distPath: string) {
         const htmlRoutes = Yon.getHtmlRoutes()
         await Yon.prerenderRoutes(distPath, htmlRoutes)
@@ -311,16 +363,42 @@ export default class Yon {
 
     static async prerenderRoutes(distPath: string, routes: string[]) {
         const shellHTML = await Bun.file(PRODUCTION_SHELL_PATH).text()
+        const renderedRoutes: Array<{ outputFile: string; html: string }> = []
+        let renderIndex = 0
+        const renderWorkers = Array.from(
+            { length: Math.min(Yon.prerenderRenderConcurrency, routes.length) },
+            async () => {
+                while (renderIndex < routes.length) {
+                    const currentIndex = renderIndex++
+                    const route = routes[currentIndex]
+                    const outputFile = route === '/'
+                        ? path.join(distPath, 'index.html')
+                        : path.join(distPath, route.slice(1), 'index.html')
 
-        for (const route of routes) {
-            const outputFile = route === '/'
-                ? path.join(distPath, 'index.html')
-                : path.join(distPath, route.slice(1), 'index.html')
+                    const html = routes.length === 1
+                        ? await Yon.renderPageDocument(distPath, route, shellHTML)
+                        : await Yon.renderPageDocumentIsolated(distPath, route, shellHTML)
 
-            const html = await Yon.renderPageDocument(distPath, route, shellHTML)
-            await mkdir(path.dirname(outputFile), { recursive: true })
-            await writeFile(outputFile, html)
-        }
+                    renderedRoutes[currentIndex] = { outputFile, html }
+                }
+            }
+        )
+
+        await Promise.all(renderWorkers)
+
+        let index = 0
+        const workers = Array.from(
+            { length: Math.min(Yon.prerenderWriteConcurrency, renderedRoutes.length) },
+            async () => {
+                while (index < renderedRoutes.length) {
+                    const current = renderedRoutes[index++]
+                    await mkdir(path.dirname(current.outputFile), { recursive: true })
+                    await writeFile(current.outputFile, current.html)
+                }
+            }
+        )
+
+        await Promise.all(workers)
     }
 
     static async bundlePageFile(route: string) {

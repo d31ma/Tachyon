@@ -27,23 +27,14 @@ bun add @delma/tachyon
 ## Quick Start
 
 ```bash
-# Start the development server (expects routes/ in the current directory)
-tach.serve
-
-# Start the dev server and keep dist/ refreshed for frontend/static preview work
-tach.serve --bundle-watch
-
 # Scaffold a new app
 tach.init my-app
 
-# Build front-end assets into dist/ and prerender HTML routes
-tach.bundle
-
-# Rebuild dist/ automatically while source files change
-tach.bundle --watch
-
-# Preview the built dist/ output locally
-tach.preview
+# In a Tachyon app:
+bun run bundle
+bun run preview
+bun run serve
+bun run serve --full
 ```
 
 Or via npm scripts if you declare them in your own `package.json`:
@@ -51,8 +42,9 @@ Or via npm scripts if you declare them in your own `package.json`:
 ```json
 {
   "scripts": {
-    "start":  "tach.serve",
-    "bundle": "tach.bundle"
+    "bundle": "tach.bundle",
+    "preview": "tach.preview --watch",
+    "serve": "tach.serve"
   }
 }
 ```
@@ -63,7 +55,7 @@ Or via npm scripts if you declare them in your own `package.json`:
 bunx @delma/tachyon tach.init my-app
 cd my-app
 bun install
-bun run start
+bun run serve
 ```
 
 `tach.init` creates a starter project with:
@@ -73,7 +65,7 @@ bun run start
 - `main.js`
 - `.env.example`
 - `amplify.yml`
-- `package.json` scripts for `start`, `bundle`, and `preview`
+- `package.json` scripts for `serve`, `bundle`, and `preview`
 
 ## Configuration
 
@@ -275,7 +267,31 @@ To preview the generated `dist/` output locally, run:
 tach.preview
 ```
 
+To serve `dist/` and keep rebuilding it from frontend source changes in one command, run:
+
+```bash
+tach.preview --watch
+```
+
 `tach.preview` serves exact bundle assets such as `/main.js` and also resolves nested route files like `/docs` to `dist/docs/index.html`.
+
+## Development Commands
+
+In a scaffolded Tachyon app, the recommended commands are:
+
+```bash
+bun run bundle
+bun run preview
+bun run serve
+bun run serve --full
+```
+
+- `bun run bundle` builds the app into `dist/`
+- `bun run preview` serves `dist/` and rebuilds it when frontend files change
+- `bun run serve` starts the Tachyon app server only
+- `bun run serve --full` starts the app server and the frontend preview together
+
+By default, `serve --full` uses `PORT` for the app server and `PREVIEW_PORT` for the preview server. `PREVIEW_PORT` defaults to `3000`.
 
 ### Template Syntax
 
@@ -365,6 +381,12 @@ To preview the built output locally:
 tach.preview
 ```
 
+To serve `dist/` and keep it rebuilding from source changes in one command:
+
+```bash
+tach.preview --watch
+```
+
 If you want to serve `dist/` with Bun's HTML/static tooling during development, keep the bundle fresh with:
 
 ```bash
@@ -381,13 +403,14 @@ That watch mode rebuilds `dist/` when files change in:
 
 This is the mode to pair with a static server that watches `dist/`.
 
-If you are building a full-stack Tachyon app but also want `dist/` kept up to date for frontend previewing, use:
+If you are building a full-stack Tachyon app and want the app server plus the frontend preview together, use:
 
 ```bash
-tach.serve --bundle-watch
+tach.serve --full
 ```
 
-That runs the normal Tachyon dev server and a background bundle watcher together.
+That runs the normal Tachyon dev server and a background frontend preview process together.
+If you only need the static frontend preview workflow, `tach.preview --watch` is the simpler option.
 
 ### Static Hosting
 
