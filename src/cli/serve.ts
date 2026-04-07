@@ -55,7 +55,7 @@ async function configureRoutes(isReload = false) {
 }
 
 if (fullModeEnabled) {
-    const { runBuild } = await import('./bundle.ts')
+    const { runBuild } = await import('./bundle.js')
     await runBuild()
     Router.resetStaticState()
 }
