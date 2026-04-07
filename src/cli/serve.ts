@@ -11,9 +11,11 @@ import type { Middleware } from "../server/route-handler.js"
 /** Debounce delay (ms) applied to file-watcher events before triggering an HMR reload */
 const HMR_DEBOUNCE_MS = 1000
 const bundleWatchEnabled = process.argv.includes('--bundle-watch')
+const fullModeEnabled = process.argv.includes('--full')
 
 const start = Date.now()
 let bundleWatcher: Bun.Subprocess | null = null
+let previewWatcher: Bun.Subprocess | null = null
 
 async function pathExists(path: string): Promise<boolean> {
     try { await access(path); return true } catch { return false }
@@ -60,6 +62,25 @@ if (bundleWatchEnabled) {
     )
 }
 
+if (fullModeEnabled) {
+    const previewPort = process.env.PREVIEW_PORT || '3000'
+    const previewHost = process.env.PREVIEW_HOST || process.env.HOST || process.env.HOSTNAME || '127.0.0.1'
+
+    previewWatcher = Bun.spawn(
+        ['bun', `${import.meta.dir}/preview.ts`, '--watch'],
+        {
+            cwd: process.cwd(),
+            env: {
+                ...process.env,
+                PORT: previewPort,
+                HOST: previewHost,
+            },
+            stdout: 'inherit',
+            stderr: 'inherit'
+        }
+    )
+}
+
 let debounceTimer: Timer
 
 const server = Bun.serve({
@@ -98,7 +119,7 @@ const server = Bun.serve({
 
     routes:      Router.reqRoutes,
     port:        process.env.PORT     || 8080,
-    hostname:    process.env.HOSTNAME || '0.0.0.0',
+    hostname:    process.env.HOST || process.env.HOSTNAME || '0.0.0.0',
     development: !!process.env.DEV,
 })
 
@@ -108,6 +129,7 @@ process.on('SIGINT', () => {
     clearTimeout(debounceTimer)
     Pool.clearWarmedProcesses()
     bundleWatcher?.kill()
+    previewWatcher?.kill()
     server.stop()
     process.exit(0)
 })
@@ -116,6 +138,7 @@ process.on('SIGTERM', () => {
     clearTimeout(debounceTimer)
     Pool.clearWarmedProcesses()
     bundleWatcher?.kill()
+    previewWatcher?.kill()
     server.stop()
     process.exit(0)
 })

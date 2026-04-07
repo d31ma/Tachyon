@@ -38,7 +38,7 @@ export async function createStaticPreviewServer(
 ) {
     const server = Bun.serve({
         port: options.port ?? Number(process.env.PORT || 3000),
-        hostname: options.hostname ?? process.env.HOSTNAME ?? '0.0.0.0',
+        hostname: options.hostname ?? process.env.HOST ?? '127.0.0.1',
         async fetch(req) {
             const url = new URL(req.url)
             const filePath = await resolvePreviewFile(distPath, url.pathname)

@@ -1,6 +1,11 @@
 {
   "name": "tachyon-examples",
   "private": true,
+  "scripts": {
+    "bundle": "bun ../src/cli/bundle.ts",
+    "preview": "bun ../src/cli/preview.ts --watch",
+    "serve": "bun ../src/cli/serve.ts"
+  },
   "dependencies": {
     "dayjs": "^1.11.13"
   }

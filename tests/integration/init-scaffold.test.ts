@@ -23,7 +23,8 @@ test('createAppScaffold writes a deployable starter app', async () => {
     const layout = await readFile(path.join(appDir, 'routes', 'LAYOUT'), 'utf8')
     const amplify = await readFile(path.join(appDir, 'amplify.yml'), 'utf8')
 
-    expect(packageJson).toContain('"preview": "tach.preview"')
+    expect(packageJson).toContain('"serve": "tach.serve"')
+    expect(packageJson).toContain('"preview": "tach.preview --watch"')
     expect(packageJson).toContain('"@delma/tachyon"')
     expect(homePage).toContain('<hero />')
     expect(layout).toContain('<slot />')

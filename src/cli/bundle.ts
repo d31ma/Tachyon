@@ -9,8 +9,43 @@ import path from "node:path"
 const distPath = `${process.cwd()}/dist`
 const watchMode = process.argv.includes('--watch')
 const WATCH_DEBOUNCE_MS = 200
+const BUILD_CONCURRENCY = 8
 
-async function runBuild() {
+async function runWithConcurrency<T>(
+    items: T[],
+    limit: number,
+    worker: (item: T) => Promise<void>
+) {
+    if (items.length === 0) return
+
+    let index = 0
+
+    const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (index < items.length) {
+            const current = items[index++]
+            await worker(current)
+        }
+    })
+
+    await Promise.all(runners)
+}
+
+async function buildRouteOutput(route: string) {
+    // Skip the HMR script — it is a dev-only asset
+    if (route.includes('hot-reload-client')) return
+
+    const handler = Router.reqRoutes[route]?.GET
+    if (!handler) return
+
+    try {
+        const res = await handler()
+        await Bun.write(Bun.file(`${distPath}${route}`), await res.blob())
+    } catch (err) {
+        console.error(`Failed to build route ${route}: ${(err as Error).message}`, process.pid)
+    }
+}
+
+export async function runBuild() {
     const start = Date.now()
 
     Router.resetStaticState()
@@ -20,22 +55,7 @@ async function runBuild() {
 
     await Yon.createStaticRoutes()
 
-    for (const route in Router.reqRoutes) {
-
-        // Skip the HMR script — it is a dev-only asset
-        if (route.includes('hot-reload-client')) continue
-
-        const handler = Router.reqRoutes[route]['GET']
-
-        if (!handler) continue
-
-        try {
-            const res = await handler()
-            await Bun.write(Bun.file(`${distPath}${route}`), await res.blob())
-        } catch (err) {
-            console.error(`Failed to build route ${route}: ${(err as Error).message}`, process.pid)
-        }
-    }
+    await runWithConcurrency(Object.keys(Router.reqRoutes), BUILD_CONCURRENCY, buildRouteOutput)
 
     await Yon.prerenderStaticPages(distPath)
 
@@ -43,11 +63,7 @@ async function runBuild() {
 }
 
 async function writeRouteOutput(route: string) {
-    const handler = Router.reqRoutes[route]?.GET
-    if (!handler || route.includes('hot-reload-client')) return
-
-    const res = await handler()
-    await Bun.write(Bun.file(`${distPath}${route}`), await res.blob())
+    await buildRouteOutput(route)
 }
 
 async function pathExists(filePath: string) {
@@ -276,9 +292,12 @@ async function watchPaths(onChange: (targetPath: string, eventType: string) => v
     }
 }
 
-if (!watchMode) {
-    await runBuild()
-} else {
+export type BundleWatcherHandle = {
+    close(): void
+}
+
+export async function startBundleWatcher(options: { incremental?: boolean } = {}): Promise<BundleWatcherHandle> {
+    const incremental = options.incremental ?? true
     await runBuild()
 
     let debounceTimer: Timer | undefined
@@ -311,7 +330,11 @@ if (!watchMode) {
                 await watcher.refresh()
                 const change = pendingChange ?? { type: 'full', relative: 'unknown' }
                 pendingChange = null
-                await runSelectiveBuild(change)
+                if (incremental) {
+                    await runSelectiveBuild(change)
+                } else {
+                    await runBuild()
+                }
             } catch (err) {
                 console.error(`Watch rebuild failed: ${(err as Error).message}`, process.pid)
             } finally {
@@ -332,14 +355,28 @@ if (!watchMode) {
 
     console.info(`Watching ${Router.routesPath} and related source paths for bundle changes`, process.pid)
 
-    const shutdown = () => {
-        clearTimeout(debounceTimer)
-        watcher.close()
-        process.exit(0)
+    return {
+        close() {
+            clearTimeout(debounceTimer)
+            watcher.close()
+        }
     }
+}
 
-    process.on('SIGINT', shutdown)
-    process.on('SIGTERM', shutdown)
+if (import.meta.main) {
+    if (!watchMode) {
+        await runBuild()
+    } else {
+        const bundleWatcher = await startBundleWatcher()
 
-    await new Promise(() => {})
+        const shutdown = () => {
+            bundleWatcher.close()
+            process.exit(0)
+        }
+
+        process.on('SIGINT', shutdown)
+        process.on('SIGTERM', shutdown)
+
+        await new Promise(() => {})
+    }
 }
