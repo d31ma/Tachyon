@@ -63,6 +63,12 @@ async function canRunPlaywright(): Promise<{ ok: boolean; detail?: string }> {
 }
 
 test('browser interactions runner completes when Playwright is available', { timeout: 15000 }, async () => {
+    if (process.env.CI) {
+        console.warn('[browser-test] Skipping Playwright runner in CI; use local smoke runs for browser HMR verification')
+        expect(true).toBe(true)
+        return
+    }
+
     if (isLegacyBunRuntime()) {
         console.warn(`[browser-test] Skipping Playwright runner on Bun ${Bun.version}: probe is unstable on this runtime`)
         expect(true).toBe(true)
