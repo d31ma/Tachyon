@@ -2,11 +2,17 @@
   "name": "tachyon-examples",
   "private": true,
   "scripts": {
-    "bundle": "bun ../src/cli/bundle.ts",
-    "preview": "bun ../src/cli/preview.ts --watch",
-    "serve": "bun ../src/cli/serve.ts"
+    "tailwind:build": "tailwindcss -i ./styles/tailwind.css -o ./assets/tailwind.css",
+    "tailwind:watch": "tailwindcss -i ./styles/tailwind.css -o ./assets/tailwind.css --watch",
+    "bundle": "bun run tailwind:build && bun ../src/cli/bundle.ts",
+    "preview": "bun run tailwind:build && bun ../src/cli/preview.ts --watch",
+    "serve": "bun run tailwind:build && bun ../src/cli/serve.ts"
   },
   "dependencies": {
     "dayjs": "^1.11.13"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.2.2",
+    "tailwindcss": "^4.2.2"
   }
 }

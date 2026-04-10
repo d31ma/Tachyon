@@ -9,6 +9,11 @@ darkLink.rel = "stylesheet";
 darkLink.href = "https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/dark.css";
 document.head.appendChild(darkLink);
 
+const tailwindLink = document.createElement("link");
+tailwindLink.rel = "stylesheet";
+tailwindLink.href = "/assets/tailwind.css";
+document.head.appendChild(tailwindLink);
+
 const script = document.createElement("script");
 script.type = "module";
 script.src = "https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/shoelace-autoloader.js";

@@ -1,16 +1,18 @@
 #!/usr/bin/env bun
 import path from 'node:path'
 import { createAppScaffold } from '../runtime/app-scaffold.js'
-import '../server/console-logger.js'
+import logger from '../server/logger.js'
+
+const initLogger = logger.child({ scope: 'cli:init' })
 
 const targetArg = process.argv[2] || '.'
 const targetDir = path.resolve(process.cwd(), targetArg)
 
 try {
     const created = await createAppScaffold(targetDir)
-    console.info(`Scaffolded Tachyon app in ${created}`, process.pid)
-    console.info(`Next steps: cd ${targetArg} && bun install && bun run start`, process.pid)
+    initLogger.info('Scaffolded Tachyon app', { path: created })
+    initLogger.info('Next steps', { command: `cd ${targetArg} && bun install && bun run start` })
 } catch (error) {
-    console.error((error as Error).message, process.pid)
+    initLogger.error('Failed to scaffold app', { err: error, path: targetDir })
     process.exit(1)
 }

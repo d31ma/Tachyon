@@ -3,12 +3,13 @@ import { access, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import Router from '../server/route-handler.js'
 import { createStaticPreviewServer } from '../runtime/static-preview.js'
-import '../server/console-logger.js'
+import logger from '../server/logger.js'
 
 const distPath = path.join(process.cwd(), 'dist')
 const watchMode = process.argv.includes('--watch') || process.argv.includes('--bundle-watch')
 const WATCH_INTERVAL_MS = 300
 const bundleCliPath = path.join(import.meta.dir, 'bundle.ts')
+const previewLogger = logger.child({ scope: 'cli:preview' })
 
 type PreviewWatcherHandle = {
     close(): void
@@ -80,7 +81,7 @@ async function startPreviewBundleWatcher(): Promise<PreviewWatcherHandle> {
             await runFreshBundleBuild()
             lastFingerprint = await buildFingerprint()
         } catch (err) {
-            console.error(`Preview rebuild failed: ${(err as Error).message}`, process.pid)
+            previewLogger.error('Preview rebuild failed', { err })
         } finally {
             building = false
             if (queued) {
@@ -111,7 +112,10 @@ if (watchMode) {
     try {
         await access(distPath)
     } catch {
-        console.error(`Missing dist directory at '${distPath}'. Run 'tach.bundle' first.`, process.pid)
+        previewLogger.error('Missing dist directory', {
+            distPath,
+            suggestion: "Run 'tach.bundle' first.",
+        })
         process.exit(1)
     }
 }
@@ -119,7 +123,11 @@ if (watchMode) {
 const start = Date.now()
 const server = await createStaticPreviewServer(distPath)
 
-console.info(`Preview running on http://${server.hostname}:${server.port} — started in ${Date.now() - start}ms`, process.pid)
+previewLogger.info('Preview server started', {
+    url: `http://${server.hostname}:${server.port}`,
+    startupMs: Date.now() - start,
+    watchMode,
+})
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {

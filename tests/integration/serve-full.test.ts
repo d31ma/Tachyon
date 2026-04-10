@@ -32,7 +32,8 @@ async function createExampleApp() {
     await writeFile(path.join(root, 'routes', 'HTML'), `<main><h1>Fixture Home</h1></main>`)
     const getRoutePath = path.join(root, 'routes', 'GET')
     await writeFile(getRoutePath, `#!/usr/bin/env bun
-Bun.stdout.write(JSON.stringify({ ok: true, fixture: 'api' }))
+const request = await Bun.stdin.json()
+Bun.stdout.write(JSON.stringify({ ok: true, fixture: 'api', requestId: request.context.requestId }))
 `)
     await chmod(getRoutePath, 0o755)
 
@@ -101,23 +102,32 @@ test('tach.serve --full serves frontend and backend responses from the same port
 
     const ok = await waitFor(async () => {
         try {
+            const requestId = 'serve-full-test-request-id'
             const [frontendRes, apiRes] = await Promise.all([
                 fetch(`http://127.0.0.1:${port}/`, {
                     headers: { accept: 'text/html' }
                 }),
                 fetch(`http://127.0.0.1:${port}/`, {
-                    headers: { accept: 'application/json' }
+                    headers: {
+                        accept: 'application/json',
+                        'x-request-id': requestId,
+                    }
                 })
             ])
+            const apiBody = await apiRes.json().catch(() => null) as { fixture?: string, requestId?: string } | null
 
             const htmlOk = frontendRes.ok
                 && (await frontendRes.text()).includes('Fixture Home')
             const apiOk = apiRes.ok
-                && (await apiRes.text()).includes('"fixture":"api"')
+                && apiBody?.fixture === 'api'
+                && apiBody?.requestId === requestId
+                && apiRes.headers.get('x-request-id') === requestId
 
             lastSnapshot = JSON.stringify({
                 htmlStatus: frontendRes.status,
                 apiStatus: apiRes.status,
+                apiRequestId: apiRes.headers.get('x-request-id'),
+                apiBody,
                 htmlOk,
                 apiOk,
             })

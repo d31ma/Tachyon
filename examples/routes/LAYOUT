@@ -97,30 +97,30 @@
   .content { flex: 1; padding: 2rem; overflow-y: auto; }
 </style>
 
-<div class="shell">
+<div class="shell flex min-h-screen bg-slate-50 text-slate-950">
 
   <logic :if="sidebarOpen">
-    <aside class="sidebar">
-      <div class="sidebar-brand">
+    <aside class="sidebar bg-slate-950 text-slate-300">
+      <div class="sidebar-brand border-b border-slate-700 text-white">
         <sl-icon name="lightning-charge-fill"></sl-icon> TACHYON
       </div>
-      <nav class="sidebar-nav">
-        <a href="/"><sl-icon name="house-door"></sl-icon> Home</a>
-        <a href="/api"><sl-icon name="broadcast"></sl-icon> API Tester</a>
+      <nav class="sidebar-nav py-2">
+        <a class="hover:bg-white/5" href="/"><sl-icon name="house-door"></sl-icon> Home</a>
+        <a class="hover:bg-white/5" href="/api"><sl-icon name="broadcast"></sl-icon> API Tester</a>
       </nav>
-      <div class="sidebar-footer">
+      <div class="sidebar-footer border-t border-slate-700 text-slate-500">
         <sl-icon name="gear"></sl-icon> v1.2 · © {year}
       </div>
     </aside>
   </logic>
 
-  <div class="main-area">
-    <header class="topbar">
-      <div class="topbar-left">
+  <div class="main-area min-w-0 flex-1">
+    <header class="topbar border-b border-slate-200 bg-white">
+      <div class="topbar-left flex items-center gap-3">
         <sl-icon-button name="list" label="Toggle sidebar" @click="toggleSidebar()"></sl-icon-button>
         <sl-tag size="small" variant="primary">Playground</sl-tag>
       </div>
-      <div class="topbar-right">
+      <div class="topbar-right flex items-center gap-3">
         <sl-tooltip content="Toggle dark mode">
           <sl-icon-button @click="toggleTheme()">
             <logic :if="darkMode"><sl-icon name="sun-fill"></sl-icon></logic>
@@ -131,7 +131,7 @@
       </div>
     </header>
 
-    <div class="content">
+    <div class="content p-8">
       <slot />
     </div>
   </div>

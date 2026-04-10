@@ -76,6 +76,8 @@ PORT=8000
 HOSTNAME=127.0.0.1
 TIMEOUT=70
 DEV=true
+LOG_LEVEL=info
+LOG_FORMAT=pretty
 
 # CORS — restrict to explicit origins in production; never combine * with credentials
 ALLOW_HEADERS=Content-Type,Authorization
@@ -104,6 +106,10 @@ ROUTES_PATH=
 COMPONENTS_PATH=
 ASSETS_PATH=
 ```
+
+`LOG_LEVEL` supports `trace`, `debug`, `info`, `warn`, `error`, `fatal`, and `silent`. `LOG_FORMAT` supports `pretty` for local development and `json` for production log pipelines. `TACHYON_LOG_LEVEL` and `TACHYON_LOG_FORMAT` are also accepted if you want framework-specific overrides.
+
+Handler subprocess logs include per-request resource usage after each handler exits: `requestId`, handler `pid`, exit code, CPU time in microseconds, peak RSS memory in bytes, filesystem read/write operation counts, and response/error byte counts.
 
 ## Route Structure
 
@@ -142,6 +148,7 @@ Every handler receives the full request context on `stdin` as a JSON object:
   "query":   { "page": 1 },
   "paths":   { "version": "v2" },
   "context": {
+    "requestId": "3f5b52f8-9c2e-4f8d-8bd3-6fd2b10c28d9",
     "ipAddress": "127.0.0.1",
     "bearer": {
       "header":   { "alg": "HS256", "typ": "JWT" },
@@ -152,6 +159,8 @@ Every handler receives the full request context on `stdin` as a JSON object:
   }
 }
 ```
+
+Tachyon reuses an incoming `X-Request-Id` header when present, generates one when it is missing, returns it on every response, and includes it in request logs.
 
 > **Note:** `context.bearer` is decoded but the signature is **not** verified. `verified` is always `false`. Do not trust claims in `bearer.payload` without out-of-band verification (e.g. via middleware that calls a trusted auth service). Tokens with an expired `exp` claim are rejected before reaching your handler. Use the [`jose`](https://github.com/panva/jose) library for full JWT verification.
 
@@ -164,7 +173,7 @@ Every handler receives the full request context on `stdin` as a JSON object:
 
 const { body, paths, context } = await Bun.stdin.json()
 
-const response = { collection: paths.collection, from: context.ipAddress }
+const response = { collection: paths.collection, from: context.ipAddress, requestId: context.requestId }
 
 Bun.stdout.write(JSON.stringify(response))
 ```

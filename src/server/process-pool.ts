@@ -1,5 +1,6 @@
 import { existsSync } from 'fs'
 import Router from "./route-handler.js"
+import logger from './logger.js'
 
 /** A Bun subprocess with all three stdio channels opened as pipes. */
 export type PipedProcess = ReturnType<typeof Bun.spawn<"pipe", "pipe", "pipe">>
@@ -8,6 +9,7 @@ export type PipedProcess = ReturnType<typeof Bun.spawn<"pipe", "pipe", "pipe">>
 const HANDLER_TIMEOUT_MS = process.env.HANDLER_TIMEOUT_MS
     ? Number(process.env.HANDLER_TIMEOUT_MS)
     : 30_000
+const poolLogger = logger.child({ scope: 'process-pool' })
 
 export default class Pool {
 
@@ -27,6 +29,7 @@ export default class Pool {
     static prewarmHandler(handler: string): void {
         if (Pool.warmedProcesses.has(handler)) return
 
+        poolLogger.debug('Prewarming handler process', { handler })
         Pool.warmedProcesses.set(handler, Bun.spawn<"pipe", "pipe", "pipe">({
             cmd: [handler],
             stdin:  "pipe",
@@ -87,10 +90,20 @@ export default class Pool {
                 env:    process.env,
             })
 
+        if (warmed && warmed.exitCode === null) {
+            poolLogger.debug('Using prewarmed handler process', { handler, pid: proc.pid })
+        } else {
+            poolLogger.debug('Spawned fresh handler process', { handler, pid: proc.pid })
+        }
+
         // Kill hung processes to prevent resource exhaustion
         const timeout = setTimeout(() => {
             if (proc.exitCode === null) {
-                console.error(`[pool] Handler timed out after ${HANDLER_TIMEOUT_MS}ms — killing process`, proc.pid)
+                poolLogger.error('Handler timed out and will be killed', {
+                    handler,
+                    pid: proc.pid,
+                    timeoutMs: HANDLER_TIMEOUT_MS,
+                })
                 try { proc.kill() } catch { /* already exited */ }
             }
         }, HANDLER_TIMEOUT_MS)
