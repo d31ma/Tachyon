@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
+import { pathToFileURL } from 'node:url'
 
 const tempDirs: string[] = []
 const bundleEntrypoint = path.join(process.cwd(), 'src/cli/bundle.ts')
@@ -35,6 +36,65 @@ async function createFixture() {
     return root
 }
 
+async function createTagClassificationFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-tag-classification-'))
+    tempDirs.push(root)
+
+    await mkdir(path.join(root, 'routes'), { recursive: true })
+    await mkdir(path.join(root, 'components'), { recursive: true })
+
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-tag-classification-fixture',
+        private: true
+    }, null, 2))
+
+    await writeFile(
+        path.join(root, 'components', 'hero-card.html'),
+        `<article class="hero-card">Tachyon component wins</article>`
+    )
+
+    await writeFile(
+        path.join(root, 'routes', 'HTML'),
+        [
+            '<hero-card />',
+            '<user-card data-kind="web-component"></user-card>',
+            '<mystery>Unknown tag survives with warning</mystery>',
+        ].join('')
+    )
+
+    return root
+}
+
+async function createLoopEventFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-loop-event-'))
+    tempDirs.push(root)
+
+    await mkdir(path.join(root, 'routes'), { recursive: true })
+
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-loop-event-fixture',
+        private: true
+    }, null, 2))
+
+    await writeFile(
+        path.join(root, 'routes', 'HTML'),
+        `<script>
+let tasks = [{ text: "One", done: false }];
+function toggle(index) {
+    tasks = tasks.map((task, i) => i === index ? { ...task, done: !task.done } : task);
+}
+function status() {
+    return tasks[0].done ? "done" : "pending";
+}
+</script>
+<loop :for="let i = 0; i < tasks.length; i++">
+  <button @click="toggle(i)">{status()}</button>
+</loop>`
+    )
+
+    return root
+}
+
 async function decode(stream: ReadableStream<Uint8Array> | null) {
     if (!stream) return ''
     return await new Response(stream).text()
@@ -61,7 +121,7 @@ test('tach.bundle prerenders HTML routes into static documents', { timeout: 2000
 
     expect(exitCode).toBe(0)
     expect(stderr).toBe('')
-    expect(stdout).toContain('Built in')
+    expect(stdout).toContain('Bundle completed')
 
     const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8')
     const docs = await readFile(path.join(cwd, 'dist', 'docs', 'index.html'), 'utf8')
@@ -75,4 +135,66 @@ test('tach.bundle prerenders HTML routes into static documents', { timeout: 2000
     expect(docs).toContain('<title>Fixture Docs</title>')
     expect(docs).toContain('>Docs page</p>')
     expect(docs).toContain('class="shell"')
+})
+
+test('tach.bundle classifies component, web component, native, and unknown tags by priority', { timeout: 20000 }, async () => {
+    const cwd = await createTagClassificationFixture()
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ])
+
+    expect(exitCode).toBe(0)
+    expect(stdout).toContain('Bundle completed')
+    expect(stderr).toContain('Unknown element tag')
+    expect(stderr).toContain('tag=mystery')
+
+    const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8')
+
+    expect(home).toContain('Tachyon component wins')
+    expect(home).toContain('<user-card')
+    expect(home).toContain('data-kind="web-component"')
+    expect(home).toContain('<mystery')
+    expect(home).toContain('Unknown tag survives with warning')
+})
+
+test('loop-scoped event handlers can access loop variables when rerendered', { timeout: 20000 }, async () => {
+    const cwd = await createLoopEventFixture()
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ])
+
+    expect(exitCode).toBe(0)
+    expect(stderr).toBe('')
+
+    const pageModulePath = path.join(cwd, 'dist', 'pages', 'HTML.js')
+    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?loop-event=${Date.now()}`)
+    const render = await pageModule.default()
+    const initial = await render()
+    const buttonId = initial.match(/<button[^>]* id="([^"]+)"/)?.[1]
+
+    expect(buttonId).toBeDefined()
+    expect(initial).toContain('pending')
+
+    await render(buttonId)
+    const updated = await render()
+
+    expect(updated).toContain('done')
 })

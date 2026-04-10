@@ -2,6 +2,7 @@ import { BunRequest, Server } from "bun"
 
 /** Context object injected into every route handler */
 export interface RequestContext {
+    requestId: string
     ipAddress: string
     bearer?: {
         header: Record<string, unknown>

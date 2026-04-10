@@ -10,9 +10,10 @@ import {
 } from '../../src/runtime/dom-helpers.js'
 
 let previousGlobals: Record<string, unknown>
+let windowInstance: Window
 
 beforeAll(() => {
-    const windowInstance = new Window()
+    windowInstance = new Window()
 
     previousGlobals = {
         window: globalThis.window,
@@ -39,7 +40,8 @@ beforeAll(() => {
     })
 })
 
-afterAll(() => {
+afterAll(async () => {
+    await windowInstance.happyDOM.close()
     Object.assign(globalThis, previousGlobals)
 })
 

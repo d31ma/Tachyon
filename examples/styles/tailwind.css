@@ -1,0 +1,9 @@
+@import "tailwindcss" source(none);
+
+@source "../routes";
+@source "../components";
+@source "../main.js";
+
+@theme {
+  --font-sans: "Avenir Next", "Segoe UI", sans-serif;
+}

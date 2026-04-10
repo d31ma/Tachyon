@@ -26,7 +26,7 @@ async function runBundle(cwd: string) {
 
     expect(exitCode).toBe(0)
     expect(stderr).toBe('')
-    expect(stdout).toContain('Built in')
+    expect(stdout).toContain('Bundle completed')
 }
 
 async function createFixture() {

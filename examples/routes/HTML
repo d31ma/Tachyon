@@ -151,15 +151,15 @@
   .feature-item sl-icon { color: var(--sl-color-success-600); font-size: 1.2rem; }
 </style>
 
-<div class="home">
+<div class="home max-w-5xl">
 
-  <div class="hero">
-    <h1>
+  <div class="hero rounded-2xl bg-gradient-to-br from-blue-600 to-violet-700 p-8 text-white shadow-xl shadow-blue-900/10">
+    <h1 class="flex items-center gap-2 text-3xl font-bold">
       <sl-icon name="lightning-charge-fill"></sl-icon>
       {greeting}
     </h1>
-    <p>A polyglot, file-system-routed full-stack framework for Bun — write API handlers in any language, build reactive UIs with zero config.</p>
-    <div class="hero-actions">
+    <p class="mt-2 max-w-2xl text-sm text-white/85">A polyglot, file-system-routed full-stack framework for Bun — write API handlers in any language, build reactive UIs with zero config.</p>
+    <div class="hero-actions mt-4 flex gap-2">
       <sl-button variant="default" size="small" @click="showAbout = !showAbout">
         <sl-icon slot="prefix" name="info-circle"></sl-icon>
         About
@@ -186,19 +186,19 @@
     <br />
   </logic>
 
-  <div class="stats">
-    <div class="stat-card">
-      <div class="stat-label">Completed</div>
-      <div class="stat-value">{doneCount()}</div>
+  <div class="stats grid grid-cols-3 gap-4">
+    <div class="stat-card rounded-xl border border-slate-200 bg-white p-5">
+      <div class="stat-label text-xs font-semibold uppercase tracking-wide text-slate-500">Completed</div>
+      <div class="stat-value text-3xl font-bold">{doneCount()}</div>
       <sl-progress-bar :value="percent()"></sl-progress-bar>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Pending</div>
-      <div class="stat-value">{pendingCount()}</div>
+    <div class="stat-card rounded-xl border border-slate-200 bg-white p-5">
+      <div class="stat-label text-xs font-semibold uppercase tracking-wide text-slate-500">Pending</div>
+      <div class="stat-value text-3xl font-bold">{pendingCount()}</div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Total</div>
-      <div class="stat-value">{tasks.length}</div>
+    <div class="stat-card rounded-xl border border-slate-200 bg-white p-5">
+      <div class="stat-label text-xs font-semibold uppercase tracking-wide text-slate-500">Total</div>
+      <div class="stat-value text-3xl font-bold">{tasks.length}</div>
     </div>
   </div>
 
@@ -224,7 +224,7 @@
       <logic :if="filtered().length > 0">
         <ul class="task-list">
           <loop :for="let i = 0; i < filtered().length; i++">
-            <li class="task-item">
+            <li class="task-item border-b border-slate-100 px-5 py-3 hover:bg-slate-50">
               <sl-checkbox :checked="filtered()[i].done" @click="toggle(tasks.indexOf(filtered()[i]))"></sl-checkbox>
               <span class="task-text">
                 <logic :if="filtered()[i].done">

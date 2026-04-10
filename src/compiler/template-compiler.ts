@@ -1,4 +1,5 @@
 import Router from "../server/route-handler.js";
+import logger from "../server/logger.js";
 import { BunRequest } from 'bun';
 import { exists, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from "node:path";
@@ -15,6 +16,13 @@ interface ComponentData {
     scriptLang?: string;
 }
 
+type ElementTagResolution =
+    | { kind: 'component'; name: string }
+    | { kind: 'web-component' }
+    | { kind: 'native' }
+    | { kind: 'control' }
+    | { kind: 'unknown' }
+
 const TEMPLATE_PATH = `${import.meta.dir}/render-template.js`;
 const ROUTES_JSON_PATH = `${import.meta.dir}/../runtime/route-manifest.json`;
 const LAYOUTS_JSON_PATH = `${import.meta.dir}/../runtime/layout-manifest.json`;
@@ -29,6 +37,7 @@ const jsonResponse = (path: string) =>
     async () => new Response(await Bun.file(path).bytes(), { headers: { 'Content-Type': 'application/json' } });
 
 export default class Yon {
+    private static readonly compilerLogger = logger.child({ scope: 'compiler' })
 
     private static readonly htmlMethod = 'HTML'
     private static readonly layoutMethod = 'LAYOUT'
@@ -36,6 +45,7 @@ export default class Yon {
     private static readonly prerenderWriteConcurrency = 8
     private static readonly compMapping = new Map<string, string>()
     private static layoutMapping: Record<string, string> = {}
+    private static readonly warnedUnknownTags = new Set<string>()
     private static readonly nativeTags = new Set([
         'a', 'abbr', 'address', 'area', 'article', 'aside', 'audio', 'b', 'base', 'bdi', 'bdo',
         'blockquote', 'body', 'br', 'button', 'canvas', 'caption', 'cite', 'code', 'col',
@@ -57,6 +67,17 @@ export default class Yon {
         'feimage', 'femerge', 'femergenode', 'femorphology', 'feoffset', 'fepointlight',
         'fespecularlighting', 'fespotlight', 'fetile', 'feturbulence'
     ])
+    private static readonly controlTags = new Set(['loop', 'logic'])
+    private static readonly reservedCustomElementNames = new Set([
+        'annotation-xml',
+        'color-profile',
+        'font-face',
+        'font-face-src',
+        'font-face-uri',
+        'font-face-format',
+        'font-face-name',
+        'missing-glyph',
+    ])
 
     private static readonly routeTitleFallback = "Tachyon"
 
@@ -72,22 +93,44 @@ export default class Yon {
         return segments.join('-').toLowerCase()
     }
 
-    private static resolveComponentName(tagName: string): string | null {
+    private static classifyElementTag(tagName: string): ElementTagResolution {
         const normalized = tagName.toLowerCase()
 
         if (normalized.endsWith('_')) {
             const legacyName = normalized.slice(0, -1)
-            return Yon.compMapping.has(legacyName) ? legacyName : null
+            return Yon.compMapping.has(legacyName)
+                ? { kind: 'component', name: legacyName }
+                : { kind: 'unknown' }
         }
 
-        if (Yon.nativeTags.has(normalized)) return null
+        if (Yon.compMapping.has(normalized)) return { kind: 'component', name: normalized }
+        if (Yon.isWebComponentTag(normalized)) return { kind: 'web-component' }
+        if (Yon.nativeTags.has(normalized)) return { kind: 'native' }
+        if (Yon.controlTags.has(normalized)) return { kind: 'control' }
 
-        return Yon.compMapping.has(normalized) ? normalized : null
+        return { kind: 'unknown' }
+    }
+
+    private static isWebComponentTag(tagName: string): boolean {
+        return /^[a-z][.0-9_a-z]*-[.0-9_a-z-]*$/.test(tagName)
+            && !Yon.reservedCustomElementNames.has(tagName)
+    }
+
+    private static warnUnknownTag(tagName: string, sourceName: string) {
+        const key = `${sourceName}:${tagName}`
+        if (Yon.warnedUnknownTags.has(key)) return
+
+        Yon.warnedUnknownTags.add(key)
+        Yon.compilerLogger.warn('Unknown element tag; treating it as plain HTML', {
+            tag: tagName,
+            source: sourceName,
+        })
     }
 
     static async createStaticRoutes() {
         Yon.compMapping.clear()
         Yon.layoutMapping = {}
+        Yon.warnedUnknownTags.clear()
 
         // Build client-side render + HMR scripts
         const result = await Bun.build({
@@ -461,6 +504,7 @@ export default class Yon {
     // ── HTML → AST parsing ─────────────────────────────────────────────────────
     private static parseHTML(
         htmlContent: string,
+        sourceName = 'template',
         imports: Map<string, Set<string>> = new Map()
     ): Promise<ParsedElement[]> {
         return new Promise((resolve) => {
@@ -473,7 +517,7 @@ export default class Yon {
 
             const formatAttr = (name: string, value: string, hash: string): string => {
                 if (name.startsWith('@'))
-                    return `${name}="\${ty_invokeEvent('${hash}', '${value}')}"`;
+                    return `${name}="\${ty_invokeEvent('${hash}', (__event__) => { ${value} })}"`;
                 if (name === ':value')
                     return `value="\${ty_assignValue('${hash}', '${value}')}"`;
                 return `${name}="${value}"`;
@@ -516,7 +560,12 @@ export default class Yon {
 
                         for (const [name, value] of element.attributes) attrs[name] = value;
 
-                        const resolvedComponent = Yon.resolveComponentName(tagLower);
+                        const tagResolution = Yon.classifyElementTag(tagLower);
+                        const resolvedComponent = tagResolution.kind === 'component' ? tagResolution.name : null;
+
+                        if (tagResolution.kind === 'unknown') {
+                            Yon.warnUnknownTag(tagLower, sourceName);
+                        }
 
                         // Component import
                         if (resolvedComponent) {
@@ -622,7 +671,7 @@ export default class Yon {
             for (const [, key, value] of matches) {
                 if (key === 'lazy') continue;
                 if (key.startsWith('@')) {
-                    events.push(`${key}="${value.replace(/(ty_invokeEvent\(')([^"]+)(',[^)]+\))/g, `$1${hash}$3`)}"`);
+                    events.push(`${key}="${value.replace(/(ty_invokeEvent\(')([^']+)(')/g, `$1${hash}$3`)}"`);
                 } else {
                     // Convert template-literal expr "${foo()}" → foo(), static value → JSON literal
                     const expr = value.startsWith('${') && value.endsWith('}')
@@ -661,7 +710,7 @@ export default class Yon {
 
     // ── Build & register a single template module ──────────────────────────────
     private static async registerModule(data: ComponentData, route: string, dir: 'pages' | 'components' | 'layouts') {
-        const parsed = await Yon.parseHTML(data.html);
+        const parsed = await Yon.parseHTML(data.html, `${dir}/${route}`);
         const jsCode = await Yon.createJSData(parsed, data.script);
 
         const srcRoute = route.replace('.html', `.${data.scriptLang || 'js'}`);
@@ -761,7 +810,7 @@ export default class Yon {
                     };
                 }
             } catch (e) {
-                console.warn(`Failed to bundle module '${mod}': ${(e as Error).message}`, process.pid);
+                Yon.compilerLogger.warn('Failed to bundle dependency module', { module: mod, err: e });
             }
         }
     }

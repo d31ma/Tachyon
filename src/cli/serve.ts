@@ -3,7 +3,7 @@ import Tach from "../server/process-executor.js"
 import Pool from "../server/process-pool.js"
 import Router from "../server/route-handler.js"
 import Yon from "../compiler/template-compiler.js"
-import "../server/console-logger.js"
+import logger from "../server/logger.js"
 import { watch } from "fs"
 import { access } from "fs/promises"
 import path from "node:path"
@@ -19,6 +19,7 @@ const start = Date.now()
 let bundleWatcher: Bun.Subprocess | null = null
 const distPath = path.join(process.cwd(), 'dist')
 const bundleCliPath = `${import.meta.dir}/bundle.ts`
+const serveLogger = logger.child({ scope: 'cli:serve' })
 
 async function pathExists(path: string): Promise<boolean> {
     try { await access(path); return true } catch { return false }
@@ -104,12 +105,12 @@ const server = Bun.serve({
                     clearTimeout(debounceTimer)
                     debounceTimer = setTimeout(async () => {
                         try {
-                            console.info("HMR Update", process.pid)
+                            serveLogger.info('HMR reload started')
                             await configureRoutes(true)
                             server.reload({ routes: Router.reqRoutes })
                             controller.enqueue("\n\n")
                         } catch (err) {
-                            console.error(`HMR reload failed: ${(err as Error).message}`, process.pid)
+                            serveLogger.error('HMR reload failed', { err })
                         }
                     }, HMR_DEBOUNCE_MS)
                 }
@@ -126,13 +127,19 @@ const server = Bun.serve({
     development: !!process.env.DEV,
 })
 
-console.info(`Server running on http://${server.hostname}:${server.port} — started in ${Date.now() - start}ms`, process.pid)
+serveLogger.info('Server started', {
+    url: `http://${server.hostname}:${server.port}`,
+    startupMs: Date.now() - start,
+    bundleWatchEnabled,
+    fullModeEnabled,
+})
 
 process.on('SIGINT', () => {
     clearTimeout(debounceTimer)
     Pool.clearWarmedProcesses()
     bundleWatcher?.kill()
     server.stop()
+    serveLogger.info('Server stopped', { signal: 'SIGINT' })
     process.exit(0)
 })
 
@@ -141,5 +148,6 @@ process.on('SIGTERM', () => {
     Pool.clearWarmedProcesses()
     bundleWatcher?.kill()
     server.stop()
+    serveLogger.info('Server stopped', { signal: 'SIGTERM' })
     process.exit(0)
 })

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import Router from "../server/route-handler.js"
 import Yon from "../compiler/template-compiler.js"
-import "../server/console-logger.js"
+import logger from "../server/logger.js"
 import { access, mkdir, readdir, rm, stat } from "node:fs/promises"
 import { watch, type FSWatcher } from "node:fs"
 import path from "node:path"
@@ -10,6 +10,7 @@ const distPath = `${process.cwd()}/dist`
 const watchMode = process.argv.includes('--watch')
 const WATCH_DEBOUNCE_MS = 200
 const BUILD_CONCURRENCY = 8
+const bundleLogger = logger.child({ scope: 'cli:bundle' })
 
 async function runWithConcurrency<T>(
     items: T[],
@@ -41,7 +42,7 @@ async function buildRouteOutput(route: string) {
         const res = await handler()
         await Bun.write(Bun.file(`${distPath}${route}`), await res.blob())
     } catch (err) {
-        console.error(`Failed to build route ${route}: ${(err as Error).message}`, process.pid)
+        bundleLogger.error('Failed to build route', { route, err })
     }
 }
 
@@ -59,7 +60,11 @@ export async function runBuild() {
 
     await Yon.prerenderStaticPages(distPath)
 
-    console.info(`Built in ${Date.now() - start}ms`, process.pid)
+    bundleLogger.info('Bundle completed', {
+        durationMs: Date.now() - start,
+        routeCount: Object.keys(Router.reqRoutes).length,
+        distPath,
+    })
 }
 
 async function writeRouteOutput(route: string) {
@@ -121,6 +126,11 @@ function routesUsingLayout(layoutRoute: string) {
 
 async function runSelectiveBuild(change: ChangeKind) {
     const start = Date.now()
+    const logIncrementalBuild = () => bundleLogger.info('Incremental build completed', {
+        changeType: change.type,
+        target: change.relative,
+        durationMs: Date.now() - start,
+    })
 
     if (change.type === 'main') {
         const mainPath = `${process.cwd()}/main.js`
@@ -135,7 +145,7 @@ async function runSelectiveBuild(change: ChangeKind) {
             }
             await writeRouteOutput('/main.js')
         }
-        console.info(`Incremental build for ${change.relative} in ${Date.now() - start}ms`, process.pid)
+        logIncrementalBuild()
         return
     }
 
@@ -151,7 +161,7 @@ async function runSelectiveBuild(change: ChangeKind) {
             await writeRouteOutput(`/assets/${change.relative}`)
         }
 
-        console.info(`Incremental build for ${change.relative} in ${Date.now() - start}ms`, process.pid)
+        logIncrementalBuild()
         return
     }
 
@@ -169,7 +179,7 @@ async function runSelectiveBuild(change: ChangeKind) {
         await Yon.bundleComponentFile(change.relative)
         await writeRouteOutput(outputRoute)
         await Yon.prerenderRoutes(distPath, Yon.getHtmlRoutes())
-        console.info(`Incremental build for ${change.relative} in ${Date.now() - start}ms`, process.pid)
+        logIncrementalBuild()
         return
     }
 
@@ -191,7 +201,7 @@ async function runSelectiveBuild(change: ChangeKind) {
         await Yon.bundlePageFile(change.relative)
         await writeRouteOutput(outputRoute)
         await Yon.prerenderRoutes(distPath, [routePath])
-        console.info(`Incremental build for ${change.relative} in ${Date.now() - start}ms`, process.pid)
+        logIncrementalBuild()
         return
     }
 
@@ -207,7 +217,7 @@ async function runSelectiveBuild(change: ChangeKind) {
         await Yon.bundleLayoutFile(change.relative)
         await writeRouteOutput(outputRoute)
         await Yon.prerenderRoutes(distPath, routesUsingLayout(change.relative))
-        console.info(`Incremental build for ${change.relative} in ${Date.now() - start}ms`, process.pid)
+        logIncrementalBuild()
         return
     }
 
@@ -336,7 +346,11 @@ export async function startBundleWatcher(options: { incremental?: boolean } = {}
                     await runBuild()
                 }
             } catch (err) {
-                console.error(`Watch rebuild failed: ${(err as Error).message}`, process.pid)
+                bundleLogger.error('Watch rebuild failed', {
+                    changedPath: targetPath,
+                    eventType,
+                    err,
+                })
             } finally {
                 building = false
                 if (queued) {
@@ -353,7 +367,11 @@ export async function startBundleWatcher(options: { incremental?: boolean } = {}
 
     const watcher = await watchPaths(schedule)
 
-    console.info(`Watching ${Router.routesPath} and related source paths for bundle changes`, process.pid)
+    bundleLogger.info('Watching source paths for bundle changes', {
+        routesPath: Router.routesPath,
+        componentsPath: Router.componentsPath,
+        assetsPath: Router.assetsPath,
+    })
 
     return {
         close() {

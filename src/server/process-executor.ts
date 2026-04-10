@@ -1,13 +1,18 @@
 import { BunRequest, Server } from "bun";
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import Router, { RequestContext, RouteOptions, RequestPayload, RouteResponse } from "./route-handler.js";
 import Pool from "./process-pool.js";
 import Validate from "./schema-validator.js";
-import './console-logger.js'
+import logger from './logger.js'
 
 export default class Tach {
+    private static readonly processLogger = logger.child({ scope: 'process-executor' })
+    private static readonly requestLogger = logger.child({ scope: 'http' })
+    private static readonly handlerLogger = logger.child({ scope: 'handler' })
 
     private static readonly STREAM_MIME_TYPE = "text/event-stream"
+    private static readonly REQUEST_ID_HEADER = 'X-Request-Id'
+    private static readonly MAX_REQUEST_ID_LENGTH = 200
     private static frontendRequestHandler:
         | ((request: BunRequest) => Promise<Response | null>)
         | null = null
@@ -50,6 +55,50 @@ export default class Tach {
         return partial
     }
 
+    private static byteLength(value: string | undefined): number {
+        return value ? Buffer.byteLength(value) : 0
+    }
+
+    private static async logHandlerResourceUsage(
+        proc: ReturnType<typeof Pool.acquireHandler>,
+        context: RequestContext,
+        handler: string,
+        responseBytes: number,
+        errorBytes: number,
+    ): Promise<void> {
+        const exitCode = await proc.exited.catch(() => null)
+        const usage = proc.resourceUsage()
+
+        if (!usage) {
+            Tach.handlerLogger.debug('Handler resource usage unavailable', {
+                requestId: context.requestId,
+                handler,
+                pid: proc.pid,
+                exitCode,
+                responseBytes,
+                errorBytes,
+            })
+            return
+        }
+
+        Tach.handlerLogger.info('Handler resource usage', {
+            requestId: context.requestId,
+            handler,
+            pid: proc.pid,
+            exitCode,
+            cpuUserUs: usage.cpuTime.user,
+            cpuSystemUs: usage.cpuTime.system,
+            cpuTotalUs: usage.cpuTime.total,
+            memoryMaxRssBytes: usage.maxRSS,
+            fsReadOps: usage.ops.in,
+            fsWriteOps: usage.ops.out,
+            voluntaryContextSwitches: usage.contextSwitches.voluntary,
+            involuntaryContextSwitches: usage.contextSwitches.involuntary,
+            responseBytes,
+            errorBytes,
+        })
+    }
+
     /**
      * Executes a handler and returns a single {@link RouteResponse}.
      * stdout and stderr are drained concurrently to prevent pipe-buffer deadlocks.
@@ -67,9 +116,25 @@ export default class Tach {
         proc.stdin.end()
 
         const [out, err] = await Promise.all([
-            Tach.drainStream(proc.stdout, line => console.info(line,  proc.pid)),
-            Tach.drainStream(proc.stderr, line => console.error(line, proc.pid)),
+            Tach.drainStream(proc.stdout, line => Tach.handlerLogger.info('Handler stdout output', {
+                requestId: context.requestId,
+                pid: proc.pid,
+                output: line,
+            })),
+            Tach.drainStream(proc.stderr, line => Tach.handlerLogger.error('Handler stderr output', {
+                requestId: context.requestId,
+                pid: proc.pid,
+                output: line,
+            })),
         ])
+
+        await Tach.logHandlerResourceUsage(
+            proc,
+            context,
+            cmd[0],
+            Tach.byteLength(out),
+            Tach.byteLength(err),
+        )
 
         if (out.length > 0) return { status: 200, body: out }
         if (err.length > 0) return { status: 500, body: err }
@@ -95,24 +160,46 @@ export default class Tach {
         // Drain stderr concurrently in the background so its OS buffer never fills
         // and blocks the subprocess while we are processing stdout chunks.
         const stderrLines: string[] = []
+        let responseBytes = 0
         const stderrDone = Tach.drainStream(proc.stderr, line => {
             stderrLines.push(line)
-            console.error(line, proc.pid)
+            Tach.handlerLogger.error('Handler stderr output', {
+                requestId: context.requestId,
+                pid: proc.pid,
+                output: line,
+            })
         })
 
         for await (const chunk of proc.stdout) {
-            const combined = Tach.decoder.decode(chunk)
-            const lines    = combined.split('\n')
-            const partial  = lines.pop()!
+            const body = Tach.decoder.decode(chunk)
+            const lines = body.split('\n')
+            const partial = lines.pop()!
 
             for (const line of lines) {
-                if (line.length > 0) console.info(line, proc.pid)
+                if (line.length > 0) {
+                    Tach.handlerLogger.info('Handler stdout output', {
+                        requestId: context.requestId,
+                        pid: proc.pid,
+                        output: line,
+                    })
+                }
             }
 
+            responseBytes += Tach.byteLength(partial)
             if (partial.length > 0) yield { status: 200, body: partial }
         }
 
         const errRemainder = await stderrDone
+        const errorBytes = Tach.byteLength(errRemainder)
+            + stderrLines.reduce((total, line) => total + Tach.byteLength(line), 0)
+
+        await Tach.logHandlerResourceUsage(
+            proc,
+            context,
+            cmd[0],
+            responseBytes,
+            errorBytes,
+        )
 
         if (errRemainder.length > 0) {
             yield { status: 500, body: errRemainder }
@@ -137,6 +224,27 @@ export default class Tach {
         handler: ((request: BunRequest) => Promise<Response | null>) | null
     ) {
         Tach.frontendRequestHandler = handler
+    }
+
+    private static getRequestId(request: Request): string {
+        const incoming = request.headers.get(Tach.REQUEST_ID_HEADER)?.trim()
+
+        if (incoming && incoming.length <= Tach.MAX_REQUEST_ID_LENGTH) {
+            return incoming
+        }
+
+        return randomUUID()
+    }
+
+    private static withRequestId(response: Response, requestId: string): Response {
+        const headers = new Headers(response.headers)
+        headers.set(Tach.REQUEST_ID_HEADER, requestId)
+
+        return new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+        })
     }
 
     private static async serveRequest(
@@ -220,7 +328,7 @@ export default class Tach {
 
             // Reject expired tokens even without full signature verification
             if (typeof decodedPayload.exp === 'number' && decodedPayload.exp < Math.floor(Date.now() / 1000)) {
-                console.warn(`Rejected expired JWT (exp=${decodedPayload.exp})`, process.pid)
+                Tach.processLogger.warn('Rejected expired JWT', { exp: decodedPayload.exp })
                 return undefined
             }
 
@@ -231,7 +339,7 @@ export default class Tach {
                 verified:   false as const, // Signature NOT verified — do not trust claims without separate verification
             }
         } catch {
-            console.warn(`Failed to decode JWT — malformed base64 or JSON payload`, process.pid)
+            Tach.processLogger.warn('Failed to decode JWT payload')
             return undefined
         }
     }
@@ -249,57 +357,89 @@ export default class Tach {
             const serverRoute = async (request?: BunRequest, server?: Server<any>) => {
                 const start = Date.now()
                 const path  = new URL(request!.url).pathname
+                const method = request!.method
+                const ipAddress = server?.requestIP(request!)?.address ?? '0.0.0.0'
+                const requestId = Tach.getRequestId(request!)
 
-                let res: Response
+                let res: Response | undefined
+                let requestKind = 'handler'
 
                 try {
                     if (request!.headers.get('accept')?.includes('text/html')) {
+                        requestKind = 'frontend'
                         const frontendResponse = await Tach.frontendRequestHandler?.(request!)
-                        if (frontendResponse) return frontendResponse
-
-                        return new Response(
-                            await Bun.file(`${import.meta.dir}/../runtime/shells/development.html`).text(),
-                            { status: 200, headers: { 'Content-Type': 'text/html' } }
-                        )
-                    }
-
-                    if (request!.method === "OPTIONS") {
-                        console.info(`${path} - OPTIONS - 200`, process.pid)
-                        return new Response(
+                        if (frontendResponse) {
+                            res = frontendResponse
+                        } else {
+                            res = new Response(
+                                await Bun.file(`${import.meta.dir}/../runtime/shells/development.html`).text(),
+                                { status: 200, headers: { 'Content-Type': 'text/html' } }
+                            )
+                        }
+                    } else if (method === "OPTIONS") {
+                        requestKind = 'options'
+                        res = new Response(
                             Bun.file(`${Router.routesPath}${route === '/' ? '' : route}/OPTIONS`),
                             { status: 200, headers: { 'Content-Type': 'application/json' } }
                         )
-                    }
+                    } else {
+                        const context: RequestContext = {
+                            requestId,
+                            ipAddress,
+                        }
 
-                    const context: RequestContext = {
-                        ipAddress: server?.requestIP(request!)?.address ?? '0.0.0.0',
-                    }
+                        if (Router.middleware?.before) {
+                            const earlyResponse = await Router.middleware.before(request!, context)
+                            if (earlyResponse) {
+                                requestKind = 'middleware'
+                                res = earlyResponse
+                            }
+                        }
 
-                    if (Router.middleware?.before) {
-                        const earlyResponse = await Router.middleware.before(request!, context)
-                        if (earlyResponse) return earlyResponse
-                    }
+                        if (!res) {
+                            const { handler, stdin, config } = await Router.processRequest(request!, route)
 
-                    const { handler, stdin, config } = await Router.processRequest(request!, route)
+                            context.bearer = Tach.decodeJWT(stdin.headers?.authorization)
 
-                    context.bearer = Tach.decodeJWT(stdin.headers?.authorization)
+                            res = await Tach.serveRequest(handler, stdin, context, config)
 
-                    res = await Tach.serveRequest(handler, stdin, context, config)
-
-                    if (Router.middleware?.after) {
-                        res = await Router.middleware.after(request!, res, context)
+                            if (Router.middleware?.after) {
+                                res = await Router.middleware.after(request!, res, context)
+                            }
+                        }
                     }
 
                 } catch (err) {
                     if (err instanceof Response) {
                         res = err
                     } else {
-                        console.error('[process-executor] Unhandled error:', err, process.pid)
+                        Tach.processLogger.error('Unhandled request error', {
+                            err,
+                            requestId,
+                            method,
+                            path,
+                            route,
+                        })
                         res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.headers })
                     }
                 }
 
-                console.info(`${path} - ${request!.method} - ${res.status} - ${Date.now() - start}ms`, process.pid)
+                if (!res) {
+                    res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.headers })
+                }
+
+                res = Tach.withRequestId(res, requestId)
+
+                Tach.requestLogger.info('Request completed', {
+                    requestId,
+                    method,
+                    path,
+                    route,
+                    kind: requestKind,
+                    status: res.status,
+                    durationMs: Date.now() - start,
+                    ipAddress,
+                })
 
                 return res
             }
