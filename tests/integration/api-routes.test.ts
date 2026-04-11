@@ -40,6 +40,8 @@ beforeAll(async () => {
             PORT: TEST_PORT,
             HOSTNAME: '127.0.0.1',
             BASIC_AUTH: TEST_BASIC_AUTH,
+            ENABLE_HSTS: 'false',
+            MAX_BODY_BYTES: '64',
         },
         stdout: 'inherit',
         stderr: 'inherit'
@@ -237,6 +239,17 @@ describe('Request body parsing', () => {
         const res = await authFetch('/api', { method: 'POST' })
         expect(res.status).toEqual(200)
     })
+
+    test('body exceeding MAX_BODY_BYTES returns 413 before handler execution', async () => {
+        const res = await authFetch('/api', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: 'x'.repeat(65),
+        })
+        expect(res.status).toEqual(413)
+        const body = await res.json()
+        expect(body.error).toBe('Payload too large')
+    })
 })
 
 // ===========================================================================
@@ -299,16 +312,16 @@ describe('404 Not Found', () => {
 // CORS Headers
 // ===========================================================================
 describe('CORS headers', () => {
-    test('response includes Access-Control-Allow-Credential header', async () => {
+    test('response includes Access-Control-Allow-Credentials header', async () => {
         const res = await authFetch('/api')
         // ALLOW_CREDENTIALS defaults to "false" when not set
-        expect(res.headers.get('access-control-allow-credential')).toBe('false')
+        expect(res.headers.get('access-control-allow-credentials')).toBe('false')
     })
 
-    test('401 response includes Access-Control-Allow-Credential header', async () => {
+    test('401 response includes Access-Control-Allow-Credentials header', async () => {
         const res = await fetch(`${BASE_URL}/api`)
         expect(res.status).toEqual(401)
-        expect(res.headers.get('access-control-allow-credential')).toBe('false')
+        expect(res.headers.get('access-control-allow-credentials')).toBe('false')
     })
 })
 
@@ -764,12 +777,9 @@ describe('Security headers', () => {
         expect(res.headers.get('x-content-type-options')).toBe('nosniff')
     })
 
-    test('response includes Strict-Transport-Security header', async () => {
+    test('plain local HTTP responses do not include Strict-Transport-Security by default', async () => {
         const res = await authFetch('/api')
-        const hsts = res.headers.get('strict-transport-security')
-        expect(hsts).not.toBeNull()
-        expect(hsts).toContain('max-age=')
-        expect(hsts).toContain('includeSubDomains')
+        expect(res.headers.get('strict-transport-security')).toBeNull()
     })
 
     test('response includes Content-Security-Policy header', async () => {

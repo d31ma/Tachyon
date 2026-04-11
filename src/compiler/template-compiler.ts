@@ -523,8 +523,17 @@ export default class Yon {
                 return `${name}="${value}"`;
             };
 
-            const interpolate = (text: string) =>
-                text.replace(/\{([^{}]+)\}/g, '${$1}').replace(/\{\{([^{}]+)\}\}/g, '{${$1}}');
+            const interpolate = (text: string) => {
+                const rawExpressions: string[] = [];
+
+                return text
+                    .replace(/\{!\s*([^{}]+?)\s*\}/g, (_match, expr) => {
+                        rawExpressions.push(expr);
+                        return `__TY_RAW_${rawExpressions.length - 1}__`;
+                    })
+                    .replace(/\{\s*([^{}!][^{}]*?)\s*\}/g, (_match, expr) => `\${ty_escapeText(${expr})}`)
+                    .replace(/__TY_RAW_(\d+)__/g, (_match, index) => `\${${rawExpressions[Number(index)]}}`);
+            };
 
             const rewriter = new HTMLRewriter()
                 .on('script', {
@@ -656,8 +665,8 @@ export default class Yon {
             .replaceAll(/`<logic :else-if="(.*?)">`|`<\/logic>`/g, (_, expr) => expr ? `else if(${expr}) {` : '}')
             .replaceAll(/`<logic else="">`|`<\/logic>`/g, (_, expr) => expr ? `else {` : '}');
 
-        // Bind dynamic attributes :attr="expr" → attr="${expr}"
-        code = code.replaceAll(/:(\w[\w-]*)="([^"]*)"/g, '$1="${$2}"');
+        // Bind dynamic attributes :attr="expr" → attr="${escaped expr}"
+        code = code.replaceAll(/:(\w[\w-]*)="([^"]*)"/g, '$1="${ty_escapeAttr($2)}"');
 
         // Transform component invocations
         code = code.replaceAll(/`<([A-Za-z0-9-]+)_\s*([^/>]*)\/>`/g, (_, component, attrStr) => {

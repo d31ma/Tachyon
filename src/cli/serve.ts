@@ -4,7 +4,7 @@ import Pool from "../server/process-pool.js"
 import Router from "../server/route-handler.js"
 import Yon from "../compiler/template-compiler.js"
 import logger from "../server/logger.js"
-import { watch } from "fs"
+import { watch, type FSWatcher } from "fs"
 import { access } from "fs/promises"
 import path from "node:path"
 import type { Middleware } from "../server/route-handler.js"
@@ -20,6 +20,10 @@ let bundleWatcher: Bun.Subprocess | null = null
 const distPath = path.join(process.cwd(), 'dist')
 const bundleCliPath = `${import.meta.dir}/bundle.ts`
 const serveLogger = logger.child({ scope: 'cli:serve' })
+const hmrClients = new Set<ReadableStreamDefaultController<string>>()
+const hmrMaxClients = Number(process.env.HMR_MAX_CLIENTS) || 20
+const hmrWatchers: FSWatcher[] = []
+let hmrWatchersStarted = false
 
 async function pathExists(path: string): Promise<boolean> {
     try { await access(path); return true } catch { return false }
@@ -83,6 +87,49 @@ if (fullModeEnabled) {
 
 let debounceTimer: Timer
 
+function isLoopbackHost(hostname: string | null | undefined): boolean {
+    return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'
+}
+
+function isAuthorizedHmrRequest(req: Request, hostname: string | null | undefined): boolean {
+    if (isLoopbackHost(hostname)) return true
+
+    const token = process.env.HMR_TOKEN || process.env.DEV_TOKEN
+    if (!token) return false
+
+    const url = new URL(req.url)
+    const provided = req.headers.get('X-Tachyon-Dev-Token') || url.searchParams.get('token')
+
+    return provided === token
+}
+
+async function startHmrWatchers(server: ReturnType<typeof Bun.serve>) {
+    if (hmrWatchersStarted) return
+    hmrWatchersStarted = true
+
+    const onFileChange = () => {
+        clearTimeout(debounceTimer)
+        debounceTimer = setTimeout(async () => {
+            try {
+                serveLogger.info('HMR reload started')
+                await configureRoutes(true)
+                server.reload({ routes: Router.reqRoutes })
+                for (const client of hmrClients) client.enqueue("\n\n")
+            } catch (err) {
+                serveLogger.error('HMR reload failed', { err })
+            }
+        }, HMR_DEBOUNCE_MS)
+    }
+
+    if (await pathExists(Router.routesPath)) {
+        hmrWatchers.push(watch(Router.routesPath, { recursive: true }, onFileChange))
+    }
+
+    if (await pathExists(Router.componentsPath)) {
+        hmrWatchers.push(watch(Router.componentsPath, { recursive: true }, onFileChange))
+    }
+}
+
 const server = Bun.serve({
     idleTimeout: process.env.TIMEOUT ? Number(process.env.TIMEOUT) : 0,
 
@@ -96,34 +143,40 @@ const server = Bun.serve({
             return new Response("Not Found", { status: 404 })
         }
 
+        if (!isAuthorizedHmrRequest(req, server.hostname)) {
+            return new Response("Forbidden", { status: 403 })
+        }
+
+        if (hmrClients.size >= hmrMaxClients) {
+            return new Response("Too Many HMR Clients", { status: 429 })
+        }
+
         server.timeout(req, 0)
+
+        let hmrController: ReadableStreamDefaultController<string> | null = null
 
         return new Response(new ReadableStream({
             async start(controller) {
-
-                const onFileChange = () => {
-                    clearTimeout(debounceTimer)
-                    debounceTimer = setTimeout(async () => {
-                        try {
-                            serveLogger.info('HMR reload started')
-                            await configureRoutes(true)
-                            server.reload({ routes: Router.reqRoutes })
-                            controller.enqueue("\n\n")
-                        } catch (err) {
-                            serveLogger.error('HMR reload failed', { err })
-                        }
-                    }, HMR_DEBOUNCE_MS)
-                }
-
-                if (await pathExists(Router.routesPath))     watch(Router.routesPath,     { recursive: true }, onFileChange)
-                if (await pathExists(Router.componentsPath)) watch(Router.componentsPath, { recursive: true }, onFileChange)
+                hmrController = controller
+                hmrClients.add(controller)
+                controller.enqueue(": connected\n\n")
+                await startHmrWatchers(server)
+            },
+            cancel() {
+                if (hmrController) hmrClients.delete(hmrController)
+            },
+        }), {
+            headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
             }
-        }), { headers: { "Content-Type": "text/event-stream" } })
+        })
     },
 
     routes:      Router.reqRoutes,
     port:        process.env.PORT     || 8080,
-    hostname:    process.env.HOST || process.env.HOSTNAME || '0.0.0.0',
+    hostname:    process.env.HOST || process.env.HOSTNAME || '127.0.0.1',
     development: !!process.env.DEV,
 })
 
@@ -136,6 +189,7 @@ serveLogger.info('Server started', {
 
 process.on('SIGINT', () => {
     clearTimeout(debounceTimer)
+    for (const watcher of hmrWatchers) watcher.close()
     Pool.clearWarmedProcesses()
     bundleWatcher?.kill()
     server.stop()
@@ -145,6 +199,7 @@ process.on('SIGINT', () => {
 
 process.on('SIGTERM', () => {
     clearTimeout(debounceTimer)
+    for (const watcher of hmrWatchers) watcher.close()
     Pool.clearWarmedProcesses()
     bundleWatcher?.kill()
     server.stop()

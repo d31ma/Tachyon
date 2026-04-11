@@ -95,6 +95,32 @@ function status() {
     return root
 }
 
+async function createEscapingFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-escaping-'))
+    tempDirs.push(root)
+
+    await mkdir(path.join(root, 'routes'), { recursive: true })
+
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-escaping-fixture',
+        private: true
+    }, null, 2))
+
+    await writeFile(
+        path.join(root, 'routes', 'HTML'),
+        `<script>
+let message = '<img src=x onerror=alert(1)>';
+let title = '" onfocus="alert(1)';
+let trusted = '<strong>Trusted raw HTML</strong>';
+</script>
+<p>{message}</p>
+<div :title="title">Hover me</div>
+<section>{!trusted}</section>`
+    )
+
+    return root
+}
+
 async function decode(stream: ReadableStream<Uint8Array> | null) {
     if (!stream) return ''
     return await new Response(stream).text()
@@ -119,7 +145,7 @@ test('tach.bundle prerenders HTML routes into static documents', { timeout: 2000
         proc.exited
     ])
 
-    expect(exitCode).toBe(0)
+    if (exitCode !== 0) throw new Error(stderr)
     expect(stderr).toBe('')
     expect(stdout).toContain('Bundle completed')
 
@@ -152,7 +178,7 @@ test('tach.bundle classifies component, web component, native, and unknown tags 
         proc.exited
     ])
 
-    expect(exitCode).toBe(0)
+    if (exitCode !== 0) throw new Error(stderr)
     expect(stdout).toContain('Bundle completed')
     expect(stderr).toContain('Unknown element tag')
     expect(stderr).toContain('tag=mystery')
@@ -181,7 +207,7 @@ test('loop-scoped event handlers can access loop variables when rerendered', { t
         proc.exited
     ])
 
-    expect(exitCode).toBe(0)
+    if (exitCode !== 0) throw new Error(stderr)
     expect(stderr).toBe('')
 
     const pageModulePath = path.join(cwd, 'dist', 'pages', 'HTML.js')
@@ -197,4 +223,34 @@ test('loop-scoped event handlers can access loop variables when rerendered', { t
     const updated = await render()
 
     expect(updated).toContain('done')
+})
+
+test('template interpolation and dynamic attributes are escaped by default', { timeout: 20000 }, async () => {
+    const cwd = await createEscapingFixture()
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ])
+
+    if (exitCode !== 0) throw new Error(stderr)
+    expect(stderr).toBe('')
+
+    const pageModulePath = path.join(cwd, 'dist', 'pages', 'HTML.js')
+    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?escaping=${Date.now()}`)
+    const render = await pageModule.default()
+    const html = await render()
+
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;')
+    expect(html).not.toContain('<img src=x onerror=alert(1)>')
+    expect(html).toContain('title="&quot; onfocus=&quot;alert(1)"')
+    expect(html).not.toContain('title="" onfocus="alert(1)"')
+    expect(html).toContain('<strong>Trusted raw HTML</strong>')
 })
