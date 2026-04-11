@@ -5,10 +5,8 @@ export interface RequestContext {
     requestId: string
     ipAddress: string
     bearer?: {
-        header: Record<string, unknown>
-        payload: Record<string, unknown>
-        signature: string
-        /** Always false — signature is decoded but NOT cryptographically verified */
+        token: string
+        /** Always false unless application middleware replaces it with verified auth context */
         verified: false
     }
 }
@@ -68,20 +66,30 @@ export default class Router {
         ? process.env.ALLOW_METHODS.split(',')
         : ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD']
 
-    static headers = {
-        "Access-Control-Allow-Headers":    process.env.ALLOW_HEADERS     || "",
-        "Access-Control-Allow-Origin":     process.env.ALLOW_ORIGINS     || "",
-        "Access-Control-Allow-Credential": process.env.ALLOW_CREDENTIALS || "false",
-        "Access-Control-Expose-Headers":   process.env.ALLOW_EXPOSE_HEADERS || "",
-        "Access-Control-Max-Age":          process.env.ALLOW_MAX_AGE     || "",
-        "Access-Control-Allow-Methods":    process.env.ALLOW_METHODS     || "",
-        // Security headers
-        "X-Frame-Options":                 "DENY",
-        "X-Content-Type-Options":          "nosniff",
-        "Strict-Transport-Security":       "max-age=31536000; includeSubDomains",
-        "Content-Security-Policy":         process.env.CONTENT_SECURITY_POLICY || "default-src 'self'",
-        "Referrer-Policy":                 "strict-origin-when-cross-origin",
+    static get headers(): Record<string, string> {
+        const headers: Record<string, string> = {
+            "Access-Control-Allow-Headers":      process.env.ALLOW_HEADERS     || "",
+            "Access-Control-Allow-Origin":       process.env.ALLOW_ORIGINS     || "",
+            "Access-Control-Allow-Credentials":  process.env.ALLOW_CREDENTIALS || "false",
+            "Access-Control-Expose-Headers":     process.env.ALLOW_EXPOSE_HEADERS || "",
+            "Access-Control-Max-Age":            process.env.ALLOW_MAX_AGE     || "",
+            "Access-Control-Allow-Methods":      process.env.ALLOW_METHODS     || "",
+            // Security headers
+            "X-Frame-Options":                   "DENY",
+            "X-Content-Type-Options":            "nosniff",
+            "Content-Security-Policy":           process.env.CONTENT_SECURITY_POLICY || "default-src 'self'",
+            "Referrer-Policy":                   "strict-origin-when-cross-origin",
+        }
+
+        if (process.env.ENABLE_HSTS === 'true') {
+            headers["Strict-Transport-Security"] = process.env.HSTS_VALUE || "max-age=31536000; includeSubDomains"
+        }
+
+        return headers
     }
+
+    /** Maximum bytes buffered from an inbound request body before returning 413. */
+    static readonly MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES) || 1_048_576
 
     /**
      * Validates a route file path, registers slugs, and records allowed methods.
@@ -153,11 +161,12 @@ export default class Router {
 
         stdin.headers = request.headers.toJSON()
 
-        const blob = await request.blob()
+        const bodyBytes = await Router.readBodyBytes(request)
 
-        if (blob.size > 0) {
+        if (bodyBytes.byteLength > 0) {
             const contentType = request.headers.get('content-type') ?? ''
-            stdin.body = contentType.includes('json') ? await blob.json() : await blob.text()
+            const bodyText = new TextDecoder().decode(bodyBytes)
+            stdin.body = contentType.includes('json') ? JSON.parse(bodyText) : bodyText
         }
 
         const searchParams = new URL(request.url).searchParams
@@ -167,6 +176,43 @@ export default class Router {
         }
 
         return { handler: `${Router.routesPath}${route}/${request.method}`, stdin, config: requestConfig }
+    }
+
+    private static async readBodyBytes(request: Request): Promise<Uint8Array> {
+        const contentLength = request.headers.get('content-length')
+
+        if (contentLength && Number(contentLength) > Router.MAX_BODY_BYTES) {
+            throw Response.json({ error: 'Payload too large' }, { status: 413, headers: Router.headers })
+        }
+
+        if (!request.body) return new Uint8Array()
+
+        const reader = request.body.getReader()
+        const chunks: Uint8Array[] = []
+        let total = 0
+
+        while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            if (!value) continue
+
+            total += value.byteLength
+            if (total > Router.MAX_BODY_BYTES) {
+                await reader.cancel()
+                throw Response.json({ error: 'Payload too large' }, { status: 413, headers: Router.headers })
+            }
+
+            chunks.push(value)
+        }
+
+        const body = new Uint8Array(total)
+        let offset = 0
+        for (const chunk of chunks) {
+            body.set(chunk, offset)
+            offset += chunk.byteLength
+        }
+
+        return body
     }
 
     /** Maximum allowed length for any single route or query parameter value. */

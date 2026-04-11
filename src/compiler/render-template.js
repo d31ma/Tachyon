@@ -56,6 +56,19 @@ export default async function(props) {
             return ''
         }
 
+        const ty_escapeHtml = (value) => {
+            if(value === null || value === undefined) return ''
+            return String(value)
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;')
+        }
+
+        const ty_escapeText = ty_escapeHtml
+        const ty_escapeAttr = ty_escapeHtml
+
         let elements = '';
 
         let render;

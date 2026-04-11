@@ -59,6 +59,14 @@ export default class Tach {
         return value ? Buffer.byteLength(value) : 0
     }
 
+    private static handlerErrorBody(stderr?: string): string {
+        if (process.env.DEV === 'true' && process.env.DEV_ERROR_DETAILS === 'true' && stderr) {
+            return JSON.stringify({ detail: stderr })
+        }
+
+        return JSON.stringify({ detail: 'Internal server error' })
+    }
+
     private static async logHandlerResourceUsage(
         proc: ReturnType<typeof Pool.acquireHandler>,
         context: RequestContext,
@@ -137,7 +145,7 @@ export default class Tach {
         )
 
         if (out.length > 0) return { status: 200, body: out }
-        if (err.length > 0) return { status: 500, body: err }
+        if (err.length > 0) return { status: 500, body: Tach.handlerErrorBody(err) }
         return { status: 200 }
     }
 
@@ -202,9 +210,9 @@ export default class Tach {
         )
 
         if (errRemainder.length > 0) {
-            yield { status: 500, body: errRemainder }
+            yield { status: 500, body: Tach.handlerErrorBody(errRemainder) }
         } else if (stderrLines.length > 0) {
-            yield { status: 500, body: JSON.stringify({ detail: stderrLines.join(' ') }) }
+            yield { status: 500, body: Tach.handlerErrorBody(stderrLines.join(' ')) }
         }
     }
 
@@ -308,40 +316,34 @@ export default class Tach {
     }
 
     /**
-     * Decodes a Bearer JWT from an Authorization header.
-     * WARNING: The signature is NOT verified. Route handlers must not trust claims
-     * without out-of-band verification (e.g. via a middleware that calls a trusted
-     * auth service). Rejects tokens whose `exp` claim is in the past.
+     * Extracts a Bearer token without exposing decoded claims to handlers.
+     * The token is decoded only internally to reject expired JWTs when possible.
      * @param authorization - The raw `Authorization` header value
      */
-    private static decodeJWT(authorization: string | undefined) {
+    private static getBearerContext(authorization: string | undefined): RequestContext['bearer'] {
         if (!authorization) return undefined
 
         const [authType, token] = authorization.split(' ')
 
-        if (authType.toLowerCase() !== "bearer") return undefined
+        if (authType?.toLowerCase() !== "bearer" || !token) return undefined
 
-        const [header, payload, signature] = token.split('.')
+        const [, payload] = token.split('.')
 
         try {
-            const decodedPayload: Record<string, unknown> = JSON.parse(atob(payload))
+            if (payload) {
+                const decodedPayload: Record<string, unknown> = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
 
-            // Reject expired tokens even without full signature verification
-            if (typeof decodedPayload.exp === 'number' && decodedPayload.exp < Math.floor(Date.now() / 1000)) {
-                Tach.processLogger.warn('Rejected expired JWT', { exp: decodedPayload.exp })
-                return undefined
-            }
-
-            return {
-                header:     JSON.parse(atob(header)),
-                payload:    decodedPayload,
-                signature,
-                verified:   false as const, // Signature NOT verified — do not trust claims without separate verification
+                // Reject expired tokens even without exposing unverified claims.
+                if (typeof decodedPayload.exp === 'number' && decodedPayload.exp < Math.floor(Date.now() / 1000)) {
+                    Tach.processLogger.warn('Rejected expired JWT', { exp: decodedPayload.exp })
+                    return undefined
+                }
             }
         } catch {
-            Tach.processLogger.warn('Failed to decode JWT payload')
-            return undefined
+            Tach.processLogger.warn('Failed to decode JWT payload; exposing raw bearer token only')
         }
+
+        return { token, verified: false as const }
     }
 
     /**
@@ -399,7 +401,7 @@ export default class Tach {
                         if (!res) {
                             const { handler, stdin, config } = await Router.processRequest(request!, route)
 
-                            context.bearer = Tach.decodeJWT(stdin.headers?.authorization)
+                            context.bearer = Tach.getBearerContext(stdin.headers?.authorization)
 
                             res = await Tach.serveRequest(handler, stdin, context, config)
 

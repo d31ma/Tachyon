@@ -151,9 +151,7 @@ Every handler receives the full request context on `stdin` as a JSON object:
     "requestId": "3f5b52f8-9c2e-4f8d-8bd3-6fd2b10c28d9",
     "ipAddress": "127.0.0.1",
     "bearer": {
-      "header":   { "alg": "HS256", "typ": "JWT" },
-      "payload":  { "sub": "42", "exp": 1999999999 },
-      "signature": "...",
+      "token": "...",
       "verified": false
     }
   }
@@ -162,7 +160,7 @@ Every handler receives the full request context on `stdin` as a JSON object:
 
 Tachyon reuses an incoming `X-Request-Id` header when present, generates one when it is missing, returns it on every response, and includes it in request logs.
 
-> **Note:** `context.bearer` is decoded but the signature is **not** verified. `verified` is always `false`. Do not trust claims in `bearer.payload` without out-of-band verification (e.g. via middleware that calls a trusted auth service). Tokens with an expired `exp` claim are rejected before reaching your handler. Use the [`jose`](https://github.com/panva/jose) library for full JWT verification.
+> **Note:** `context.bearer` exposes only the raw bearer token and `verified: false`. Tachyon may decode the payload internally to reject expired JWTs, but unverified claims are not exposed to handlers. Use middleware plus a verifier such as [`jose`](https://github.com/panva/jose) when handlers need authenticated identity.
 
 ### Route Handler Examples
 
@@ -304,7 +302,8 @@ bun run serve --full
 
 | Syntax | Description |
 |--------|-------------|
-| `{expr}` | Interpolate expression |
+| `{expr}` | Interpolate and HTML-escape expression |
+| `{!expr}` | Render trusted raw HTML without escaping |
 | `@event="handler()"` | Event binding |
 | `:prop="value"` | Bind attribute to expression |
 | `:value="variable"` | Two-way input binding |
@@ -477,17 +476,21 @@ Tachyon applies the following protections by default:
 
 | Area | Protection |
 |------|-----------|
-| **Response headers** | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Strict-Transport-Security`, `Content-Security-Policy`, `Referrer-Policy` on every response |
+| **Response headers** | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy`, `Referrer-Policy` on every response; `Strict-Transport-Security` is opt-in with `ENABLE_HSTS=true` |
 | **Basic Auth** | Credential comparison uses `timingSafeEqual` to prevent timing oracle attacks |
-| **JWT** | Tokens with an expired `exp` claim are rejected; signature is decoded but not verified (see note above) |
+| **JWT** | Raw bearer tokens are exposed with `verified: false`; expired JWTs are rejected when their `exp` claim can be decoded |
+| **Request body limits** | Request bodies exceeding `MAX_BODY_BYTES` return HTTP 413 before handler execution |
+| **Template escaping** | Text interpolation and dynamic attributes are escaped by default; raw HTML requires `{!expr}` |
 | **Process timeout** | Handler processes that exceed `HANDLER_TIMEOUT_MS` are killed automatically |
 | **Parameter limits** | Query and path parameters exceeding `MAX_PARAM_LENGTH` characters return HTTP 400 |
-| **Error responses** | Unhandled server errors return a generic message; internal details are logged server-side only |
+| **Error responses** | Unhandled server errors and handler `stderr` failures return generic messages; internal details are logged server-side with the request id |
+| **HMR** | Development HMR defaults to `127.0.0.1`, limits clients with `HMR_MAX_CLIENTS`, and requires `HMR_TOKEN` when exposed beyond loopback |
 | **CORS** | Wildcard `ALLOW_ORIGINS=*` combined with `ALLOW_CREDENTIALS=true` is not recommended — set explicit origins in production |
 
 For production deployments:
 - Set `BASIC_AUTH` to a strong credential — never use a default value
 - Set `ALLOW_ORIGINS` to your application's domain instead of `*`
+- Set `ENABLE_HSTS=true` only when serving HTTPS directly or behind a trusted HTTPS proxy
 - Consider adding a reverse proxy (nginx, Caddy) to enforce HTTPS and add rate limiting
 
 ## License
