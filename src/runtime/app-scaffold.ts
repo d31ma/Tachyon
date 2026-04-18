@@ -1,7 +1,7 @@
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const version = '1.9.0'
+const version = '1.10.0'
 
 const files = {
     '.gitignore': `node_modules

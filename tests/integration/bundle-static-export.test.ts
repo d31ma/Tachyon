@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
+import { Window } from 'happy-dom'
 
 const tempDirs: string[] = []
 const bundleEntrypoint = path.join(process.cwd(), 'src/cli/bundle.ts')
@@ -169,6 +170,44 @@ async function requestMfa() {
 </script>
 <button @click="requestMfa()">Continue</button>
 <p>{status}</p>`
+    )
+
+    return root
+}
+
+async function createComponentEmitFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-component-emit-'))
+    tempDirs.push(root)
+
+    await mkdir(path.join(root, 'routes'), { recursive: true })
+    await mkdir(path.join(root, 'components'), { recursive: true })
+
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-component-emit-fixture',
+        private: true
+    }, null, 2))
+
+    await writeFile(
+        path.join(root, 'components', 'child-picker.html'),
+        `<script>
+let label = 'fallback';
+function choose() {
+    emit('selected', { label, source: 'child-picker' });
+}
+</script>
+<button @click="choose()">Choose {label}</button>`
+    )
+
+    await writeFile(
+        path.join(root, 'routes', 'HTML'),
+        `<script>
+let selected = 'none';
+function receive(event) {
+    selected = event.detail.label + ':' + event.detail.source;
+}
+</script>
+<child-picker label="alpha" @selected="receive($event)" />
+<p>Selected {selected}</p>`
     )
 
     return root
@@ -373,4 +412,72 @@ test('async event handlers are awaited before Yon rerenders', { timeout: 20000 }
 
     expect(updated).toContain('>phone-input</p>')
     expect(updated).not.toContain('>loading</p>')
+})
+
+test('components can emit custom events handled by their parent wrapper', { timeout: 20000 }, async () => {
+    const cwd = await createComponentEmitFixture()
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ])
+
+    if (exitCode !== 0) throw new Error(stderr)
+    expect(stderr).toBe('')
+
+    const pageModulePath = path.join(cwd, 'dist', 'pages', 'HTML.js')
+    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?component-emit=${Date.now()}`)
+    const render = await pageModule.default()
+    const initial = await render()
+
+    const windowInstance = new Window()
+    const previousGlobals = {
+        window: globalThis.window,
+        document: globalThis.document,
+        CustomEvent: globalThis.CustomEvent,
+    }
+
+    try {
+        Object.assign(windowInstance, {
+            SyntaxError,
+        })
+
+        Object.assign(globalThis, {
+            window: windowInstance,
+            document: windowInstance.document,
+            CustomEvent: windowInstance.CustomEvent,
+        })
+
+        document.body.innerHTML = initial
+
+        const wrapperId = initial.match(/<div id="([^"]+)" @selected/)?.[1]
+        const wrapper = wrapperId ? document.getElementById(wrapperId) as HTMLDivElement | null : null
+        const button = document.querySelector('button') as HTMLButtonElement | null
+
+        expect(wrapper?.id).toBeTruthy()
+        expect(button?.id).toBeTruthy()
+        expect(initial).toContain('Selected none')
+
+        const received = new Promise<unknown>((resolve) => {
+            wrapper!.addEventListener('selected', async (event) => {
+                await render(wrapper!.id, event)
+                resolve((event as CustomEvent).detail)
+            })
+        })
+
+        await render(button!.id, new windowInstance.MouseEvent('click'))
+
+        expect(await received).toEqual({ label: 'alpha', source: 'child-picker' })
+        expect(await render()).toContain('Selected alpha:child-picker')
+    } finally {
+        await windowInstance.happyDOM.close()
+        Object.assign(globalThis, previousGlobals)
+    }
 })
