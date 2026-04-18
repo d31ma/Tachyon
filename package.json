@@ -44,11 +44,11 @@
     ],
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/Chidelma/Tachyon.git"
+        "url": "git+https://github.com/d31ma/Tachyon.git"
     },
     "homepage": "https://tachyon.del.ma",
     "bugs": {
-        "url": "https://github.com/Chidelma/Tachyon/issues"
+        "url": "https://github.com/d31ma/Tachyon/issues"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "^20.8.9",
