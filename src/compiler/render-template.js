@@ -35,12 +35,12 @@ export default async function(props) {
             return 'ty-' + key + '-0'
         }
 
-        const ty_invokeEvent = (hash, action) => {
+        const ty_invokeEvent = async (hash, action) => {
             if(elemId === ty_generateId(hash, 'ev')) {
-                if(typeof action === 'function') action(event)
+                if(typeof action === 'function') await action(event)
                 else {
                     const toCall = (event && !action.endsWith(')')) ? action + "('" + event + "')" : action
-                    eval(toCall)
+                    await eval(toCall)
                 }
             }
             return ''

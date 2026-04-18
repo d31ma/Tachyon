@@ -8,6 +8,56 @@ import {
 } from './dom-helpers.js';
 
 type RenderFn = (elementId?: string | null, eventDetail?: unknown) => Promise<string>;
+type RenderFactory = (props?: unknown) => Promise<RenderFn>;
+type YonGlobal = {
+  version: string;
+  modules: Map<string, RenderFactory>;
+  register(path: string, factory: RenderFactory): RenderFactory;
+  load(path: string): Promise<RenderFactory>;
+  navigate?: (pathname: string) => void;
+  rerender?: (triggerId: string, eventDetail?: unknown) => Promise<void>;
+};
+
+declare global {
+  interface Window {
+    Yon?: YonGlobal;
+    __ty_rerender?: () => Promise<void>;
+  }
+}
+
+function getYonGlobal(): YonGlobal {
+  const existing = window.Yon;
+  if (
+    existing?.modules
+    && typeof existing.register === 'function'
+    && typeof existing.load === 'function'
+  ) return existing;
+
+  const modules = existing?.modules ?? new Map<string, RenderFactory>();
+  const yon: YonGlobal = {
+    version: '1',
+    modules,
+    register(path, factory) {
+      modules.set(path, factory);
+      return factory;
+    },
+    async load(path) {
+      const registered = modules.get(path);
+      if (registered) return registered;
+
+      const mod = await import(path);
+      if (typeof mod.default === 'function') return mod.default as RenderFactory;
+
+      const loaded = modules.get(path);
+      if (loaded) return loaded;
+
+      throw new Error(`Yon module "${path}" did not export or register a renderer`);
+    },
+  };
+
+  window.Yon = Object.assign(existing ?? {}, yon);
+  return window.Yon;
+}
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let pageRender: RenderFn;
@@ -21,6 +71,7 @@ const routes = new Map<string, Record<string, number>>();
 const layouts: Record<string, string> = {};
 const slugs: Record<string, string> = {};
 let params: (string | number | boolean | null | undefined)[] = [];
+const yon = getYonGlobal();
 
 async function loadManifests() {
   const [routeData, layoutData] = await Promise.all([
@@ -123,6 +174,30 @@ async function rerender(triggerId: string, eventDetail?: unknown) {
   }
 }
 
+async function refreshCurrentView() {
+  if (!pageRender) return;
+
+  previousHTML = '';
+
+  if (layoutRender) {
+    const [layoutHTML, pageHTML] = await Promise.all([
+      layoutRender(),
+      pageRender(),
+    ]);
+    const tempDoc = new DOMParser().parseFromString(`<body>${layoutHTML}</body>`, 'text/html');
+    const slot = tempDoc.getElementById('ty-layout-slot');
+    if (slot) slot.innerHTML = pageHTML;
+    morphChildren(document.body, parseFragment(tempDoc.body.innerHTML), {
+      preserveElement: (el) => lazyRenders.has(el.id)
+    });
+    previousHTML = pageHTML;
+  } else {
+    patchBody(await pageRender());
+  }
+
+  postPatch();
+}
+
 function isInsideSlot(elementId: string): boolean {
   const el = document.getElementById(elementId);
   if (!el) return false;
@@ -212,8 +287,8 @@ async function loadLazyComponent(el: HTMLElement) {
   const props = propsRaw ? JSON.parse(decodeURIComponent(propsRaw)) : null;
 
   try {
-    const mod = await import(modulePath);
-    const render = await mod.default(props);
+    const factory = await yon.load(modulePath);
+    const render = await factory(props);
     lazyRenders.set(el.id, render);
     el.innerHTML = await render();
     el.removeAttribute('data-lazy-component');
@@ -271,10 +346,10 @@ function navigate(pathname: string) {
   const layoutChanged = layoutPath !== currentLayoutPath;
 
   const loadPage = async () => {
-    const mod = await import(pageURL);
+    const pageFactory = await yon.load(pageURL);
     if (location.pathname !== pathname) history.pushState({}, '', pathname);
     else history.replaceState({}, '', pathname);
-    pageRender = await mod.default();
+    pageRender = await pageFactory();
     freshNavigation = true;
     previousHTML = '';
     lazyLoaded.clear();
@@ -292,15 +367,15 @@ function navigate(pathname: string) {
 
   if (layoutPath && layoutChanged) {
     Promise.all([
-      import(layoutPath),
-      import(pageURL),
-    ]).then(async ([layoutMod, pageMod]) => {
+      yon.load(layoutPath),
+      yon.load(pageURL),
+    ]).then(async ([layoutFactory, pageFactory]) => {
       currentLayoutPath = layoutPath;
-      layoutRender = await layoutMod.default();
+      layoutRender = await layoutFactory();
 
       if (location.pathname !== pathname) history.pushState({}, '', pathname);
       else history.replaceState({}, '', pathname);
-      pageRender = await pageMod.default();
+      pageRender = await pageFactory();
 
       freshNavigation = true;
       previousHTML = '';
@@ -340,3 +415,10 @@ function resolvePageHandler(pathname: string): string {
   params = parseParams(segments.slice(routeSegs.length));
   return handler;
 }
+
+Object.assign(yon, {
+  navigate,
+  rerender,
+});
+
+window.__ty_rerender = refreshCurrentView;
