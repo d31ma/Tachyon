@@ -134,7 +134,8 @@ jobs:
     needs: [test, package-blackbox, version]
     if: needs.version.outputs.tag_exists == 'false'
     permissions:
-      contents: write
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -151,25 +152,19 @@ jobs:
       - name: Setup Node and upgrade npm
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Upgrade npm
         run: npm install -g npm@latest
 
-      - name: Verify NPM token
+      - name: Verify trusted publishing prerequisites
         run: |
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "NPM_TOKEN secret is not configured."
-            exit 1
-          fi
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          node --version
+          npm --version
 
       - name: Publish to npm
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   github-release:
     name: Create GitHub release
