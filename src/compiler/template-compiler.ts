@@ -23,6 +23,8 @@ type ElementTagResolution =
     | { kind: 'control' }
     | { kind: 'unknown' }
 
+type YonOutputFormat = 'esm' | 'global'
+
 const TEMPLATE_PATH = `${import.meta.dir}/render-template.js`;
 const ROUTES_JSON_PATH = `${import.meta.dir}/../runtime/route-manifest.json`;
 const LAYOUTS_JSON_PATH = `${import.meta.dir}/../runtime/layout-manifest.json`;
@@ -43,6 +45,7 @@ export default class Yon {
     private static readonly layoutMethod = 'LAYOUT'
     private static readonly prerenderRenderConcurrency = 4
     private static readonly prerenderWriteConcurrency = 8
+    private static readonly outputFormat = Yon.resolveOutputFormat()
     private static readonly compMapping = new Map<string, string>()
     private static layoutMapping: Record<string, string> = {}
     private static readonly warnedUnknownTags = new Set<string>()
@@ -80,6 +83,15 @@ export default class Yon {
     ])
 
     private static readonly routeTitleFallback = "Tachyon"
+
+    private static resolveOutputFormat(): YonOutputFormat {
+        const value = (process.env.YON_FORMAT || process.env.TACHYON_YON_FORMAT || 'esm').toLowerCase()
+        return value === 'global' || value === 'umd' || value === 'iife' ? 'global' : 'esm'
+    }
+
+    private static isGlobalOutput() {
+        return Yon.outputFormat === 'global'
+    }
 
     static getParams(request: BunRequest, route: string) {
         const url = new URL(request.url)
@@ -228,9 +240,11 @@ export default class Yon {
         if (rewritten !== source) await writeFile(filePath, rewritten)
     }
 
-    private static installPrerenderGlobals() {
+    private static installPrerenderGlobals(distPath: string) {
         const previousDocument = globalThis.document
         const previousWindow = globalThis.window
+        const previousYon = (globalThis as Record<string, unknown>).Yon
+        const modules = new Map<string, (props?: unknown) => Promise<(elementId?: string | null, eventDetail?: unknown) => Promise<string>>>()
 
         const titleState = { value: '' }
         const documentStub = {
@@ -280,7 +294,28 @@ export default class Yon {
 
         Object.assign(globalThis, {
             document: documentStub,
-            window: globalThis
+            window: globalThis,
+            Yon: {
+                version: '1',
+                modules,
+                register(id: string, factory: (props?: unknown) => Promise<(elementId?: string | null, eventDetail?: unknown) => Promise<string>>) {
+                    modules.set(id, factory)
+                    return factory
+                },
+                async load(id: string) {
+                    const registered = modules.get(id)
+                    if (registered) return registered
+
+                    const relative = id.startsWith('/') ? id.slice(1) : id
+                    const modulePath = pathToFileURL(path.join(distPath, relative)).href
+                    const mod = await import(modulePath)
+                    const loaded = modules.get(id)
+                    if (loaded) return loaded
+                    if (typeof mod.default === 'function') return mod.default
+
+                    throw new Error(`Yon module '${id}' did not export or register a renderer`)
+                }
+            }
         })
 
         return {
@@ -293,8 +328,26 @@ export default class Yon {
 
                 if (previousWindow === undefined) Reflect.deleteProperty(globalThis as Record<string, unknown>, 'window')
                 else Object.assign(globalThis, { window: previousWindow })
+
+                if (previousYon === undefined) Reflect.deleteProperty(globalThis as Record<string, unknown>, 'Yon')
+                else Object.assign(globalThis, { Yon: previousYon })
             }
         }
+    }
+
+    private static async loadRenderFactoryForPrerender(filePath: string, publicPath: string) {
+        const mod = await import(pathToFileURL(filePath).href)
+        if (typeof mod.default === 'function') return mod.default
+
+        const yon = (globalThis as {
+            Yon?: {
+                modules?: Map<string, (props?: unknown) => Promise<(elementId?: string | null, eventDetail?: unknown) => Promise<string>>>
+            }
+        }).Yon
+        const registered = yon?.modules?.get(publicPath)
+        if (registered) return registered
+
+        throw new Error(`Yon module '${publicPath}' did not export or register a renderer`)
     }
 
     private static async renderPageDocument(
@@ -305,6 +358,9 @@ export default class Yon {
         const pageFile = pathname === '/'
             ? path.join(distPath, 'pages', 'HTML.js')
             : path.join(distPath, 'pages', pathname.slice(1), 'HTML.js')
+        const pagePublicPath = pathname === '/'
+            ? '/pages/HTML.js'
+            : `/pages/${pathname.slice(1)}/HTML.js`
 
         await Yon.rewriteAbsoluteImports(pageFile, distPath)
 
@@ -315,18 +371,18 @@ export default class Yon {
 
         if (layoutFile) await Yon.rewriteAbsoluteImports(layoutFile, distPath)
 
-        const prerender = Yon.installPrerenderGlobals()
+        const prerender = Yon.installPrerenderGlobals(distPath)
 
         try {
-            const pageModule = await import(pathToFileURL(pageFile).href)
-            const pageFactory = await pageModule.default()
+            const pageModule = await Yon.loadRenderFactoryForPrerender(pageFile, pagePublicPath)
+            const pageFactory = await pageModule()
             const pageHTML = await pageFactory()
 
             let layoutHTML = ''
 
             if (layoutFile) {
-                const layoutModule = await import(pathToFileURL(layoutFile).href)
-                const layoutFactory = await layoutModule.default()
+                const layoutModule = await Yon.loadRenderFactoryForPrerender(layoutFile, layoutRoute!)
+                const layoutFactory = await layoutModule()
                 layoutHTML = await layoutFactory()
             }
 
@@ -517,7 +573,7 @@ export default class Yon {
 
             const formatAttr = (name: string, value: string, hash: string): string => {
                 if (name.startsWith('@'))
-                    return `${name}="\${ty_invokeEvent('${hash}', (__event__) => { ${value} })}"`;
+                    return `${name}="\${await ty_invokeEvent('${hash}', (__event__) => { ${value} })}"`;
                 if (name === ':value')
                     return `value="\${ty_assignValue('${hash}', '${value}')}"`;
                 return `${name}="${value}"`;
@@ -585,8 +641,12 @@ export default class Yon {
                                 const existing = imports.get(filepath);
                                 if (!existing || !existing.has(resolvedComponent)) {
                                     const keyword = existing ? 'const' : 'const';
-                                    const awaitPrefix = existing ? '' : 'await ';
-                                    parsed.push({ static: `${keyword} { default: ${resolvedComponent.replaceAll('-', '_')} } = ${awaitPrefix}import('/components/${filepath}')` });
+                                    if (Yon.isGlobalOutput()) {
+                                        parsed.push({ static: `${keyword} ${resolvedComponent.replaceAll('-', '_')} = await globalThis.Yon.load('/components/${filepath}')` });
+                                    } else {
+                                        const awaitPrefix = existing ? '' : 'await ';
+                                        parsed.push({ static: `${keyword} { default: ${resolvedComponent.replaceAll('-', '_')} } = ${awaitPrefix}import('/components/${filepath}')` });
+                                    }
                                     if (existing) existing.add(resolvedComponent);
                                     else imports.set(filepath, new Set([resolvedComponent]));
                                 }
@@ -717,15 +777,67 @@ export default class Yon {
         return code;
     }
 
+    private static wrapGlobalModule(code: string, publicPath: string) {
+        const factory = code.replace(/^export default\s+/, '')
+
+        return `
+(function(root, factory) {
+    function ensureYon() {
+        var existing = root.Yon || {};
+        var modules = existing.modules || new Map();
+
+        existing.version = existing.version || '1';
+        existing.modules = modules;
+        existing.register = existing.register || function(path, rendererFactory) {
+            modules.set(path, rendererFactory);
+            return rendererFactory;
+        };
+        existing.load = existing.load || async function(path) {
+            var registered = modules.get(path);
+            if (registered) return registered;
+
+            var mod = await import(path);
+            if (typeof mod.default === 'function') return mod.default;
+
+            registered = modules.get(path);
+            if (registered) return registered;
+
+            throw new Error('Yon module "' + path + '" did not export or register a renderer');
+        };
+
+        root.Yon = existing;
+        return existing;
+    }
+
+    ensureYon().register(${JSON.stringify(publicPath)}, factory);
+})(globalThis, ${factory});
+`
+    }
+
     // ── Build & register a single template module ──────────────────────────────
     private static async registerModule(data: ComponentData, route: string, dir: 'pages' | 'components' | 'layouts') {
         const parsed = await Yon.parseHTML(data.html, `${dir}/${route}`);
-        const jsCode = await Yon.createJSData(parsed, data.script);
-
         const srcRoute = route.replace('.html', `.${data.scriptLang || 'js'}`);
-        const tmpPath = `/tmp/${srcRoute}`;
+        const outRoute = srcRoute.replace('.ts', '.js');
+        const publicPath = `/${dir}/${outRoute}`;
+        const baseCode = await Yon.createJSData(parsed, data.script);
+        const jsCode = Yon.isGlobalOutput()
+            ? Yon.wrapGlobalModule(baseCode, publicPath)
+            : baseCode;
+        const tmpPath = path.join('/tmp', `tachyon-yon-${Bun.randomUUIDv7()}`, srcRoute);
 
+        await mkdir(path.dirname(tmpPath), { recursive: true });
         await Bun.write(Bun.file(tmpPath), jsCode);
+
+        if (Yon.isGlobalOutput()) {
+            const loader = srcRoute.endsWith('.ts') ? 'ts' : 'js'
+            const output = new Bun.Transpiler({ loader }).transformSync(jsCode)
+
+            Router.reqRoutes[publicPath] = {
+                GET: () => jsResponse(output)
+            };
+            return
+        }
 
         const result = await Bun.build({
             entrypoints: [tmpPath],
@@ -733,9 +845,7 @@ export default class Yon {
             minify: { whitespace: true, syntax: true }
         });
 
-        const outRoute = srcRoute.replace('.ts', '.js');
-
-        Router.reqRoutes[`/${dir}/${outRoute}`] = {
+        Router.reqRoutes[publicPath] = {
             GET: () => jsResponse(result.outputs[0])
         };
     }

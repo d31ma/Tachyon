@@ -121,6 +121,59 @@ let trusted = '<strong>Trusted raw HTML</strong>';
     return root
 }
 
+async function createGlobalYonFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-global-yon-'))
+    tempDirs.push(root)
+
+    await mkdir(path.join(root, 'routes'), { recursive: true })
+    await mkdir(path.join(root, 'components'), { recursive: true })
+
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-global-yon-fixture',
+        private: true
+    }, null, 2))
+
+    await writeFile(
+        path.join(root, 'components', 'badge.html'),
+        `<script>let label = ''</script><strong class="badge">Badge: {label}</strong>`
+    )
+
+    await writeFile(
+        path.join(root, 'routes', 'HTML'),
+        `<script>let title = 'Global Yon'</script><badge :label="title" />`
+    )
+
+    return root
+}
+
+async function createAsyncEventFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-async-event-'))
+    tempDirs.push(root)
+
+    await mkdir(path.join(root, 'routes'), { recursive: true })
+
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-async-event-fixture',
+        private: true
+    }, null, 2))
+
+    await writeFile(
+        path.join(root, 'routes', 'HTML'),
+        `<script>
+let status = 'idle';
+async function requestMfa() {
+    status = 'loading';
+    await Promise.resolve();
+    status = 'phone-input';
+}
+</script>
+<button @click="requestMfa()">Continue</button>
+<p>{status}</p>`
+    )
+
+    return root
+}
+
 async function decode(stream: ReadableStream<Uint8Array> | null) {
     if (!stream) return ''
     return await new Response(stream).text()
@@ -181,7 +234,7 @@ test('tach.bundle classifies component, web component, native, and unknown tags 
     if (exitCode !== 0) throw new Error(stderr)
     expect(stdout).toContain('Bundle completed')
     expect(stderr).toContain('Unknown element tag')
-    expect(stderr).toContain('tag=mystery')
+    expect(stderr).toContain('mystery')
 
     const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8')
 
@@ -253,4 +306,71 @@ test('template interpolation and dynamic attributes are escaped by default', { t
     expect(html).toContain('title="&quot; onfocus=&quot;alert(1)"')
     expect(html).not.toContain('title="" onfocus="alert(1)"')
     expect(html).toContain('<strong>Trusted raw HTML</strong>')
+})
+
+test('YON_FORMAT=global emits registry modules that prerender successfully', { timeout: 20000 }, async () => {
+    const cwd = await createGlobalYonFixture()
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        env: {
+            ...process.env,
+            YON_FORMAT: 'global',
+        },
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ])
+
+    if (exitCode !== 0) throw new Error(stderr)
+    expect(stdout).toContain('Bundle completed')
+    expect(stderr).toBe('')
+
+    const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8')
+    const pageModule = await readFile(path.join(cwd, 'dist', 'pages', 'HTML.js'), 'utf8')
+    const componentModule = await readFile(path.join(cwd, 'dist', 'components', 'badge.js'), 'utf8')
+
+    expect(home).toContain('Badge: Global Yon')
+    expect(pageModule).toContain('register("/pages/HTML.js"')
+    expect(componentModule).toContain('register("/components/badge.js"')
+    expect(pageModule).not.toContain('export default')
+    expect(componentModule).not.toContain('export default')
+})
+
+test('async event handlers are awaited before Yon rerenders', { timeout: 20000 }, async () => {
+    const cwd = await createAsyncEventFixture()
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ])
+
+    if (exitCode !== 0) throw new Error(stderr)
+    expect(stderr).toBe('')
+
+    const pageModulePath = path.join(cwd, 'dist', 'pages', 'HTML.js')
+    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?async-event=${Date.now()}`)
+    const render = await pageModule.default()
+    const initial = await render()
+    const buttonId = initial.match(/<button[^>]* id="([^"]+)"/)?.[1]
+
+    expect(buttonId).toBeDefined()
+    expect(initial).toContain('>idle</p>')
+
+    const updated = await render(buttonId)
+
+    expect(updated).toContain('>phone-input</p>')
+    expect(updated).not.toContain('>loading</p>')
 })

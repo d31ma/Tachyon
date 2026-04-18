@@ -298,6 +298,16 @@ bun run serve --full
 - `bun run serve` starts the Tachyon app server only
 - `bun run serve --full` serves the frontend bundle and backend API routes from the same port
 
+### Yon Output Format
+
+Yon emits ESM page, layout, and component modules by default. For script-tag/CDN-style environments, set `YON_FORMAT=global` before running `tach.bundle`, `tach.preview`, or `tach.serve`; generated frontend modules will register with the browser global `window.Yon` instead of exporting ESM defaults.
+
+```bash
+YON_FORMAT=global bun run bundle
+```
+
+The global format keeps the same runtime behavior, but compiled modules are classic-script compatible and can be resolved through `window.Yon.load('/pages/HTML.js')`.
+
 ### Template Syntax
 
 | Syntax | Description |
@@ -417,6 +427,8 @@ tach.serve --full
 
 That runs the normal Tachyon dev server while also serving the bundled frontend from `dist/` on the same port. Browser-style `Accept: text/html` requests receive the frontend, while API-style requests still hit the route handlers.
 If you only need the static frontend preview workflow, `tach.preview --watch` is the simpler option.
+
+When `NODE_ENV=production` is set without `--full`, Tachyon uses the production HTML shell fallback and does not inject the development HMR client. Use `tach.serve --full` when the same production server should serve bundled frontend assets from `dist/`.
 
 ### Static Hosting
 

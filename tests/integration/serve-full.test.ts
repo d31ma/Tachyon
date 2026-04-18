@@ -151,3 +151,66 @@ test('tach.serve --full serves frontend and backend responses from the same port
 
     expect(proc.exitCode).toBeNull()
 })
+
+test('tach.serve uses the production shell fallback when NODE_ENV=production', { timeout: 40000 }, async () => {
+    const root = await createExampleApp()
+    const port = await getFreePort()
+    const env = {
+        ...process.env,
+        PORT: String(port),
+        HOST: '127.0.0.1',
+        NODE_ENV: 'production',
+    } as Record<string, string>
+
+    delete env.BASIC_AUTH
+    delete env.DEV
+    delete env.VALIDATE
+
+    let lastSnapshot = 'no attempts yet'
+
+    const proc = Bun.spawn(
+        ['bun', path.join(import.meta.dir, '../../src/cli/serve.ts')],
+        {
+            cwd: root,
+            env,
+            stdout: 'pipe',
+            stderr: 'pipe'
+        }
+    )
+
+    processes.push(proc)
+
+    const ok = await waitFor(async () => {
+        try {
+            const res = await fetch(`http://127.0.0.1:${port}/`, {
+                headers: { accept: 'text/html' }
+            })
+            const body = await res.text()
+
+            lastSnapshot = JSON.stringify({
+                status: res.status,
+                hasSpaRenderer: body.includes('/spa-renderer.js'),
+                hasHotReloadClient: body.includes('/hot-reload-client.js'),
+            })
+
+            return res.ok
+                && body.includes('/spa-renderer.js')
+                && !body.includes('/hot-reload-client.js')
+        } catch {
+            lastSnapshot = 'request connection failed'
+            return false
+        }
+    }, 30000)
+
+    if (!ok) {
+        proc.kill()
+        await proc.exited.catch(() => {})
+        const stdout = await new Response(proc.stdout).text()
+        const stderr = await new Response(proc.stderr).text()
+        throw new Error(
+            `serve did not return production shell. last=${lastSnapshot}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`
+        )
+    }
+
+    expect(proc.exitCode).toBeNull()
+})

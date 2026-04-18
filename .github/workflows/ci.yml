@@ -41,3 +41,62 @@ jobs:
         env:
           HOSTNAME: 127.0.0.1
           BASIC_AUTH: admin:pass
+
+  package-blackbox:
+    name: Package blackbox tests
+    runs-on: ubuntu-latest
+    env:
+      TACHYON_PACKAGE_TARBALL: /tmp/tachyon-blackbox.tgz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Pack package under test
+        run: bun pm pack --filename "$TACHYON_PACKAGE_TARBALL" --quiet
+
+      - name: Require private blackbox credentials
+        env:
+          BLACKBOX_REPOSITORY: ${{ vars.TACHYON_BLACKBOX_REPOSITORY || secrets.TACHYON_BLACKBOX_REPOSITORY }}
+          BLACKBOX_SSH_KEY: ${{ secrets.TACHYON_BLACKBOX_SSH_KEY }}
+        run: |
+          if [ -z "$BLACKBOX_REPOSITORY" ]; then
+            echo "::error::Missing TACHYON_BLACKBOX_REPOSITORY variable or secret"
+            exit 1
+          fi
+          if [ -z "$BLACKBOX_SSH_KEY" ]; then
+            echo "::error::Missing TACHYON_BLACKBOX_SSH_KEY secret"
+            exit 1
+          fi
+
+      - name: Checkout private blackbox suite
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.TACHYON_BLACKBOX_REPOSITORY || secrets.TACHYON_BLACKBOX_REPOSITORY }}
+          ssh-key: ${{ secrets.TACHYON_BLACKBOX_SSH_KEY }}
+          ref: ${{ vars.TACHYON_BLACKBOX_REF || 'main' }}
+          path: .blackbox-tests
+
+      - name: Run Tachyon blackbox tests
+        working-directory: .blackbox-tests
+        env:
+          NIGHTJAR_SUITE: tachyon
+          TACHYON_PACKAGE_TARBALL: ${{ env.TACHYON_PACKAGE_TARBALL }}
+        run: |
+          if [ -f package.json ] || [ -f bun.lock ]; then
+            bun install --frozen-lockfile
+          fi
+
+          if [ -f package.json ] && jq -e '.scripts.blackbox' package.json >/dev/null; then
+            bun run blackbox
+          else
+            bun test tachyon --timeout 120000
+          fi

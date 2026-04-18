@@ -85,6 +85,10 @@ if (fullModeEnabled) {
     Tach.setFrontendRequestHandler(null)
 }
 
+if (process.env.NODE_ENV === 'production' && !fullModeEnabled) {
+    serveLogger.warn('Production mode without --full will serve the production shell fallback only; run tach.serve --full to serve bundled frontend assets')
+}
+
 let debounceTimer: Timer
 
 function isLoopbackHost(hostname: string | null | undefined): boolean {
@@ -114,7 +118,7 @@ async function startHmrWatchers(server: ReturnType<typeof Bun.serve>) {
                 serveLogger.info('HMR reload started')
                 await configureRoutes(true)
                 server.reload({ routes: Router.reqRoutes })
-                for (const client of hmrClients) client.enqueue("\n\n")
+                for (const client of hmrClients) client.enqueue("event: reload\ndata: reload\n\n")
             } catch (err) {
                 serveLogger.error('HMR reload failed', { err })
             }

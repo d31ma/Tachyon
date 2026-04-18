@@ -13,6 +13,8 @@ export default class Tach {
     private static readonly STREAM_MIME_TYPE = "text/event-stream"
     private static readonly REQUEST_ID_HEADER = 'X-Request-Id'
     private static readonly MAX_REQUEST_ID_LENGTH = 200
+    private static readonly HTML_SHELL =
+        process.env.NODE_ENV === 'production' ? 'production.html' : 'development.html'
     private static frontendRequestHandler:
         | ((request: BunRequest) => Promise<Response | null>)
         | null = null
@@ -374,7 +376,7 @@ export default class Tach {
                             res = frontendResponse
                         } else {
                             res = new Response(
-                                await Bun.file(`${import.meta.dir}/../runtime/shells/development.html`).text(),
+                                await Bun.file(`${import.meta.dir}/../runtime/shells/${Tach.HTML_SHELL}`).text(),
                                 { status: 200, headers: { 'Content-Type': 'text/html' } }
                             )
                         }

@@ -2,7 +2,8 @@ name: Publish
 
 on:
   push:
-    branches: [release/*]
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -36,12 +37,105 @@ jobs:
           HOSTNAME: 127.0.0.1
           BASIC_AUTH: admin:pass
 
+  package-blackbox:
+    name: Package blackbox tests
+    runs-on: ubuntu-latest
+    env:
+      TACHYON_PACKAGE_TARBALL: /tmp/tachyon-blackbox.tgz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Pack package under test
+        run: bun pm pack --filename "$TACHYON_PACKAGE_TARBALL" --quiet
+
+      - name: Require private blackbox credentials
+        env:
+          BLACKBOX_REPOSITORY: ${{ vars.TACHYON_BLACKBOX_REPOSITORY || secrets.TACHYON_BLACKBOX_REPOSITORY }}
+          BLACKBOX_SSH_KEY: ${{ secrets.TACHYON_BLACKBOX_SSH_KEY }}
+        run: |
+          if [ -z "$BLACKBOX_REPOSITORY" ]; then
+            echo "::error::Missing TACHYON_BLACKBOX_REPOSITORY variable or secret"
+            exit 1
+          fi
+          if [ -z "$BLACKBOX_SSH_KEY" ]; then
+            echo "::error::Missing TACHYON_BLACKBOX_SSH_KEY secret"
+            exit 1
+          fi
+
+      - name: Checkout private blackbox suite
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.TACHYON_BLACKBOX_REPOSITORY || secrets.TACHYON_BLACKBOX_REPOSITORY }}
+          ssh-key: ${{ secrets.TACHYON_BLACKBOX_SSH_KEY }}
+          ref: ${{ vars.TACHYON_BLACKBOX_REF || 'main' }}
+          path: .blackbox-tests
+
+      - name: Run Tachyon blackbox tests
+        working-directory: .blackbox-tests
+        env:
+          NIGHTJAR_SUITE: tachyon
+          TACHYON_PACKAGE_TARBALL: ${{ env.TACHYON_PACKAGE_TARBALL }}
+        run: |
+          if [ -f package.json ] || [ -f bun.lock ]; then
+            bun install --frozen-lockfile
+          fi
+
+          if [ -f package.json ] && jq -e '.scripts.blackbox' package.json >/dev/null; then
+            bun run blackbox
+          else
+            bun test tachyon --timeout 120000
+          fi
+
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tag_exists: ${{ steps.check.outputs.exists }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read package version
+        id: read
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Check version tag
+        id: check
+        env:
+          TAG: v${{ steps.read.outputs.version }}
+        run: |
+          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $TAG already exists; skipping publish and release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, package-blackbox, version]
+    if: needs.version.outputs.tag_exists == 'false'
     permissions:
-      contents: write   # create git tags
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -58,50 +152,48 @@ jobs:
       - name: Setup Node and upgrade npm
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Upgrade npm
         run: npm install -g npm@latest
 
-      - name: Resolve version from branch
-        id: version
+      - name: Verify trusted publishing prerequisites
         run: |
-          BRANCH="${GITHUB_REF#refs/heads/}"
-          VERSION="${BRANCH#release/}"
-          PKG_VERSION=$(bun -e "console.log(require('./package.json').version)")
-          if [ "$VERSION" != "$PKG_VERSION" ]; then
-            echo "Branch version ($VERSION) does not match package.json ($PKG_VERSION). Skipping publish."
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Verify NPM token
-        run: |
-          if [ -z "${NPM_TOKEN}" ]; then
-            echo "NPM_TOKEN secret is not configured."
-            exit 1
-          fi
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          node --version
+          npm --version
 
       - name: Publish to npm
-        run: |
-          npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+  github-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    needs: [version, publish]
+    if: needs.version.outputs.tag_exists == 'false'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Create and push version tag
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f -a "v${{ steps.version.outputs.version }}" -m "v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}" --force
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin "v$VERSION"
 
       - name: Create GitHub release
-        run: |
-          gh release create "v${{ steps.version.outputs.version }}" \
-            --title "v${{ steps.version.outputs.version }}" \
-            --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --generate-notes

@@ -1,7 +1,7 @@
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const version = '1.8.1'
+const version = '1.9.0'
 
 const files = {
     '.gitignore': `node_modules
@@ -15,6 +15,7 @@ HOSTNAME=127.0.0.1
 DEV=true
 LOG_LEVEL=info
 LOG_FORMAT=pretty
+YON_FORMAT=esm
 MAX_BODY_BYTES=1048576
 HMR_TOKEN=
 HMR_MAX_CLIENTS=20
