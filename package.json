@@ -12,10 +12,10 @@
         "./compiler": "./src/compiler/template-compiler.ts"
     },
     "bin": {
-        "tach.init": "./src/cli/init.ts",
-        "tach.serve": "./src/cli/serve.ts",
-        "tach.bundle": "./src/cli/bundle.ts",
-        "tach.preview": "./src/cli/preview.ts"
+        "tach.init": "./bin/tach.init.js",
+        "tach.serve": "./bin/tach.serve.js",
+        "tach.bundle": "./bin/tach.bundle.js",
+        "tach.preview": "./bin/tach.preview.js"
     },
     "scripts": {
         "init": "bun src/cli/init.ts",
@@ -28,6 +28,7 @@
         "test": "bun test"
     },
     "files": [
+        "bin/",
         "src/",
         "README.md",
         ".env.example"

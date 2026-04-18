@@ -46,7 +46,7 @@ jobs:
     name: Package blackbox tests
     runs-on: ubuntu-latest
     env:
-      TACHYON_PACKAGE_TARBALL: ${{ runner.temp }}/tachyon-blackbox.tgz
+      TACHYON_PACKAGE_TARBALL: /tmp/tachyon-blackbox.tgz
 
     steps:
       - name: Checkout
