@@ -573,7 +573,7 @@ export default class Yon {
 
             const formatAttr = (name: string, value: string, hash: string): string => {
                 if (name.startsWith('@'))
-                    return `${name}="\${await ty_invokeEvent('${hash}', (__event__) => { ${value} })}"`;
+                    return `${name}="\${await ty_invokeEvent('${hash}', ($event) => { const __event__ = $event; ${value} })}"`;
                 if (name === ':value')
                     return `value="\${ty_assignValue('${hash}', '${value}')}"`;
                 return `${name}="${value}"`;
@@ -702,7 +702,7 @@ export default class Yon {
                 // Control flow and component tags are raw JS, not concatenated
                 if (el.element.includes('<loop') || el.element.includes('</loop') ||
                     el.element.includes('<logic') || el.element.includes('</logic') ||
-                    /<([A-Za-z0-9-]+)_\s*([^/>]*)\/>/.test(el.element)) {
+                    /<([A-Za-z0-9-]+)_\s*([\s\S]*?)\/>/.test(el.element)) {
                     body.push(el.element);
                 } else {
                     body.push(`elements+=${el.element}`);
@@ -729,7 +729,7 @@ export default class Yon {
         code = code.replaceAll(/:(\w[\w-]*)="([^"]*)"/g, '$1="${ty_escapeAttr($2)}"');
 
         // Transform component invocations
-        code = code.replaceAll(/`<([A-Za-z0-9-]+)_\s*([^/>]*)\/>`/g, (_, component, attrStr) => {
+        code = code.replaceAll(/`<([A-Za-z0-9-]+)_\s*([\s\S]*?)\/>`/g, (_, component, attrStr) => {
             const matches = attrStr.matchAll(/([a-zA-Z0-9-@]+)="([^"]*)"/g);
             const props: string[] = [];
             const events: string[] = [];

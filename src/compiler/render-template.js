@@ -2,6 +2,8 @@ export default async function(props) {
 
     // imports
 
+    let emit = () => false
+
     // script
 
     if(props) {
@@ -19,6 +21,23 @@ export default async function(props) {
     return async function(elemId, event, compId) {
 
         const counters = { id: {}, ev: {}, bind: {} }
+        const ty_componentRootId = compId
+            ? (String(compId).startsWith('ty-') ? String(compId) : 'ty-' + compId + '-0')
+            : null
+
+        emit = (name, detail) => {
+            const eventName = String(name || '').replace(/^@/, '')
+            if(!eventName || !ty_componentRootId || typeof document === 'undefined') return false
+
+            const target = document.getElementById(ty_componentRootId)
+            if(!target || typeof CustomEvent === 'undefined') return false
+
+            return target.dispatchEvent(new CustomEvent(eventName, {
+                detail,
+                bubbles: true,
+                composed: true
+            }))
+        }
 
         const ty_generateId = (hash, source) => {
 

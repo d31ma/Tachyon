@@ -7,7 +7,7 @@ import {
   resolveHandler,
 } from './dom-helpers.js';
 
-type RenderFn = (elementId?: string | null, eventDetail?: unknown) => Promise<string>;
+type RenderFn = (elementId?: string | null, eventDetail?: unknown, componentRootId?: string | null) => Promise<string>;
 type RenderFactory = (props?: unknown) => Promise<RenderFn>;
 type YonGlobal = {
   version: string;
@@ -72,6 +72,7 @@ const layouts: Record<string, string> = {};
 const slugs: Record<string, string> = {};
 let params: (string | number | boolean | null | undefined)[] = [];
 const yon = getYonGlobal();
+const delegatedEvents = new Set<string>();
 
 async function loadManifests() {
   const [routeData, layoutData] = await Promise.all([
@@ -96,27 +97,50 @@ Promise.all([
 });
 
 // ── Event Delegation ───────────────────────────────────────────────────────────
-// Single delegated listener at the document level instead of per-element binding.
-// Handles both `@event` attribute actions and `:value` two-way binding.
-document.addEventListener('click', (ev: MouseEvent) => {
-  // SPA link interception
-  const anchor = (ev.target as Element)?.closest('a[href]') as HTMLAnchorElement | null;
-  if (anchor) {
-    const url = new URL(anchor.href, location.origin);
-    if (url.origin === location.origin) {
-      ev.preventDefault();
-      navigate(url.pathname);
-      return;
+// Single delegated listener per event name at the document level.
+function ensureDelegatedEvent(eventName: string) {
+  if (!eventName || delegatedEvents.has(eventName)) return;
+  delegatedEvents.add(eventName);
+  document.addEventListener(eventName, (ev: Event) => handleDelegatedEvent(eventName, ev));
+}
+
+function handleDelegatedEvent(eventName: string, ev: Event) {
+  const eventTarget = ev.target instanceof Element ? ev.target : null;
+
+  if (eventName === 'click') {
+    // SPA link interception
+    const anchor = eventTarget?.closest('a[href]') as HTMLAnchorElement | null;
+    if (anchor) {
+      const url = new URL(anchor.href, location.origin);
+      if (url.origin === location.origin) {
+        ev.preventDefault();
+        navigate(url.pathname);
+        return;
+      }
     }
   }
 
-  // Delegated @click
-  const target = findEventTarget(ev.target as Element, 'click');
+  const target = findEventTarget(eventTarget, eventName);
   if (target) {
-    ev.preventDefault();
-    dispatchAction(target);
+    if (eventName === 'click' || eventName === 'submit') ev.preventDefault();
+    dispatchAction(target, ev);
   }
-});
+}
+
+function registerDeclarativeEvents(root: ParentNode = document.body) {
+  const elements = root instanceof Element
+    ? [root, ...Array.from(root.querySelectorAll('*'))]
+    : Array.from(root.querySelectorAll('*'));
+
+  for (const el of elements) {
+    for (const attr of Array.from(el.attributes)) {
+      if (attr.name.startsWith('@')) ensureDelegatedEvent(attr.name.slice(1));
+    }
+  }
+}
+
+// Keep same-origin navigation active even on pages without an explicit @click.
+ensureDelegatedEvent('click');
 
 // Value-change events (input, change, sl-input, sl-change)
 for (const eventName of ['input', 'change', 'sl-input', 'sl-change'] as const) {
@@ -130,8 +154,8 @@ for (const eventName of ['input', 'change', 'sl-input', 'sl-change'] as const) {
 
 window.addEventListener('popstate', () => navigate(location.pathname));
 
-function dispatchAction(el: Element) {
-  rerender(el.id);
+function dispatchAction(el: Element, eventDetail?: unknown) {
+  rerender(el.id, eventDetail);
 }
 
 function findLazyAncestor(elementId: string): HTMLElement | null {
@@ -150,8 +174,8 @@ async function rerender(triggerId: string, eventDetail?: unknown) {
   const lazyContainer = findLazyAncestor(triggerId);
   if (lazyContainer) {
     const render = lazyRenders.get(lazyContainer.id) as RenderFn;
-    await render(triggerId, eventDetail);
-    const html = await render();
+    await render(triggerId, eventDetail, lazyContainer.id);
+    const html = await render(null, undefined, lazyContainer.id);
     morphChildren(lazyContainer, parseFragment(html), {
       preserveElement: (el) => lazyRenders.has(el.id)
     });
@@ -290,14 +314,11 @@ async function loadLazyComponent(el: HTMLElement) {
     const factory = await yon.load(modulePath);
     const render = await factory(props);
     lazyRenders.set(el.id, render);
-    el.innerHTML = await render();
+    el.innerHTML = await render(null, undefined, el.id);
     el.removeAttribute('data-lazy-component');
     el.removeAttribute('data-lazy-path');
     el.removeAttribute('data-lazy-props');
-
-    // Wire up event delegation for lazy-loaded content
-    const eventEls = el.querySelectorAll('[\\@click]');
-    // Events are already handled by delegation — no extra wiring needed
+    postPatch();
   } catch (e) {
     console.error(`[tachyon] Failed to load lazy component "${path}":`, e);
   }
@@ -314,6 +335,7 @@ function observeLazyComponents() {
 
 function postPatch() {
   cleanBooleanAttrs();
+  registerDeclarativeEvents();
   observeLazyComponents();
   if (focusTarget) {
     const el = document.getElementById(focusTarget);

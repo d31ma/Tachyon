@@ -314,13 +314,13 @@ The global format keeps the same runtime behavior, but compiled modules are clas
 |--------|-------------|
 | `{expr}` | Interpolate and HTML-escape expression |
 | `{!expr}` | Render trusted raw HTML without escaping |
-| `@event="handler()"` | Event binding |
+| `@event="handler()"` | Event binding; handlers receive `$event` |
 | `:prop="value"` | Bind attribute to expression |
 | `:value="variable"` | Two-way input binding |
 | `<loop :for="...">` | Loop block |
 | `<logic :if="...">` | Conditional block |
-| `<myComp_ prop=val />` | Custom component (trailing `_`) |
-| `<myComp_ lazy />` | Lazy-loaded component (renders when visible) |
+| `<my-comp prop=val />` | Custom component from `components/my-comp.html` |
+| `<my-comp lazy />` | Lazy-loaded component (renders when visible) |
 
 ### Custom Components
 
@@ -336,7 +336,34 @@ The global format keeps the same runtime behavior, but compiled modules are clas
 Use in a page:
 
 ```html
-<counter_ />
+<counter />
+```
+
+Components can emit custom events to their parent wrapper with `emit(name, detail)`.
+Parent handlers receive the browser `CustomEvent` as `$event`, so payloads are
+available at `$event.detail`.
+
+```html
+<!-- components/item-picker.html -->
+<script>
+  let label = 'Default'
+
+  function choose() {
+    emit('selected', { label })
+  }
+</script>
+
+<button @click="choose()">Choose {label}</button>
+```
+
+```html
+<!-- routes/HTML -->
+<script>
+  let selected = 'none'
+</script>
+
+<item-picker label="Tachyon" @selected="selected = $event.detail.label" />
+<p>Selected: {selected}</p>
 ```
 
 ### Lazy Loading
@@ -345,10 +372,10 @@ Add the `lazy` attribute to defer a component's loading until it scrolls into vi
 
 ```html
 <!-- Eager (default) — loaded immediately -->
-<counter_ />
+<counter />
 
 <!-- Lazy — loaded when visible in the viewport -->
-<counter_ lazy />
+<counter lazy />
 ```
 
 Lazy components are fully interactive once loaded — event delegation and state management work identically to eager components.
