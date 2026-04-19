@@ -118,7 +118,7 @@ describe('render-template browser-side (with window)', () => {
         r.called = false
         const factory = await buildTestFactory(`onMount(() => { __ty_test__.called = true })`)
         await factory()
-        const queue = (windowInstance as Record<string, unknown>).__ty_onMount_queue__ as Array<() => void>
+        const queue = (windowInstance as Record<string, unknown>).__ty_onMount_queue__ as Array<() => void | Promise<void>>
         expect(Array.isArray(queue)).toBe(true)
         expect(queue.length).toBe(1)
         queue[0]()
@@ -134,7 +134,7 @@ describe('render-template browser-side (with window)', () => {
             onMount(() => { __ty_test__.order.push(2) })
         `)
         await factory()
-        const queue = (windowInstance as Record<string, unknown>).__ty_onMount_queue__ as Array<() => void>
+        const queue = (windowInstance as Record<string, unknown>).__ty_onMount_queue__ as Array<() => void | Promise<void>>
         queue.forEach(fn => fn())
         expect(r.order).toEqual([1, 2])
     })

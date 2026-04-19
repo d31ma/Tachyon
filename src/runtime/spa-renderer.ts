@@ -23,7 +23,7 @@ declare global {
   interface Window {
     Yon?: YonGlobal;
     __ty_rerender?: () => Promise<void>;
-    __ty_onMount_queue__?: Array<() => void>;
+    __ty_onMount_queue__?: Array<() => void | Promise<void>>;
     __ty_context__?: Map<string, unknown>;
   }
 }
@@ -350,18 +350,21 @@ function postPatch() {
     focusTarget = null;
   }
 
-  if (freshNavigation) {
-    window.dispatchEvent(new CustomEvent('tachyon:navigate', { detail: { pathname: location.pathname } }));
-  }
-  freshNavigation = false;
-
   const queue = window.__ty_onMount_queue__;
   if (queue?.length) {
     window.__ty_onMount_queue__ = [];
     for (const fn of queue) {
-      try { fn(); } catch (e) { console.error('[tachyon] onMount callback error:', e); }
+      try {
+        const r = fn();
+        if (r instanceof Promise) r.catch(e => console.error('[tachyon] onMount callback error:', e));
+      } catch (e) { console.error('[tachyon] onMount callback error:', e); }
     }
   }
+
+  if (freshNavigation) {
+    window.dispatchEvent(new CustomEvent('tachyon:navigate', { detail: { pathname: location.pathname } }));
+  }
+  freshNavigation = false;
 }
 
 // ── Navigation / Routing ───────────────────────────────────────────────────────
