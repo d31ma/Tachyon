@@ -4,7 +4,7 @@ export default async function(props) {
 
     let emit = () => false
 
-    const isBrowser = typeof window !== 'undefined'
+    const isBrowser = typeof window !== 'undefined' && !globalThis.__ty_prerender__
     const isServer = !isBrowser
 
     const onMount = (fn) => {
@@ -28,9 +28,14 @@ export default async function(props) {
 
     const persist = (key, initialValue) => {
         if (!isBrowser) return [initialValue, () => {}]
-        const stored = sessionStorage.getItem(key)
-        const current = stored !== null ? JSON.parse(stored) : initialValue
-        const save = (newValue) => sessionStorage.setItem(key, JSON.stringify(newValue))
+        let current = initialValue
+        try {
+            const stored = sessionStorage.getItem(key)
+            if (stored !== null) current = JSON.parse(stored)
+        } catch {}
+        const save = (newValue) => {
+            try { sessionStorage.setItem(key, JSON.stringify(newValue)) } catch {}
+        }
         return [current, save]
     }
 

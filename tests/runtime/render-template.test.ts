@@ -204,4 +204,68 @@ describe('render-template browser-side (with window)', () => {
         const factory = await buildTestFactory(`rerender()`)
         expect(async () => await factory()).not.toThrow()
     })
+
+    test('persist is safe with malformed sessionStorage value', async () => {
+        windowInstance.sessionStorage.setItem('badJson', 'not-valid-json{{{')
+        const r = testResults()
+        const factory = await buildTestFactory(`const [val] = persist('badJson', 'safe'); __ty_test__.val = val`)
+        await factory()
+        expect(r.val).toBe('safe')
+        windowInstance.sessionStorage.removeItem('badJson')
+    })
+})
+
+// ── Prerender-environment (window = globalThis, no sessionStorage) ─────────────
+
+describe('render-template prerender-environment (window=globalThis, __ty_prerender__=true)', () => {
+    let previousGlobals: Record<string, unknown>
+
+    beforeAll(() => {
+        previousGlobals = {
+            window: (globalThis as Record<string, unknown>).window,
+            __ty_prerender__: (globalThis as Record<string, unknown>).__ty_prerender__,
+        }
+        Object.assign(globalThis, {
+            window: globalThis,
+            __ty_prerender__: true,
+        })
+    })
+
+    afterAll(() => {
+        Object.assign(globalThis, previousGlobals)
+        if (previousGlobals.__ty_prerender__ === undefined) {
+            Reflect.deleteProperty(globalThis as Record<string, unknown>, '__ty_prerender__')
+        }
+    })
+
+    test('isBrowser is false and isServer is true despite window being set', async () => {
+        const r = testResults()
+        const factory = await buildTestFactory(`__ty_test__.isBrowser = isBrowser; __ty_test__.isServer = isServer`)
+        await factory()
+        expect(r.isBrowser).toBe(false)
+        expect(r.isServer).toBe(true)
+    })
+
+    test('onMount does not push to any queue during prerender', async () => {
+        const r = testResults()
+        r.called = false
+        const factory = await buildTestFactory(`onMount(() => { __ty_test__.called = true })`)
+        await factory()
+        expect(r.called).toBe(false)
+        expect((globalThis as Record<string, unknown>).__ty_onMount_queue__).toBeUndefined()
+    })
+
+    test('persist returns [initialValue, noop] during prerender without crashing', async () => {
+        const r = testResults()
+        const factory = await buildTestFactory(`const [val, save] = persist('someKey', 99); __ty_test__.val = val; save(100)`)
+        await factory()
+        expect(r.val).toBe(99)
+    })
+
+    test('inject returns fallback during prerender', async () => {
+        const r = testResults()
+        const factory = await buildTestFactory(`__ty_test__.value = inject('k', 'prerender-fallback')`)
+        await factory()
+        expect(r.value).toBe('prerender-fallback')
+    })
 })
