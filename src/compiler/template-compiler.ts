@@ -295,6 +295,7 @@ export default class Yon {
         Object.assign(globalThis, {
             document: documentStub,
             window: globalThis,
+            __ty_prerender__: true,
             Yon: {
                 version: '1',
                 modules,
@@ -331,6 +332,8 @@ export default class Yon {
 
                 if (previousYon === undefined) Reflect.deleteProperty(globalThis as Record<string, unknown>, 'Yon')
                 else Object.assign(globalThis, { Yon: previousYon })
+
+                Reflect.deleteProperty(globalThis as Record<string, unknown>, '__ty_prerender__')
             }
         }
     }
