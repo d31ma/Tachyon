@@ -17,6 +17,8 @@ Tachyon is a **polyglot, file-system-routed full-stack framework for [Bun](https
 - **Auth** — built-in Basic Auth (timing-safe) and JWT decoding with expiry enforcement
 - **Security headers** — X-Frame-Options, X-Content-Type-Options, HSTS, CSP, and Referrer-Policy sent on every response
 - **Streaming** — SSE responses via `Accept: text/event-stream`
+- **Script primitives** — `onMount`, `rerender`, `inject`/`provide`, `persist`, `isBrowser`/`isServer` available in every component script
+- **Navigation events** — `tachyon:navigate` dispatched on `window` after every SPA navigation
 
 ## Installation
 
@@ -379,6 +381,119 @@ Add the `lazy` attribute to defer a component's loading until it scrolls into vi
 ```
 
 Lazy components are fully interactive once loaded — event delegation and state management work identically to eager components.
+
+### Script Primitives
+
+Every component `<script>` block has access to the following built-in primitives:
+
+| Primitive | Description |
+|-----------|-------------|
+| `isBrowser` | `true` in the browser, `false` during prerender |
+| `isServer` | Inverse of `isBrowser` |
+| `onMount(fn)` | Run `fn` once after the component's first browser render; no-op during prerender |
+| `rerender()` | Trigger a mid-handler repaint without waiting for the handler to fully resolve |
+| `inject(key, fallback?)` | Retrieve a value registered with `provide` or `Yon.provide` |
+| `provide(key, value)` | Register a value in the app-level context |
+| `persist(key, init)` | Returns `[currentValue, save]` backed by `sessionStorage` |
+| `emit(name, detail)` | Dispatch a custom event from a component to its parent wrapper |
+
+#### `onMount`
+
+Use `onMount` to run browser-only setup code without sprinkling `typeof window !== 'undefined'` guards everywhere. The callback fires after the component's first DOM patch.
+
+```html
+<script>
+  onMount(() => {
+    document.title = 'Dashboard'
+    window.addEventListener('tachyon:navigate', syncActiveLink)
+  })
+</script>
+```
+
+#### `rerender`
+
+Calling `rerender()` mid-handler triggers an immediate repaint of the current component state, letting you show loading indicators before an async operation completes:
+
+```html
+<script>
+  let loading = false
+  let result = null
+
+  async function fetchData() {
+    loading = true
+    rerender()  // show spinner now
+
+    const res = await fetch('/api/data')
+    result = await res.json()
+    loading = false
+  }
+</script>
+
+<logic :if="loading"><p>Loading…</p></logic>
+<logic :if="!loading && result"><p>{result.name}</p></logic>
+<button @click="fetchData()">Fetch</button>
+```
+
+#### `provide` / `inject`
+
+Share services or values across components without polluting `window`. Call `Yon.provide` (or the `provide` primitive) before components mount, then `inject` in any component that needs it.
+
+```js
+// main.js
+Yon.provide('apiFetch', (path, opts) => fetch(path, { ...opts, credentials: 'include' }))
+Yon.provide('toast', (msg) => showToast(msg))
+```
+
+```html
+<!-- any component -->
+<script>
+  const apiFetch = inject('apiFetch')
+  const toast = inject('toast')
+
+  async function send() {
+    const res = await apiFetch('/api/send', { method: 'POST' })
+    if (res.ok) toast('Sent!')
+  }
+</script>
+```
+
+`inject` returns `undefined` (or the provided fallback) during prerender so components remain SSG-safe.
+
+#### `persist`
+
+Preserve component state across SPA navigations using `sessionStorage`. The factory reads the stored value on every mount, so state survives navigating away and back.
+
+```html
+<script>
+  let [step, saveStep] = persist('onboarding-step', 1)
+  let [formData, saveFormData] = persist('onboarding-form', {})
+
+  function next() {
+    step++
+    saveStep(step)
+  }
+
+  function updateField(key, value) {
+    formData = { ...formData, [key]: value }
+    saveFormData(formData)
+  }
+</script>
+```
+
+`save` serialises the value as JSON. Returns `[initialValue, noop]` during prerender.
+
+### Navigation Events
+
+Tachyon dispatches a `tachyon:navigate` `CustomEvent` on `window` after every SPA navigation settles. The event detail contains the new `pathname`.
+
+```js
+window.addEventListener('tachyon:navigate', (e) => {
+  console.log('Navigated to', e.detail.pathname)
+  syncActiveNavLink(e.detail.pathname)
+})
+```
+
+This is especially useful for layout components that need to react to route changes without being re-rendered.
 
 ### NPM Modules in Front-end Code
 

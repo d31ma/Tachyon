@@ -16,12 +16,15 @@ type YonGlobal = {
   load(path: string): Promise<RenderFactory>;
   navigate?: (pathname: string) => void;
   rerender?: (triggerId: string, eventDetail?: unknown) => Promise<void>;
+  provide?: (key: string, value: unknown) => void;
 };
 
 declare global {
   interface Window {
     Yon?: YonGlobal;
     __ty_rerender?: () => Promise<void>;
+    __ty_onMount_queue__?: Array<() => void>;
+    __ty_context__?: Map<string, unknown>;
   }
 }
 
@@ -58,6 +61,10 @@ function getYonGlobal(): YonGlobal {
   window.Yon = Object.assign(existing ?? {}, yon);
   return window.Yon;
 }
+
+// ── Context ────────────────────────────────────────────────────────────────────
+const context = new Map<string, unknown>();
+window.__ty_context__ = context;
 
 // ── State ──────────────────────────────────────────────────────────────────────
 let pageRender: RenderFn;
@@ -342,7 +349,19 @@ function postPatch() {
     if (el) try { el.focus(); } catch {}
     focusTarget = null;
   }
+
+  if (freshNavigation) {
+    window.dispatchEvent(new CustomEvent('tachyon:navigate', { detail: { pathname: location.pathname } }));
+  }
   freshNavigation = false;
+
+  const queue = window.__ty_onMount_queue__;
+  if (queue?.length) {
+    window.__ty_onMount_queue__ = [];
+    for (const fn of queue) {
+      try { fn(); } catch (e) { console.error('[tachyon] onMount callback error:', e); }
+    }
+  }
 }
 
 // ── Navigation / Routing ───────────────────────────────────────────────────────
@@ -441,6 +460,7 @@ function resolvePageHandler(pathname: string): string {
 Object.assign(yon, {
   navigate,
   rerender,
+  provide: (key: string, value: unknown) => context.set(key, value),
 });
 
 window.__ty_rerender = refreshCurrentView;

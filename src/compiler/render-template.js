@@ -4,6 +4,36 @@ export default async function(props) {
 
     let emit = () => false
 
+    const isBrowser = typeof window !== 'undefined'
+    const isServer = !isBrowser
+
+    const onMount = (fn) => {
+        if (!isBrowser) return
+        if (!window.__ty_onMount_queue__) window.__ty_onMount_queue__ = []
+        window.__ty_onMount_queue__.push(fn)
+    }
+
+    const rerender = () => {
+        if (isBrowser) window.__ty_rerender?.()
+    }
+
+    const inject = (key, fallback = undefined) => {
+        if (!isBrowser) return fallback
+        return window.__ty_context__?.get(key) ?? fallback
+    }
+
+    const provide = (key, value) => {
+        if (isBrowser) window.__ty_context__?.set(key, value)
+    }
+
+    const persist = (key, initialValue) => {
+        if (!isBrowser) return [initialValue, () => {}]
+        const stored = sessionStorage.getItem(key)
+        const current = stored !== null ? JSON.parse(stored) : initialValue
+        const save = (newValue) => sessionStorage.setItem(key, JSON.stringify(newValue))
+        return [current, save]
+    }
+
     // script
 
     if(props) {
