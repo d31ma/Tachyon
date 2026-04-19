@@ -90,6 +90,6 @@ jobs:
 
             Use inline comments for specific actionable findings. Use a single top-level PR comment for the summary, including when there are no findings. In the summary, briefly state what project areas you inspected beyond the diff.
           claude_args: |
-            --max-turns 20
+            --max-turns 30
             --model claude-opus-4-7
             --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"

@@ -459,6 +459,10 @@ Yon.provide('toast', (msg) => showToast(msg))
 
 `inject` returns `undefined` (or the provided fallback) during prerender so components remain SSG-safe.
 
+> **Context scope:** `provide` / `inject` share a single app-level context map that lives for the whole page session — values persist across SPA navigations and are not scoped per route. Use `Yon.provide` in `main.js` for app-wide services. Calling `provide` from a component script is valid but the value will remain available globally for the rest of the session.
+
+> **Load order:** `Yon.provide` is available once `spa-renderer.ts` initialises, which happens before any page or component factory runs. Call `Yon.provide(...)` at the top level of `main.js` (not inside an event handler or timeout) to ensure services are registered before the first component mounts.
+
 #### `persist`
 
 Preserve component state across SPA navigations using `sessionStorage`. The factory reads the stored value on every mount, so state survives navigating away and back.
