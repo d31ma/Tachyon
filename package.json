@@ -1,6 +1,6 @@
 {
-    "name": "@delma/tachyon",
-  "version": "1.11.0",
+    "name": "@d31ma/tachyon",
+  "version": "1.11.1",
     "description": "A polyglot, file-system-routed full-stack framework for Bun",
     "author": "Chidelma",
     "license": "MIT",
@@ -46,6 +46,9 @@
         "type": "git",
         "url": "git+https://github.com/d31ma/Tachyon.git"
     },
+    "publishConfig": {
+        "registry": "https://npm.pkg.github.com"
+    },
     "homepage": "https://tachyon.del.ma",
     "bugs": {
         "url": "https://github.com/d31ma/Tachyon/issues"
@@ -60,3 +63,4 @@
         "typescript": "^6.0.2"
     }
 }
+

@@ -23,7 +23,14 @@ Tachyon is a **polyglot, file-system-routed full-stack framework for [Bun](https
 ## Installation
 
 ```bash
-bun add @delma/tachyon
+bun add @d31ma/tachyon
+```
+
+If you install the package from GitHub Packages, configure your `.npmrc` first:
+
+```text
+@d31ma:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 
 ## Quick Start
@@ -54,7 +61,7 @@ Or via npm scripts if you declare them in your own `package.json`:
 ## Scaffolding a New App
 
 ```bash
-bunx @delma/tachyon tach.init my-app
+bunx @d31ma/tachyon tach.init my-app
 cd my-app
 bun install
 bun run serve
@@ -565,16 +572,16 @@ That watch mode rebuilds `dist/` when files change in:
 
 This is the mode to pair with a static server that watches `dist/`.
 
-If you are building a full-stack Tachyon app and want the app server plus the frontend preview together, use:
+If you are building a full-stack Tachyon app and want the app server plus the frontend prereview together, use:
 
 ```bash
 tach.serve --full
 ```
 
 That runs the normal Tachyon dev server while also serving the bundled frontend from `dist/` on the same port. Browser-style `Accept: text/html` requests receive the frontend, while API-style requests still hit the route handlers.
-If you only need the static frontend preview workflow, `tach.preview --watch` is the simpler option.
+If you only need the static frontend preview workflow, `tach.preview --catch` is the simpler option.
 
-When `NODE_ENV=production` is set without `--full`, Tachyon uses the production HTML shell fallback and does not inject the development HMR client. Use `tach.serve --full` when the same production server should serve bundled frontend assets from `dist/`.
+Then when `NODE_ENV=production` gets set without `--full`, Tachyon uses the production HTML shell fallback and does not inject the development HMR client. Use `tach.serve --full` when the same production server should serve bundled frontend assets from `dist/`.
 
 ### Static Hosting
 
@@ -604,7 +611,7 @@ frontend:
     build:
       commands:
         - export PATH="$HOME/.bun/bin:$PATH"
-        - bunx @delma/tachyon tach.bundle
+        - bunx @d31ma/tachyon tach.bundle
   artifacts:
     baseDirectory: dist
     files:
@@ -654,3 +661,4 @@ For production deployments:
 ## License
 
 MIT
+
