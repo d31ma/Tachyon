@@ -1,6 +1,6 @@
 import { BunRequest, Server } from "bun";
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import Router, { RequestContext, RouteOptions, RequestPayload, RouteResponse } from "./route-handler.js";
+import Router, { RequestContext, RouteOptions, RequestPayload, RouteResponse, type RateLimitDecision } from "./route-handler.js";
 import Pool from "./process-pool.js";
 import Validate from "./schema-validator.js";
 import logger from './logger.js'
@@ -15,9 +15,12 @@ export default class Tach {
     private static readonly MAX_REQUEST_ID_LENGTH = 200
     private static readonly HTML_SHELL =
         process.env.NODE_ENV === 'production' ? 'production.html' : 'development.html'
+    private static readonly healthRoutePaths = ['/health', '/healthz']
+    private static readonly readyRoutePaths = ['/ready', '/readyz']
     private static frontendRequestHandler:
         | ((request: BunRequest) => Promise<Response | null>)
         | null = null
+    private static readonly rateLimitBuckets = new Map<string, { count: number; resetAt: number }>()
 
     /**
      * Shared decoder instance — safe to reuse since we call decode() without
@@ -67,6 +70,180 @@ export default class Tach {
         }
 
         return JSON.stringify({ detail: 'Internal server error' })
+    }
+
+    private static withMainStylesheet(shellHTML: string): string {
+        if (!Router.reqRoutes['/main.css'] || shellHTML.includes('/main.css')) return shellHTML
+        return shellHTML.replace('</head>', '    <link rel="stylesheet" href="/main.css">\n</head>')
+    }
+
+    private static splitHeaderList(value: string | null | undefined): string[] {
+        return value
+            ?.split(',')
+            .map(item => item.trim())
+            .filter(Boolean)
+            ?? []
+    }
+
+    private static parseForwardedHeader(value: string | null): {
+        for?: string
+        proto?: string
+        host?: string
+    } {
+        if (!value) return {}
+
+        const firstEntry = value.split(',')[0]?.trim()
+        if (!firstEntry) return {}
+
+        const params = firstEntry.split(';')
+        const forwarded: { for?: string; proto?: string; host?: string } = {}
+
+        for (const param of params) {
+            const [rawKey, rawValue] = param.split('=')
+            const key = rawKey?.trim().toLowerCase()
+            const value = rawValue?.trim().replace(/^"|"$/g, '')
+
+            if (!key || !value) continue
+
+            if (key === 'for') forwarded.for = value.replace(/^\[|\]$/g, '')
+            if (key === 'proto') forwarded.proto = value
+            if (key === 'host') forwarded.host = value
+        }
+
+        return forwarded
+    }
+
+    private static isLoopbackAddress(address: string): boolean {
+        return address === '127.0.0.1' || address === '::1' || address === 'localhost'
+    }
+
+    private static trustedProxyEntries(): string[] {
+        return Tach.splitHeaderList(process.env.TRUST_PROXY)
+    }
+
+    private static isTrustedProxy(address: string): boolean {
+        const trustedEntries = Tach.trustedProxyEntries()
+
+        if (trustedEntries.length === 0) return false
+        if (trustedEntries.includes('true') || trustedEntries.includes('*')) return true
+        if (trustedEntries.includes('loopback') && Tach.isLoopbackAddress(address)) return true
+
+        return trustedEntries.includes(address)
+    }
+
+    static getClientInfo(
+        request: Request,
+        remoteAddress?: string | null,
+    ): Pick<RequestContext, 'ipAddress' | 'protocol' | 'host'> {
+        const url = new URL(request.url)
+        const fallback = {
+            ipAddress: remoteAddress || '0.0.0.0',
+            protocol: url.protocol.replace(/:$/, ''),
+            host: url.host,
+        }
+
+        if (!remoteAddress || !Tach.isTrustedProxy(remoteAddress)) return fallback
+
+        const forwarded = Tach.parseForwardedHeader(request.headers.get('forwarded'))
+        const xForwardedFor = Tach.splitHeaderList(request.headers.get('x-forwarded-for'))[0]
+        const xForwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+        const xForwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+
+        return {
+            ipAddress: forwarded.for || xForwardedFor || fallback.ipAddress,
+            protocol: forwarded.proto || xForwardedProto || fallback.protocol,
+            host: forwarded.host || xForwardedHost || fallback.host,
+        }
+    }
+
+    private static isHealthEndpoint(pathname: string): boolean {
+        return Tach.healthRoutePaths.includes(pathname)
+    }
+
+    private static isReadyEndpoint(pathname: string): boolean {
+        return Tach.readyRoutePaths.includes(pathname)
+    }
+
+    private static getRateLimitConfig() {
+        return {
+            max: Number(process.env.RATE_LIMIT_MAX || 0),
+            windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 0),
+        }
+    }
+
+    private static getRateLimitHeaders(
+        decision: Pick<RateLimitDecision, 'limit' | 'remaining' | 'resetAt'>,
+        now = Date.now(),
+    ): Record<string, string> {
+        return {
+            'RateLimit-Limit': String(Math.max(decision.limit, 0)),
+            'RateLimit-Remaining': String(Math.max(decision.remaining, 0)),
+            'RateLimit-Reset': String(Math.max(Math.ceil((decision.resetAt - now) / 1000), 0)),
+        }
+    }
+
+    private static takeInMemoryRateLimit(
+        clientIpAddress: string,
+    ): RateLimitDecision | null {
+        const { max, windowMs } = Tach.getRateLimitConfig()
+
+        if (max <= 0 || windowMs <= 0) return null
+
+        const now = Date.now()
+        const existing = Tach.rateLimitBuckets.get(clientIpAddress)
+        const bucket = !existing || existing.resetAt <= now
+            ? { count: 0, resetAt: now + windowMs }
+            : existing
+
+        bucket.count += 1
+        Tach.rateLimitBuckets.set(clientIpAddress, bucket)
+
+        return {
+            allowed: bucket.count <= max,
+            limit: max,
+            remaining: Math.max(max - bucket.count, 0),
+            resetAt: bucket.resetAt,
+        }
+    }
+
+    private static async takeRateLimit(
+        request: Request,
+        context: RequestContext,
+        pathname: string,
+    ): Promise<{ rejection?: Response; headers?: Record<string, string> }> {
+        if (Tach.isHealthEndpoint(pathname) || Tach.isReadyEndpoint(pathname)) {
+            return {}
+        }
+
+        const decision = Router.rateLimiter
+            ? await Router.rateLimiter.take(request, context) || null
+            : Tach.takeInMemoryRateLimit(context.ipAddress)
+
+        if (!decision) return {}
+
+        const headers = {
+            ...Tach.getRateLimitHeaders(decision),
+            ...decision.headers,
+        }
+
+        if (!decision.allowed) {
+            return {
+                rejection: Response.json(
+                    { detail: 'Too many requests' },
+                    {
+                        status: 429,
+                        headers: {
+                            ...Router.getHeaders(request),
+                            ...headers,
+                            'Retry-After': headers['RateLimit-Reset'],
+                        }
+                    }
+                ),
+                headers,
+            }
+        }
+
+        return { headers }
     }
 
     private static async logHandlerResourceUsage(
@@ -218,13 +395,37 @@ export default class Tach {
         }
     }
 
-    private static isAuthorizedClient(authorization: string | undefined, basicAuth: string): boolean {
-        if (!authorization) return false
-        const [, provided] = authorization.split(' ')
+    private static getBasicCredentials(authorization: string | undefined): string | null {
+        if (!authorization) return null
+
+        const [scheme, encoded] = authorization.split(' ')
+
+        if (scheme?.toLowerCase() !== 'basic' || !encoded) return null
+
+        try {
+            return atob(encoded)
+        } catch {
+            return null
+        }
+    }
+
+    private static async isAuthorizedClient(
+        authorization: string | undefined,
+        basicAuth: string | undefined,
+        basicAuthHash: string | undefined,
+    ): Promise<boolean> {
+        const provided = Tach.getBasicCredentials(authorization)
+
         if (!provided) return false
-        const expected = btoa(basicAuth)
+
+        if (basicAuthHash) {
+            return Bun.password.verify(provided, basicAuthHash)
+        }
+
+        if (!basicAuth) return false
+
         // Timing-safe comparison prevents brute-force timing oracle attacks
-        const a = Buffer.from(expected)
+        const a = Buffer.from(basicAuth)
         const b = Buffer.from(provided)
         if (a.length !== b.length) return false
         return timingSafeEqual(a, b)
@@ -257,17 +458,86 @@ export default class Tach {
         })
     }
 
+    private static withAdditionalHeaders(response: Response, extraHeaders?: Record<string, string>): Response {
+        if (!extraHeaders || Object.keys(extraHeaders).length === 0) return response
+
+        const headers = new Headers(response.headers)
+
+        for (const [name, value] of Object.entries(extraHeaders)) {
+            if (value) headers.set(name, value)
+        }
+
+        return new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+        })
+    }
+
+    private static withCacheControl(response: Response, request: Request): Response {
+        if (response.headers.has('Cache-Control')) return response
+
+        const headers = new Headers(response.headers)
+        headers.set(
+            'Cache-Control',
+            Router.getCacheControlHeader(
+                new URL(request.url).pathname,
+                response.headers.get('Content-Type'),
+            )
+        )
+
+        return new Response(response.body, {
+            status: response.status,
+            statusText: response.statusText,
+            headers,
+        })
+    }
+
+    private static rejectDisallowedOrigin(request: Request): Response | null {
+        if (Router.isOriginAllowed(request)) return null
+
+        return Response.json(
+            { detail: 'Origin not allowed' },
+            { status: 403, headers: Router.getHeaders(request) }
+        )
+    }
+
+    private static healthResponse(request: Request, kind: 'ok' | 'ready') {
+        return Response.json(
+            {
+                status: kind,
+                uptimeMs: Math.round(process.uptime() * 1000),
+            },
+            {
+                status: 200,
+                headers: {
+                    ...Router.getHeaders(request),
+                    'Cache-Control': 'no-store',
+                }
+            }
+        )
+    }
+
     private static async serveRequest(
+        request:  BunRequest,
         handler:  string,
         stdin:    RequestPayload,
         context:  RequestContext,
         config?:  RouteOptions,
     ): Promise<Response> {
+        const responseHeaders = Router.getHeaders(request)
 
-        if (process.env.BASIC_AUTH && !Tach.isAuthorizedClient(stdin.headers?.authorization, process.env.BASIC_AUTH)) {
+        if (
+            (process.env.BASIC_AUTH || process.env.BASIC_AUTH_HASH)
+            && !await Tach.isAuthorizedClient(
+                stdin.headers?.authorization,
+                process.env.BASIC_AUTH,
+                process.env.BASIC_AUTH_HASH,
+            )
+        ) {
             return Response.json(
                 { detail: "Unauthorized Client" },
-                { status: 401, headers: { ...Router.headers, "WWW-Authenticate": 'Basic realm="Secure Area"' } }
+                { status: 401, headers: { ...responseHeaders, "WWW-Authenticate": 'Basic realm="Secure Area"' } }
             )
         }
 
@@ -275,7 +545,7 @@ export default class Tach {
             try {
                 await Validate.validateData(handler, "req", stdin as Record<string, unknown>)
             } catch (e) {
-                return Response.json({ detail: (e as Error).message }, { status: 400, headers: Router.headers })
+                return Response.json({ detail: (e as Error).message }, { status: 400, headers: responseHeaders })
             }
         }
 
@@ -297,7 +567,7 @@ export default class Tach {
                 }
             })
 
-            return new Response(stream, { headers: { ...Router.headers, "Content-Type": Tach.STREAM_MIME_TYPE } })
+            return new Response(stream, { headers: { ...responseHeaders, "Content-Type": Tach.STREAM_MIME_TYPE } })
         }
 
         const { body, status } = await Tach.getResponse([handler], stdin, context, config)
@@ -310,11 +580,11 @@ export default class Tach {
             try {
                 await Validate.validateData(handler, ioKey, body!)
             } catch (e) {
-                return Response.json({ detail: (e as Error).message }, { status: 422, headers: Router.headers })
+                return Response.json({ detail: (e as Error).message }, { status: 422, headers: responseHeaders })
             }
         }
 
-        return new Response(body, { status: finalStatus, headers: Router.headers })
+        return new Response(body, { status: finalStatus, headers: responseHeaders })
     }
 
     /**
@@ -355,6 +625,24 @@ export default class Tach {
     static createServerRoutes() {
         if (!Router.allRoutes.has('/')) Router.allRoutes.set('/', new Set(['GET']))
 
+        for (const healthPath of [...Tach.healthRoutePaths, ...Tach.readyRoutePaths]) {
+            if (!Router.reqRoutes[healthPath]) Router.reqRoutes[healthPath] = {}
+        }
+
+        for (const healthPath of Tach.healthRoutePaths) {
+            if (!Router.reqRoutes[healthPath].GET) {
+                Router.reqRoutes[healthPath].GET = (request?: BunRequest) =>
+                    Tach.healthResponse(request!, 'ok')
+            }
+        }
+
+        for (const readyPath of Tach.readyRoutePaths) {
+            if (!Router.reqRoutes[readyPath].GET) {
+                Router.reqRoutes[readyPath].GET = (request?: BunRequest) =>
+                    Tach.healthResponse(request!, 'ready')
+            }
+        }
+
         for (const [route, methods] of Router.allRoutes) {
 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -362,21 +650,50 @@ export default class Tach {
                 const start = Date.now()
                 const path  = new URL(request!.url).pathname
                 const method = request!.method
-                const ipAddress = server?.requestIP(request!)?.address ?? '0.0.0.0'
+                const clientInfo = Tach.getClientInfo(
+                    request!,
+                    server?.requestIP(request!)?.address ?? null,
+                )
                 const requestId = Tach.getRequestId(request!)
+                const context: RequestContext = {
+                    requestId,
+                    ipAddress: clientInfo.ipAddress,
+                    protocol: clientInfo.protocol,
+                    host: clientInfo.host,
+                }
 
                 let res: Response | undefined
                 let requestKind = 'handler'
+                let responseHeaders: Record<string, string> | undefined
 
                 try {
-                    if (request!.headers.get('accept')?.includes('text/html')) {
+                    const originRejection = Tach.rejectDisallowedOrigin(request!)
+                    if (originRejection) {
+                        requestKind = 'cors'
+                        res = originRejection
+                    } else {
+                        const rateLimit = await Tach.takeRateLimit(request!, context, path)
+                        responseHeaders = rateLimit.headers
+
+                        if (rateLimit.rejection) {
+                            requestKind = 'rate-limit'
+                            res = rateLimit.rejection
+                        }
+                    }
+
+                    if (res) {
+                        // no-op, request already handled
+                    } else if (request!.headers.get('accept')?.includes('text/html')) {
                         requestKind = 'frontend'
                         const frontendResponse = await Tach.frontendRequestHandler?.(request!)
                         if (frontendResponse) {
                             res = frontendResponse
                         } else {
+                            const shellHTML = Tach.withMainStylesheet(
+                                await Bun.file(`${import.meta.dir}/../runtime/shells/${Tach.HTML_SHELL}`).text()
+                            )
                             res = new Response(
-                                await Bun.file(`${import.meta.dir}/../runtime/shells/${Tach.HTML_SHELL}`).text(),
+                                shellHTML,
                                 { status: 200, headers: { 'Content-Type': 'text/html' } }
                             )
                         }
@@ -384,14 +701,9 @@ export default class Tach {
                         requestKind = 'options'
                         res = new Response(
                             Bun.file(`${Router.routesPath}${route === '/' ? '' : route}/OPTIONS`),
-                            { status: 200, headers: { 'Content-Type': 'application/json' } }
+                            { status: 200, headers: { ...Router.getHeaders(request!), 'Content-Type': 'application/json' } }
                         )
                     } else {
-                        const context: RequestContext = {
-                            requestId,
-                            ipAddress,
-                        }
-
                         if (Router.middleware?.before) {
                             const earlyResponse = await Router.middleware.before(request!, context)
                             if (earlyResponse) {
@@ -405,7 +717,7 @@ export default class Tach {
 
                             context.bearer = Tach.getBearerContext(stdin.headers?.authorization)
 
-                            res = await Tach.serveRequest(handler, stdin, context, config)
+                            res = await Tach.serveRequest(request!, handler, stdin, context, config)
 
                             if (Router.middleware?.after) {
                                 res = await Router.middleware.after(request!, res, context)
@@ -424,14 +736,16 @@ export default class Tach {
                             path,
                             route,
                         })
-                        res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.headers })
+                        res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request!) })
                     }
                 }
 
                 if (!res) {
-                    res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.headers })
+                    res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request!) })
                 }
 
+                res = Tach.withAdditionalHeaders(res, responseHeaders)
+                res = Tach.withCacheControl(res, request!)
                 res = Tach.withRequestId(res, requestId)
 
                 Tach.requestLogger.info('Request completed', {
@@ -442,7 +756,7 @@ export default class Tach {
                     kind: requestKind,
                     status: res.status,
                     durationMs: Date.now() - start,
-                    ipAddress,
+                    ipAddress: clientInfo.ipAddress,
                 })
 
                 return res

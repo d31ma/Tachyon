@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
+import Router from '../server/route-handler.js'
 
 async function pathExists(filePath: string) {
     try {
@@ -52,10 +53,15 @@ export async function serveStaticPreviewRequest(
     if (!filePath) return null
 
     const file = Bun.file(filePath)
-    const body = await file.bytes()
+    const headers = new Headers()
+
+    if (file.type) headers.set('Content-Type', file.type)
+    headers.set('Cache-Control', Router.getCacheControlHeader(url.pathname, file.type))
+
+    const body = req.method === 'HEAD' ? null : await file.bytes()
 
     return new Response(body, {
-        headers: file.type ? { 'Content-Type': file.type } : undefined
+        headers
     })
 }
 

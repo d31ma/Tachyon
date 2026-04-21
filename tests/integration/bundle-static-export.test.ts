@@ -122,6 +122,104 @@ let trusted = '<strong>Trusted raw HTML</strong>';
     return root
 }
 
+async function createTemplateImportFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-template-import-'))
+    tempDirs.push(root)
+
+    await mkdir(path.join(root, 'routes'), { recursive: true })
+
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-template-import-fixture',
+        private: true,
+    }, null, 2))
+
+    await writeFile(
+        path.join(root, 'routes', 'HTML'),
+        `<script lang="ts">
+const { formatLabel } = await import("./template-support");
+let message = formatLabel("plugin-powered");
+</script>
+<p>{message}</p>`
+    )
+
+    await writeFile(
+        path.join(root, 'routes', 'template-support.ts'),
+        `export function formatLabel(value: string) {
+    return value.toUpperCase();
+}
+`
+    )
+
+    return root
+}
+
+async function createPackageExportsFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-package-exports-'))
+    tempDirs.push(root)
+
+    await mkdir(path.join(root, 'routes'), { recursive: true })
+    await mkdir(path.join(root, 'node_modules', 'fixture-exports', 'src'), { recursive: true })
+
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-package-exports-fixture',
+        private: true,
+        dependencies: {
+            'fixture-exports': '1.0.0',
+        },
+    }, null, 2))
+
+    await writeFile(
+        path.join(root, 'routes', 'HTML'),
+        `<script>document.title = "Exports Fixture"</script><h1>Exports Fixture</h1>`
+    )
+
+    await writeFile(path.join(root, 'node_modules', 'fixture-exports', 'package.json'), JSON.stringify({
+        name: 'fixture-exports',
+        version: '1.0.0',
+        type: 'module',
+        exports: './src/index.js',
+    }, null, 2))
+
+    await writeFile(
+        path.join(root, 'node_modules', 'fixture-exports', 'src', 'index.js'),
+        'export const flavor = "exports-aware"; export default function label() { return flavor; }\n'
+    )
+
+    return root
+}
+
+async function createMainEntrypointFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-main-entry-'))
+    tempDirs.push(root)
+
+    await mkdir(path.join(root, 'routes'), { recursive: true })
+
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-main-entry-fixture',
+        private: true,
+    }, null, 2))
+
+    await writeFile(
+        path.join(root, 'routes', 'HTML'),
+        `<script>document.title = "Main Entry Fixture"</script><main><h1>Main Entry Fixture</h1></main>`
+    )
+
+    await writeFile(
+        path.join(root, 'main.ts'),
+        `import { bootMessage } from "./main-support";
+import "./main.css";
+
+console.log(bootMessage);
+document.documentElement.dataset.boot = bootMessage;
+`
+    )
+
+    await writeFile(path.join(root, 'main-support.ts'), `export const bootMessage = "booted-from-main-ts";\n`)
+    await writeFile(path.join(root, 'main.css'), `body { background: rgb(1, 2, 3); }\n`)
+
+    return root
+}
+
 async function createGlobalYonFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-global-yon-'))
     tempDirs.push(root)
@@ -248,7 +346,7 @@ test('tach.bundle prerenders HTML routes into static documents', { timeout: 2000
     expect(home).toContain('class="shell"')
     expect(home).toContain('>Fixture Home</h1>')
     expect(home).not.toContain('@scope')
-    expect(home).toContain('<script src="/spa-renderer.js" defer></script>')
+    expect(home).toContain('<script type="module" src="/spa-renderer.js"></script>')
 
     expect(docs).toContain('<title>Fixture Docs</title>')
     expect(docs).toContain('>Docs page</p>')
@@ -345,6 +443,91 @@ test('template interpolation and dynamic attributes are escaped by default', { t
     expect(html).toContain('title="&quot; onfocus=&quot;alert(1)"')
     expect(html).not.toContain('title="" onfocus="alert(1)"')
     expect(html).toContain('<strong>Trusted raw HTML</strong>')
+})
+
+test('Yon template scripts can bundle relative imports from their source directory', { timeout: 20000 }, async () => {
+    const cwd = await createTemplateImportFixture()
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ])
+
+    if (exitCode !== 0) throw new Error(stderr)
+    expect(stderr).toBe('')
+
+    const pageModulePath = path.join(cwd, 'dist', 'pages', 'HTML.js')
+    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?template-import=${Date.now()}`)
+    const render = await pageModule.default()
+
+    expect(await render()).toContain('PLUGIN-POWERED')
+})
+
+test('tach.bundle resolves dependency entrypoints via package exports', { timeout: 20000 }, async () => {
+    const cwd = await createPackageExportsFixture()
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ])
+
+    if (exitCode !== 0) throw new Error(stderr)
+    expect(stdout).toContain('Bundle completed')
+    expect(stderr).toBe('')
+
+    const modulePath = path.join(cwd, 'dist', 'modules', 'fixture-exports.js')
+    const bundledModule = await readFile(modulePath, 'utf8')
+
+    expect(bundledModule).toContain('exports-aware')
+
+    const loaded = await import(`${pathToFileURL(modulePath).href}?exports=${Date.now()}`)
+    expect(loaded.flavor).toBe('exports-aware')
+    expect(loaded.default()).toBe('exports-aware')
+})
+
+test('tach.bundle bundles typed main entrypoints and emits main.css when imported', { timeout: 20000 }, async () => {
+    const cwd = await createMainEntrypointFixture()
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    })
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ])
+
+    if (exitCode !== 0) throw new Error(stderr)
+    expect(stdout).toContain('Bundle completed')
+    expect(stderr).toBe('')
+
+    const html = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8')
+    const bundledMain = await readFile(path.join(cwd, 'dist', 'main.js'), 'utf8')
+    const bundledCss = await readFile(path.join(cwd, 'dist', 'main.css'), 'utf8')
+
+    expect(html).toContain('<link rel="stylesheet" href="/main.css">')
+    expect(html).toContain('<script type="module" src="/spa-renderer.js"></script>')
+    expect(html).toContain('<script type="module" src="/main.js"></script>')
+    expect(html.indexOf('/spa-renderer.js')).toBeLessThan(html.indexOf('/main.js'))
+    expect(bundledMain).toContain('booted-from-main-ts')
+    expect(bundledCss).toContain('background:#010203')
 })
 
 test('YON_FORMAT=global emits registry modules that prerender successfully', { timeout: 20000 }, async () => {

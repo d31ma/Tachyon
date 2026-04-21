@@ -40,8 +40,8 @@ jobs:
       - name: Type check
         run: bun run typecheck
 
-      - name: Run tests
-        run: bun test
+      - name: Run tests with coverage
+        run: bun run test:coverage
         env:
           HOSTNAME: 127.0.0.1
           BASIC_AUTH: admin:pass

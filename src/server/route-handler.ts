@@ -1,9 +1,12 @@
 import { BunRequest, Server } from "bun"
+import path from "node:path"
 
 /** Context object injected into every route handler */
 export interface RequestContext {
     requestId: string
     ipAddress: string
+    protocol: string
+    host: string
     bearer?: {
         token: string
         /** Always false unless application middleware replaces it with verified auth context */
@@ -37,6 +40,28 @@ export interface Middleware {
     after?:  (request: Request, response: Response, context: RequestContext) => Promise<Response> | Response
 }
 
+/** Result returned by a rate limiter after consuming the current request. */
+export interface RateLimitDecision {
+    allowed: boolean
+    limit: number
+    remaining: number
+    /** Unix epoch timestamp in milliseconds when the current window resets. */
+    resetAt: number
+    /** Optional extra headers to merge into the response. */
+    headers?: Record<string, string>
+}
+
+/** Optional request rate limiter hook, suitable for shared stores like Redis. */
+export interface RateLimiter {
+    take: (request: Request, context: RequestContext) =>
+        Promise<RateLimitDecision | null | void> | RateLimitDecision | null | void
+}
+
+/** Full shape supported by `middleware.ts` / `middleware.js`. */
+export interface MiddlewareModule extends Middleware {
+    rateLimiter?: RateLimiter
+}
+
 export default class Router {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,6 +77,7 @@ export default class Router {
     static readonly middlewarePath = process.env.MIDDLEWARE_PATH  || `${process.cwd()}/middleware`
 
     static middleware: Middleware | null = null
+    static rateLimiter: RateLimiter | null = null
 
     static readonly routeConfigs: Record<string, Record<string, RouteOptions>> = {}
 
@@ -60,16 +86,61 @@ export default class Router {
         Router.allRoutes.clear()
         for (const key of Object.keys(Router.routeSlugs)) delete Router.routeSlugs[key]
         for (const key of Object.keys(Router.routeConfigs)) delete Router.routeConfigs[key]
+        Router.middleware = null
+        Router.rateLimiter = null
     }
 
     private static readonly allMethods = process.env.ALLOW_METHODS
         ? process.env.ALLOW_METHODS.split(',')
         : ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD']
 
-    static get headers(): Record<string, string> {
+    private static splitConfigList(value: string | undefined): string[] {
+        return value
+            ?.split(',')
+            .map(item => item.trim())
+            .filter(item => item.length > 0)
+            ?? []
+    }
+
+    static get allowedOrigins(): string[] {
+        return Router.splitConfigList(process.env.ALLOW_ORIGINS)
+    }
+
+    static isOriginAllowed(request: Request): boolean {
+        const origin = request.headers.get('origin')
+
+        if (!origin) return true
+        if (origin === new URL(request.url).origin) return true
+
+        const allowedOrigins = Router.allowedOrigins
+
+        if (allowedOrigins.length === 0) return true
+
+        return allowedOrigins.includes('*') || allowedOrigins.includes(origin)
+    }
+
+    private static resolveAllowedOrigin(request?: Request): string {
+        const allowedOrigins = Router.allowedOrigins
+
+        if (allowedOrigins.length === 0) return ''
+        if (allowedOrigins.includes('*')) return '*'
+
+        const requestOrigin = request?.headers.get('origin')
+
+        if (request && requestOrigin) {
+            if (requestOrigin === new URL(request.url).origin) return requestOrigin
+            if (allowedOrigins.includes(requestOrigin)) return requestOrigin
+        }
+
+        return allowedOrigins.length === 1 ? allowedOrigins[0] : ''
+    }
+
+    static getHeaders(request?: Request): Record<string, string> {
+        const allowOrigin = Router.resolveAllowedOrigin(request)
+
         const headers: Record<string, string> = {
             "Access-Control-Allow-Headers":      process.env.ALLOW_HEADERS     || "",
-            "Access-Control-Allow-Origin":       process.env.ALLOW_ORIGINS     || "",
+            "Access-Control-Allow-Origin":       allowOrigin,
             "Access-Control-Allow-Credentials":  process.env.ALLOW_CREDENTIALS || "false",
             "Access-Control-Expose-Headers":     process.env.ALLOW_EXPOSE_HEADERS || "",
             "Access-Control-Max-Age":            process.env.ALLOW_MAX_AGE     || "",
@@ -81,11 +152,43 @@ export default class Router {
             "Referrer-Policy":                   "strict-origin-when-cross-origin",
         }
 
+        if (request?.headers.get('origin') && allowOrigin && allowOrigin !== '*') {
+            headers.Vary = 'Origin'
+        }
+
         if (process.env.ENABLE_HSTS === 'true') {
             headers["Strict-Transport-Security"] = process.env.HSTS_VALUE || "max-age=31536000; includeSubDomains"
         }
 
         return headers
+    }
+
+    static get headers(): Record<string, string> {
+        return Router.getHeaders()
+    }
+
+    static getCacheControlHeader(pathname: string, contentType?: string | null): string {
+        const normalizedPath = pathname.split('?')[0] || '/'
+        const base = path.posix.basename(normalizedPath)
+        const type = (contentType || '').toLowerCase()
+
+        if (type.includes('text/html')) return 'no-cache, must-revalidate'
+        if (normalizedPath === '/routes.json' || normalizedPath === '/layouts.json') return 'no-cache, must-revalidate'
+        if (['main.js', 'main.css', 'spa-renderer.js', 'hot-reload-client.js'].includes(base)) {
+            return 'no-cache, must-revalidate'
+        }
+        if (/^chunk-[a-z0-9]+\./i.test(base)) return 'public, max-age=31536000, immutable'
+        if (normalizedPath.startsWith('/assets/')) return 'public, max-age=3600'
+        if (
+            normalizedPath.startsWith('/components/')
+            || normalizedPath.startsWith('/layouts/')
+            || normalizedPath.startsWith('/pages/')
+            || normalizedPath.startsWith('/modules/')
+        ) {
+            return 'no-cache, must-revalidate'
+        }
+
+        return 'no-store'
     }
 
     /** Maximum bytes buffered from an inbound request body before returning 413. */
@@ -182,7 +285,7 @@ export default class Router {
         const contentLength = request.headers.get('content-length')
 
         if (contentLength && Number(contentLength) > Router.MAX_BODY_BYTES) {
-            throw Response.json({ error: 'Payload too large' }, { status: 413, headers: Router.headers })
+            throw Response.json({ error: 'Payload too large' }, { status: 413, headers: Router.getHeaders(request) })
         }
 
         if (!request.body) return new Uint8Array()
@@ -199,7 +302,7 @@ export default class Router {
             total += value.byteLength
             if (total > Router.MAX_BODY_BYTES) {
                 await reader.cancel()
-                throw Response.json({ error: 'Payload too large' }, { status: 413, headers: Router.headers })
+                throw Response.json({ error: 'Payload too large' }, { status: 413, headers: Router.getHeaders(request) })
             }
 
             chunks.push(value)

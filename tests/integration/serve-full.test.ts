@@ -27,7 +27,17 @@ async function createExampleApp() {
         private: true
     }, null, 2))
 
-    await writeFile(path.join(root, 'main.js'), 'console.log("fixture boot")\n')
+    await writeFile(
+        path.join(root, 'main.ts'),
+        `import { bootMessage } from "./main-support";
+import "./main.css";
+
+console.log(bootMessage);
+document.documentElement.dataset.boot = bootMessage;
+`
+    )
+    await writeFile(path.join(root, 'main-support.ts'), `export const bootMessage = "fixture-boot";\n`)
+    await writeFile(path.join(root, 'main.css'), `body { background: rgb(12, 34, 56); }\n`)
     await writeFile(path.join(root, 'routes', 'LAYOUT'), `<html><body><slot /></body></html>`)
     await writeFile(path.join(root, 'routes', 'HTML'), `<main><h1>Fixture Home</h1></main>`)
     const getRoutePath = path.join(root, 'routes', 'GET')
@@ -103,7 +113,7 @@ test('tach.serve --full serves frontend and backend responses from the same port
     const ok = await waitFor(async () => {
         try {
             const requestId = 'serve-full-test-request-id'
-            const [frontendRes, apiRes] = await Promise.all([
+            const [frontendRes, apiRes, mainRes, cssRes] = await Promise.all([
                 fetch(`http://127.0.0.1:${port}/`, {
                     headers: { accept: 'text/html' }
                 }),
@@ -112,27 +122,45 @@ test('tach.serve --full serves frontend and backend responses from the same port
                         accept: 'application/json',
                         'x-request-id': requestId,
                     }
-                })
+                }),
+                fetch(`http://127.0.0.1:${port}/main.js`),
+                fetch(`http://127.0.0.1:${port}/main.css`),
             ])
             const apiBody = await apiRes.json().catch(() => null) as { fixture?: string, requestId?: string } | null
+            const frontendBody = await frontendRes.text()
+            const mainBody = await mainRes.text()
+            const cssBody = await cssRes.text()
 
             const htmlOk = frontendRes.ok
-                && (await frontendRes.text()).includes('Fixture Home')
+                && frontendBody.includes('Fixture Home')
+                && frontendBody.includes('/main.css')
+                && frontendBody.includes('type="module" src="/spa-renderer.js"')
+                && frontendBody.includes('type="module" src="/main.js"')
             const apiOk = apiRes.ok
                 && apiBody?.fixture === 'api'
                 && apiBody?.requestId === requestId
                 && apiRes.headers.get('x-request-id') === requestId
+            const mainOk = mainRes.ok
+                && mainRes.headers.get('content-type')?.includes('javascript')
+                && mainBody.includes('fixture-boot')
+            const cssOk = cssRes.ok
+                && cssRes.headers.get('content-type')?.includes('text/css')
+                && cssBody.includes('background:#0c2238')
 
             lastSnapshot = JSON.stringify({
                 htmlStatus: frontendRes.status,
                 apiStatus: apiRes.status,
+                mainStatus: mainRes.status,
+                cssStatus: cssRes.status,
                 apiRequestId: apiRes.headers.get('x-request-id'),
                 apiBody,
                 htmlOk,
                 apiOk,
+                mainOk,
+                cssOk,
             })
 
-            return htmlOk && apiOk
+            return htmlOk && apiOk && mainOk && cssOk
         } catch {
             lastSnapshot = 'request connection failed'
             return false
@@ -191,10 +219,13 @@ test('tach.serve uses the production shell fallback when NODE_ENV=production', {
                 status: res.status,
                 hasSpaRenderer: body.includes('/spa-renderer.js'),
                 hasHotReloadClient: body.includes('/hot-reload-client.js'),
+                hasMainStylesheet: body.includes('/main.css'),
             })
 
             return res.ok
-                && body.includes('/spa-renderer.js')
+                && body.includes('type="module" src="/spa-renderer.js"')
+                && body.includes('type="module" src="/main.js"')
+                && body.includes('/main.css')
                 && !body.includes('/hot-reload-client.js')
         } catch {
             lastSnapshot = 'request connection failed'

@@ -1,4 +1,7 @@
 import { test, beforeAll, afterAll, expect, describe } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
 /** Base URL for the local test server */
 const TEST_PORT = '18080'
@@ -9,8 +12,8 @@ const STARTUP_TIMEOUT_MS = 10_000
 
 /**
  * Basic auth credentials for tests.
- * The test server must be started with BASIC_AUTH set to this value.
- * Use BASIC_AUTH env var to override (e.g. BASIC_AUTH=user:secret bun test).
+ * The test server hashes this value into BASIC_AUTH_HASH at startup.
+ * Use TEST_BASIC_AUTH env var to override (e.g. TEST_BASIC_AUTH=user:secret bun test).
  */
 const TEST_BASIC_AUTH = process.env.TEST_BASIC_AUTH ?? 'admin:pass'
 const AUTH_HEADER = `Basic ${btoa(TEST_BASIC_AUTH)}`
@@ -18,6 +21,27 @@ let serverProcess: Bun.Subprocess | null = null
 const PROJECT_ROOT = `${import.meta.dir}/../..`
 const EXAMPLES_DIR = `${PROJECT_ROOT}/examples`
 const SERVE_SCRIPT = `${PROJECT_ROOT}/src/cli/serve.ts`
+
+async function waitForServer(baseUrl: string, proc: Bun.Subprocess) {
+    const startedAt = Date.now()
+
+    while (Date.now() - startedAt < STARTUP_TIMEOUT_MS) {
+        if (proc.exitCode !== null) {
+            throw new Error(`Test server exited early with code ${proc.exitCode}`)
+        }
+
+        try {
+            const response = await fetch(`${baseUrl}/routes.json`)
+            if (response.ok) return
+        } catch {
+            // Server is still starting.
+        }
+
+        await Bun.sleep(200)
+    }
+
+    throw new Error(`Timed out waiting for test server on ${baseUrl}`)
+}
 
 /** Returns headers record with Authorization pre-set */
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -33,38 +57,25 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 }
 
 beforeAll(async () => {
+    const basicAuthHash = await Bun.password.hash(TEST_BASIC_AUTH)
+
     serverProcess = Bun.spawn(['bun', SERVE_SCRIPT], {
         cwd: EXAMPLES_DIR,
         env: {
             ...process.env,
             PORT: TEST_PORT,
             HOSTNAME: '127.0.0.1',
-            BASIC_AUTH: TEST_BASIC_AUTH,
+            BASIC_AUTH_HASH: basicAuthHash,
+            ALLOW_HEADERS: 'Content-Type,Authorization',
+            ALLOW_ORIGINS: 'https://app.example.com',
+            ALLOW_METHODS: 'GET,POST,PUT,DELETE,PATCH,OPTIONS',
             ENABLE_HSTS: 'false',
             MAX_BODY_BYTES: '64',
         },
         stdout: 'inherit',
         stderr: 'inherit'
     })
-
-    const startedAt = Date.now()
-
-    while (Date.now() - startedAt < STARTUP_TIMEOUT_MS) {
-        if (serverProcess.exitCode !== null) {
-            throw new Error(`Test server exited early with code ${serverProcess.exitCode}`)
-        }
-
-        try {
-            const response = await fetch(`${BASE_URL}/routes.json`)
-            if (response.ok) return
-        } catch {
-            // Server is still starting.
-        }
-
-        await Bun.sleep(200)
-    }
-
-    throw new Error(`Timed out waiting for test server on ${BASE_URL}`)
+    await waitForServer(BASE_URL, serverProcess)
 })
 
 afterAll(async () => {
@@ -291,6 +302,23 @@ describe('OPTIONS route', () => {
         expect(body.GET).toHaveProperty('500')
         expect(body.GET['200']).toHaveProperty('message')
     })
+
+    test('OPTIONS preflight response includes configured CORS headers', async () => {
+        const res = await fetch(`${BASE_URL}/api`, {
+            method: 'OPTIONS',
+            headers: {
+                Origin: 'https://app.example.com',
+                'Access-Control-Request-Method': 'POST',
+                'Access-Control-Request-Headers': 'Content-Type,Authorization',
+            },
+        })
+
+        expect(res.status).toEqual(200)
+        expect(res.headers.get('access-control-allow-origin')).toBe('https://app.example.com')
+        expect(res.headers.get('access-control-allow-methods')).toBe('GET,POST,PUT,DELETE,PATCH,OPTIONS')
+        expect(res.headers.get('access-control-allow-headers')).toBe('Content-Type,Authorization')
+        expect(res.headers.get('access-control-allow-credentials')).toBe('false')
+    })
 })
 
 // ===========================================================================
@@ -322,6 +350,52 @@ describe('CORS headers', () => {
         const res = await fetch(`${BASE_URL}/api`)
         expect(res.status).toEqual(401)
         expect(res.headers.get('access-control-allow-credentials')).toBe('false')
+    })
+
+    test('allowed cross-origin request echoes the matched origin', async () => {
+        const res = await authFetch('/api', {
+            headers: { Origin: 'https://app.example.com' },
+        })
+
+        expect(res.status).toEqual(200)
+        expect(res.headers.get('access-control-allow-origin')).toBe('https://app.example.com')
+        expect(res.headers.get('vary')).toBe('Origin')
+    })
+
+    test('same-origin request remains allowed even when not listed in ALLOW_ORIGINS', async () => {
+        const res = await authFetch('/api', {
+            method: 'POST',
+            headers: { Origin: BASE_URL },
+        })
+
+        expect(res.status).toEqual(200)
+        expect(res.headers.get('access-control-allow-origin')).toBe(BASE_URL)
+    })
+
+    test('disallowed cross-origin request returns 403 before handler execution', async () => {
+        const res = await authFetch('/api', {
+            headers: { Origin: 'https://evil.example.com' },
+        })
+
+        expect(res.status).toEqual(403)
+        expect(res.headers.get('access-control-allow-origin')).toBe('https://app.example.com')
+        const body = await res.json()
+        expect(body.detail).toBe('Origin not allowed')
+    })
+
+    test('disallowed preflight request returns 403', async () => {
+        const res = await fetch(`${BASE_URL}/api`, {
+            method: 'OPTIONS',
+            headers: {
+                Origin: 'https://evil.example.com',
+                'Access-Control-Request-Method': 'POST',
+                'Access-Control-Request-Headers': 'Content-Type,Authorization',
+            },
+        })
+
+        expect(res.status).toEqual(403)
+        const body = await res.json()
+        expect(body.detail).toBe('Origin not allowed')
     })
 })
 
@@ -463,6 +537,48 @@ describe('Static assets', () => {
         const res = await fetch(`${BASE_URL}/main.js`)
         expect(res.status).toEqual(200)
         expect(res.headers.get('content-type')).toContain('javascript')
+        expect(res.headers.get('cache-control')).toBe('no-cache, must-revalidate')
+    })
+})
+
+// ===========================================================================
+// Health / Readiness
+// ===========================================================================
+describe('Health endpoints', () => {
+    test('GET /health returns ok without authentication', async () => {
+        const res = await fetch(`${BASE_URL}/health`)
+        expect(res.status).toBe(200)
+        expect(res.headers.get('cache-control')).toBe('no-store')
+        const body = await res.json()
+        expect(body.status).toBe('ok')
+        expect(typeof body.uptimeMs).toBe('number')
+    })
+
+    test('GET /ready returns ready without authentication', async () => {
+        const res = await fetch(`${BASE_URL}/ready`)
+        expect(res.status).toBe(200)
+        const body = await res.json()
+        expect(body.status).toBe('ready')
+    })
+})
+
+// ===========================================================================
+// Cache headers
+// ===========================================================================
+describe('Cache headers', () => {
+    test('HTML shell responses are not cacheable', async () => {
+        const res = await fetch(`${BASE_URL}/api`, {
+            headers: { Accept: 'text/html' },
+        })
+
+        expect(res.status).toBe(200)
+        expect(res.headers.get('cache-control')).toBe('no-cache, must-revalidate')
+    })
+
+    test('asset files are cacheable for a short period', async () => {
+        const res = await fetch(`${BASE_URL}/assets/tailwind.css`)
+        expect(res.status).toBe(200)
+        expect(res.headers.get('cache-control')).toBe('public, max-age=3600')
     })
 })
 
@@ -797,6 +913,125 @@ describe('Security headers', () => {
         expect(res.status).toBe(401)
         expect(res.headers.get('x-frame-options')).toBe('DENY')
         expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    })
+})
+
+// ===========================================================================
+// Rate limiting
+// ===========================================================================
+describe('Rate limiting', () => {
+    test('requests over the configured limit return 429 with rate limit headers', async () => {
+        const port = String(18_100 + Math.floor(Math.random() * 800))
+        const baseUrl = `http://127.0.0.1:${port}`
+        const basicAuthHash = await Bun.password.hash(TEST_BASIC_AUTH)
+        const proc = Bun.spawn(['bun', SERVE_SCRIPT], {
+            cwd: EXAMPLES_DIR,
+            env: {
+                ...process.env,
+                PORT: port,
+                HOSTNAME: '127.0.0.1',
+                BASIC_AUTH_HASH: basicAuthHash,
+                RATE_LIMIT_MAX: '2',
+                RATE_LIMIT_WINDOW_MS: '60000',
+            },
+            stdout: 'ignore',
+            stderr: 'ignore',
+        })
+
+        try {
+            await waitForServer(baseUrl, proc)
+
+            const [first, second, third] = await Promise.all([
+                fetch(`${baseUrl}/api`, { headers: authHeaders() }),
+                fetch(`${baseUrl}/api`, { headers: authHeaders() }),
+                fetch(`${baseUrl}/api`, { headers: authHeaders() }),
+            ])
+
+            expect(first.status).toBe(200)
+            expect(second.status).toBe(200)
+            expect(third.status).toBe(429)
+            expect(third.headers.get('ratelimit-limit')).toBe('2')
+            expect(third.headers.get('ratelimit-remaining')).toBe('0')
+            expect(third.headers.get('retry-after')).not.toBeNull()
+
+            const body = await third.json()
+            expect(body.detail).toBe('Too many requests')
+        } finally {
+            proc.kill()
+            await Bun.sleep(100)
+        }
+    })
+
+    test('custom middleware rateLimiter overrides the built-in in-memory limiter', async () => {
+        const tempRoot = await mkdtemp(path.join(tmpdir(), 'tachyon-rate-limiter-'))
+        const middlewareBase = path.join(tempRoot, 'middleware')
+        const port = String(18_100 + Math.floor(Math.random() * 800))
+        const baseUrl = `http://127.0.0.1:${port}`
+        const basicAuthHash = await Bun.password.hash(TEST_BASIC_AUTH)
+
+        await Bun.write(`${middlewareBase}.ts`, `
+import type { MiddlewareModule } from '${PROJECT_ROOT}/src/server/route-handler.js'
+
+let hits = 0
+
+const middleware: MiddlewareModule = {
+    rateLimiter: {
+        async take(_request, context) {
+            hits += 1
+            return {
+                allowed: hits <= 1,
+                limit: 1,
+                remaining: Math.max(1 - hits, 0),
+                resetAt: Date.now() + 60_000,
+                headers: {
+                    'X-RateLimit-Backend': 'custom',
+                    'X-RateLimit-Key': context.host,
+                },
+            }
+        },
+    },
+}
+
+export default middleware
+`)
+
+        const proc = Bun.spawn(['bun', SERVE_SCRIPT], {
+            cwd: EXAMPLES_DIR,
+            env: {
+                ...process.env,
+                PORT: port,
+                HOSTNAME: '127.0.0.1',
+                BASIC_AUTH_HASH: basicAuthHash,
+                MIDDLEWARE_PATH: middlewareBase,
+                RATE_LIMIT_MAX: '100',
+                RATE_LIMIT_WINDOW_MS: '60000',
+            },
+            stdout: 'ignore',
+            stderr: 'ignore',
+        })
+
+        try {
+            await waitForServer(baseUrl, proc)
+
+            const first = await fetch(`${baseUrl}/api`, { headers: authHeaders() })
+            const second = await fetch(`${baseUrl}/api`, { headers: authHeaders() })
+
+            expect(first.status).toBe(200)
+            expect(first.headers.get('x-ratelimit-backend')).toBe('custom')
+            expect(first.headers.get('ratelimit-limit')).toBe('1')
+
+            expect(second.status).toBe(429)
+            expect(second.headers.get('x-ratelimit-backend')).toBe('custom')
+            expect(second.headers.get('x-ratelimit-key')).toBe(`127.0.0.1:${port}`)
+            expect(second.headers.get('ratelimit-limit')).toBe('1')
+
+            const body = await second.json()
+            expect(body.detail).toBe('Too many requests')
+        } finally {
+            proc.kill()
+            await Bun.sleep(100)
+            await rm(tempRoot, { recursive: true, force: true })
+        }
     })
 })
 

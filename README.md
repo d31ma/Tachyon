@@ -71,7 +71,7 @@ bun run serve
 
 - `routes/HTML`, `routes/LAYOUT`, and `routes/GET`
 - a sample `components/hero.html`
-- `main.js`
+- `main.js` bootstrap entry
 - `.env.example`
 - `amplify.yml`
 - `package.json` scripts for `serve`, `bundle`, and `preview`
@@ -87,8 +87,9 @@ TIMEOUT=70
 DEV=true
 LOG_LEVEL=info
 LOG_FORMAT=pretty
+TRUST_PROXY=
 
-# CORS — restrict to explicit origins in production; never combine * with credentials
+# CORS — restrict to explicit origins in production; disallowed cross-origin requests are rejected before handler execution
 ALLOW_HEADERS=Content-Type,Authorization
 ALLOW_ORIGINS=https://yourdomain.com
 ALLOW_CREDENTIALS=false
@@ -96,8 +97,9 @@ ALLOW_EXPOSE_HEADERS=
 ALLOW_MAX_AGE=3600
 ALLOW_METHODS=GET,POST,PUT,DELETE,PATCH,OPTIONS
 
-# Auth — generate strong credentials; never commit real values
+# Auth — generate strong credentials; prefer BASIC_AUTH_HASH in production and never commit real values
 BASIC_AUTH=
+BASIC_AUTH_HASH=
 
 # Validation (set to any value to enable)
 VALIDATE=true
@@ -107,6 +109,9 @@ VALIDATE=true
 CONTENT_SECURITY_POLICY=default-src 'self'
 # Maximum ms a handler process may run before it is killed (default: 30000)
 HANDLER_TIMEOUT_MS=30000
+# Optional per-IP rate limiting for non-health requests
+RATE_LIMIT_MAX=
+RATE_LIMIT_WINDOW_MS=
 # Maximum length of any single route or query parameter value (default: 1000)
 MAX_PARAM_LENGTH=1000
 
@@ -117,6 +122,14 @@ ASSETS_PATH=
 ```
 
 `LOG_LEVEL` supports `trace`, `debug`, `info`, `warn`, `error`, `fatal`, and `silent`. `LOG_FORMAT` supports `pretty` for local development and `json` for production log pipelines. `TACHYON_LOG_LEVEL` and `TACHYON_LOG_FORMAT` are also accepted if you want framework-specific overrides.
+
+Set `TRUST_PROXY=loopback` when Tachyon is behind a local reverse proxy such as nginx or Caddy on the same host. Use a comma-separated allowlist of exact proxy IPs, or `true` / `*` to trust all proxies. When trusted, Tachyon derives `context.ipAddress`, `context.protocol`, and `context.host` from `Forwarded` or `X-Forwarded-*` headers instead of the raw socket address.
+
+Set both `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS` to enable built-in per-IP rate limiting. Over-limit responses return HTTP `429` with `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, and `Retry-After` headers. Health/readiness endpoints are excluded.
+
+If you need shared rate limiting across multiple app instances, export a `rateLimiter` from `middleware.ts` or `middleware.js`. When present, Tachyon uses that limiter instead of the built-in in-memory one, so you can back it with Redis, Upstash, SQL, or another shared store.
+
+To generate a `BASIC_AUTH_HASH`, run `bun -e "console.log(await Bun.password.hash('user:pass'))"` and store the result in your environment instead of the plaintext credential.
 
 Handler subprocess logs include per-request resource usage after each handler exits: `requestId`, handler `pid`, exit code, CPU time in microseconds, peak RSS memory in bytes, filesystem read/write operation counts, and response/error byte counts.
 
@@ -159,6 +172,8 @@ Every handler receives the full request context on `stdin` as a JSON object:
   "context": {
     "requestId": "3f5b52f8-9c2e-4f8d-8bd3-6fd2b10c28d9",
     "ipAddress": "127.0.0.1",
+    "protocol": "http",
+    "host": "127.0.0.1:8000",
     "bearer": {
       "token": "...",
       "verified": false
@@ -168,6 +183,8 @@ Every handler receives the full request context on `stdin` as a JSON object:
 ```
 
 Tachyon reuses an incoming `X-Request-Id` header when present, generates one when it is missing, returns it on every response, and includes it in request logs.
+
+When `TRUST_PROXY` is configured and the remote peer is trusted, `context.ipAddress`, `context.protocol`, and `context.host` reflect proxy-forwarded client metadata. Otherwise they reflect the direct Bun server connection.
 
 > **Note:** `context.bearer` exposes only the raw bearer token and `verified: false`. Tachyon may decode the payload internally to reject expired JWTs, but unverified claims are not exposed to handlers. Use middleware plus a verifier such as [`jose`](https://github.com/panva/jose) when handlers need authenticated identity.
 
@@ -404,6 +421,8 @@ Every component `<script>` block has access to the following built-in primitives
 | `persist(key, init)` | Returns `[currentValue, save]` backed by `sessionStorage` |
 | `emit(name, detail)` | Dispatch a custom event from a component to its parent wrapper |
 
+Template `<script>` blocks run inside an async factory, so load local helpers with `await import('./helper')` rather than a static `import` statement. Tachyon now resolves those relative imports from the page/component source file and lets Bun bundle them with the generated module.
+
 #### `onMount`
 
 Use `onMount` to run browser-only setup code without sprinkling `typeof window !== 'undefined'` guards everywhere. The callback fires after the component's first DOM patch.
@@ -446,7 +465,7 @@ Calling `rerender()` mid-handler triggers an immediate repaint of the current co
 Share services or values across components without polluting `window`. Call `Yon.provide` (or the `provide` primitive) before components mount, then `inject` in any component that needs it.
 
 ```js
-// main.js
+// main.js (or main.ts / main.tsx / main.jsx)
 Yon.provide('apiFetch', (path, opts) => fetch(path, { ...opts, credentials: 'include' }))
 Yon.provide('toast', (msg) => showToast(msg))
 ```
@@ -466,9 +485,9 @@ Yon.provide('toast', (msg) => showToast(msg))
 
 `inject` returns `undefined` (or the provided fallback) during prerender so components remain SSG-safe.
 
-> **Context scope:** `provide` / `inject` share a single app-level context map that lives for the whole page session — values persist across SPA navigations and are not scoped per route. Use `Yon.provide` in `main.js` for app-wide services. Calling `provide` from a component script is valid but the value will remain available globally for the rest of the session.
+> **Context scope:** `provide` / `inject` share a single app-level context map that lives for the whole page session — values persist across SPA navigations and are not scoped per route. Use `Yon.provide` in your `main.*` entry for app-wide services. Calling `provide` from a component script is valid but the value will remain available globally for the rest of the session.
 
-> **Load order:** `Yon.provide` is available once `spa-renderer.ts` initialises, which happens before any page or component factory runs. Call `Yon.provide(...)` at the top level of `main.js` (not inside an event handler or timeout) to ensure services are registered before the first component mounts.
+> **Load order:** Tachyon loads `spa-renderer.ts` before your `main.*` browser entry, so `Yon.provide(...)` is safe at the top level of `main.*` and will register services before the first component mounts.
 
 #### `persist`
 
@@ -595,7 +614,7 @@ That means you can deploy `dist/` directly to platforms like Amplify, Netlify, C
 
 ### AWS Amplify
 
-An example Amplify build file is included at [examples/amplify.yml](/Users/iyor/Library/CloudStorage/Dropbox/myProjects/TACHYON/examples/amplify.yml).
+An example Amplify build file is included at [`examples/amplify.yml`](examples/amplify.yml).
 
 Typical project setup:
 
@@ -618,7 +637,7 @@ frontend:
       - '**/*'
 ```
 
-If your app depends on a local `main.js`, components, layouts, or nested `HTML` routes, `tach.bundle` will include them automatically.
+If your app depends on a local `main.js`, `main.ts`, `main.tsx`, or `main.jsx`, plus components, layouts, or nested `HTML` routes, `tach.bundle` will include them automatically. If that entry imports CSS, Tachyon also emits `/main.css` and links it from generated HTML shells.
 
 ### Recommended Deploy Flow
 
@@ -631,9 +650,73 @@ Use `tach.preview` to verify:
 
 - `/` resolves to the prerendered homepage
 - nested routes like `/docs` resolve to `dist/docs/index.html`
-- assets such as `/main.js` and `/assets/*` load correctly
+- assets such as `/main.js`, optional `/main.css`, and `/assets/*` load correctly
 
 Once that looks good, deploy the `dist/` directory.
+
+## Operations
+
+Tachyon exposes built-in health and readiness endpoints at `/health`, `/healthz`, `/ready`, and `/readyz`. They always return HTTP `200`, skip auth and rate limiting, and send `Cache-Control: no-store`.
+
+```json
+{ "status": "ok", "uptimeMs": 12345 }
+```
+
+Use these for uptime checks, container readiness probes, or load balancer health checks.
+
+### Shared Rate Limiting
+
+For multi-instance deployments, export a custom `rateLimiter` from your middleware module:
+
+```ts
+import type { MiddlewareModule } from '@d31ma/tachyon'
+
+const middleware: MiddlewareModule = {
+  rateLimiter: {
+    async take(request, context) {
+      const resetAt = Date.now() + 60_000
+
+      // Replace this with a shared counter in Redis, Upstash, SQL, etc.
+      const remaining = 9
+
+      return {
+        allowed: remaining >= 0,
+        limit: 10,
+        remaining,
+        resetAt,
+        headers: {
+          'X-RateLimit-Key': context.ipAddress,
+        },
+      }
+    },
+  },
+}
+
+export default middleware
+```
+
+The limiter should return `allowed`, `limit`, `remaining`, and `resetAt` (unix epoch milliseconds). Tachyon adds the standard `RateLimit-*` headers automatically and returns HTTP `429` when `allowed` is `false`.
+
+The repo also includes a working Upstash Redis example at [`examples/middleware.upstash.ts`](examples/middleware.upstash.ts). Point Tachyon at it with `MIDDLEWARE_PATH=./middleware.upstash`, then set:
+
+```env
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+RATE_LIMIT_MAX=100
+RATE_LIMIT_WINDOW_MS=60000
+UPSTASH_RATE_LIMIT_PREFIX=tachyon:rate-limit
+```
+
+That example uses Upstash's REST API plus a Redis Lua script so the increment and TTL setup stay atomic across multiple app instances. Reference: [Upstash REST API](https://upstash.com/docs/redis/features/restapi).
+
+## Cache Behavior
+
+Tachyon applies cache headers automatically across the runtime and preview servers:
+
+- HTML responses, `/routes.json`, `/layouts.json`, and stable runtime entry files such as `/main.js`, `/main.css`, `/spa-renderer.js`, and `/hot-reload-client.js` use `Cache-Control: no-cache, must-revalidate`
+- Fingerprinted Bun chunk files like `/chunk-*.js` use `Cache-Control: public, max-age=31536000, immutable`
+- Static `/assets/*` files use `Cache-Control: public, max-age=3600`
+- Generated frontend module routes such as `/pages/*`, `/layouts/*`, `/components/*`, and `/modules/*` use `Cache-Control: no-cache, must-revalidate`
 
 ## Security
 
@@ -642,21 +725,25 @@ Tachyon applies the following protections by default:
 | Area | Protection |
 |------|-----------|
 | **Response headers** | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy`, `Referrer-Policy` on every response; `Strict-Transport-Security` is opt-in with `ENABLE_HSTS=true` |
-| **Basic Auth** | Credential comparison uses `timingSafeEqual` to prevent timing oracle attacks |
+| **Basic Auth** | Supports plaintext `BASIC_AUTH` with `timingSafeEqual`, or Bun-backed hashed verification via `BASIC_AUTH_HASH` |
+| **Dependency bundling** | Frontend `/modules/*.js` output uses Bun's native package resolver, including `exports`-based package entrypoints |
 | **JWT** | Raw bearer tokens are exposed with `verified: false`; expired JWTs are rejected when their `exp` claim can be decoded |
+| **Trusted proxy support** | When `TRUST_PROXY` is configured, Tachyon accepts `Forwarded` / `X-Forwarded-*` metadata only from trusted peers and surfaces the resolved client IP, protocol, and host in request context |
+| **Rate limiting** | Optional per-IP limiting via `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS`; over-limit requests return HTTP `429` with standard rate-limit headers |
 | **Request body limits** | Request bodies exceeding `MAX_BODY_BYTES` return HTTP 413 before handler execution |
 | **Template escaping** | Text interpolation and dynamic attributes are escaped by default; raw HTML requires `{!expr}` |
 | **Process timeout** | Handler processes that exceed `HANDLER_TIMEOUT_MS` are killed automatically |
 | **Parameter limits** | Query and path parameters exceeding `MAX_PARAM_LENGTH` characters return HTTP 400 |
 | **Error responses** | Unhandled server errors and handler `stderr` failures return generic messages; internal details are logged server-side with the request id |
 | **HMR** | Development HMR defaults to `127.0.0.1`, limits clients with `HMR_MAX_CLIENTS`, and requires `HMR_TOKEN` when exposed beyond loopback |
-| **CORS** | Wildcard `ALLOW_ORIGINS=*` combined with `ALLOW_CREDENTIALS=true` is not recommended — set explicit origins in production |
+| **CORS** | When `ALLOW_ORIGINS` is set, disallowed cross-origin requests return HTTP 403 before handler execution; wildcard `ALLOW_ORIGINS=*` combined with `ALLOW_CREDENTIALS=true` is not recommended |
 
 For production deployments:
-- Set `BASIC_AUTH` to a strong credential — never use a default value
+- Prefer `BASIC_AUTH_HASH` over plaintext `BASIC_AUTH` in production
 - Set `ALLOW_ORIGINS` to your application's domain instead of `*`
 - Set `ENABLE_HSTS=true` only when serving HTTPS directly or behind a trusted HTTPS proxy
-- Consider adding a reverse proxy (nginx, Caddy) to enforce HTTPS and add rate limiting
+- Set `TRUST_PROXY` to `loopback` or an explicit proxy allowlist when running behind nginx, Caddy, Cloudflare Tunnel, or another reverse proxy
+- Enable `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS` if you want Tachyon to enforce basic per-IP throttling itself
 
 ## License
 

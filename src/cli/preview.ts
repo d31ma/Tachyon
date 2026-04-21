@@ -2,6 +2,7 @@
 import { access, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import Router from '../server/route-handler.js'
+import Yon from '../compiler/template-compiler.js'
 import { createStaticPreviewServer } from '../runtime/static-preview.js'
 import logger from '../server/logger.js'
 
@@ -42,7 +43,7 @@ async function buildFingerprint() {
         pathFingerprint(Router.routesPath),
         pathFingerprint(Router.componentsPath),
         pathFingerprint(Router.assetsPath),
-        pathFingerprint(path.join(process.cwd(), 'main.js')),
+        ...Yon.getMainEntryCandidates().map((candidate) => pathFingerprint(candidate)),
         pathFingerprint(path.join(process.cwd(), 'package.json'))
     ])
 

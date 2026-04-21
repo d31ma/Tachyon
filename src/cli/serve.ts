@@ -7,7 +7,7 @@ import logger from "../server/logger.js"
 import { watch, type FSWatcher } from "fs"
 import { access } from "fs/promises"
 import path from "node:path"
-import type { Middleware } from "../server/route-handler.js"
+import type { MiddlewareModule } from "../server/route-handler.js"
 import { serveStaticPreviewRequest } from "../runtime/static-preview.js"
 
 /** Debounce delay (ms) applied to file-watcher events before triggering an HMR reload */
@@ -30,22 +30,41 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function loadMiddleware() {
+    Router.middleware = null
+    Router.rateLimiter = null
+
     const extensions = ['.ts', '.js']
     for (const ext of extensions) {
         const filePath = `${Router.middlewarePath}${ext}`
         if (await pathExists(filePath)) {
             const mod = await import(filePath)
             const loaded = mod.default ?? mod
-            if (typeof loaded !== 'object' || loaded === null ||
-                (loaded.before !== undefined && typeof loaded.before !== 'function') ||
-                (loaded.after  !== undefined && typeof loaded.after  !== 'function')) {
-                throw new Error(`Middleware at '${filePath}' must export an object with optional before/after functions`)
+            if (
+                typeof loaded !== 'object'
+                || loaded === null
+                || (loaded.before !== undefined && typeof loaded.before !== 'function')
+                || (loaded.after  !== undefined && typeof loaded.after  !== 'function')
+                || (
+                    loaded.rateLimiter !== undefined
+                    && (
+                        typeof loaded.rateLimiter !== 'object'
+                        || loaded.rateLimiter === null
+                        || typeof loaded.rateLimiter.take !== 'function'
+                    )
+                )
+            ) {
+                throw new Error(
+                    `Middleware at '${filePath}' must export an object with optional before/after functions and optional rateLimiter.take(request, context)`
+                )
             }
-            Router.middleware = loaded as Middleware
+            const middlewareModule = loaded as MiddlewareModule
+            Router.middleware = middlewareModule.before || middlewareModule.after
+                ? { before: middlewareModule.before, after: middlewareModule.after }
+                : null
+            Router.rateLimiter = middlewareModule.rateLimiter ?? null
             return
         }
     }
-    Router.middleware = null
 }
 
 async function configureRoutes(isReload = false) {

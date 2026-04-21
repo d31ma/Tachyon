@@ -10,12 +10,12 @@ const TEMPLATE_PATH = new URL('../../src/compiler/render-template.js', import.me
  * script slot. Results are returned via globalThis.__ty_test__ to bridge
  * the ESM module boundary.
  */
-async function buildTestFactory(testScript: string): Promise<(props?: unknown) => Promise<unknown>> {
+async function buildTestFactory(testScript: string, testInners?: string): Promise<(props?: unknown) => Promise<unknown>> {
     const source = await Bun.file(TEMPLATE_PATH).text()
     const modified = source
         .replace('// imports', '')
         .replace('// script', testScript)
-        .replace('// inners', '')
+        .replace('// inners', testInners ?? '')
     const tmpPath = path.join(os.tmpdir(), `tachyon-tpl-${Bun.randomUUIDv7()}.js`)
     await Bun.write(tmpPath, modified)
     const { default: factory } = await import(tmpPath)
@@ -267,5 +267,89 @@ describe('render-template prerender-environment (window=globalThis, __ty_prerend
         const factory = await buildTestFactory(`__ty_test__.value = inject('k', 'prerender-fallback')`)
         await factory()
         expect(r.value).toBe('prerender-fallback')
+    })
+})
+
+// ── Async event handler re-rendering ───────────────────────────────────────────
+
+describe('ty_invokeEvent awaits async handlers', () => {
+    test('state change after await inside handler is visible when render completes', async () => {
+        const r = testResults()
+
+        const script = `
+            let step = 'start'
+            async function next() {
+                await new Promise(resolve => setTimeout(resolve, 50))
+                step = 'done'
+            }
+        `
+        const inners = `
+            await ty_invokeEvent('testhash', async ($event) => { const __event__ = $event; return next() })
+            ;(globalThis).__ty_test__.step = step
+        `
+
+        const factory = await buildTestFactory(script, inners)
+        const render = await factory()
+        // Trigger the event by passing the matching element ID
+        await render('ty-testhash-0', null)
+        expect(r.step).toBe('done')
+    })
+
+    test('sync handler still works with async callback and return', async () => {
+        const r = testResults()
+
+        const script = `
+            let count = 0
+        `
+        const inners = `
+            await ty_invokeEvent('synchash', async ($event) => { const __event__ = $event; return count++ })
+            ;(globalThis).__ty_test__.count = count
+        `
+
+        const factory = await buildTestFactory(script, inners)
+        const render = await factory()
+        await render('ty-synchash-0', null)
+        expect(r.count).toBe(1)
+    })
+
+    test('handler returning a promise chain is awaited', async () => {
+        const r = testResults()
+
+        const script = `
+            let value = 'pending'
+            function fetchData() {
+                return new Promise(resolve => setTimeout(resolve, 30))
+                    .then(() => { value = 'resolved' })
+            }
+        `
+        const inners = `
+            await ty_invokeEvent('chainhash', async ($event) => { const __event__ = $event; return fetchData() })
+            ;(globalThis).__ty_test__.value = value
+        `
+
+        const factory = await buildTestFactory(script, inners)
+        const render = await factory()
+        await render('ty-chainhash-0', null)
+        expect(r.value).toBe('resolved')
+    })
+
+    test('non-matching element ID does not execute handler', async () => {
+        const r = testResults()
+        r.called = false
+
+        const script = `
+            async function handler() {
+                ;(globalThis).__ty_test__.called = true
+            }
+        `
+        const inners = `
+            await ty_invokeEvent('skiphash', async ($event) => { const __event__ = $event; return handler() })
+        `
+
+        const factory = await buildTestFactory(script, inners)
+        const render = await factory()
+        // Pass a non-matching ID
+        await render('ty-wrongid-0', null)
+        expect(r.called).toBe(false)
     })
 })

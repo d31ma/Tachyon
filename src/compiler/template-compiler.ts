@@ -1,6 +1,6 @@
 import Router from "../server/route-handler.js";
 import logger from "../server/logger.js";
-import { BunRequest } from 'bun';
+import { BunRequest, type BunPlugin } from 'bun';
 import { exists, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -15,6 +15,9 @@ interface ComponentData {
     script?: string;
     scriptLang?: string;
 }
+
+type YonModuleDir = 'pages' | 'components' | 'layouts'
+type YonScriptLoader = 'js' | 'jsx' | 'ts' | 'tsx'
 
 type ElementTagResolution =
     | { kind: 'component'; name: string }
@@ -32,11 +35,21 @@ const NOT_FOUND_PATH = `${import.meta.dir}/../runtime/shells/not-found.html`;
 const PRODUCTION_SHELL_PATH = `${import.meta.dir}/../runtime/shells/production.html`;
 const PRERENDER_WORKER_PATH = `${import.meta.dir}/../runtime/prerender-worker.ts`;
 
-const jsResponse = (body: BodyInit) =>
-    new Response(body, { headers: { 'Content-Type': 'application/javascript' } });
+const staticRouteResponse = (routePath: string, body: BodyInit, contentType?: string) => {
+    const headers = new Headers()
+    if (contentType) headers.set('Content-Type', contentType)
+    headers.set('Cache-Control', Router.getCacheControlHeader(routePath, contentType))
+    return new Response(body, { headers })
+}
 
-const jsonResponse = (path: string) =>
-    async () => new Response(await Bun.file(path).bytes(), { headers: { 'Content-Type': 'application/json' } });
+const jsResponse = (routePath: string, body: BodyInit) =>
+    staticRouteResponse(routePath, body, 'application/javascript');
+
+const typedResponse = (routePath: string, body: BodyInit, contentType?: string) =>
+    staticRouteResponse(routePath, body, contentType);
+
+const jsonResponse = (routePath: string, filePath: string) =>
+    async () => staticRouteResponse(routePath, await Bun.file(filePath).bytes(), 'application/json');
 
 export default class Yon {
     private static readonly compilerLogger = logger.child({ scope: 'compiler' })
@@ -46,6 +59,8 @@ export default class Yon {
     private static readonly prerenderRenderConcurrency = 4
     private static readonly prerenderWriteConcurrency = 8
     private static readonly outputFormat = Yon.resolveOutputFormat()
+    private static readonly mainEntryCandidates = ['main.ts', 'main.tsx', 'main.jsx', 'main.js', 'main.mts', 'main.mjs', 'main.cts', 'main.cjs']
+    private static browserRuntimeRoutes = new Set<string>()
     private static readonly compMapping = new Map<string, string>()
     private static layoutMapping: Record<string, string> = {}
     private static readonly warnedUnknownTags = new Set<string>()
@@ -83,6 +98,10 @@ export default class Yon {
     ])
 
     private static readonly routeTitleFallback = "Tachyon"
+
+    private static escapeRegExp(value: string) {
+        return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    }
 
     private static resolveOutputFormat(): YonOutputFormat {
         const value = (process.env.YON_FORMAT || process.env.TACHYON_YON_FORMAT || 'esm').toLowerCase()
@@ -144,29 +163,11 @@ export default class Yon {
         Yon.layoutMapping = {}
         Yon.warnedUnknownTags.clear()
 
-        // Build client-side render + HMR scripts
-        const result = await Bun.build({
-            entrypoints: [`${import.meta.dir}/../runtime/spa-renderer.ts`, `${import.meta.dir}/../runtime/hot-reload-client.ts`],
-            minify: true
-        })
-
-        for (const output of result.outputs) {
-            Router.reqRoutes[output.path.replace('./', '/')] = {
-                GET: async () => jsResponse(output)
-            }
-        }
+        await Yon.bundleBrowserRuntimeAssets()
 
         // JSON manifests
-        Router.reqRoutes["/routes.json"] = { GET: jsonResponse(ROUTES_JSON_PATH) }
-        Router.reqRoutes["/layouts.json"] = { GET: jsonResponse(LAYOUTS_JSON_PATH) }
-
-        // Optional user main.js
-        const main = Bun.file(`${process.cwd()}/main.js`)
-        if (await main.exists()) {
-            Router.reqRoutes["/main.js"] = {
-                GET: async () => new Response(await main.bytes(), { headers: { 'Content-Type': 'application/javascript' } })
-            }
-        }
+        Router.reqRoutes["/routes.json"] = { GET: jsonResponse('/routes.json', ROUTES_JSON_PATH) }
+        Router.reqRoutes["/layouts.json"] = { GET: jsonResponse('/layouts.json', LAYOUTS_JSON_PATH) }
 
         // Components must be registered before pages/layouts compile so that
         // compMapping is fully populated when import statements are generated.
@@ -238,6 +239,96 @@ export default class Yon {
         )
 
         if (rewritten !== source) await writeFile(filePath, rewritten)
+    }
+
+    static isMainEntrypoint(filePath: string) {
+        return Yon.mainEntryCandidates.includes(path.posix.basename(filePath))
+    }
+
+    static getMainEntryCandidates(cwd = process.cwd()) {
+        return Yon.mainEntryCandidates.map((entry) => path.join(cwd, entry))
+    }
+
+    static async getMainEntrypointPath(cwd = process.cwd()): Promise<string | null> {
+        for (const candidate of Yon.getMainEntryCandidates(cwd)) {
+            if (await Bun.file(candidate).exists()) return candidate
+        }
+
+        return null
+    }
+
+    private static routePathFromBuildOutput(outputPath: string) {
+        const normalized = outputPath.replaceAll(path.sep, '/').replace(/^\.\//, '')
+        return normalized.startsWith('/') ? normalized : `/${normalized}`
+    }
+
+    static getBrowserRuntimeRoutes() {
+        return [...Yon.browserRuntimeRoutes]
+    }
+
+    private static normalizeScriptLoader(scriptLang?: string): YonScriptLoader {
+        switch ((scriptLang || 'js').toLowerCase()) {
+            case 'tsx':
+                return 'tsx'
+            case 'ts':
+            case 'mts':
+            case 'cts':
+                return 'ts'
+            case 'jsx':
+                return 'jsx'
+            default:
+                return 'js'
+        }
+    }
+
+    private static toModuleOutputRoute(route: string) {
+        return route.replace(/\.(?:html|[cm]?[jt]sx?)$/, '.js')
+    }
+
+    private static toSourceLabel(sourcePath: string) {
+        const relative = path.relative(process.cwd(), sourcePath).replaceAll(path.sep, '/')
+        return relative.startsWith('.') ? relative : `./${relative}`
+    }
+
+    static withMainStylesheet(shellHTML: string) {
+        if (!Router.reqRoutes['/main.css'] || shellHTML.includes('/main.css')) return shellHTML
+        return shellHTML.replace('</head>', '    <link rel="stylesheet" href="/main.css">\n</head>')
+    }
+
+    static async bundleBrowserRuntimeAssets(): Promise<string[]> {
+        const entrypoints = [
+            `${import.meta.dir}/../runtime/spa-renderer.ts`,
+            `${import.meta.dir}/../runtime/hot-reload-client.ts`,
+        ]
+        const mainEntrypoint = await Yon.getMainEntrypointPath()
+
+        if (mainEntrypoint) entrypoints.splice(1, 0, mainEntrypoint)
+
+        const result = await Bun.build({
+            entrypoints,
+            format: 'esm',
+            naming: '[name].[ext]',
+            minify: true,
+            splitting: true,
+            target: 'browser',
+        })
+
+        const registeredRoutes = new Set<string>()
+
+        for (const output of result.outputs) {
+            const routePath = Yon.routePathFromBuildOutput(output.path)
+            Router.reqRoutes[routePath] = {
+                GET: () => typedResponse(routePath, output, output.type)
+            }
+            registeredRoutes.add(routePath)
+        }
+
+        for (const staleRoute of Yon.browserRuntimeRoutes) {
+            if (!registeredRoutes.has(staleRoute)) delete Router.reqRoutes[staleRoute]
+        }
+
+        Yon.browserRuntimeRoutes = registeredRoutes
+        return [...registeredRoutes]
     }
 
     private static installPrerenderGlobals(distPath: string) {
@@ -464,7 +555,7 @@ export default class Yon {
     }
 
     static async prerenderRoutes(distPath: string, routes: string[]) {
-        const shellHTML = await Bun.file(PRODUCTION_SHELL_PATH).text()
+        const shellHTML = Yon.withMainStylesheet(await Bun.file(PRODUCTION_SHELL_PATH).text())
         const renderedRoutes: Array<{ outputFile: string; html: string }> = []
         let renderIndex = 0
         const renderWorkers = Array.from(
@@ -505,35 +596,40 @@ export default class Yon {
 
     static async bundlePageFile(route: string) {
         await Router.validateRoute(route)
-        const data = await Yon.extractComponents(await Bun.file(`${Router.routesPath}/${route}`).text())
-        await Yon.registerModule(data, `${route}.${data.scriptLang || 'js'}`, 'pages')
+        const sourcePath = `${Router.routesPath}/${route}`
+        const data = await Yon.extractComponents(await Bun.file(sourcePath).text())
+        await Yon.registerModule(data, `${route}.${data.scriptLang || 'js'}`, 'pages', sourcePath)
     }
 
     static async bundleLayoutFile(layout: string) {
         const prefix = layout === Yon.layoutMethod ? '/' : `/${layout.replace(`/${Yon.layoutMethod}`, '')}`
-        const data = await Yon.extractComponents(await Bun.file(`${Router.routesPath}/${layout}`).text())
+        const sourcePath = `${Router.routesPath}/${layout}`
+        const data = await Yon.extractComponents(await Bun.file(sourcePath).text())
         const layoutRoute = layout === Yon.layoutMethod ? Yon.layoutMethod : layout
-        await Yon.registerModule(data, `${layoutRoute}.${data.scriptLang || 'js'}`, 'layouts')
-        Yon.layoutMapping[prefix] = `/layouts/${layoutRoute}.js`
+        const moduleRoute = `${layoutRoute}.${data.scriptLang || 'js'}`
+        await Yon.registerModule(data, moduleRoute, 'layouts', sourcePath)
+        Yon.layoutMapping[prefix] = `/layouts/${Yon.toModuleOutputRoute(moduleRoute)}`
     }
 
     static async bundleComponentFile(comp: string) {
         const componentName = Yon.normalizeComponentName(comp)
         const modulePath = comp.replace('.html', '.js')
+        const sourcePath = `${Router.componentsPath}/${comp}`
 
         if (Yon.compMapping.has(componentName) && Yon.compMapping.get(componentName) !== modulePath) {
             throw new Error(`Duplicate component name '${componentName}' for '${comp}' and '${Yon.compMapping.get(componentName)}'`)
         }
 
         Yon.compMapping.set(componentName, modulePath)
-        const data = await Yon.extractComponents(await Bun.file(`${Router.componentsPath}/${comp}`).text())
-        await Yon.registerModule(data, comp, 'components')
+        const data = await Yon.extractComponents(await Bun.file(sourcePath).text())
+        await Yon.registerModule(data, comp, 'components', sourcePath)
     }
 
     static async bundleAssetFile(route: string) {
         const file = Bun.file(`${Router.assetsPath}/${route}`)
+        const routePath = `/assets/${route}`
         Router.reqRoutes[`/assets/${route}`] = {
-            GET: async () => new Response(await file.bytes(), { headers: { 'Content-Type': file.type } })
+            GET: async () => typedResponse(routePath, await file.bytes(), file.type)
         }
     }
 
@@ -576,7 +672,7 @@ export default class Yon {
 
             const formatAttr = (name: string, value: string, hash: string): string => {
                 if (name.startsWith('@'))
-                    return `${name}="\${await ty_invokeEvent('${hash}', ($event) => { const __event__ = $event; ${value} })}"`;
+                    return `${name}="\${await ty_invokeEvent('${hash}', async ($event) => { const __event__ = $event; return ${value} })}"`;
                 if (name === ':value')
                     return `value="\${ty_assignValue('${hash}', '${value}')}"`;
                 return `${name}="${value}"`;
@@ -817,39 +913,75 @@ export default class Yon {
 `
     }
 
-    // ── Build & register a single template module ──────────────────────────────
-    private static async registerModule(data: ComponentData, route: string, dir: 'pages' | 'components' | 'layouts') {
-        const parsed = await Yon.parseHTML(data.html, `${dir}/${route}`);
-        const srcRoute = route.replace('.html', `.${data.scriptLang || 'js'}`);
-        const outRoute = srcRoute.replace('.ts', '.js');
-        const publicPath = `/${dir}/${outRoute}`;
-        const baseCode = await Yon.createJSData(parsed, data.script);
-        const jsCode = Yon.isGlobalOutput()
-            ? Yon.wrapGlobalModule(baseCode, publicPath)
-            : baseCode;
-        const tmpPath = path.join('/tmp', `tachyon-yon-${Bun.randomUUIDv7()}`, srcRoute);
+    private static createTemplatePlugin(options: {
+        data: ComponentData
+        dir: YonModuleDir
+        route: string
+        sourcePath: string
+        publicPath: string
+    }): BunPlugin {
+        const { data, dir, route, sourcePath, publicPath } = options
+        const filter = new RegExp(`^${Yon.escapeRegExp(sourcePath)}$`)
+        const sourceLabel = Yon.toSourceLabel(sourcePath)
 
-        await mkdir(path.dirname(tmpPath), { recursive: true });
-        await Bun.write(Bun.file(tmpPath), jsCode);
+        return {
+            name: `tachyon-yon-template:${publicPath}`,
+            target: 'browser',
+            setup(build) {
+                build.onLoad({ filter }, async () => {
+                    const parsed = await Yon.parseHTML(data.html, `${dir}/${route} (${sourceLabel})`)
+                    const baseCode = await Yon.createJSData(parsed, data.script)
+                    const jsCode = Yon.isGlobalOutput()
+                        ? Yon.wrapGlobalModule(baseCode, publicPath)
+                        : baseCode
+
+                    return {
+                        contents: jsCode,
+                        loader: Yon.normalizeScriptLoader(data.scriptLang),
+                    }
+                })
+            }
+        }
+    }
+
+    // ── Build & register a single template module ──────────────────────────────
+    private static async registerModule(
+        data: ComponentData,
+        route: string,
+        dir: YonModuleDir,
+        sourcePath: string
+    ) {
+        const publicPath = `/${dir}/${Yon.toModuleOutputRoute(route)}`
 
         if (Yon.isGlobalOutput()) {
-            const loader = srcRoute.endsWith('.ts') ? 'ts' : 'js'
-            const output = new Bun.Transpiler({ loader }).transformSync(jsCode)
+            const parsed = await Yon.parseHTML(data.html, `${dir}/${route} (${Yon.toSourceLabel(sourcePath)})`)
+            const baseCode = await Yon.createJSData(parsed, data.script)
+            const output = new Bun.Transpiler({ loader: Yon.normalizeScriptLoader(data.scriptLang) })
+                .transformSync(Yon.wrapGlobalModule(baseCode, publicPath))
 
             Router.reqRoutes[publicPath] = {
-                GET: () => jsResponse(output)
+                GET: () => jsResponse(publicPath, output)
             };
             return
         }
 
         const result = await Bun.build({
-            entrypoints: [tmpPath],
-            external: ["*"],
-            minify: { whitespace: true, syntax: true }
+            entrypoints: [sourcePath],
+            external: ['/components/*', '/modules/*'],
+            minify: { whitespace: true, syntax: true },
+            plugins: [
+                Yon.createTemplatePlugin({
+                    data,
+                    dir,
+                    route,
+                    sourcePath,
+                    publicPath,
+                })
+            ],
         });
 
         Router.reqRoutes[publicPath] = {
-            GET: () => jsResponse(result.outputs[0])
+            GET: () => jsResponse(publicPath, result.outputs[0])
         };
     }
 
@@ -859,8 +991,9 @@ export default class Yon {
 
         for (const route of new Bun.Glob('**/*').scanSync({ cwd: Router.assetsPath })) {
             const file = Bun.file(`${Router.assetsPath}/${route}`);
+            const routePath = `/assets/${route}`
             Router.reqRoutes[`/assets/${route}`] = {
-                GET: async () => new Response(await file.bytes(), { headers: { 'Content-Type': file.type } })
+                GET: async () => typedResponse(routePath, await file.bytes(), file.type)
             };
         }
     }
@@ -878,7 +1011,12 @@ export default class Yon {
             ? await nfFile.text()
             : await Bun.file(NOT_FOUND_PATH).text();
         const nfData = await Yon.extractComponents(nfContent);
-        await Yon.registerModule(nfData, '404.html', 'pages');
+        await Yon.registerModule(
+            nfData,
+            '404.html',
+            'pages',
+            await nfFile.exists() ? `${process.cwd()}/404.html` : NOT_FOUND_PATH
+        );
     }
 
     private static async bundleLayouts() {
@@ -903,32 +1041,19 @@ export default class Yon {
 
         const packages = await packageFile.json();
         const modules = Object.keys(packages.dependencies ?? {});
-        const fallbackEntries = ['index.js', 'index', 'index.node'];
 
         for (const mod of modules) {
-            const modPackPath = `${process.cwd()}/node_modules/${mod}/package.json`;
-            const modPack = await Bun.file(modPackPath).json();
-
-            if (!modPack.main) {
-                for (const entry of fallbackEntries) {
-                    if (await Bun.file(`${process.cwd()}/node_modules/${mod}/${entry}`).exists()) {
-                        modPack.main = entry;
-                        break;
-                    }
-                }
-            }
-
-            if (!modPack.main) continue;
-
             try {
                 const result = await Bun.build({
-                    entrypoints: [`${process.cwd()}/node_modules/${mod}/${(modPack.main as string).replace('./', '')}`],
+                    // Let Bun resolve package exports/main/module fields instead
+                    // of manually guessing node_modules entry files.
+                    entrypoints: [mod],
                     minify: true
                 });
 
                 for (const output of result.outputs) {
                     Router.reqRoutes[`/modules/${mod}.js`] = {
-                        GET: () => jsResponse(output)
+                        GET: () => jsResponse(`/modules/${mod}.js`, output)
                     };
                 }
             } catch (e) {

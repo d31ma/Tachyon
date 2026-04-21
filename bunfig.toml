@@ -1,0 +1,13 @@
+[test]
+coverageSkipTestFiles = true
+coverageReporter = ["text", "lcov"]
+coverageDir = "coverage"
+coverageThreshold = { function = 0.73, line = 0.64 }
+coveragePathIgnorePatterns = [
+  "dist/**",
+  "**/dist/**",
+  "/private/var/folders/**",
+  "**/private/var/folders/**",
+  "/var/folders/**",
+  "**/var/folders/**",
+]

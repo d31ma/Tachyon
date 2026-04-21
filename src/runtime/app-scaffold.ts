@@ -1,7 +1,7 @@
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const version = '1.10.0'
+const version = '1.11.1'
 
 const files = {
     '.gitignore': `node_modules
@@ -15,8 +15,12 @@ HOSTNAME=127.0.0.1
 DEV=true
 LOG_LEVEL=info
 LOG_FORMAT=pretty
+TRUST_PROXY=
 YON_FORMAT=esm
 MAX_BODY_BYTES=1048576
+HANDLER_TIMEOUT_MS=30000
+RATE_LIMIT_MAX=
+RATE_LIMIT_WINDOW_MS=
 HMR_TOKEN=
 HMR_MAX_CLIENTS=20
 ENABLE_HSTS=false
@@ -32,7 +36,7 @@ ENABLE_HSTS=false
             test: 'bun test'
         },
         devDependencies: {
-            '@delma/tachyon': `^${version}`
+            '@d31ma/tachyon': `^${version}`
         }
     }, null, 2) + '\n',
     'README.md': `# Tachyon App

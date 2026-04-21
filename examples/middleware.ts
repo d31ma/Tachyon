@@ -1,8 +1,8 @@
-import type { RequestContext } from "@vyckr/tachyon"
+import type { MiddlewareModule } from "../src/server/route-handler.js"
 
-export default {
+const middleware: MiddlewareModule = {
 
-    async before(request: Request, context: RequestContext) {
+    async before(request: Request, context) {
         console.info(`[middleware] ${request.method} ${new URL(request.url).pathname} requestId=${context.requestId}`)
 
         // Example: block requests with a custom header
@@ -11,7 +11,7 @@ export default {
         // }
     },
 
-    async after(request: Request, response: Response, context: RequestContext) {
+    async after(request: Request, response: Response, context) {
         // Example: add a custom response header
         // const headers = new Headers(response.headers)
         // headers.set('X-Request-Id', context.requestId)
@@ -20,3 +20,5 @@ export default {
         return response
     }
 }
+
+export default middleware

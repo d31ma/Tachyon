@@ -92,7 +92,7 @@ function normalizeRelative(filePath: string) {
 function classifyChange(targetPath: string): ChangeKind {
     const relative = normalizeRelative(path.relative(process.cwd(), targetPath))
 
-    if (relative === 'main.js') return { type: 'main', relative }
+    if (Yon.isMainEntrypoint(relative)) return { type: 'main', relative }
     if (relative === 'package.json') return { type: 'full', relative }
 
     const routesPrefix = normalizeRelative(path.relative(process.cwd(), Router.routesPath)) + '/'
@@ -133,18 +133,20 @@ async function runSelectiveBuild(change: ChangeKind) {
     })
 
     if (change.type === 'main') {
-        const mainPath = `${process.cwd()}/main.js`
-        if (!await pathExists(mainPath)) {
-            delete Router.reqRoutes['/main.js']
-            await rm(`${distPath}/main.js`, { force: true })
-        } else {
-            Router.reqRoutes['/main.js'] = {
-                GET: async () => new Response(await Bun.file(mainPath).bytes(), {
-                    headers: { 'Content-Type': 'application/javascript' }
-                })
+        const previousRoutes = new Set(Yon.getBrowserRuntimeRoutes())
+        const outputRoutes = await Yon.bundleBrowserRuntimeAssets()
+
+        for (const staleRoute of previousRoutes) {
+            if (!outputRoutes.includes(staleRoute)) {
+                await rm(`${distPath}${staleRoute}`, { force: true })
             }
-            await writeRouteOutput('/main.js')
         }
+
+        for (const route of outputRoutes) {
+            await writeRouteOutput(route)
+        }
+
+        await Yon.prerenderRoutes(distPath, Yon.getHtmlRoutes())
         logIncrementalBuild()
         return
     }
@@ -276,7 +278,7 @@ async function watchPaths(onChange: (targetPath: string, eventType: string) => v
             }
         }
 
-        for (const file of [`${process.cwd()}/main.js`, `${process.cwd()}/package.json`]) {
+        for (const file of [...Yon.getMainEntryCandidates(), `${process.cwd()}/package.json`]) {
             active.add(file)
             addWatcher(file, 'file')
         }

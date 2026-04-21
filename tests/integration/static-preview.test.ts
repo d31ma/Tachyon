@@ -32,25 +32,33 @@ test('static preview serves nested route indexes and bundle assets', async () =>
     try {
         const base = `http://${server.hostname}:${server.port}`
 
-        const [home, docs, js, asset, missingAsset] = await Promise.all([
+        const [home, docs, js, asset, headHome, missingAsset] = await Promise.all([
             fetch(`${base}/`),
             fetch(`${base}/docs`),
             fetch(`${base}/main.js`),
             fetch(`${base}/assets/logo.svg`),
+            fetch(`${base}/`, { method: 'HEAD' }),
             fetch(`${base}/missing.js`)
         ])
 
         expect(home.status).toBe(200)
         expect(await home.text()).toContain('<h1>Home</h1>')
+        expect(home.headers.get('cache-control')).toBe('no-cache, must-revalidate')
 
         expect(docs.status).toBe(200)
         expect(await docs.text()).toContain('<h1>Docs</h1>')
+        expect(docs.headers.get('cache-control')).toBe('no-cache, must-revalidate')
 
         expect(js.status).toBe(200)
         expect(await js.text()).toContain('console.log("tachyon")')
+        expect(js.headers.get('cache-control')).toBe('no-cache, must-revalidate')
 
         expect(asset.status).toBe(200)
         expect((await asset.text()).trim()).toBe('<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+        expect(asset.headers.get('cache-control')).toBe('public, max-age=3600')
+
+        expect(headHome.status).toBe(200)
+        expect(await headHome.text()).toBe('')
 
         expect(missingAsset.status).toBe(404)
     } finally {

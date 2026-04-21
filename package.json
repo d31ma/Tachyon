@@ -25,10 +25,12 @@
         "bundle:watch": "bun src/cli/bundle.ts --watch",
         "start": "bun run serve",
         "typecheck": "tsc --noEmit",
-        "test": "bun test"
+        "test": "bun test",
+        "test:coverage": "bun test --coverage"
     },
     "files": [
         "bin/",
+        "examples/middleware.upstash.ts",
         "src/",
         "README.md",
         ".env.example"

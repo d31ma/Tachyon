@@ -45,7 +45,15 @@ jobs:
       - name: Type check
         run: bun run typecheck
 
+      - name: Run tests with coverage
+        if: matrix.bun-version == 'latest'
+        run: bun run test:coverage
+        env:
+          HOSTNAME: 127.0.0.1
+          BASIC_AUTH: admin:pass
+
       - name: Run tests
+        if: matrix.bun-version != 'latest'
         run: bun test
         env:
           HOSTNAME: 127.0.0.1
