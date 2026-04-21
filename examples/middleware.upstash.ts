@@ -1,5 +1,5 @@
 // In a standalone app, change this import to:
-// import type { MiddlewareModule } from '@d31ma/tachyon'
+// import type { MiddlewareModule } from '@delma/tachyon'
 import type { MiddlewareModule } from "../src/server/route-handler.js"
 
 type UpstashResponse = Array<{

@@ -9,7 +9,7 @@ frontend:
     build:
       commands:
         - export PATH="$HOME/.bun/bin:$PATH"
-        - bunx @d31ma/tachyon tach.bundle
+        - bunx @delma/tachyon tach.bundle
   artifacts:
     baseDirectory: dist
     files:

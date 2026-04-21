@@ -36,7 +36,7 @@ ENABLE_HSTS=false
             test: 'bun test'
         },
         devDependencies: {
-            '@d31ma/tachyon': `^${version}`
+            '@delma/tachyon': `^${version}`
         }
     }, null, 2) + '\n',
     'README.md': `# Tachyon App

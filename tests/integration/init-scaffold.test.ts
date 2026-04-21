@@ -25,7 +25,7 @@ test('createAppScaffold writes a deployable starter app', async () => {
 
     expect(packageJson).toContain('"serve": "tach.serve"')
     expect(packageJson).toContain('"preview": "tach.preview --watch"')
-    expect(packageJson).toContain('"@d31ma/tachyon"')
+    expect(packageJson).toContain('"@delma/tachyon"')
     expect(homePage).toContain('<hero />')
     expect(layout).toContain('<slot />')
     expect(amplify).toContain('baseDirectory: dist')
