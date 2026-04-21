@@ -6,6 +6,7 @@
     "license": "MIT",
     "type": "module",
     "main": "./src/server/route-handler.ts",
+    "types": "./src/server/route-handler.ts",
     "exports": {
         ".": "./src/server/route-handler.ts",
         "./server": "./src/server/process-executor.ts",
