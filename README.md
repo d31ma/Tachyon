@@ -23,7 +23,14 @@ Tachyon is a **polyglot, file-system-routed full-stack framework for [Bun](https
 ## Installation
 
 ```bash
-bun add @delma/tachyon
+bun add @d31ma/tachyon
+```
+
+If you install the package from GitHub Packages, configure your `.npmrc` first:
+
+```text
+@d31ma:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 
 ## Quick Start
@@ -54,7 +61,7 @@ Or via npm scripts if you declare them in your own `package.json`:
 ## Scaffolding a New App
 
 ```bash
-bunx @delma/tachyon tach.init my-app
+bunx @d31ma/tachyon tach.init my-app
 cd my-app
 bun install
 bun run serve
@@ -623,7 +630,7 @@ frontend:
     build:
       commands:
         - export PATH="$HOME/.bun/bin:$PATH"
-        - bunx @delma/tachyon tach.bundle
+        - bunx @d31ma/tachyon tach.bundle
   artifacts:
     baseDirectory: dist
     files:
@@ -662,7 +669,7 @@ Use these for uptime checks, container readiness probes, or load balancer health
 For multi-instance deployments, export a custom `rateLimiter` from your middleware module:
 
 ```ts
-import type { MiddlewareModule } from '@delma/tachyon'
+import type { MiddlewareModule } from '@d31ma/tachyon'
 
 const middleware: MiddlewareModule = {
   rateLimiter: {
