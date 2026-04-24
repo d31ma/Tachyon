@@ -72,6 +72,7 @@ try {
             existingNpmrc.trimEnd(),
             existingNpmrc.includes('@d31ma:registry=') ? '' : '@d31ma:registry=https://npm.pkg.github.com',
             `//npm.pkg.github.com/:_authToken=${githubPackagesToken}`,
+            'always-auth=true',
             '',
         ].filter(Boolean).join('\n'));
     }
