@@ -167,6 +167,9 @@ jobs:
         env:
           NIGHTJAR_SUITE: tachyon
           TACHYON_PACKAGE_TARBALL: ${{ env.TACHYON_PACKAGE_TARBALL }}
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+          NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc
+          npm_config_userconfig: ${{ github.workspace }}/.npmrc
         run: |
           if [ -f package.json ] || [ -f bun.lock ]; then
             bun install --frozen-lockfile
