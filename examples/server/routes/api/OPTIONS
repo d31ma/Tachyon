@@ -1,0 +1,38 @@
+{
+    "PUT": {
+        "200": {
+            "message": "string"
+        },
+        "500": {
+            "detail": "string"
+        }
+    },
+    "GET": {
+        "200": {
+            "message": "string",
+            "runtime": {
+                "name": "string",
+                "version": "string"
+            },
+            "context": {
+                "requestId": "string",
+                "ipAddress": "string",
+                "protocol": "string",
+                "host": "string"
+            },
+            "frontend": "string",
+            "backend": "string"
+        },
+        "500": {
+            "detail": "string"
+        }
+    },
+    "POST": {
+        "200": {
+            "message": "string"
+        },
+        "500": {
+            "detail": "string"
+        }
+    }
+}

@@ -1,18 +1,14 @@
 {
   "name": "tachyon-examples",
   "private": true,
+  "type": "module",
   "scripts": {
-    "tailwind:build": "tailwindcss -i ./styles/tailwind.css -o ./assets/tailwind.css",
-    "tailwind:watch": "tailwindcss -i ./styles/tailwind.css -o ./assets/tailwind.css --watch",
-    "bundle": "bun run tailwind:build && bun ../src/cli/bundle.ts",
-    "preview": "bun run tailwind:build && bun ../src/cli/preview.ts --watch",
-    "serve": "bun run tailwind:build && bun ../src/cli/serve.ts"
+    "bundle": "bun ../src/cli/bundle.js",
+    "preview": "bun ../src/cli/preview.js --watch",
+    "serve": "bun ../src/cli/serve.js",
+    "telemetry:alerts": "bun ./server/workers/telemetry-alert-worker.js"
   },
   "dependencies": {
-    "dayjs": "^1.11.13"
-  },
-  "devDependencies": {
-    "@tailwindcss/cli": "^4.2.2",
-    "tailwindcss": "^4.2.2"
+    "dayjs": "^1.11.20"
   }
 }

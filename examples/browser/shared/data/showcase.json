@@ -1,0 +1,4 @@
+{
+  "title": "Tac local-first data",
+  "summary": "Component and page fetch calls save successful responses into IndexedDB so the next read can hydrate from the browser first."
+}

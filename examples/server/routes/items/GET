@@ -1,0 +1,22 @@
+#!/usr/bin/env bun
+
+const dataPath = `${process.cwd()}/server/data/items.json`
+const seedItems = [
+    { id: 'seed-widget', name: 'Widget', source: 'seed', createdAt: '2026-04-21T09:00:00.000Z' },
+    { id: 'seed-gadget', name: 'Gadget', source: 'seed', createdAt: '2026-04-21T09:05:00.000Z' },
+]
+
+async function ensureItems() {
+    const file = Bun.file(dataPath)
+    if (!await file.exists()) {
+        await Bun.write(file, JSON.stringify(seedItems, null, 2))
+    }
+}
+
+async function readItems() {
+    await ensureItems()
+    return await Bun.file(dataPath).json()
+}
+
+await Bun.stdin.text()
+Bun.stdout.write(JSON.stringify({ items: await readItems() }))

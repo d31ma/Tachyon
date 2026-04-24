@@ -1,0 +1,13 @@
+#!/usr/bin/env bun
+
+const request = await Bun.stdin.json()
+
+Bun.stdout.write(JSON.stringify({
+  message: 'Example Yon root handler ready',
+  layers: {
+    frontend: 'Tac',
+    backend: 'Yon',
+  },
+  requestId: request.context?.requestId,
+  timestamp: new Date().toISOString(),
+}))

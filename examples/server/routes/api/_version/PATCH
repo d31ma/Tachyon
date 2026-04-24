@@ -1,0 +1,12 @@
+#!/usr/bin/env bun
+
+const request = await Bun.stdin.json()
+
+Bun.stdout.write(JSON.stringify({
+    message: 'Hello from Yon on Bun!',
+    method: 'PATCH',
+    version: request.paths?.version ?? 'v1',
+    path: request.paths,
+    body: request.body ?? null,
+    context: request.context,
+}))

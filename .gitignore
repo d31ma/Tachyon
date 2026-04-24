@@ -5,3 +5,11 @@ test-results
 .DS_Store
 src/runtime/route-manifest.json
 src/runtime/layout-manifest.json
+
+# Graphify
+.graphify_*
+graphify-out/cache/
+graphify-out/converted/
+graphify-out/transcripts/
+graphify-out/manifest.json
+graphify-out/.graphify_python

@@ -124,7 +124,7 @@ jobs:
           bun test tachyon/yon-contract.test.mjs tachyon/serve-contract.test.mjs --timeout 120000
 
       - name: Run Tachyon package contract
-        run: bun run scripts/verify-package-contract.ts
+        run: bun run scripts/verify-package-contract.js
 
   version:
     name: Read version

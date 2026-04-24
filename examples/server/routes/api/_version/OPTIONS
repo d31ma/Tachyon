@@ -1,0 +1,33 @@
+{
+    "DELETE": {
+        "200": {
+            "message": "string"
+        },
+        "500": {
+            "detail": "string"
+        }
+    },
+    "GET": {
+        "200": {
+            "message": "string",
+            "version": "string",
+            "context": {
+                "requestId": "string",
+                "ipAddress": "string",
+                "protocol": "string",
+                "host": "string"
+            }
+        },
+        "500": {
+            "detail": "string"
+        }
+    },
+    "PATCH": {
+        "200": {
+            "message": "string"
+        },
+        "500": {
+            "detail": "string"
+        }
+    }
+}
