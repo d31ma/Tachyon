@@ -75,6 +75,11 @@ try {
             'always-auth=true',
             '',
         ].filter(Boolean).join('\n'));
+        await writeFile(path.join(consumerRoot, 'bunfig.toml'), [
+            '[install.scopes]',
+            'd31ma = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }',
+            '',
+        ].join('\n'));
     }
     await writeFile(path.join(consumerRoot, 'package.json'), JSON.stringify({
         private: true,

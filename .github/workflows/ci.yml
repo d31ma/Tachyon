@@ -40,6 +40,11 @@ jobs:
             echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
             echo "always-auth=true"
           } > ~/.npmrc
+          cat >> bunfig.toml <<'EOF'
+
+          [install.scopes]
+          d31ma = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
+          EOF
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
@@ -116,6 +121,11 @@ jobs:
             echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
             echo "always-auth=true"
           } > ~/.npmrc
+          cat >> bunfig.toml <<'EOF'
+
+          [install.scopes]
+          d31ma = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
+          EOF
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
