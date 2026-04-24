@@ -34,7 +34,8 @@ jobs:
             echo "@d31ma:registry=https://npm.pkg.github.com"
             echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
             echo "always-auth=true"
-          } > ~/.npmrc
+          } > .npmrc
+          cp .npmrc ~/.npmrc
           cat >> bunfig.toml <<'EOF'
 
           [install.scopes]
@@ -111,7 +112,8 @@ jobs:
             echo "@d31ma:registry=https://npm.pkg.github.com"
             echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
             echo "always-auth=true"
-          } > ~/.npmrc
+          } > .npmrc
+          cp .npmrc ~/.npmrc
           cat >> bunfig.toml <<'EOF'
 
           [install.scopes]
@@ -233,7 +235,8 @@ jobs:
             echo "@d31ma:registry=https://npm.pkg.github.com"
             echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
             echo "always-auth=true"
-          } > ~/.npmrc
+          } > .npmrc
+          cp .npmrc ~/.npmrc
           cat >> bunfig.toml <<'EOF'
 
           [install.scopes]
