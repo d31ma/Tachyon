@@ -176,6 +176,8 @@ jobs:
             bun install --frozen-lockfile
           fi
 
+          export BUN_CONFIG_REGISTRY="https://npm.pkg.github.com"
+
           if [ -f package.json ] && jq -e '.scripts.blackbox' package.json >/dev/null; then
             bun run blackbox
           else
