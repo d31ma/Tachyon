@@ -1,0 +1,325 @@
+<div class="shell">
+  <logic :if="$sidebarOpen">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-400/15 text-sm font-black tracking-[0.28em] text-sky-300">TX</span>
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-[0.32em] text-slate-400">Tachyon</div>
+          <div class="text-sm font-bold text-white">Tac + Yon</div>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#overview"><span class="nav-kicker">01</span> Overview</a>
+        <a href="#inventory"><span class="nav-kicker">02</span> Inventory</a>
+        <a href="#frontend"><span class="nav-kicker">03</span> Tac</a>
+        <a href="#platform"><span class="nav-kicker">04</span> Platform</a>
+        <a href="#telemetry"><span class="nav-kicker">05</span> Telemetry</a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="sidebar-release">{release}</div>
+        <div>Frontend: Tac</div>
+        <div>Backend: Yon</div>
+      </div>
+    </aside>
+  </logic>
+
+  <div class="main-area">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button
+          type="button"
+          class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+          @click="toggleSidebar()"
+        >
+          Menu
+        </button>
+        <span class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">v2 Showcase</span>
+      </div>
+      <div class="topbar-right">
+        <button
+          type="button"
+          class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+          @click="refreshAll()"
+        >
+          Refresh
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+          @click="toggleTheme()"
+        >
+          Theme
+        </button>
+      </div>
+    </header>
+
+    <main class="content">
+      <section class="hero" id="overview">
+        <div class="hero-copy">
+          <span class="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-sky-100">Tac + Yon</span>
+          <h1>{headline}</h1>
+          <p>{subtitle}</p>
+        </div>
+        <div class="hero-mark">
+          <img src="/shared/assets/wordmark.svg" alt="Tachyon wordmark" class="hero-wordmark" />
+        </div>
+        <div class="hero-actions">
+          <button
+            type="button"
+            class="inline-flex items-center justify-center rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-100"
+            @click="refreshAll()"
+          >
+            Reload live data
+          </button>
+          <a
+            href="/api-docs"
+            class="inline-flex items-center justify-center rounded-2xl border border-white/25 bg-slate-950/20 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-950/35"
+          >
+            Open API docs
+          </a>
+        </div>
+      </section>
+
+      <section class="stats">
+        <article class="stat-card">
+          <div class="stat-label">Session visits</div>
+          <div class="stat-value">{$visits}</div>
+          <p>Stored automatically because the field name starts with `$`.</p>
+        </article>
+        <article class="stat-card">
+          <div class="stat-label">Inventory items</div>
+          <div class="stat-value">{items.length}</div>
+          <p>Served by Yon route handlers and updated live from the page.</p>
+        </article>
+        <article class="stat-card">
+          <div class="stat-label">Health</div>
+          <div class="stat-value">{health.summary}</div>
+          <p>Built-in `/health` and `/ready` endpoints are checked from the browser.</p>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Runtime snapshot</h2>
+            <span class="status-pill status-pill-sky">{loadingState('diagnostics')}</span>
+          </div>
+          <logic :if="diagnostics">
+            <dl class="definition-grid">
+              <div><dt>Message</dt><dd>{diagnostics.message}</dd></div>
+              <div><dt>Request ID</dt><dd>{diagnostics.context.requestId}</dd></div>
+              <div><dt>Protocol</dt><dd>{diagnostics.context.protocol}</dd></div>
+              <div><dt>Host</dt><dd>{diagnostics.context.host}</dd></div>
+              <div><dt>IP Address</dt><dd>{diagnostics.context.ipAddress}</dd></div>
+              <div><dt>Runtime</dt><dd>{diagnostics.runtime.name} {diagnostics.runtime.version}</dd></div>
+            </dl>
+          </logic>
+          <logic :if="!diagnostics">
+            <p class="muted">Waiting for Yon to answer the request snapshot.</p>
+          </logic>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Polyglot routes</h2>
+            <span class="status-pill status-pill-emerald">{loadingState('versioned')}</span>
+          </div>
+          <p class="muted">These responses are coming from different handler languages under the same routed app.</p>
+          <logic :if="versioned">
+            <div class="callout">
+              <strong>{versioned.message}</strong>
+              <p>Route version: {versioned.version}</p>
+            </div>
+          </logic>
+          <ul class="stack-list">
+            <li>GET `/api` via Node.js</li>
+            <li>POST `/api` via Python</li>
+            <li>PUT `/api` via PHP</li>
+            <li>GET `/api/v2` via Python</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel-grid">
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Shared browser data</h2>
+            <span class="status-pill status-pill-amber">{loadingState('showcase')}</span>
+          </div>
+          <logic :if="showcase">
+            <div class="callout">
+              <strong>{showcase.title}</strong>
+              <p>{showcase.summary}</p>
+            </div>
+          </logic>
+          <logic :if="!showcase">
+            <p class="muted">Fetching the browser-side data manifest.</p>
+          </logic>
+        </article>
+
+        <article class="panel" id="platform">
+          <div class="panel-head">
+            <h2>Platform surfaces</h2>
+            <span class="status-pill status-pill-sky">runtime</span>
+          </div>
+          <p class="muted">The example exposes the same docs and manifests that power bundle, preview, and operational tooling.</p>
+          <div class="stack-links">
+            <a href="/api-docs" class="stack-link">/api-docs</a>
+            <a href="/openapi.json" class="stack-link">/openapi.json</a>
+            <a href="/routes.json" class="stack-link">/routes.json</a>
+            <a href="/shells.json" class="stack-link">/shells.json</a>
+            <a href="/telemetry" class="stack-link">/telemetry</a>
+            <a href="/" class="stack-link">/</a>
+            <a href="/api" class="stack-link">/api</a>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel-grid" id="telemetry">
+        <article class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Telemetry consumer</h2>
+            <span class="status-pill status-pill-emerald">{loadingState('telemetry')}</span>
+          </div>
+          <p class="muted">This panel is powered by a Yon route that reads FYLO, parses the stored OTLP JSON payload, and returns a monitoring-friendly summary.</p>
+          <logic :if="telemetry">
+            <div class="stats-inline">
+              <div class="mini-stat">
+                <span>Spans</span>
+                <strong>{telemetry.summary.spanCount}</strong>
+              </div>
+              <div class="mini-stat">
+                <span>Requests</span>
+                <strong>{telemetry.summary.requestCount}</strong>
+              </div>
+              <div class="mini-stat">
+                <span>Errors</span>
+                <strong>{telemetry.summary.errorCount}</strong>
+              </div>
+            </div>
+            <ul class="stack-list telemetry-list">
+              <loop :for="const entry of telemetry.recent">
+                <li>
+                  <div class="telemetry-row">
+                    <strong>{entry.name}</strong>
+                    <span class="telemetry-meta">{entry.kind} · {entry.statusCode || 'n/a'} · {Math.round(entry.durationMs)} ms</span>
+                  </div>
+                  <p>trace {entry.traceId}</p>
+                  <p>route {entry.route || 'n/a'} · request {entry.requestId || 'n/a'}</p>
+                </li>
+              </loop>
+            </ul>
+          </logic>
+          <logic :if="!telemetry">
+            <p class="muted">Enable `OTEL_ENABLED=true` to see FYLO-backed telemetry summaries here.</p>
+          </logic>
+        </article>
+      </section>
+
+      <section class="panel-grid" id="inventory">
+        <article class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Inventory lab</h2>
+            <div class="inline-actions">
+              <button
+                type="button"
+                class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                @click="refreshItems()"
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100"
+                @click="clearItems()"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+
+          <div class="inventory-form">
+            <input
+              type="text"
+              class="min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+              placeholder="Create a backend item"
+              :value="newItem"
+            />
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-2xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+              @click="addItem()"
+            >
+              Save
+            </button>
+          </div>
+
+          <logic :if="feedback">
+            <div class="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800 shadow-sm">
+              {feedback}
+            </div>
+          </logic>
+
+          <logic :if="items.length > 0">
+            <ul class="inventory-list">
+              <loop :for="let i = 0; i < items.length; i++">
+                <li class="inventory-item">
+                  <div>
+                    <strong>{items[i].name}</strong>
+                    <p>{items[i].source} - {formatDate(items[i].createdAt)}</p>
+                  </div>
+                  <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
+                    {items[i].id.slice(0, 8)}
+                  </span>
+                </li>
+              </loop>
+            </ul>
+          </logic>
+          <logic :if="items.length === 0">
+            <p class="muted">No saved items yet. Create one and Yon will persist it for the next request.</p>
+          </logic>
+        </article>
+
+        <article class="panel" id="frontend">
+          <div class="panel-head">
+            <h2>Tac helpers</h2>
+            <span class="status-pill status-pill-amber">frontend</span>
+          </div>
+          <p class="muted">Theme and draft text below persist automatically because the class fields are prefixed with `$`.</p>
+          <textarea
+            rows="5"
+            class="min-h-36 w-full rounded-3xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+            :value="$draftNote"
+          ></textarea>
+          <div class="helper-actions">
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+              @click="toggleTheme()"
+            >
+              Toggle theme
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+              @click="clearDraft()"
+            >
+              Clear draft
+            </button>
+          </div>
+        </article>
+      </section>
+
+      <section class="component-section">
+        <div class="panel-head">
+          <h2>Scoped components</h2>
+          <span class="status-pill status-pill-emerald">companions</span>
+        </div>
+        <div class="component-grid">
+          <clicker :clicks="items.length" label="Persistent clicks" />
+          <ui-clicker :clicks="$visits" label="Session clicks" />
+        </div>
+      </section>
+    </main>
+  </div>
+</div>

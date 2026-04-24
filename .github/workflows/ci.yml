@@ -33,11 +33,31 @@ jobs:
         with:
           bun-version: ${{ matrix.bun-version }}
 
+      - name: Configure GitHub Packages
+        run: |
+          {
+            echo "@d31ma:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+            echo "always-auth=true"
+          } > .npmrc
+          cp .npmrc ~/.npmrc
+          cat >> bunfig.toml <<'EOF'
+
+          [install.scopes]
+          d31ma = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
+          EOF
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Install example dependencies
         run: cd examples && bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Install Playwright Chromium
         run: bunx playwright install chromium
@@ -99,8 +119,26 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Configure GitHub Packages
+        run: |
+          {
+            echo "@d31ma:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+            echo "always-auth=true"
+          } > .npmrc
+          cp .npmrc ~/.npmrc
+          cat >> bunfig.toml <<'EOF'
+
+          [install.scopes]
+          d31ma = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
+          EOF
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Pack package under test
         run: bun pm pack --filename "$TACHYON_PACKAGE_TARBALL" --quiet
@@ -129,7 +167,11 @@ jobs:
         env:
           NIGHTJAR_SUITE: tachyon
           TACHYON_PACKAGE_TARBALL: ${{ env.TACHYON_PACKAGE_TARBALL }}
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
         run: |
+          export NPM_CONFIG_USERCONFIG="$GITHUB_WORKSPACE/.npmrc"
+          export npm_config_userconfig="$GITHUB_WORKSPACE/.npmrc"
+
           if [ -f package.json ] || [ -f bun.lock ]; then
             bun install --frozen-lockfile
           fi

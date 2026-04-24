@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+import sys, json
+
+request = json.loads(sys.stdin.readline())
+version = request.get("paths", {}).get("version", "v1")
+
+result = {
+    "message": "Hello from Yon on Python!",
+    "version": version,
+    "context": request["context"]
+}
+
+sys.stdout.write(json.dumps(result))

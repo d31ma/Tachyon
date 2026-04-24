@@ -1,7 +1,0 @@
-#!/usr/bin/env node
-
-const chunks = []
-process.stdin.on('data', c => chunks.push(c))
-process.stdin.on('end', () => {
-    process.stdout.write(JSON.stringify({ items: ['widget', 'gadget', 'doohickey'] }))
-})

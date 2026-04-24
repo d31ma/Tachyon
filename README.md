@@ -1,32 +1,34 @@
 # Tachyon
 
-Tachyon is a **polyglot, file-system-routed full-stack framework for [Bun](https://bun.sh)**. It lets you define API routes as plain executable files written in any language, and build reactive front-end pages with a lightweight HTML template syntax — all without configuration.
+Tachyon is a polyglot, file-system-routed full-stack framework for [Bun](https://bun.sh).
+
+- `Tac` is the frontend layer.
+- `Yon` is the backend/runtime layer.
 
 ## Features
 
-- **File-system routing** — routes are directories; HTTP methods are files
-- **Polyglot handlers** — write routes in Bun, Python, Ruby, Go, Rust, Java, or any language with a shebang
-- **Reactive front-end (Yon)** — HTML templates with bindings, loops, conditionals, and custom components
-- **Lazy component loading** — defer component rendering until visible with `IntersectionObserver`
-- **NPM dependency bundling** — use npm packages in front-end code via `/modules/` imports
-- **Static HTML export** — `tach.bundle` prerenders each `HTML` route into `dist/**/index.html` for static hosting
-- **Hot Module Replacement** — watches `routes/` and `components/` and reloads on change
-- **Custom 404 page** — drop a `404.html` in your project root to override the default
-- **Schema validation** — per-route request/response validation via `OPTIONS` files
-- **Status code routing** — map response schemas to HTTP status codes; the framework picks the code automatically
-- **Auth** — built-in Basic Auth (timing-safe) and JWT decoding with expiry enforcement
-- **Security headers** — X-Frame-Options, X-Content-Type-Options, HSTS, CSP, and Referrer-Policy sent on every response
-- **Streaming** — SSE responses via `Accept: text/event-stream`
-- **Script primitives** — `onMount`, `rerender`, `inject`/`provide`, `persist`, `isBrowser`/`isServer` available in every component script
-- **Navigation events** — `tachyon:navigate` dispatched on `window` after every SPA navigation
+- Polyglot backend handlers with executable files and shebangs
+- Tac pages and components with `index.html` / `component.html` templates
+- Companion `*.js`, `*.ts`, and `*.css` files beside templates
+- OOP-style companion classes with `export default class extends Tac`
+- Automatic session persistence for `$`-prefixed instance fields
+- Local-first browser `fetch()` for Tac page/component scripts with IndexedDB-backed read caching and mutation-aware invalidation
+- Explicit browser env allowlisting through `TAC_PUBLIC_ENV` and `this.env(...)`
+- Static export with prerendered `dist/**/index.html`
+- Shared frontend assets under `/shared/assets/*`
+- Shared frontend data under `/shared/data/*`
+- Generated OpenAPI 3.1 docs at `/openapi.json` with a self-hosted Tachyon docs UI at `/api-docs`
+- FYLO-backed OpenTelemetry storage with request and handler span correlation
+- Built-in health/readiness endpoints
+- Proxy-aware request context, CORS enforcement, and optional rate limiting
 
-## Installation
+## Install
 
 ```bash
 bun add @d31ma/tachyon
 ```
 
-If you install the package from GitHub Packages, configure your `.npmrc` first:
+If you install from GitHub Packages, configure `.npmrc` first:
 
 ```text
 @d31ma:registry=https://npm.pkg.github.com
@@ -36,668 +38,501 @@ If you install the package from GitHub Packages, configure your `.npmrc` first:
 ## Quick Start
 
 ```bash
-# Scaffold a new app
-tach.init my-app
-
-# In a Tachyon app:
-bun run bundle
-bun run preview
-bun run serve
-bun run serve --full
-```
-
-Or via npm scripts if you declare them in your own `package.json`:
-
-```json
-{
-  "scripts": {
-    "bundle": "tach.bundle",
-    "preview": "tach.preview --watch",
-    "serve": "tach.serve"
-  }
-}
-```
-
-## Scaffolding a New App
-
-```bash
-bunx @d31ma/tachyon tach.init my-app
+yon.init my-app
 cd my-app
 bun install
 bun run serve
 ```
 
-`tach.init` creates a starter project with:
+Useful commands:
 
-- `routes/HTML`, `routes/LAYOUT`, and `routes/GET`
-- a sample `components/hero.html`
-- `main.js` bootstrap entry
-- `.env.example`
-- `amplify.yml`
-- `package.json` scripts for `serve`, `bundle`, and `preview`
+```bash
+bun run serve
+bun run bundle
+bun run preview
+```
+
+`bun run serve` is shape-aware: `browser/` only bundles and serves the frontend, `server/` only serves backend routes, and apps with both folders run as a full-stack app on one port.
+
+## Scaffold Layout
+
+```text
+browser/
+  pages/
+    index.html
+    index.js
+    index.css
+  components/
+    hero.html
+    hero.css
+  shared/
+    scripts/
+    styles/
+    assets/
+    data/
+
+server/
+  routes/
+  data/
+  deps/
+```
+
+Scaffolds are JavaScript-first and use strict JSDoc rather than TypeScript source files.
+The runtime still supports TypeScript companion scripts when you want them.
+
+The example app in [examples/](examples/) demonstrates Tac and Yon working together:
+
+- reactive page state
+- persisted `$` fields
+- local-first fetches
+- backend handlers in multiple languages
+- shared data, shared assets, and a browser entry
+- middleware, OpenAPI docs, route manifests, and component companions
 
 ## Configuration
 
-Create a `.env` file in your project root. All variables are optional.
+Create a `.env` file in your app root. All variables are optional.
 
 ```env
 PORT=8000
+HOST=127.0.0.1
 HOSTNAME=127.0.0.1
-TIMEOUT=70
 DEV=true
 LOG_LEVEL=info
 LOG_FORMAT=pretty
 TRUST_PROXY=
+TAC_FORMAT=esm
 
-# CORS — restrict to explicit origins in production; disallowed cross-origin requests are rejected before handler execution
 ALLOW_HEADERS=Content-Type,Authorization
-ALLOW_ORIGINS=https://yourdomain.com
+ALLOW_ORIGINS=
 ALLOW_CREDENTIALS=false
 ALLOW_EXPOSE_HEADERS=
 ALLOW_MAX_AGE=3600
 ALLOW_METHODS=GET,POST,PUT,DELETE,PATCH,OPTIONS
 
-# Auth — generate strong credentials; prefer BASIC_AUTH_HASH in production and never commit real values
 BASIC_AUTH=
 BASIC_AUTH_HASH=
-
-# Validation (set to any value to enable)
 VALIDATE=true
-
-# Security
-# Override the default CSP if your app loads scripts/styles from external origins
 CONTENT_SECURITY_POLICY=default-src 'self'
-# Maximum ms a handler process may run before it is killed (default: 30000)
+ENABLE_HSTS=false
+
 HANDLER_TIMEOUT_MS=30000
-# Optional per-IP rate limiting for non-health requests
+MAX_BODY_BYTES=1048576
+MAX_PARAM_LENGTH=1000
 RATE_LIMIT_MAX=
 RATE_LIMIT_WINDOW_MS=
-# Maximum length of any single route or query parameter value (default: 1000)
-MAX_PARAM_LENGTH=1000
 
-# Custom route/asset paths (defaults to <cwd>/routes, <cwd>/components, <cwd>/assets)
-ROUTES_PATH=
-COMPONENTS_PATH=
-ASSETS_PATH=
+ROUTES_PATH=server/routes
+PAGES_PATH=browser/pages
+COMPONENTS_PATH=browser/components
+ASSETS_PATH=browser/shared/assets
+SHARED_SCRIPTS_PATH=browser/shared/scripts
+SHARED_STYLES_PATH=browser/shared/styles
+SHARED_DATA_PATH=browser/shared/data
+MIDDLEWARE_PATH=./middleware
 ```
 
-`LOG_LEVEL` supports `trace`, `debug`, `info`, `warn`, `error`, `fatal`, and `silent`. `LOG_FORMAT` supports `pretty` for local development and `json` for production log pipelines. `TACHYON_LOG_LEVEL` and `TACHYON_LOG_FORMAT` are also accepted if you want framework-specific overrides.
+Notes:
 
-Set `TRUST_PROXY=loopback` when Tachyon is behind a local reverse proxy such as nginx or Caddy on the same host. Use a comma-separated allowlist of exact proxy IPs, or `true` / `*` to trust all proxies. When trusted, Tachyon derives `context.ipAddress`, `context.protocol`, and `context.host` from `Forwarded` or `X-Forwarded-*` headers instead of the raw socket address.
+- `TRUST_PROXY=loopback` is a good default when running behind a local reverse proxy.
+- Set both `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS` to enable the built-in in-memory limiter.
+- For distributed deployments, export a custom `rateLimiter` from `middleware.js`.
+- Prefer `BASIC_AUTH_HASH` over plaintext `BASIC_AUTH` in production.
 
-Set both `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS` to enable built-in per-IP rate limiting. Over-limit responses return HTTP `429` with `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, and `Retry-After` headers. Health/readiness endpoints are excluded.
+Generate a Bun password hash with:
 
-If you need shared rate limiting across multiple app instances, export a `rateLimiter` from `middleware.ts` or `middleware.js`. When present, Tachyon uses that limiter instead of the built-in in-memory one, so you can back it with Redis, Upstash, SQL, or another shared store.
-
-To generate a `BASIC_AUTH_HASH`, run `bun -e "console.log(await Bun.password.hash('user:pass'))"` and store the result in your environment instead of the plaintext credential.
-
-Handler subprocess logs include per-request resource usage after each handler exits: `requestId`, handler `pid`, exit code, CPU time in microseconds, peak RSS memory in bytes, filesystem read/write operation counts, and response/error byte counts.
-
-## Route Structure
-
+```bash
+bun -e "console.log(await Bun.password.hash('user:pass'))"
 ```
-routes/
-  GET               →  GET  /
-  POST              →  POST /
+
+## Backend Routing
+
+Yon backend routes live in `server/routes`.
+
+```text
+server/routes/
+  GET                  -> GET /
+  POST                 -> POST /
   api/
-    GET             →  GET  /api
-    :version/
-      GET           →  GET  /api/:version
-      DELETE        →  DELETE /api/:version
-  dashboard/
-    HTML            →  front-end page at /dashboard
-  OPTIONS           →  schema file (optional, enables validation)
+    GET                -> GET /api
+    POST               -> POST /api
+    _version/
+      GET              -> GET /api/:version
+  items/
+    GET                -> GET /items
+    POST               -> POST /items
+    DELETE             -> DELETE /items
+  OPTIONS              -> route schema file
 ```
 
-### Requirements
+Rules:
 
-- Every route handler is an **executable file** — include a shebang on the first line
-- The last path segment must be an **uppercase HTTP method** (e.g. `GET`, `POST`, `DELETE`) or `HTML` for a front-end page
-- Dynamic segments start with `:` (e.g. `:version`, `:id`)
-- The first path segment must **not** be dynamic
-- Adjacent dynamic segments are not allowed (e.g. `/:a/:b/GET` is invalid)
-- Node modules must be imported dynamically with the `/modules/` prefix: `await import('/modules/dayjs.js')`
-- Components live in `components/` and must have a `.html` extension
+- handler files must be executable
+- the last segment must be an uppercase HTTP method file such as `GET` or `POST`
+- dynamic route segments use `_slug` on disk and become `:slug` at runtime
+- the first segment cannot be dynamic
+- adjacent dynamic segments are not allowed
 
-### Request Context
-
-Every handler receives the full request context on `stdin` as a JSON object:
+Each handler receives JSON on `stdin`:
 
 ```json
 {
-  "headers": { "content-type": "application/json" },
-  "body":    { "name": "Alice" },
-  "query":   { "page": 1 },
-  "paths":   { "version": "v2" },
+  "headers": {},
+  "body": {},
+  "query": {},
+  "paths": {},
   "context": {
-    "requestId": "3f5b52f8-9c2e-4f8d-8bd3-6fd2b10c28d9",
+    "requestId": "req-id",
     "ipAddress": "127.0.0.1",
     "protocol": "http",
-    "host": "127.0.0.1:8000",
-    "bearer": {
-      "token": "...",
-      "verified": false
-    }
+    "host": "127.0.0.1:8000"
   }
 }
 ```
 
-Tachyon reuses an incoming `X-Request-Id` header when present, generates one when it is missing, returns it on every response, and includes it in request logs.
+## Frontend Routing
 
-When `TRUST_PROXY` is configured and the remote peer is trusted, `context.ipAddress`, `context.protocol`, and `context.host` reflect proxy-forwarded client metadata. Otherwise they reflect the direct Bun server connection.
+Tac page routes live in `browser/pages`.
 
-> **Note:** `context.bearer` exposes only the raw bearer token and `verified: false`. Tachyon may decode the payload internally to reject expired JWTs, but unverified claims are not exposed to handlers. Use middleware plus a verifier such as [`jose`](https://github.com/panva/jose) when handlers need authenticated identity.
-
-### Route Handler Examples
-
-**Bun (TypeScript)**
-```typescript
-// routes/v1/:collection/GET
-#!/usr/bin/env bun
-
-const { body, paths, context } = await Bun.stdin.json()
-
-const response = { collection: paths.collection, from: context.ipAddress, requestId: context.requestId }
-
-Bun.stdout.write(JSON.stringify(response))
+```text
+browser/pages/
+  index.html           -> /
+  docs/
+    index.html         -> /docs
+  blog/
+    _slug/
+      index.html       -> /blog/:slug
 ```
 
-**Python**
-```python
-# routes/v1/:collection/POST
-#!/usr/bin/env python3
-import json, sys
+If an ancestor page contains `<slot />`, it acts as a reusable shell for descendant pages.
 
-stdin = json.loads(sys.stdin.read())
-sys.stdout.write(json.dumps({ "message": "Hello from Python!" }))
+Tac components live in `browser/components`.
+
+```text
+browser/components/
+  clicker.html
+  clicker.js
+  clicker.css
 ```
 
-**Ruby**
-```ruby
-# routes/v1/:collection/DELETE
-#!/usr/bin/env ruby
-require 'json'
+Companion scripts can be JavaScript or TypeScript:
 
-stdin = JSON.parse(ARGF.read)
-print JSON.generate({ message: "Hello from Ruby!" })
-```
+- `clicker.js`
+- `clicker.ts`
 
-### Schema Validation
+## Tac Templates
 
-Place an `OPTIONS` file in any route directory to enable validation:
+Templates support:
 
-```json
-{
-  "POST": {
-    "req": {
-      "name":   "string",
-      "age?":   0
-    },
-    "res": {
-      "message": "string"
-    },
-    "err": {
-      "detail": "string"
-    }
-  }
-}
-```
+- `{expr}` for escaped interpolation
+- `{!expr}` for trusted raw HTML
+- `@event="handler()"` for event binding
+- `:prop="expr"` for dynamic attributes
+- `:value="field"` for two-way input binding
+- `<loop :for="...">`
+- `<logic :if="...">`
+- `<my-component />`
+- `<my-component lazy />`
 
-Nullable fields are suffixed with `?`. Set `VALIDATE=true` in your `.env` to enable.
-
-### Status Code Routing
-
-Instead of `res`/`err`, you can key response schemas by HTTP status code. Tachyon matches the handler's JSON output against each schema in ascending order — the first match determines the response status code.
-
-```json
-{
-  "POST": {
-    "req": { "name": "string" },
-    "201": { "id": "string", "name": "string" },
-    "400": { "detail": "string" },
-    "503": { "detail": "string", "retryAfter": 0 }
-  },
-  "DELETE": {
-    "204": {}
-  }
-}
-```
-
-Handlers write their normal JSON to stdout — no changes required. The framework determines the status code from whichever schema the output matches. If no numeric schemas are defined, the default behaviour applies (stdout → 200, stderr → 500).
-
-When `VALIDATE=true` is set, the matched schema is also used for strict validation.
-
-## Front-end Pages (Yon)
-
-Create an `HTML` file inside any route directory to define a front-end page:
+Example page:
 
 ```html
-<!-- routes/HTML -->
-<script>
-  document.title = "Home"
-  let count = 0
-</script>
+<!-- browser/pages/index.html -->
+<section class="hero">
+  <h1>{headline}</h1>
+  <p>{subtitle}</p>
+  <button @click="refresh()">Refresh</button>
+</section>
 
-<h1>Count: {count}</h1>
-<button @click="count++">Increment</button>
+<clicker label="Visits" />
 ```
 
-When you run `tach.bundle`, Tachyon compiles these pages into browser modules and also prerenders static HTML files such as:
+```js
+// browser/pages/index.js
+export default class extends Tac {
+  /** @type {number} */
+  $visits = 0
+  /** @type {string} */
+  headline = 'Tac + Yon'
+  /** @type {string} */
+  subtitle = 'Reactive frontend, polyglot backend.'
+
+  constructor(props = {}, tac = undefined) {
+    super(props, tac)
+    this.$visits += 1
+    if (this.isBrowser) document.title = 'Home'
+  }
+
+  async refresh() {
+    const response = await this.fetch('/api')
+    const payload = await response.json()
+    this.subtitle = String(payload.message ?? this.subtitle)
+  }
+}
+```
+
+Anonymous companion classes are fully supported:
+
+```js
+export default class extends Tac {}
+```
+
+## Tac Companion Scripts
+
+Companion scripts are instantiated automatically during render. Their fields and methods are visible in the matching HTML template without the developer manually referencing the class instance.
+
+Companion authors only need to think about `Tac` itself. Internal runtime helper plumbing is attached by the framework and does not need to be imported, typed, or threaded through user code.
+
+Available helpers through `Tac`:
+
+- `this.env(key, fallback?)`
+- `this.fetch(input, init)`
+- `this.emit(name, detail)`
+- `this.inject(key, fallback?)`
+- `this.provide(key, value)`
+- `this.onMount(fn)`
+- `this.rerender()`
+- `this.isBrowser`
+- `this.isServer`
+- `this.props`
+
+### Browser Environment Variables
+
+Tac can expose explicitly public browser config through `this.env(key, fallback)`.
+
+```js
+export default class extends Tac {
+  apiBase = this.env('PUBLIC_API_BASE_URL', '/api')
+}
+```
+
+Set the allowlist with `TAC_PUBLIC_ENV`:
+
+```bash
+TAC_PUBLIC_ENV=PUBLIC_API_BASE_URL,PUBLIC_SENTRY_DSN
+PUBLIC_API_BASE_URL=https://api.example.com
+```
+
+Important boundary:
+
+- anything sent to browser JavaScript can be seen by the browser user
+- Tachyon therefore only exposes vars you explicitly allowlist
+- private secrets must stay in Yon and be used through server routes, middleware, or upstream API calls made on the server
+
+There is no secure way to give a browser script a secret and also keep that secret hidden from the browser.
+
+## API Docs
+
+Yon exposes an OpenAPI 3.1 document at `/openapi.json` and a self-hosted Tachyon docs UI at `/api-docs`.
+
+- route response schemas are derived from each route's `OPTIONS` file
+- request schemas can also flow into the OpenAPI document when you define `req` or `request`
+- the docs page is rendered by Tachyon-owned HTML, CSS, and JavaScript instead of a third-party docs bundle
+- the docs UI supports request authorization, operation filtering, deep links, cURL generation, and live "try it out" execution with response inspection
+
+## OpenTelemetry Storage
+
+Yon can persist OpenTelemetry trace data into FYLO without adding an SDK dependency stack.
+
+```bash
+OTEL_ENABLED=true
+OTEL_FYLO_ROOT=.tachyon-otel
+OTEL_SERVICE_NAME=@d31ma/tachyon
+```
+
+When enabled, Yon writes request spans and nested handler spans into the FYLO collection `otel-spans`.
+
+- incoming `traceparent` headers are continued when present
+- responses emit `Traceparent` and `X-Trace-Id` for correlation
+- spans fail open: telemetry write failures are logged but do not fail the request
+- `OTEL_CAPTURE_IP=true` opt-in is required before client IPs are stored
+- each FYLO record stores the exact OTLP JSON `TracesData` payload in `otlpJson`, plus scalar index fields such as `traceId`, `spanId`, and `requestId`
+- custom Tachyon-specific correlation stays namespaced in span attributes such as `tachyon.request.id`
+
+### Testing Telemetry
+
+Integration coverage already exists in [tests/integration/api-routes.test.js](tests/integration/api-routes.test.js).
+
+Run the focused check with:
+
+```bash
+bun test tests/integration/api-routes.test.js
+```
+
+For a manual smoke test:
+
+```bash
+cd examples
+OTEL_ENABLED=true \
+OTEL_FYLO_ROOT=.tachyon-otel \
+OTEL_SERVICE_NAME=tachyon-dev \
+BASIC_AUTH_HASH="$(bun -e "console.log(await Bun.password.hash('admin:pass'))")" \
+bun ../src/cli/serve.js
+```
+
+Then send a traced request:
+
+```bash
+curl -i \
+  -H 'Authorization: Basic YWRtaW46cGFzcw==' \
+  -H 'X-Request-Id: manual-otel-test' \
+  -H 'traceparent: 00-0123456789abcdef0123456789abcdef-1111111111111111-01' \
+  http://127.0.0.1:8000/api
+```
+
+You should see:
+
+- `Traceparent` and `X-Trace-Id` in the response headers
+- persisted FYLO documents under `.tachyon-otel/otel-spans/.fylo/`
+- one server span and one nested handler span for the request
+
+### Consuming Telemetry From FYLO
+
+The example app includes a Yon telemetry consumer at `/telemetry`.
+
+- it reads `otel-spans` from FYLO
+- parses the stored `otlpJson` payload back into OTLP JSON `TracesData`
+- returns a monitoring-friendly summary plus recent spans
+
+That route is implemented in [examples/server/routes/telemetry/GET](examples/server/routes/telemetry/GET), and the example dashboard uses it to render a live telemetry panel.
+
+The examples also include a tiny alerting worker at [examples/server/workers/telemetry-alert-worker.js](examples/server/workers/telemetry-alert-worker.js).
+
+Run it against the example app with:
+
+```bash
+cd examples
+TELEMETRY_URL=http://127.0.0.1:8000/telemetry?limit=25 \
+BASIC_AUTH_HEADER='Basic YWRtaW46cGFzcw==' \
+ALERT_SLOW_MS=500 \
+ALERT_STATUS_CODE=500 \
+bun run telemetry:alerts
+```
+
+It polls the telemetry endpoint, flags slow routes and server errors, and prints structured JSON that can be shipped to another service or cron job.
+
+### `$` Field Persistence
+
+`$`-prefixed instance fields are automatically persisted to `sessionStorage`.
+
+```js
+export default class extends Tac {
+  /** @type {number} */
+  $count = 0
+
+  increment() {
+    this.$count += 1
+  }
+}
+```
+
+The persistence key is generated from:
+
+- the Tac module path
+- the current page path or generated component instance identity
+- the field name
+
+That makes the key stable across reloads and unique per persisted field instance.
+
+### Local-First `fetch()`
+
+Inside Tac page/component scripts only, `fetch()` is wrapped with a local-first strategy:
+
+- all request methods are supported and forwarded through the Tac wrapper
+- successful `GET` and `HEAD` responses are written to IndexedDB
+- later `GET` and `HEAD` calls read from the cache first
+- `cache: 'reload'` bypasses the cached read
+- successful non-`GET` requests invalidate cached `GET` and `HEAD` entries for the same URL so later reads do not serve stale data
+
+This does not override the global browser `fetch` outside Tac page/component execution.
+
+On the Yon side, handler responses are also given an inferred content type now:
+
+- JSON-looking output is served as `application/json`
+- other string output falls back to `text/plain`
+
+### Scoped Component CSS
+
+`component.css` is automatically wrapped with a component scope:
+
+```css
+@scope ([data-tac-scope="clicker"]) { ... }
+```
+
+That scope is applied to the generated wrapper around each component instance.
+
+## Shared Frontend Files
+
+- `browser/shared/assets/*` is served at `/shared/assets/*`
+- `browser/shared/data/*` is served at `/shared/data/*`
+- `browser/shared/scripts/main.js` is the optional browser entry
+- `browser/shared/styles/*` is available for imports from `main.js`
+
+If `main.js` imports CSS, Tachyon emits `/main.css` and links it from generated HTML shells.
+
+The example app uses a local `main.js` plus shared assets/data, and loads Tailwind's browser build from `https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4` for demo convenience. Tailwind's own docs note that browser CDN is for development, not production.
+
+## Build Output
+
+`tac.bundle` writes a static-ready `dist/` directory.
+
+Typical output:
 
 ```text
 dist/
   index.html
-  dashboard/index.html
-  pages/HTML.js
-  pages/dashboard/HTML.js
+  docs/index.html
+  pages/index.js
+  pages/docs/index.js
+  components/clicker.js
+  modules/*.js
+  shared/assets/*
+  shared/data/*
+  shells.json
+  routes.json
+  spa-renderer.js
+  main.js
+  main.css
 ```
 
-That means the bundled output is directly usable on static hosts while still keeping the SPA runtime available for client-side navigation and interactivity.
-
-To preview the generated `dist/` output locally, run:
-
-```bash
-tach.preview
-```
-
-To serve `dist/` and keep rebuilding it from frontend source changes in one command, run:
-
-```bash
-tach.preview --watch
-```
-
-`tach.preview` serves exact bundle assets such as `/main.js` and also resolves nested route files like `/docs` to `dist/docs/index.html`.
-
-## Development Commands
-
-In a scaffolded Tachyon app, the recommended commands are:
-
-```bash
-bun run bundle
-bun run preview
-bun run serve
-bun run serve --full
-```
-
-- `bun run bundle` builds the app into `dist/`
-- `bun run preview` serves `dist/` and rebuilds it when frontend files change
-- `bun run serve` starts the Tachyon app server only
-- `bun run serve --full` serves the frontend bundle and backend API routes from the same port
-
-### Yon Output Format
-
-Yon emits ESM page, layout, and component modules by default. For script-tag/CDN-style environments, set `YON_FORMAT=global` before running `tach.bundle`, `tach.preview`, or `tach.serve`; generated frontend modules will register with the browser global `window.Yon` instead of exporting ESM defaults.
-
-```bash
-YON_FORMAT=global bun run bundle
-```
-
-The global format keeps the same runtime behavior, but compiled modules are classic-script compatible and can be resolved through `window.Yon.load('/pages/HTML.js')`.
-
-### Template Syntax
-
-| Syntax | Description |
-|--------|-------------|
-| `{expr}` | Interpolate and HTML-escape expression |
-| `{!expr}` | Render trusted raw HTML without escaping |
-| `@event="handler()"` | Event binding; handlers receive `$event` |
-| `:prop="value"` | Bind attribute to expression |
-| `:value="variable"` | Two-way input binding |
-| `<loop :for="...">` | Loop block |
-| `<logic :if="...">` | Conditional block |
-| `<my-comp prop=val />` | Custom component from `components/my-comp.html` |
-| `<my-comp lazy />` | Lazy-loaded component (renders when visible) |
-
-### Custom Components
-
-```html
-<!-- components/counter.html -->
-<script>
-  let count = 0
-</script>
-
-<button @click="count++">Clicked {count} times</button>
-```
-
-Use in a page:
-
-```html
-<counter />
-```
-
-Components can emit custom events to their parent wrapper with `emit(name, detail)`.
-Parent handlers receive the browser `CustomEvent` as `$event`, so payloads are
-available at `$event.detail`.
-
-```html
-<!-- components/item-picker.html -->
-<script>
-  let label = 'Default'
-
-  function choose() {
-    emit('selected', { label })
-  }
-</script>
-
-<button @click="choose()">Choose {label}</button>
-```
-
-```html
-<!-- routes/HTML -->
-<script>
-  let selected = 'none'
-</script>
-
-<item-picker label="Tachyon" @selected="selected = $event.detail.label" />
-<p>Selected: {selected}</p>
-```
-
-### Lazy Loading
-
-Add the `lazy` attribute to defer a component's loading until it scrolls into view. The component renders a lightweight placeholder and uses `IntersectionObserver` to load the module on demand.
-
-```html
-<!-- Eager (default) — loaded immediately -->
-<counter />
-
-<!-- Lazy — loaded when visible in the viewport -->
-<counter lazy />
-```
-
-Lazy components are fully interactive once loaded — event delegation and state management work identically to eager components.
-
-### Script Primitives
-
-Every component `<script>` block has access to the following built-in primitives:
-
-| Primitive | Description |
-|-----------|-------------|
-| `isBrowser` | `true` in the browser, `false` during prerender |
-| `isServer` | Inverse of `isBrowser` |
-| `onMount(fn)` | Run `fn` once after the component's first browser render; no-op during prerender |
-| `rerender()` | Trigger a mid-handler repaint without waiting for the handler to fully resolve |
-| `inject(key, fallback?)` | Retrieve a value registered with `provide` or `Yon.provide` |
-| `provide(key, value)` | Register a value in the app-level context |
-| `persist(key, init)` | Returns `[currentValue, save]` backed by `sessionStorage` |
-| `emit(name, detail)` | Dispatch a custom event from a component to its parent wrapper |
-
-Template `<script>` blocks run inside an async factory, so load local helpers with `await import('./helper')` rather than a static `import` statement. Tachyon now resolves those relative imports from the page/component source file and lets Bun bundle them with the generated module.
-
-#### `onMount`
-
-Use `onMount` to run browser-only setup code without sprinkling `typeof window !== 'undefined'` guards everywhere. The callback fires after the component's first DOM patch.
-
-```html
-<script>
-  onMount(() => {
-    document.title = 'Dashboard'
-    window.addEventListener('tachyon:navigate', syncActiveLink)
-  })
-</script>
-```
-
-#### `rerender`
-
-Calling `rerender()` mid-handler triggers an immediate repaint of the current component state, letting you show loading indicators before an async operation completes:
-
-```html
-<script>
-  let loading = false
-  let result = null
-
-  async function fetchData() {
-    loading = true
-    rerender()  // show spinner now
-
-    const res = await fetch('/api/data')
-    result = await res.json()
-    loading = false
-  }
-</script>
-
-<logic :if="loading"><p>Loading…</p></logic>
-<logic :if="!loading && result"><p>{result.name}</p></logic>
-<button @click="fetchData()">Fetch</button>
-```
-
-#### `provide` / `inject`
-
-Share services or values across components without polluting `window`. Call `Yon.provide` (or the `provide` primitive) before components mount, then `inject` in any component that needs it.
-
-```js
-// main.js (or main.ts / main.tsx / main.jsx)
-Yon.provide('apiFetch', (path, opts) => fetch(path, { ...opts, credentials: 'include' }))
-Yon.provide('toast', (msg) => showToast(msg))
-```
-
-```html
-<!-- any component -->
-<script>
-  const apiFetch = inject('apiFetch')
-  const toast = inject('toast')
-
-  async function send() {
-    const res = await apiFetch('/api/send', { method: 'POST' })
-    if (res.ok) toast('Sent!')
-  }
-</script>
-```
-
-`inject` returns `undefined` (or the provided fallback) during prerender so components remain SSG-safe.
-
-> **Context scope:** `provide` / `inject` share a single app-level context map that lives for the whole page session — values persist across SPA navigations and are not scoped per route. Use `Yon.provide` in your `main.*` entry for app-wide services. Calling `provide` from a component script is valid but the value will remain available globally for the rest of the session.
-
-> **Load order:** Tachyon loads `spa-renderer.ts` before your `main.*` browser entry, so `Yon.provide(...)` is safe at the top level of `main.*` and will register services before the first component mounts.
-
-#### `persist`
-
-Preserve component state across SPA navigations using `sessionStorage`. The factory reads the stored value on every mount, so state survives navigating away and back.
-
-```html
-<script>
-  let [step, saveStep] = persist('onboarding-step', 1)
-  let [formData, saveFormData] = persist('onboarding-form', {})
-
-  function next() {
-    step++
-    saveStep(step)
-  }
-
-  function updateField(key, value) {
-    formData = { ...formData, [key]: value }
-    saveFormData(formData)
-  }
-</script>
-```
-
-`save` serialises the value as JSON. Returns `[initialValue, noop]` during prerender.
-
-### Navigation Events
-
-Tachyon dispatches a `tachyon:navigate` `CustomEvent` on `window` after every SPA navigation settles. The event detail contains the new `pathname`.
-
-```js
-window.addEventListener('tachyon:navigate', (e) => {
-  console.log('Navigated to', e.detail.pathname)
-  syncActiveNavLink(e.detail.pathname)
-})
-```
-
-This is especially useful for layout components that need to react to route changes without being re-rendered.
-
-### NPM Modules in Front-end Code
-
-Any package listed in your project's `dependencies` is automatically bundled and served at `/modules/<name>.js`. Import them dynamically in your `<script>` blocks:
-
-```html
-<script>
-  const { default: dayjs } = await import('/modules/dayjs.js')
-  let timestamp = dayjs().format('MMM D, YYYY h:mm A')
-</script>
-
-<p>Last updated: {timestamp}</p>
-```
-
-### Custom 404 Page
-
-Place a `404.html` file in your project root to override the default 404 page. It uses the same Yon template syntax:
-
-```html
-<!-- 404.html -->
-<script>
-  document.title = "Not Found"
-</script>
-
-<h1>Oops!</h1>
-<p>This page doesn't exist.</p>
-<a href="/">Go home</a>
-```
-
-If no custom `404.html` is found, Tachyon serves a built-in styled 404 page.
-
-## Building for Production
-
-```bash
-tach.bundle
-```
-
-Outputs compiled assets to `dist/`, including prerendered route files such as `dist/index.html` and `dist/docs/index.html`.
-
-To preview the built output locally:
-
-```bash
-tach.preview
-```
-
-To serve `dist/` and keep it rebuilding from source changes in one command:
-
-```bash
-tach.preview --watch
-```
-
-If you want to serve `dist/` with Bun's HTML/static tooling during development, keep the bundle fresh with:
-
-```bash
-tach.bundle --watch
-```
-
-That watch mode rebuilds `dist/` when files change in:
-
-- `routes/`
-- `components/`
-- `assets/`
-- `main.js`
-- `package.json`
-
-This is the mode to pair with a static server that watches `dist/`.
-
-If you are building a full-stack Tachyon app and want the app server plus the frontend prereview together, use:
-
-```bash
-tach.serve --full
-```
-
-That runs the normal Tachyon dev server while also serving the bundled frontend from `dist/` on the same port. Browser-style `Accept: text/html` requests receive the frontend, while API-style requests still hit the route handlers.
-If you only need the static frontend preview workflow, `tach.preview --catch` is the simpler option.
-
-Then when `NODE_ENV=production` gets set without `--full`, Tachyon uses the production HTML shell fallback and does not inject the development HMR client. Use `tach.serve --full` when the same production server should serve bundled frontend assets from `dist/`.
-
-### Static Hosting
-
-The bundled output is designed to work on static hosts:
-
-- `dist/index.html` serves the root route
-- nested pages are emitted as `dist/<route>/index.html`
-- browser modules and assets are emitted alongside them in `dist/pages`, `dist/layouts`, `dist/components`, `dist/assets`, and `dist/modules`
-
-That means you can deploy `dist/` directly to platforms like Amplify, Netlify, Cloudflare Pages, GitHub Pages, or any CDN/object-store static host.
-
-### AWS Amplify
-
-An example Amplify build file is included at [`examples/amplify.yml`](examples/amplify.yml).
-
-Typical project setup:
-
-```yaml
-version: 1
-frontend:
-  phases:
-    preBuild:
-      commands:
-        - curl -fsSL https://bun.sh/install | bash
-        - export PATH="$HOME/.bun/bin:$PATH"
-        - bun install --frozen-lockfile
-    build:
-      commands:
-        - export PATH="$HOME/.bun/bin:$PATH"
-        - bunx @d31ma/tachyon tach.bundle
-  artifacts:
-    baseDirectory: dist
-    files:
-      - '**/*'
-```
-
-If your app depends on a local `main.js`, `main.ts`, `main.tsx`, or `main.jsx`, plus components, layouts, or nested `HTML` routes, `tach.bundle` will include them automatically. If that entry imports CSS, Tachyon also emits `/main.css` and links it from generated HTML shells.
-
-### Recommended Deploy Flow
-
-```bash
-tach.bundle
-tach.preview
-```
-
-Use `tach.preview` to verify:
-
-- `/` resolves to the prerendered homepage
-- nested routes like `/docs` resolve to `dist/docs/index.html`
-- assets such as `/main.js`, optional `/main.css`, and `/assets/*` load correctly
-
-Once that looks good, deploy the `dist/` directory.
+Notes:
+
+- there is no `dist/layouts/` output in v2
+- page shells are represented through `shells.json`
+- static assets are emitted under `dist/shared/assets/`
+- the runtime now uses one app shell template and injects the HMR client only in development
+
+## Commands
+
+- `yon.serve` detects `browser/` and `server/` contents and serves the frontend, backend, or full-stack app
+- `tac.bundle` builds `dist/`
+- `tac.bundle --watch` keeps `dist/` fresh
+- `tac.preview` serves `dist/`
+- `tac.preview --watch` rebuilds and previews frontend output together
 
 ## Operations
 
-Tachyon exposes built-in health and readiness endpoints at `/health`, `/healthz`, `/ready`, and `/readyz`. They always return HTTP `200`, skip auth and rate limiting, and send `Cache-Control: no-store`.
+Built-in endpoints:
 
-```json
-{ "status": "ok", "uptimeMs": 12345 }
-```
+- `/health`
+- `/healthz`
+- `/ready`
+- `/readyz`
 
-Use these for uptime checks, container readiness probes, or load balancer health checks.
+Tachyon also supports:
 
-### Shared Rate Limiting
+- origin-aware CORS rejection before handler execution
+- proxy-aware request context
+- in-memory rate limiting
+- middleware-provided distributed rate limiting
+- cache headers for runtime assets, chunks, shared assets, and shared data
+- document-request detection using browser navigation headers such as `Sec-Fetch-Dest` / `Sec-Fetch-Mode`, with `Accept: text/html` kept as a fallback
 
-For multi-instance deployments, export a custom `rateLimiter` from your middleware module:
+## Distributed Rate Limiting
 
-```ts
-import type { MiddlewareModule } from '@d31ma/tachyon'
+Export a `rateLimiter` from `middleware.js` to use a shared backend.
 
-const middleware: MiddlewareModule = {
-  rateLimiter: {
-    async take(request, context) {
-      const resetAt = Date.now() + 60_000
-
-      // Replace this with a shared counter in Redis, Upstash, SQL, etc.
-      const remaining = 9
-
-      return {
-        allowed: remaining >= 0,
-        limit: 10,
-        remaining,
-        resetAt,
-        headers: {
-          'X-RateLimit-Key': context.ipAddress,
-        },
-      }
-    },
-  },
-}
-
-export default middleware
-```
-
-The limiter should return `allowed`, `limit`, `remaining`, and `resetAt` (unix epoch milliseconds). Tachyon adds the standard `RateLimit-*` headers automatically and returns HTTP `429` when `allowed` is `false`.
-
-The repo also includes a working Upstash Redis example at [`examples/middleware.upstash.ts`](examples/middleware.upstash.ts). Point Tachyon at it with `MIDDLEWARE_PATH=./middleware.upstash`, then set:
+Required env vars:
 
 ```env
 UPSTASH_REDIS_REST_URL=
@@ -707,45 +542,23 @@ RATE_LIMIT_WINDOW_MS=60000
 UPSTASH_RATE_LIMIT_PREFIX=tachyon:rate-limit
 ```
 
-That example uses Upstash's REST API plus a Redis Lua script so the increment and TTL setup stay atomic across multiple app instances. Reference: [Upstash REST API](https://upstash.com/docs/redis/features/restapi).
-
-## Cache Behavior
-
-Tachyon applies cache headers automatically across the runtime and preview servers:
-
-- HTML responses, `/routes.json`, `/layouts.json`, and stable runtime entry files such as `/main.js`, `/main.css`, `/spa-renderer.js`, and `/hot-reload-client.js` use `Cache-Control: no-cache, must-revalidate`
-- Fingerprinted Bun chunk files like `/chunk-*.js` use `Cache-Control: public, max-age=31536000, immutable`
-- Static `/assets/*` files use `Cache-Control: public, max-age=3600`
-- Generated frontend module routes such as `/pages/*`, `/layouts/*`, `/components/*`, and `/modules/*` use `Cache-Control: no-cache, must-revalidate`
-
 ## Security
 
-Tachyon applies the following protections by default:
+- security headers on all responses
+- Bun password verification for hashed Basic Auth
+- request body and parameter limits
+- handler timeout enforcement
+- JWT expiry rejection when decodable
+- route request/response validation through `OPTIONS`
 
-| Area | Protection |
-|------|-----------|
-| **Response headers** | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy`, `Referrer-Policy` on every response; `Strict-Transport-Security` is opt-in with `ENABLE_HSTS=true` |
-| **Basic Auth** | Supports plaintext `BASIC_AUTH` with `timingSafeEqual`, or Bun-backed hashed verification via `BASIC_AUTH_HASH` |
-| **Dependency bundling** | Frontend `/modules/*.js` output uses Bun's native package resolver, including `exports`-based package entrypoints |
-| **JWT** | Raw bearer tokens are exposed with `verified: false`; expired JWTs are rejected when their `exp` claim can be decoded |
-| **Trusted proxy support** | When `TRUST_PROXY` is configured, Tachyon accepts `Forwarded` / `X-Forwarded-*` metadata only from trusted peers and surfaces the resolved client IP, protocol, and host in request context |
-| **Rate limiting** | Optional per-IP limiting via `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS`; over-limit requests return HTTP `429` with standard rate-limit headers |
-| **Request body limits** | Request bodies exceeding `MAX_BODY_BYTES` return HTTP 413 before handler execution |
-| **Template escaping** | Text interpolation and dynamic attributes are escaped by default; raw HTML requires `{!expr}` |
-| **Process timeout** | Handler processes that exceed `HANDLER_TIMEOUT_MS` are killed automatically |
-| **Parameter limits** | Query and path parameters exceeding `MAX_PARAM_LENGTH` characters return HTTP 400 |
-| **Error responses** | Unhandled server errors and handler `stderr` failures return generic messages; internal details are logged server-side with the request id |
-| **HMR** | Development HMR defaults to `127.0.0.1`, limits clients with `HMR_MAX_CLIENTS`, and requires `HMR_TOKEN` when exposed beyond loopback |
-| **CORS** | When `ALLOW_ORIGINS` is set, disallowed cross-origin requests return HTTP 403 before handler execution; wildcard `ALLOW_ORIGINS=*` combined with `ALLOW_CREDENTIALS=true` is not recommended |
+## Production Notes
 
-For production deployments:
-- Prefer `BASIC_AUTH_HASH` over plaintext `BASIC_AUTH` in production
-- Set `ALLOW_ORIGINS` to your application's domain instead of `*`
-- Set `ENABLE_HSTS=true` only when serving HTTPS directly or behind a trusted HTTPS proxy
-- Set `TRUST_PROXY` to `loopback` or an explicit proxy allowlist when running behind nginx, Caddy, Cloudflare Tunnel, or another reverse proxy
-- Enable `RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS` if you want Tachyon to enforce basic per-IP throttling itself
+- prefer `BASIC_AUTH_HASH`
+- set explicit `ALLOW_ORIGINS`
+- configure `TRUST_PROXY` when behind nginx, Caddy, or Cloudflare
+- use a shared rate limiter for multi-instance deployments
+- validate the built frontend with `tac.preview` before deploy
 
 ## License
 
 MIT
-

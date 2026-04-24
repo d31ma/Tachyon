@@ -1,0 +1,19 @@
+:root {
+  --demo-ring: rgba(14, 165, 233, 0.16);
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+::selection {
+  background: var(--demo-ring);
+}

@@ -1,0 +1,16 @@
+<div class="panel rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="header flex items-center justify-between gap-3">
+        <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">{label}</span>
+        <span class="inline-flex min-w-12 items-center justify-center rounded-full bg-sky-600 px-3 py-1 text-sm font-bold text-white">{$clicks}</span>
+    </div>
+    <p class="copy m-0 text-sm text-slate-500">{release} - persists across reloads</p>
+    <div class="value text-4xl font-black tracking-tight text-slate-900">{$clicks}</div>
+    <div class="actions flex gap-2">
+        <button type="button" class="inline-flex items-center justify-center rounded-xl border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-50" @click="$clicks = 0">
+            Reset
+        </button>
+        <button type="button" class="inline-flex items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-sky-700" @click="$clicks++">
+            Click
+        </button>
+    </div>
+</div>
