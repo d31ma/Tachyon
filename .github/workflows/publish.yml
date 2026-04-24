@@ -163,7 +163,7 @@ jobs:
             bun install --frozen-lockfile
           fi
 
-          export BUN_CONFIG_REGISTRY="https://npm.pkg.github.com"
+          export BUN_CONFIG_REGISTRY="https://x-access-token:${NODE_AUTH_TOKEN}@npm.pkg.github.com"
 
           bun test tachyon/yon-contract.test.mjs tachyon/serve-contract.test.mjs --timeout 120000
 
