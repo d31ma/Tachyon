@@ -50,9 +50,13 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Install example dependencies
         run: cd examples && bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Install Playwright Chromium
         run: bunx playwright install chromium
@@ -131,6 +135,8 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Pack package under test
         run: bun pm pack --filename "$TACHYON_PACKAGE_TARBALL" --quiet
