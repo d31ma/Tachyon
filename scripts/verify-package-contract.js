@@ -42,6 +42,7 @@ const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'tachyon-package-contract-
 const tarballPath = path.join(tempRoot, 'tachyon.tgz');
 const consumerRoot = path.join(tempRoot, 'consumer');
 const starterRoot = path.join(consumerRoot, 'starter-app');
+const githubPackagesToken = process.env.NODE_AUTH_TOKEN || process.env.GITHUB_TOKEN || '';
 /** @param {string} filePath */
 async function fileExists(filePath) {
     try {
@@ -59,8 +60,20 @@ try {
     assertRun(run('bun', ['pm', 'pack', '--filename', tarballPath, '--quiet'], repoRoot), 'bun pm pack');
     await mkdir(consumerRoot, { recursive: true });
     const npmrcPath = path.join(repoRoot, '.npmrc');
+    const consumerNpmrcPath = path.join(consumerRoot, '.npmrc');
     if (await fileExists(npmrcPath)) {
-        await copyFile(npmrcPath, path.join(consumerRoot, '.npmrc'));
+        await copyFile(npmrcPath, consumerNpmrcPath);
+    }
+    if (githubPackagesToken) {
+        const existingNpmrc = await fileExists(consumerNpmrcPath)
+            ? await readFile(consumerNpmrcPath, 'utf8')
+            : '';
+        await writeFile(consumerNpmrcPath, [
+            existingNpmrc.trimEnd(),
+            existingNpmrc.includes('@d31ma:registry=') ? '' : '@d31ma:registry=https://npm.pkg.github.com',
+            `//npm.pkg.github.com/:_authToken=${githubPackagesToken}`,
+            '',
+        ].filter(Boolean).join('\n'));
     }
     await writeFile(path.join(consumerRoot, 'package.json'), JSON.stringify({
         private: true,
