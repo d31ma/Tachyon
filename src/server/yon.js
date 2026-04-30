@@ -1,12 +1,14 @@
 // @ts-check
 import path from 'path';
-import Router from "./route-handler.js";
-import Pool from "./process-pool.js";
-import Validate from "./schema-validator.js";
-import OpenAPI from "./openapi.js";
-import Telemetry from './telemetry.js';
-import { withPublicBrowserEnv } from './browser-env.js';
-import logger from './logger.js';
+import TTID from '@d31ma/ttid';
+import Router from "./http/route-handler.js";
+import Pool from "./process/process-pool.js";
+import Validate from "./http/schema-validator.js";
+import OpenAPI from "./openapi/openapi.js";
+import FyloBrowser from "./fylo-browser/fylo-browser.js";
+import Telemetry from './observability/telemetry.js';
+import { withPublicBrowserEnv } from './http/browser-env.js';
+import logger from './observability/logger.js';
 
 /**
  * @typedef {import("bun").BunRequest} BunRequest
@@ -103,16 +105,16 @@ export default class Yon {
     }
     /** @param {string | undefined} stderr */
     static handlerErrorBody(stderr) {
-        if (process.env.DEV === 'true' && process.env.DEV_ERROR_DETAILS === 'true' && stderr) {
+        if (process.env.YON_DEV === 'true' && process.env.YON_DEV_ERROR_DETAILS === 'true' && stderr) {
             return JSON.stringify({ detail: stderr });
         }
         return JSON.stringify({ detail: 'Internal server error' });
     }
     /** @param {string} shellHTML */
     static withMainStylesheet(shellHTML) {
-        if (!Router.reqRoutes['/main.css'] || shellHTML.includes('/main.css'))
+        if (!Router.reqRoutes['/imports.css'] || shellHTML.includes('/imports.css'))
             return shellHTML;
-        return shellHTML.replace('</head>', '    <link rel="stylesheet" href="/main.css">\n</head>');
+        return shellHTML.replace('</head>', '    <link rel="stylesheet" href="/imports.css">\n</head>');
     }
     /**
      * @param {{ includeHotReloadClient?: boolean }} [options]
@@ -120,10 +122,13 @@ export default class Yon {
      */
     static async renderShellHTML(options = {}) {
         const includeHotReloadClient = options.includeHotReloadClient === true;
+        const fyloBrowserPath = process.env.YON_DATA_BROWSER_PATH || '/_fylo';
         let shellHTML = await Bun.file(`${import.meta.dir}/../runtime/shells/app.html`).text();
-        shellHTML = shellHTML.replace('<!--__TACHYON_DEV_HEAD__-->', includeHotReloadClient
-            ? '    <script type="module" src="/hot-reload-client.js"></script>'
-            : '');
+        shellHTML = shellHTML
+            .replace('<!--__TACHYON_DEV_HEAD__-->', includeHotReloadClient
+                ? '    <script type="module" src="/hot-reload-client.js"></script>'
+                : '')
+            .replace('__FYLO_BROWSER_PATH__', fyloBrowserPath);
         return withPublicBrowserEnv(Yon.withMainStylesheet(shellHTML));
     }
 
@@ -219,7 +224,7 @@ export default class Yon {
     }
     /** @returns {string[]} */
     static trustedProxyEntries() {
-        return Yon.splitHeaderList(process.env.TRUST_PROXY);
+        return Yon.splitHeaderList(process.env.YON_TRUST_PROXY);
     }
     /** @param {string} address */
     static isTrustedProxy(address) {
@@ -267,8 +272,8 @@ export default class Yon {
     /** @returns {{ max: number, windowMs: number }} */
     static getRateLimitConfig() {
         return {
-            max: Number(process.env.RATE_LIMIT_MAX || 0),
-            windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 0),
+            max: Number(process.env.YON_RATE_LIMIT_MAX || 0),
+            windowMs: Number(process.env.YON_RATE_LIMIT_WINDOW_MS || 0),
         };
     }
     /**
@@ -350,6 +355,7 @@ export default class Yon {
     static async logHandlerResourceUsage(proc, context, handler, responseBytes, errorBytes) {
         const exitCode = await proc.exited.catch(() => null);
         const usage = proc.resourceUsage();
+        const loggedHandler = Yon.routeRelativeHandler(handler);
         if (!usage) {
             const summary = {
                 'process.pid': proc.pid,
@@ -359,7 +365,7 @@ export default class Yon {
             };
             Yon.handlerLogger.debug('Handler resource usage unavailable', {
                 requestId: context.requestId,
-                handler,
+                handler: loggedHandler,
                 pid: proc.pid,
                 exitCode,
                 responseBytes,
@@ -383,7 +389,7 @@ export default class Yon {
         };
         Yon.handlerLogger.info('Handler resource usage', {
             requestId: context.requestId,
-            handler,
+            handler: loggedHandler,
             pid: proc.pid,
             exitCode,
             cpuUserUs: usage.cpuTime.user,
@@ -553,7 +559,18 @@ export default class Yon {
         if (incoming && incoming.length <= Yon.MAX_REQUEST_ID_LENGTH) {
             return incoming;
         }
-        return crypto.randomUUID();
+        return TTID.generate();
+    }
+    /**
+     * @param {string} handler
+     * @returns {string}
+     */
+    static routeRelativeHandler(handler) {
+        const relative = path.relative(Router.routesPath, handler).replaceAll(path.sep, '/');
+        if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
+            return `/${relative}`;
+        }
+        return handler.replaceAll(path.sep, '/');
     }
     /**
      * @param {Response} response
@@ -640,11 +657,11 @@ export default class Yon {
      */
     static async serveRequest(request, handler, stdin, context, config) {
         const responseHeaders = Router.getHeaders(request);
-        if ((process.env.BASIC_AUTH || process.env.BASIC_AUTH_HASH)
-            && !await Yon.isAuthorizedClient(stdin.headers?.authorization, process.env.BASIC_AUTH, process.env.BASIC_AUTH_HASH)) {
+        if ((process.env.YON_BASIC_AUTH || process.env.YON_BASIC_AUTH_HASH)
+            && !await Yon.isAuthorizedClient(stdin.headers?.authorization, process.env.YON_BASIC_AUTH, process.env.YON_BASIC_AUTH_HASH)) {
             return Response.json({ detail: "Unauthorized Client" }, { status: 401, headers: { ...responseHeaders, "WWW-Authenticate": 'Basic realm="Secure Area"' } });
         }
-        if (process.env.VALIDATE !== undefined) {
+        if (process.env.YON_VALIDATE !== undefined) {
             try {
                 await Validate.validateData(handler, "req", stdin);
             }
@@ -657,7 +674,7 @@ export default class Yon {
             const stream = new ReadableStream({
                 async start(controller) {
                     for await (const { body, status } of Yon.getStreamResponse([handler], stdin, context, config)) {
-                        if (process.env.VALIDATE !== undefined) {
+                        if (process.env.YON_VALIDATE !== undefined) {
                             try {
                                 await Validate.validateData(handler, status === 200 ? "res" : "err", body);
                             }
@@ -676,9 +693,9 @@ export default class Yon {
             return new Response(stream, { headers: { ...responseHeaders, "Content-Type": Yon.STREAM_MIME_TYPE } });
         }
         const { body, status } = await Yon.getResponse([handler], stdin, context, config);
-        const matchedStatus = body ? Validate.matchStatusCode(handler, body) : null;
+        const matchedStatus = body ? await Validate.matchStatusCode(handler, body) : null;
         const finalStatus = matchedStatus ?? status;
-        if (process.env.VALIDATE !== undefined) {
+        if (process.env.YON_VALIDATE !== undefined) {
             const ioKey = matchedStatus ? String(matchedStatus) : (status === 200 ? "res" : "err");
             try {
                 await Validate.validateData(handler, ioKey, body);
@@ -723,11 +740,138 @@ export default class Yon {
         return { token, verified: false };
     }
     /**
+     * Wraps an inline route handler (e.g. FYLO browser, OpenAPI docs) with the
+     * same security and observability pipeline that file-system-routed handlers
+     * receive: CORS origin rejection, rate limiting, middleware.before/after,
+     * Basic Auth, telemetry spans, request-id propagation, and request logging.
+     *
+     * @param {(request: Request, server?: BunServer) => Promise<Response> | Response} handler
+     * @param {{ route?: string }} [options]
+     * @returns {(request?: Request, server?: BunServer) => Promise<Response>}
+     */
+    static wrapInlineRoute(handler, options = {}) {
+        const routeLabel = options.route || 'inline';
+        return async (request = new Request('http://localhost/'), server) => {
+            const start = Date.now();
+            const url = new URL(request.url);
+            const pathname = url.pathname;
+            const method = request.method;
+            const clientInfo = Yon.getClientInfo(request, server?.requestIP(/** @type {BunRequest} */ (request))?.address ?? null);
+            const requestId = Yon.getRequestId(request);
+            /** @type {RequestContext} */
+            const context = {
+                requestId,
+                ipAddress: clientInfo.ipAddress,
+                protocol: clientInfo.protocol,
+                host: clientInfo.host,
+            };
+            const requestSpan = Telemetry.startRequestSpan(request, {
+                requestId,
+                route: routeLabel,
+                method,
+                path: pathname,
+                protocol: clientInfo.protocol,
+                host: clientInfo.host,
+                ipAddress: clientInfo.ipAddress,
+            });
+            if (requestSpan) {
+                context.traceId = requestSpan.traceId;
+                context.spanId = requestSpan.spanId;
+                context.traceFlags = requestSpan.traceFlags;
+                context.traceState = requestSpan.traceState;
+            }
+            /** @type {Response | undefined} */
+            let res;
+            let requestKind = 'inline';
+            /** @type {Record<string, string> | undefined} */
+            let responseHeaders;
+            try {
+                const originRejection = Yon.rejectDisallowedOrigin(request);
+                if (originRejection) {
+                    requestKind = 'cors';
+                    res = originRejection;
+                } else {
+                    const rateLimit = await Yon.takeRateLimit(request, context, pathname);
+                    responseHeaders = rateLimit.headers;
+                    if (rateLimit.rejection) {
+                        requestKind = 'rate-limit';
+                        res = rateLimit.rejection;
+                    }
+                }
+                if (!res && Router.middleware?.before) {
+                    const earlyResponse = await Router.middleware.before(request, context);
+                    if (earlyResponse) {
+                        requestKind = 'middleware';
+                        res = earlyResponse;
+                    }
+                }
+                if (!res && (process.env.YON_BASIC_AUTH || process.env.YON_BASIC_AUTH_HASH)) {
+                    const authorization = request.headers.get('authorization');
+                    if (!await Yon.isAuthorizedClient(authorization, process.env.YON_BASIC_AUTH, process.env.YON_BASIC_AUTH_HASH)) {
+                        res = Response.json(
+                            { detail: 'Unauthorized Client' },
+                            { status: 401, headers: { ...Router.getHeaders(request), 'WWW-Authenticate': 'Basic realm="Secure Area"' } },
+                        );
+                    }
+                }
+                if (!res) {
+                    res = await handler(request, server);
+                    if (Router.middleware?.after) {
+                        res = await Router.middleware.after(request, res, context);
+                    }
+                }
+            } catch (err) {
+                if (err instanceof Response) {
+                    res = err;
+                } else {
+                    Yon.processLogger.error('Unhandled inline route error', {
+                        err,
+                        requestId,
+                        method,
+                        path: pathname,
+                        route: routeLabel,
+                    });
+                    res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request) });
+                }
+            }
+            if (!res) {
+                res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request) });
+            }
+            res = Yon.withAdditionalHeaders(res, responseHeaders);
+            res = Yon.withCacheControl(res, request);
+            res = Yon.withRequestId(res, requestId);
+            res = Telemetry.withTraceHeaders(res, requestSpan);
+            await Telemetry.endSpan(requestSpan, {
+                statusCode: res.status,
+                attributes: {
+                    'tachyon.request.kind': requestKind,
+                    'http.response.status_code': res.status,
+                    'http.response.cache_control': res.headers.get('cache-control') ?? undefined,
+                },
+            });
+            Yon.requestLogger.info('Request completed', {
+                requestId,
+                traceId: context.traceId,
+                method,
+                path: pathname,
+                route: routeLabel,
+                kind: requestKind,
+                status: res.status,
+                durationMs: Date.now() - start,
+                ipAddress: clientInfo.ipAddress,
+            });
+            return res;
+        };
+    }
+    /**
      * Registers all discovered routes as Bun server route handlers.
      * Must be called after {@link Router.validateRoutes}.
      */
     static createServerRoutes() {
+        /** @type {(handler: (request: Request, server?: BunServer) => Promise<Response> | Response, options?: { route?: string }) => (request?: Request, server?: BunServer) => Promise<Response>} */
+        const wrapRoute = (handler, options) => Yon.wrapInlineRoute(handler, options);
         OpenAPI.registerRoutes();
+        FyloBrowser.registerRoutes(wrapRoute);
         for (const healthPath of [...Yon.healthRoutePaths, ...Yon.readyRoutePaths]) {
             if (!Router.reqRoutes[healthPath])
                 Router.reqRoutes[healthPath] = {};
@@ -812,7 +956,7 @@ export default class Yon {
                     else if (method === "OPTIONS") {
                         requestKind = 'options';
                         const routePath = route === '/' ? '' : Router.routeToFilesystemPath(route);
-                        res = new Response(Bun.file(`${Router.routesPath}${routePath}/OPTIONS`), { status: 200, headers: { ...Router.getHeaders(request), 'Content-Type': 'application/json' } });
+                        res = new Response(Bun.file(`${Router.routesPath}${routePath}/${Router.optionsFileName}`), { status: 200, headers: { ...Router.getHeaders(request), 'Content-Type': 'application/json' } });
                     }
                     else {
                         if (Router.middleware?.before) {

@@ -1,0 +1,68 @@
+{
+    "DELETE": {
+        "request": {
+            "paths": {
+                "version": "^v[0-9]+$"
+            }
+        },
+        "200": {
+            "message": "^Hello from Yon version service!$",
+            "method": "^DELETE$",
+            "version": "^v[0-9]+$",
+            "context": {
+                "requestId": "^.{1,200}$",
+                "ipAddress": "^[0-9a-fA-F:.]+$",
+                "protocol": "^https?$",
+                "host": "^.+$"
+            }
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        }
+    },
+    "GET": {
+        "request": {
+            "paths": {
+                "version": "^v[0-9]+$"
+            }
+        },
+        "200": {
+            "message": "^Hello from Yon version service!$",
+            "version": "^v[0-9]+$",
+            "context": {
+                "requestId": "^.{1,200}$",
+                "ipAddress": "^[0-9a-fA-F:.]+$",
+                "protocol": "^https?$",
+                "host": "^.+$"
+            }
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        }
+    },
+    "PATCH": {
+        "request": {
+            "paths": {
+                "version": "^v[0-9]+$"
+            }
+        },
+        "200": {
+            "message": "^Hello from Yon version service!$",
+            "method": "^PATCH$",
+            "version": "^v[0-9]+$",
+            "path": {
+                "version": "^v[0-9]+$"
+            },
+            "body?": {},
+            "context": {
+                "requestId": "^.{1,200}$",
+                "ipAddress": "^[0-9a-fA-F:.]+$",
+                "protocol": "^https?$",
+                "host": "^.+$"
+            }
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        }
+    }
+}

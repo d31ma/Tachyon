@@ -390,6 +390,89 @@ describe('render-template browser-side (with window)', () => {
         expect(JSON.parse(stored ?? 'null')).toEqual({ persisted: true });
         windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$draft');
     });
+    test('persistent $ fields use unprefixed props as defaults without overwriting stored values', async () => {
+        windowInstance.sessionStorage.setItem('tac:__TY_MODULE_PATH__:fixture:$draft', JSON.stringify('stored'));
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const controller = { $draft: 'init' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture', draft: 'prop-default' })
+            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            __ty_test__.val = controller.$draft
+        `);
+        await factory();
+        expect(r.val).toBe('stored');
+        expect(JSON.parse(windowInstance.sessionStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$draft') ?? 'null')).toBe('stored');
+        windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$draft');
+    });
+    test('persistent $ fields fall back to unprefixed props when storage is empty', async () => {
+        windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$draft');
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const controller = { $draft: 'init' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture', draft: 'prop-default' })
+            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            __ty_test__.val = controller.$draft
+        `);
+        await factory();
+        expect(r.val).toBe('prop-default');
+        expect(JSON.parse(windowInstance.sessionStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$draft') ?? 'null')).toBe('prop-default');
+        windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$draft');
+    });
+    test('companion public field assignments schedule one batched rerender', async () => {
+        const r = testResults();
+        r.calls = 0;
+        (/** @type {any} */ (windowInstance)).__ty_rerender = () => { r.calls += 1; };
+        const factory = await buildTestFactory(`
+            const controller = { count: 0, label: 'idle' }
+            const helpers = __ty_helpers__.createTacHelpers({})
+            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            controller.count = 1
+            controller.label = 'ready'
+            __ty_test__.count = controller.count
+            __ty_test__.label = controller.label
+        `);
+        await factory();
+        expect(r.count).toBe(1);
+        expect(r.label).toBe('ready');
+        expect(r.calls).toBe(1);
+        delete (/** @type {any} */ (windowInstance)).__ty_rerender;
+    });
+    test('companion persistent field assignments write storage and schedule rerender', async () => {
+        windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$draft');
+        const r = testResults();
+        r.calls = 0;
+        (/** @type {any} */ (windowInstance)).__ty_rerender = () => { r.calls += 1; };
+        const factory = await buildTestFactory(`
+            const controller = { $draft: 'init' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            controller.$draft = 'saved'
+            __ty_test__.value = controller.$draft
+        `);
+        await factory();
+        expect(r.value).toBe('saved');
+        expect(JSON.parse(windowInstance.sessionStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$draft') ?? 'null')).toBe('saved');
+        expect(r.calls).toBe(1);
+        delete (/** @type {any} */ (windowInstance)).__ty_rerender;
+        windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$draft');
+    });
+    test('companion field assignments during event render do not schedule an extra rerender', async () => {
+        const r = testResults();
+        r.calls = 0;
+        (/** @type {any} */ (windowInstance)).__ty_rerender = () => { r.calls += 1; };
+        const factory = await buildTestFactory(`
+            const controller = { count: 0 }
+            const helpers = __ty_helpers__.createTacHelpers({})
+            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            __ty_helpers__.setRenderContext({ elemId: 'ty-event-0' })
+            controller.count = 1
+            __ty_helpers__.setRenderContext({ elemId: null })
+        `);
+        await factory();
+        await Promise.resolve();
+        expect(r.calls).toBe(0);
+        delete (/** @type {any} */ (windowInstance)).__ty_rerender;
+    });
     test('rerender calls window.__ty_rerender', async () => {
         const r = testResults();
         r.called = false;
@@ -433,6 +516,7 @@ describe('render-template browser-side (with window)', () => {
             return new Response('fresh-get', { status: 200 });
         });
         globalThis.fetch = fetchStub;
+        (/** @type {any} */ (globalThis)).__ty_native_fetch__ = fetchStub;
         (/** @type {any} */ (windowInstance)).fetch = fetchStub;
         const factory = await buildTestFactory(`
             async function run() {

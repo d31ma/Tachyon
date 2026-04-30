@@ -1,0 +1,18 @@
+<div class="surface" id="frontend">
+    <div class="surface-head">
+        <h2 class="md-typescale-title-large">Tac helpers</h2>
+        <span class="chip">frontend</span>
+    </div>
+    <p class="md-typescale-body-medium muted">Theme and draft text below persist automatically because the class fields are prefixed with `$`.</p>
+    <textarea
+        class="field-control"
+        rows="5"
+        aria-label="Draft note"
+        placeholder="Draft note"
+        :value="$draftNote"
+    ></textarea>
+    <div class="surface-actions">
+        <button type="button" class="button button-text" @click="toggleTheme()">Toggle theme</button>
+        <button type="button" class="button button-text" @click="clearDraft()">Clear draft</button>
+    </div>
+</div>

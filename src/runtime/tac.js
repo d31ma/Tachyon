@@ -40,6 +40,7 @@ const noopHelpers = {
     provide: () => { },
     rerender: () => { },
 };
+
 export default class Tac {
     /** @type {TacProps} */
     props;
@@ -48,81 +49,10 @@ export default class Tac {
 
     /**
      * @param {TacProps} [props]
-     * @param {TacRuntimeBindings} [helpers]
+     * @param {TacRuntimeBindings} [tac]
      */
-    constructor(props = {}, helpers = noopHelpers) {
+    constructor(props = {}, tac = noopHelpers) {
         this.props = props;
-        this.tac = helpers;
-        this.__bindTacPersistence__();
-    }
-
-    /** @param {TacRuntimeBindings} helpers */
-    __attachTacHelpers__(helpers) {
-        this.tac = helpers;
-        this.__bindTacPersistence__();
-    }
-
-    __bindTacPersistence__() {
-        this.tac.bindPersistentFields(/** @type {Record<string, unknown>} */ (this));
-    }
-    get isBrowser() {
-        return this.tac.isBrowser;
-    }
-    get isServer() {
-        return this.tac.isServer;
-    }
-
-    /**
-     * @template T
-     * @param {string} key
-     * @param {T} [fallback]
-     * @returns {T | undefined}
-     */
-    env(key, fallback) {
-        return this.tac.env(key, fallback);
-    }
-
-    /**
-     * @param {string} name
-     * @param {unknown} [detail]
-     * @returns {boolean}
-     */
-    emit(name, detail) {
-        return this.tac.emit(name, detail);
-    }
-
-    /**
-     * @param {RequestInfo | URL} input
-     * @param {RequestInit} [init]
-     * @returns {Promise<Response>}
-     */
-    fetch(input, init) {
-        return this.tac.fetch(input, init);
-    }
-
-    /**
-     * @template T
-     * @param {string} key
-     * @param {T} [fallback]
-     * @returns {T | undefined}
-     */
-    inject(key, fallback) {
-        return /** @type {T | undefined} */ (this.tac.inject(key, fallback));
-    }
-
-    /** @param {() => void | Promise<void>} fn */
-    onMount(fn) {
-        this.tac.onMount(fn);
-    }
-
-    /**
-     * @param {string} key
-     * @param {unknown} value
-     */
-    provide(key, value) {
-        this.tac.provide(key, value);
-    }
-    rerender() {
-        this.tac.rerender();
+        this.tac = tac;
     }
 }

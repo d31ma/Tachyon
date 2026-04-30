@@ -1,10 +1,19 @@
 node_modules
 .env
 dist
+coverage
 test-results
 .DS_Store
-src/runtime/route-manifest.json
-src/runtime/layout-manifest.json
+__pycache__/
+*.pyc
+.claude/
+.gemini/
+src/shared/manifests/route-manifest.json
+examples/db/collections/**
+examples/db/collections.stale-*
+!examples/db/collections/
+!examples/db/collections/.gitignore
+!examples/db/collections/.gitkeep
 
 # Graphify
 .graphify_*
@@ -13,3 +22,10 @@ graphify-out/converted/
 graphify-out/transcripts/
 graphify-out/manifest.json
 graphify-out/.graphify_python
+CLAUDE.md
+AGENTS.md
+.github/copilot-instructions.md
+
+# Untrack markdown except README
+*.md
+!README.md

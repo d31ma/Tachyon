@@ -1,0 +1,28 @@
+<div class="surface panel-wide">
+    <div class="surface-head">
+        <div class="surface-head-text">
+            <h2 class="md-typescale-title-large">Users</h2>
+            <p class="md-typescale-body-small muted">Reads <code>fylo.users.find()</code> directly from the browser. The <code>fylo</code> global is compiler-injected - no manual import.</p>
+        </div>
+        <span class="chip">{loadingState()}</span>
+    </div>
+    <logic :if="users.length > 0">
+        <ul class="list">
+            <loop :for="const user of users">
+                <li class="list-item">
+                    <div class="list-item-text">
+                        <strong>{user.email}</strong>
+                        <span>{user.role} - {user.id}</span>
+                    </div>
+                    <span class="chip">{user.role}</span>
+                </li>
+            </loop>
+        </ul>
+    </logic>
+    <logic :if="users.length === 0 && !loading">
+        <p class="md-typescale-body-medium muted">No users yet. Run <code>bun run seed</code> to import db/seed/users/*.json.</p>
+    </logic>
+    <logic :if="error">
+        <div class="users-error md-typescale-body-medium">{error}</div>
+    </logic>
+</div>

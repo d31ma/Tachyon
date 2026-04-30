@@ -1,0 +1,11 @@
+{
+    "POST": {
+        "200": {
+            "message": "^Hello from Java!$",
+            "requestId": "^.{1,200}$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        }
+    }
+}

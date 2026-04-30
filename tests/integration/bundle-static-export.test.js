@@ -50,9 +50,9 @@ async function createSeparatedStructureFixture() {
         name: 'tachyon-separated-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'main.js'), 'import "../styles/app.css";\n');
+    await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'imports.js'), 'import "../styles/app.css";\n');
     await writeFile(path.join(root, 'browser', 'shared', 'styles', 'app.css'), 'body { background: rgb(1, 2, 3); }\n');
-    await writeFile(path.join(root, 'server', 'routes', 'GET'), '#!/usr/bin/env bun\nBun.stdout.write(JSON.stringify({ ok: true }))\n');
+    await writeFile(path.join(root, 'server', 'routes', 'GET.js'), 'export async function handler() {\n  return { ok: true }\n}\n');
     await writeFile(path.join(root, 'browser', 'components', 'hero.html'), '<section class="hero">Hero</section>');
     await writeFile(path.join(root, 'browser', 'pages', 'index.html'), `<script>document.title = "Separated Home"</script><div class="shell"><slot /><hero /></div>`);
     await writeFile(path.join(root, 'browser', 'pages', 'docs', 'index.html'), `<script>document.title = "Separated Docs"</script><p>Docs from pages</p>`);
@@ -165,14 +165,14 @@ async function createMainEntrypointFixture() {
         private: true,
     }, null, 2));
     await writeFile(path.join(root, 'routes', 'index.html'), `<script>document.title = "Main Entry Fixture"</script><main><h1>Main Entry Fixture</h1></main>`);
-    await writeFile(path.join(root, 'main.js'), `import { bootMessage } from "./main-support.js";
-import "./main.css";
+    await writeFile(path.join(root, 'imports.js'), `import { bootMessage } from "./import-support.js";
+import "./imports.css";
 
 console.log(bootMessage);
 document.documentElement.dataset.boot = bootMessage;
 `);
-    await writeFile(path.join(root, 'main-support.js'), `export const bootMessage = "booted-from-main-js";\n`);
-    await writeFile(path.join(root, 'main.css'), `body { background: rgb(1, 2, 3); }\n`);
+    await writeFile(path.join(root, 'import-support.js'), `export const bootMessage = "booted-from-import-js";\n`);
+    await writeFile(path.join(root, 'imports.css'), `body { background: rgb(1, 2, 3); }\n`);
     return root;
 }
 async function createCompanionScriptFixture() {
@@ -343,7 +343,7 @@ timedTest('tac.bundle supports separated browser/pages and browser/components ro
     expect(stderr).toBe('');
     const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
     const docs = await readFile(path.join(cwd, 'dist', 'docs', 'index.html'), 'utf8');
-    const mainCss = await readFile(path.join(cwd, 'dist', 'main.css'), 'utf8');
+    const mainCss = await readFile(path.join(cwd, 'dist', 'imports.css'), 'utf8');
     expect(home).toContain('Separated Home');
     expect(home).toContain('Hero');
     expect(docs).toContain('Separated Docs');
@@ -468,7 +468,7 @@ timedTest('tac.bundle resolves dependency entrypoints via package exports', { ti
     expect(loaded.flavor).toBe('exports-aware');
     expect(loaded.default()).toBe('exports-aware');
 });
-timedTest('tac.bundle bundles typed main entrypoints and emits main.css when imported', { timeout: 20000 }, async () => {
+timedTest('tac.bundle bundles typed import entrypoints and emits imports.css when imported', { timeout: 20000 }, async () => {
     const cwd = await createMainEntrypointFixture();
     const proc = Bun.spawn(['bun', bundleEntrypoint], {
         cwd,
@@ -485,13 +485,13 @@ timedTest('tac.bundle bundles typed main entrypoints and emits main.css when imp
     expect(stdout).toContain('Bundle completed');
     expect(stderr).toBe('');
     const html = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
-    const bundledMain = await readFile(path.join(cwd, 'dist', 'main.js'), 'utf8');
-    const bundledCss = await readFile(path.join(cwd, 'dist', 'main.css'), 'utf8');
-    expect(html).toContain('<link rel="stylesheet" href="/main.css">');
+    const bundledMain = await readFile(path.join(cwd, 'dist', 'imports.js'), 'utf8');
+    const bundledCss = await readFile(path.join(cwd, 'dist', 'imports.css'), 'utf8');
+    expect(html).toContain('<link rel="stylesheet" href="/imports.css">');
     expect(html).toContain('<script type="module" src="/spa-renderer.js"></script>');
-    expect(html).toContain('<script type="module" src="/main.js"></script>');
-    expect(html.indexOf('/spa-renderer.js')).toBeLessThan(html.indexOf('/main.js'));
-    expect(bundledMain).toContain('booted-from-main-js');
+    expect(html).toContain('<script type="module" src="/imports.js"></script>');
+    expect(html.indexOf('/spa-renderer.js')).toBeLessThan(html.indexOf('/imports.js'));
+    expect(bundledMain).toContain('booted-from-import-js');
     expect(bundledCss).toContain('background:#010203');
 });
 timedTest('TAC_FORMAT=global emits registry modules that prerender successfully', { timeout: 20000 }, async () => {

@@ -1,0 +1,12 @@
+<div class="surface panel clicker-card clicker-card-tertiary">
+    <div class="surface-head">
+        <span class="chip">{label}</span>
+        <span class="clicker-badge">{$clicks}</span>
+    </div>
+    <p class="md-typescale-body-small muted">{release} - reset when the session ends</p>
+    <div class="clicker-value value md-typescale-display-medium">{$clicks}</div>
+    <div class="clicker-actions">
+        <button type="button" class="button button-text" @click="$clicks = 0">Reset</button>
+        <button type="button" class="button button-primary" @click="$clicks++">Click</button>
+    </div>
+</div>

@@ -1,0 +1,17 @@
+<section class="stats">
+    <div class="surface stat-card">
+        <div class="stat-label md-typescale-label-medium">Session visits</div>
+        <div class="stat-value md-typescale-display-small">{props.visits}</div>
+        <p class="md-typescale-body-small muted">Stored automatically because the field name starts with `$`.</p>
+    </div>
+    <div class="surface stat-card">
+        <div class="stat-label md-typescale-label-medium">Inventory items</div>
+        <div class="stat-value md-typescale-display-small">{itemsCount}</div>
+        <p class="md-typescale-body-small muted">Served by Yon route handlers and updated live from the page.</p>
+    </div>
+    <div class="surface stat-card">
+        <div class="stat-label md-typescale-label-medium">Health</div>
+        <div class="stat-value md-typescale-display-small">{health.summary}</div>
+        <p class="md-typescale-body-small muted">Built-in /health and /ready endpoints are checked from the browser.</p>
+    </div>
+</section>

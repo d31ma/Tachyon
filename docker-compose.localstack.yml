@@ -1,0 +1,21 @@
+name: tachyon-localstack
+
+services:
+  localstack:
+    image: localstack/localstack:3.8.1
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      SERVICES: s3,sts
+      AWS_DEFAULT_REGION: us-east-1
+      PERSISTENCE: "1"
+    volumes:
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "awslocal", "s3", "ls"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  localstack-data:

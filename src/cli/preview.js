@@ -2,10 +2,10 @@
 // @ts-check
 import { access, readdir, stat } from 'fs/promises';
 import path from 'path';
-import Router from '../server/route-handler.js';
-import Tac from '../compiler/template-compiler.js';
+import Router from '../server/http/route-handler.js';
+import Compiler from '../compiler/index.js';
 import { createStaticPreviewServer, resolvePreviewFile } from '../runtime/static-preview.js';
-import logger from '../server/logger.js';
+import logger from '../server/observability/logger.js';
 const distPath = path.join(process.cwd(), 'dist');
 const watchMode = process.argv.includes('--watch') || process.argv.includes('--bundle-watch');
 const WATCH_INTERVAL_MS = 300;
@@ -43,7 +43,7 @@ async function buildFingerprint() {
         pathFingerprint(Router.sharedDataPath),
         pathFingerprint(Router.sharedScriptsPath),
         pathFingerprint(Router.sharedStylesPath),
-        ...Tac.getMainEntryCandidates().map((candidate) => pathFingerprint(candidate)),
+        ...Compiler.getMainEntryCandidates().map((candidate) => pathFingerprint(candidate)),
         pathFingerprint(path.join(process.cwd(), 'package.json'))
     ]);
     return entries.flat().sort().join('|');

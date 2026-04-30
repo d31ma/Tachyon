@@ -1,0 +1,57 @@
+{
+    "PUT": {
+        "200": {
+            "message": "^Hello from Yon on Bun!$",
+            "method": "^PUT$",
+            "context": {
+                "requestId": "^.{1,200}$",
+                "ipAddress": "^[0-9a-fA-F:.]+$",
+                "protocol": "^https?$",
+                "host": "^.+$"
+            },
+            "snapshot": {
+                "frontend": "^Tac$",
+                "backend": "^Yon$",
+                "requestId": "^.{1,200}$",
+                "generatedAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            }
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        }
+    },
+    "GET": {
+        "200": {
+            "message": "^Hello from Yon on Bun!$",
+            "runtime": {
+                "name": "^bun$",
+                "version": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$"
+            },
+            "context": {
+                "requestId": "^.{1,200}$",
+                "ipAddress": "^[0-9a-fA-F:.]+$",
+                "protocol": "^https?$",
+                "host": "^.+$"
+            },
+            "frontend": "^Tac$",
+            "backend": "^Yon$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        }
+    },
+    "POST": {
+        "200": {
+            "message": "^Hello from Yon language service!$",
+            "snapshot": {
+                "frontend": "^Tac$",
+                "backend": "^Yon$",
+                "requestId": "^.{1,200}$",
+                "generatedAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            }
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        }
+    }
+}

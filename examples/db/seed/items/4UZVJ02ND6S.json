@@ -1,0 +1,11 @@
+{
+  "name": "High-precision linear actuator",
+  "source": "api",
+  "tags": [
+    "manufacturing",
+    "linear-motion",
+    "robotics"
+  ],
+  "price": 879.5,
+  "inStock": true
+}

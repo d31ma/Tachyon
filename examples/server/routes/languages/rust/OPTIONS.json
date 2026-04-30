@@ -1,0 +1,11 @@
+{
+    "PATCH": {
+        "200": {
+            "message": "^Hello from Rust!$",
+            "requestId": "^.{1,200}$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        }
+    }
+}

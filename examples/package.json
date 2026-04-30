@@ -6,6 +6,7 @@
     "bundle": "bun ../src/cli/bundle.js",
     "preview": "bun ../src/cli/preview.js --watch",
     "serve": "bun ../src/cli/serve.js",
+    "seed": "bun ./scripts/seed-fylo.js",
     "telemetry:alerts": "bun ./server/workers/telemetry-alert-worker.js"
   },
   "dependencies": {

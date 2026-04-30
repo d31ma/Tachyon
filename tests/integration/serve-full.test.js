@@ -30,22 +30,22 @@ async function createExampleApp(options = {}) {
     if (frontend) {
         await mkdir(path.join(root, 'browser', 'pages'), { recursive: true });
         await mkdir(path.join(root, 'browser', 'shared', 'scripts'), { recursive: true });
-        await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'main.js'), `import { bootMessage } from "./main-support.js";
-import "./main.css";
+        await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'imports.js'), `import { bootMessage } from "./import-support.js";
+import "./imports.css";
 
 console.log(bootMessage);
 document.documentElement.dataset.boot = bootMessage;
 `);
-        await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'main-support.js'), `export const bootMessage = "fixture-boot";\n`);
-        await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'main.css'), `body { background: rgb(12, 34, 56); }\n`);
+        await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'import-support.js'), `export const bootMessage = "fixture-boot";\n`);
+        await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'imports.css'), `body { background: rgb(12, 34, 56); }\n`);
         await writeFile(path.join(root, 'browser', 'pages', 'index.html'), `<main><h1>Fixture Home</h1></main>`);
     }
     if (backend) {
         await mkdir(path.join(root, 'server', 'routes', 'api'), { recursive: true });
-        const getRoutePath = path.join(root, 'server', 'routes', 'api', 'GET');
-        await writeFile(getRoutePath, `#!/usr/bin/env bun
-const request = await Bun.stdin.json()
-Bun.stdout.write(JSON.stringify({ ok: true, fixture: 'api', requestId: request.context.requestId }))
+        const getRoutePath = path.join(root, 'server', 'routes', 'api', 'GET.js');
+        await writeFile(getRoutePath, `export async function handler(request) {
+  return { ok: true, fixture: 'api', requestId: request.context.requestId }
+}
 `);
         await chmod(getRoutePath, 0o755);
     }
@@ -88,13 +88,13 @@ timedTest('yon.serve serves frontend and backend responses when browser and serv
     /** @type {NodeJS.ProcessEnv} */
     const env = {
         ...process.env,
-        PORT: String(port),
-        HOST: '127.0.0.1',
-        DEV: 'true',
+        YON_PORT: String(port),
+        YON_HOST: '127.0.0.1',
+        YON_DEV: 'true',
     };
-    delete env.BASIC_AUTH;
-    delete env.BASIC_AUTH_HASH;
-    delete env.VALIDATE;
+    delete env.YON_BASIC_AUTH;
+    delete env.YON_BASIC_AUTH_HASH;
+    delete env.YON_VALIDATE;
     let lastSnapshot = 'no attempts yet';
     const proc = Bun.spawn(['bun', path.join(import.meta.dir, '../../src/cli/serve.js')], {
         cwd: root,
@@ -119,8 +119,8 @@ timedTest('yon.serve serves frontend and backend responses when browser and serv
                         'x-request-id': requestId,
                     }
                 }),
-                fetch(`http://127.0.0.1:${port}/main.js`),
-                fetch(`http://127.0.0.1:${port}/main.css`),
+                fetch(`http://127.0.0.1:${port}/imports.js`),
+                fetch(`http://127.0.0.1:${port}/imports.css`),
             ]);
             const apiBody = await apiRes.json().catch(() => null);
             const frontendBody = await frontendRes.text();
@@ -128,9 +128,9 @@ timedTest('yon.serve serves frontend and backend responses when browser and serv
             const cssBody = await cssRes.text();
             const htmlOk = frontendRes.ok
                 && frontendBody.includes('Fixture Home')
-                && frontendBody.includes('/main.css')
+                && frontendBody.includes('/imports.css')
                 && frontendBody.includes('type="module" src="/spa-renderer.js"')
-                && frontendBody.includes('type="module" src="/main.js"');
+                && frontendBody.includes('type="module" src="/imports.js"');
             const apiOk = apiRes.ok
                 && apiBody?.fixture === 'api'
                 && apiBody?.requestId === requestId
@@ -175,13 +175,13 @@ timedTest('yon.serve serves frontend only when only the browser folder exists', 
     /** @type {NodeJS.ProcessEnv} */
     const env = {
         ...process.env,
-        PORT: String(port),
-        HOST: '127.0.0.1',
-        DEV: 'true',
+        YON_PORT: String(port),
+        YON_HOST: '127.0.0.1',
+        YON_DEV: 'true',
     };
-    delete env.BASIC_AUTH;
-    delete env.BASIC_AUTH_HASH;
-    delete env.VALIDATE;
+    delete env.YON_BASIC_AUTH;
+    delete env.YON_BASIC_AUTH_HASH;
+    delete env.YON_VALIDATE;
     let lastSnapshot = 'no attempts yet';
     const proc = Bun.spawn(['bun', path.join(import.meta.dir, '../../src/cli/serve.js')], {
         cwd: root,
@@ -210,12 +210,12 @@ timedTest('yon.serve serves frontend only when only the browser folder exists', 
                 frontendStatus: frontendRes.status,
                 apiStatus: apiRes.status,
                 hasSpaRenderer: body.includes('/spa-renderer.js'),
-                hasMainStylesheet: body.includes('/main.css'),
+                hasMainStylesheet: body.includes('/imports.css'),
             });
             return frontendRes.ok
                 && body.includes('type="module" src="/spa-renderer.js"')
-                && body.includes('type="module" src="/main.js"')
-                && body.includes('/main.css')
+                && body.includes('type="module" src="/imports.js"')
+                && body.includes('/imports.css')
                 && apiRes.status === 404;
         }
         catch {
@@ -238,13 +238,13 @@ timedTest('yon.serve serves backend only when only the server folder exists', { 
     /** @type {NodeJS.ProcessEnv} */
     const env = {
         ...process.env,
-        PORT: String(port),
-        HOST: '127.0.0.1',
-        DEV: 'true',
+        YON_PORT: String(port),
+        YON_HOST: '127.0.0.1',
+        YON_DEV: 'true',
     };
-    delete env.BASIC_AUTH;
-    delete env.BASIC_AUTH_HASH;
-    delete env.VALIDATE;
+    delete env.YON_BASIC_AUTH;
+    delete env.YON_BASIC_AUTH_HASH;
+    delete env.YON_VALIDATE;
     let lastSnapshot = 'no attempts yet';
     const proc = Bun.spawn(['bun', path.join(import.meta.dir, '../../src/cli/serve.js')], {
         cwd: root,

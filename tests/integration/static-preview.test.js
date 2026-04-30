@@ -16,7 +16,7 @@ async function createDistFixture() {
     await mkdir(path.join(root, 'dist', 'shared', 'assets'), { recursive: true });
     await writeFile(path.join(root, 'dist', 'index.html'), '<!DOCTYPE html><html><body><h1>Home</h1></body></html>');
     await writeFile(path.join(root, 'dist', 'docs', 'index.html'), '<!DOCTYPE html><html><body><h1>Docs</h1></body></html>');
-    await writeFile(path.join(root, 'dist', 'main.js'), 'console.log("tachyon");');
+    await writeFile(path.join(root, 'dist', 'imports.js'), 'console.log("tachyon");');
     await writeFile(path.join(root, 'dist', 'shared', 'assets', 'logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
     return path.join(root, 'dist');
 }
@@ -35,7 +35,7 @@ test('static preview serves nested route indexes and bundle assets', async () =>
         const [home, docs, js, asset, headHome, missingAsset] = await Promise.all([
             fetch(`${base}/`),
             fetch(`${base}/docs`),
-            fetch(`${base}/main.js`),
+            fetch(`${base}/imports.js`),
             fetch(`${base}/shared/assets/logo.svg`),
             fetch(`${base}/`, { method: 'HEAD' }),
             fetch(`${base}/missing.js`)

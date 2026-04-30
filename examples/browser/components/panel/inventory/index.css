@@ -1,0 +1,66 @@
+.surface-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.inventory-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.feedback-banner {
+    padding: 12px 16px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    font-weight: 500;
+}
+
+.inventory-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.inventory-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.inventory-item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.inventory-item-text p {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+@media (max-width: 640px) {
+    .inventory-form {
+        grid-template-columns: 1fr;
+    }
+
+    .surface-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+}

@@ -1,0 +1,19 @@
+<div class="surface">
+    <div class="surface-head">
+        <h2 class="md-typescale-title-large">Runtime snapshot</h2>
+        <span class="chip">{loadingState()}</span>
+    </div>
+    <logic :if="diagnostics">
+        <dl class="definition-grid">
+            <div><dt>Message</dt><dd>{diagnostics.message}</dd></div>
+            <div><dt>Request ID</dt><dd>{diagnostics.context.requestId}</dd></div>
+            <div><dt>Protocol</dt><dd>{diagnostics.context.protocol}</dd></div>
+            <div><dt>Host</dt><dd>{diagnostics.context.host}</dd></div>
+            <div><dt>IP Address</dt><dd>{diagnostics.context.ipAddress}</dd></div>
+            <div><dt>Runtime</dt><dd>{diagnostics.runtime.name} {diagnostics.runtime.version}</dd></div>
+        </dl>
+    </logic>
+    <logic :if="!diagnostics">
+        <p class="md-typescale-body-medium muted">Waiting for Yon to answer the request snapshot.</p>
+    </logic>
+</div>

@@ -1,0 +1,26 @@
+<div class="surface">
+    <div class="surface-head">
+        <h2 class="md-typescale-title-large">Polyglot routes</h2>
+        <span class="chip">{loadingState()}</span>
+    </div>
+    <p class="md-typescale-body-medium muted">These responses are coming from different handler languages under the same routed app.</p>
+    <logic :if="versioned">
+        <div class="callout">
+            <strong class="md-typescale-title-medium">{versioned.message}</strong>
+            <p class="md-typescale-body-small">Route version: {versioned.version}</p>
+        </div>
+    </logic>
+    <ul class="list">
+        <li class="list-item">GET /languages/javascript via Bun</li>
+        <li class="list-item">GET /languages/typescript via TypeScript</li>
+        <li class="list-item">GET /languages/python via Python</li>
+        <li class="list-item">GET /languages/ruby via Ruby</li>
+        <li class="list-item">GET /languages/php via PHP</li>
+        <li class="list-item">GET /languages/go via Go</li>
+        <li class="list-item">GET /languages/csharp via C#</li>
+        <li class="list-item">GET /languages/python/versions/v1 via Python service</li>
+        <li class="list-item">POST /languages/java via Java</li>
+        <li class="list-item">DELETE /languages/dart via Dart</li>
+        <li class="list-item">PATCH /languages/rust via Rust</li>
+    </ul>
+</div>

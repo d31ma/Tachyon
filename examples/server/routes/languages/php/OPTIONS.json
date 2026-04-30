@@ -1,0 +1,12 @@
+{
+    "GET": {
+        "200": {
+            "language": "^php$",
+            "message": "^Hello from PHP!$",
+            "requestId": "^.{1,200}$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        }
+    }
+}

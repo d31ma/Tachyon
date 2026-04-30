@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 // @ts-check
 import Yon from "../server/yon.js";
-import Pool from "../server/process-pool.js";
-import Router from "../server/route-handler.js";
-import Tac from "../compiler/template-compiler.js";
-import logger from "../server/logger.js";
+import Pool from "../server/process/process-pool.js";
+import Router from "../server/http/route-handler.js";
+import logger from "../server/observability/logger.js";
 import { watch } from "fs";
 import { access, readdir, stat } from "fs/promises";
 import path from "path";
+import { pathToFileURL } from "url";
 import { serveStaticPreviewRequest } from "../runtime/static-preview.js";
 
 /**
@@ -21,13 +21,13 @@ const HMR_DEBOUNCE_MS = 1000;
 const bundleWatchEnabled = process.argv.includes('--bundle-watch');
 const start = Date.now();
 let bundleWatcher = null;
-const distPath = path.join(process.cwd(), 'dist');
+const distPath = path.resolve(process.env.YON_DIST_PATH ?? path.join(process.cwd(), 'dist'));
 const bundleCliPath = `${import.meta.dir}/bundle.js`;
 const hotReloadClientPath = path.join(import.meta.dir, '../runtime/hot-reload-client.js');
 const serveLogger = logger.child({ scope: 'cli:serve' });
 /** @type {Set<HmrClient>} */
 const hmrClients = new Set();
-const hmrMaxClients = Number(process.env.HMR_MAX_CLIENTS) || 20;
+const hmrMaxClients = Number(process.env.YON_HMR_MAX_CLIENTS) || 20;
 /** @type {FSWatcher[]} */
 const hmrWatchers = [];
 let hmrWatchersStarted = false;
@@ -94,9 +94,9 @@ async function detectAppShape() {
 async function loadMiddleware() {
     Router.middleware = null;
     Router.rateLimiter = null;
-    const filePath = `${Router.middlewarePath}.js`;
+    const filePath = path.resolve(process.cwd(), `${Router.middlewarePath}.js`);
     if (await pathExists(filePath)) {
-        const mod = await import(filePath);
+        const mod = await import(pathToFileURL(filePath).href);
         const loaded = mod.default ?? mod;
         if (typeof loaded !== 'object'
             || loaded === null
@@ -168,7 +168,7 @@ function isLoopbackHost(hostname) {
 function isAuthorizedHmrRequest(req, hostname) {
     if (isLoopbackHost(hostname))
         return true;
-    const token = process.env.HMR_TOKEN || process.env.DEV_TOKEN;
+    const token = process.env.YON_HMR_TOKEN || process.env.YON_DEV_TOKEN;
     if (!token)
         return false;
     const url = new URL(req.url);
@@ -218,7 +218,7 @@ async function startHmrWatchers(server) {
     }
 }
 const server = Bun.serve({
-    idleTimeout: process.env.TIMEOUT ? Number(process.env.TIMEOUT) : 0,
+    idleTimeout: process.env.YON_TIMEOUT ? Number(process.env.YON_TIMEOUT) : 0,
     fetch(req, server) {
         const pathname = new URL(req.url).pathname;
         if (hmrEnabled && pathname === "/hmr") {
@@ -268,9 +268,9 @@ const server = Bun.serve({
         return new Response("Not Found", { status: 404 });
     },
     routes: Router.reqRoutes,
-    port: process.env.PORT || 8080,
-    hostname: process.env.HOST || process.env.HOSTNAME || '127.0.0.1',
-    development: !!process.env.DEV,
+    port: process.env.YON_PORT || 8080,
+    hostname: process.env.YON_HOST || process.env.YON_HOSTNAME || '127.0.0.1',
+    development: !!process.env.YON_DEV,
 });
 serveLogger.info('Server started', {
     url: `http://${server.hostname}:${server.port}`,

@@ -1,0 +1,15 @@
+{
+  "name": "GET /languages/javascript/telemetry",
+  "kind": "server",
+  "route": "/languages/javascript/telemetry",
+  "method": "GET",
+  "statusCode": 200,
+  "durationMs": 42,
+  "traceId": "7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+  "spanId": "6c7d8e9f0a1b2c3d",
+  "parentSpanId": null,
+  "requestId": "9ABCDE01FGHI",
+  "startTimeUnixNano": "1777855030000000000",
+  "endTimeUnixNano": "1777855030042000000",
+  "traceState": ""
+}

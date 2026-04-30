@@ -12,8 +12,10 @@
     "isolatedModules": true,
     "allowJs": true,
     "checkJs": true,
+    "allowImportingTsExtensions": true,
     "maxNodeModuleJsDepth": 0,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noUncheckedSideEffectImports": false
   },
   "include": [
     "src/**/*.d.ts",

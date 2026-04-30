@@ -154,6 +154,26 @@ test('examples homepage looks polished and loads live dashboard data', async ({ 
   expectNoBrowserErrors(browserErrorMap.get(page) ?? []);
 });
 
+test('fylo browser uses responsive M2 controls without browser console errors', async ({ page }) => {
+  const browserErrors = trackBrowserErrors(page);
+
+  await page.goto('/_fylo', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: /Inspect and query collections/ })).toBeVisible();
+  await expect(page.locator('#fylo-query-source')).toBeVisible();
+  await expect(page.locator('md-outlined-text-field, md-text-button, md-filled-button, md-assist-chip')).toHaveCount(0);
+  await expect
+    .poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
+    .toBe(true);
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect(page.locator('.fylo-shell')).toBeVisible();
+  await expect
+    .poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
+    .toBe(true);
+
+  expectNoBrowserErrors(browserErrors);
+});
+
 test('every example button and input responds correctly', async ({ page }) => {
   const browserErrors = trackBrowserErrors(page);
   await waitForDashboardReady(page);
@@ -182,7 +202,7 @@ test('every example button and input responds correctly', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'Open JSON spec' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Operations' })).toBeVisible();
   await expect(page.getByLabel('Search operations')).toBeVisible();
-  await page.getByLabel('Search operations').fill('/api get_api');
+  await page.getByLabel('Search operations').fill('/languages/javascript');
   const docsOperation = page.locator('.operation-card').first();
   await docsOperation.locator('.operation-toggle').click();
   await docsOperation.getByRole('button', { name: 'Try it out' }).click();
@@ -222,6 +242,9 @@ test('every example button and input responds correctly', async ({ page }) => {
   const persistentStart = Number((await persistentValue.textContent())?.trim() ?? '0');
   await persistentPanel.getByRole('button', { name: 'Click' }).click();
   await expect(persistentValue).toHaveText(String(persistentStart + 1));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.hero');
+  await expect(componentPanel(page, 'Persistent clicks').locator('.value')).toHaveText(String(persistentStart + 1));
   await persistentPanel.getByRole('button', { name: 'Reset' }).click();
   await expect(persistentValue).toHaveText('0');
 
