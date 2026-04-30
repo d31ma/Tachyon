@@ -302,12 +302,12 @@ jobs:
           "@d31ma" = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
           EOF
         env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
         env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -317,7 +317,13 @@ jobs:
           scope: '@d31ma'
 
       - name: Publish to GitHub Packages
-        run: npm publish --tag beta --registry=https://npm.pkg.github.com
+        run: |
+          {
+            echo "@d31ma:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+            echo "always-auth=true"
+          } > .npmrc
+          npm publish --tag beta --registry=https://npm.pkg.github.com
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
 
