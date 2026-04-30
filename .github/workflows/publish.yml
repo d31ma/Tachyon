@@ -50,7 +50,7 @@ jobs:
           cat >> bunfig.toml <<'EOF'
 
           [install.scopes]
-          d31ma = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
+          "@d31ma" = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
           EOF
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
@@ -128,7 +128,7 @@ jobs:
           cat >> bunfig.toml <<'EOF'
 
           [install.scopes]
-          d31ma = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
+          "@d31ma" = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
           EOF
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
@@ -299,7 +299,7 @@ jobs:
           cat >> bunfig.toml <<'EOF'
 
           [install.scopes]
-          d31ma = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
+          "@d31ma" = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
           EOF
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
@@ -365,7 +365,7 @@ jobs:
           cat >> bunfig.toml <<'EOF'
 
           [install.scopes]
-          d31ma = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
+          "@d31ma" = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
           EOF
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
