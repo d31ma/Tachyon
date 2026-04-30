@@ -88,12 +88,15 @@ timedTest('yon.serve serves frontend and backend responses when browser and serv
     /** @type {NodeJS.ProcessEnv} */
     const env = {
         ...process.env,
-        YON_PORT: String(port),
-        YON_HOST: '127.0.0.1',
+        PORT: String(port),
+        HOST: '127.0.0.1',
         YON_DEV: 'true',
     };
     delete env.YON_BASIC_AUTH;
     delete env.YON_BASIC_AUTH_HASH;
+    delete env.YON_PORT;
+    delete env.YON_HOST;
+    delete env.YON_HOSTNAME;
     delete env.YON_VALIDATE;
     let lastSnapshot = 'no attempts yet';
     const proc = Bun.spawn(['bun', path.join(import.meta.dir, '../../src/cli/serve.js')], {
@@ -106,7 +109,8 @@ timedTest('yon.serve serves frontend and backend responses when browser and serv
     const ok = await waitFor(async () => {
         try {
             const requestId = 'serve-full-test-request-id';
-            const [frontendRes, apiRes, mainRes, cssRes] = await Promise.all([
+            const [readyRes, frontendRes, apiRes, mainRes, cssRes] = await Promise.all([
+                fetch(`http://127.0.0.1:${port}/ready`),
                 fetch(`http://127.0.0.1:${port}/`, {
                     headers: {
                         'sec-fetch-dest': 'document',
@@ -122,10 +126,12 @@ timedTest('yon.serve serves frontend and backend responses when browser and serv
                 fetch(`http://127.0.0.1:${port}/imports.js`),
                 fetch(`http://127.0.0.1:${port}/imports.css`),
             ]);
+            const readyBody = await readyRes.json().catch(() => null);
             const apiBody = await apiRes.json().catch(() => null);
             const frontendBody = await frontendRes.text();
             const mainBody = await mainRes.text();
             const cssBody = await cssRes.text();
+            const readyOk = readyRes.ok && readyBody?.status === 'ready';
             const htmlOk = frontendRes.ok
                 && frontendBody.includes('Fixture Home')
                 && frontendBody.includes('/imports.css')
@@ -142,18 +148,21 @@ timedTest('yon.serve serves frontend and backend responses when browser and serv
                 && cssRes.headers.get('content-type')?.includes('text/css')
                 && cssBody.includes('background:#0c2238');
             lastSnapshot = JSON.stringify({
+                readyStatus: readyRes.status,
                 htmlStatus: frontendRes.status,
                 apiStatus: apiRes.status,
                 mainStatus: mainRes.status,
                 cssStatus: cssRes.status,
+                readyBody,
                 apiRequestId: apiRes.headers.get('x-request-id'),
                 apiBody,
+                readyOk,
                 htmlOk,
                 apiOk,
                 mainOk,
                 cssOk,
             });
-            return Boolean(htmlOk && apiOk && mainOk && cssOk);
+            return Boolean(readyOk && htmlOk && apiOk && mainOk && cssOk);
         }
         catch {
             lastSnapshot = 'request connection failed';

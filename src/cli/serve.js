@@ -157,6 +157,8 @@ else {
 }
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let debounceTimer;
+const serverPort = process.env.YON_PORT || process.env.PORT || 8080;
+const serverHostname = process.env.YON_HOST || process.env.YON_HOSTNAME || process.env.HOST || '127.0.0.1';
 /** @param {string} hostname */
 function isLoopbackHost(hostname) {
     return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1';
@@ -221,6 +223,13 @@ const server = Bun.serve({
     idleTimeout: process.env.YON_TIMEOUT ? Number(process.env.YON_TIMEOUT) : 0,
     fetch(req, server) {
         const pathname = new URL(req.url).pathname;
+        if ((Yon.isHealthEndpoint(pathname) || Yon.isReadyEndpoint(pathname))
+            && (req.method === 'GET' || req.method === 'HEAD')) {
+            const response = Yon.healthResponse(req, Yon.isReadyEndpoint(pathname) ? 'ready' : 'ok');
+            return req.method === 'HEAD'
+                ? new Response(null, { status: response.status, headers: response.headers })
+                : response;
+        }
         if (hmrEnabled && pathname === "/hmr") {
             if (!isAuthorizedHmrRequest(req, server.hostname ?? '127.0.0.1')) {
                 return new Response("Forbidden", { status: 403 });
@@ -268,8 +277,8 @@ const server = Bun.serve({
         return new Response("Not Found", { status: 404 });
     },
     routes: Router.reqRoutes,
-    port: process.env.YON_PORT || 8080,
-    hostname: process.env.YON_HOST || process.env.YON_HOSTNAME || '127.0.0.1',
+    port: serverPort,
+    hostname: serverHostname,
     development: !!process.env.YON_DEV,
 });
 serveLogger.info('Server started', {
