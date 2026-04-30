@@ -21,7 +21,7 @@ jobs:
 
     strategy:
       matrix:
-        bun-version: [latest, 1.2.x]
+        bun-version: [latest]
 
     steps:
       - name: Checkout

@@ -2,13 +2,7 @@
 import { mkdir, readdir, stat, writeFile } from 'fs/promises';
 import path from 'path';
 const version = '26.18.30';
-const files = {
-    '.gitignore': `node_modules
-dist
-.env
-.DS_Store
-`,
-    '.env.test': `YON_PORT=8000
+const defaultEnv = `YON_PORT=8000
 YON_HOST=127.0.0.1
 YON_HOSTNAME=127.0.0.1
 YON_DEV=true
@@ -52,7 +46,15 @@ YON_ROUTES_PATH=server/routes
 YON_SHARED_SCRIPTS_PATH=browser/shared/scripts
 YON_SHARED_STYLES_PATH=browser/shared/styles
 YON_SHARED_DATA_PATH=browser/shared/data
+`;
+const files = {
+    '.gitignore': `node_modules
+dist
+.env
+.DS_Store
 `,
+    '.env.example': defaultEnv,
+    '.env.test': defaultEnv,
     'package.json': JSON.stringify({
         name: 'tachyon-app',
         private: true,

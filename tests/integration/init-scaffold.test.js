@@ -24,7 +24,7 @@ test('createAppScaffold writes a deployable starter app', async () => {
     expect(packageJson).toContain('"preview": "tac.preview --watch"');
     expect(packageJson).toContain('"@d31ma/tachyon"');
     expect(await Bun.file(path.join(appDir, '.env.test')).exists()).toBe(true);
-    expect(await Bun.file(path.join(appDir, '.env.example')).exists()).toBe(false);
+    expect(await Bun.file(path.join(appDir, '.env.example')).exists()).toBe(true);
     expect(homePage).toContain('<hero />');
     expect(homePage).toContain('<slot />');
     expect(mainScript).toContain('../styles/app.css');

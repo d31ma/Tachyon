@@ -5,6 +5,9 @@
     "author": "Chidelma",
     "license": "MIT",
     "type": "module",
+    "engines": {
+        "bun": ">=1.3.0"
+    },
     "main": "./src/server/http/route-handler.js",
     "types": "./src/server/http/route-handler.js",
     "exports": {

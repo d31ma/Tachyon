@@ -1,11 +1,11 @@
 # Graph Report - TACHYON  (2026-04-30)
 
 ## Corpus Check
-- 118 files · ~72,598 words
+- 118 files · ~72,656 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 793 nodes · 1493 edges · 30 communities detected
+- 794 nodes · 1494 edges · 30 communities detected
 - Extraction: 78% EXTRACTED · 22% INFERRED · 0% AMBIGUOUS · INFERRED: 322 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
@@ -73,35 +73,35 @@ Nodes (18): has(), buildRouteOutput(), classifyChange(), normalizeRelative(), pa
 
 ### Community 1 - "Community 1"
 Cohesion: 0.05
-Nodes (10): decode(), jsonOk(), basename(), Pool, tokenizeCommand(), Router, Validate, configureRoutes() (+2 more)
+Nodes (9): __fyloCollection(), get(), decode(), jsonOk(), PythonLanguageRepository, PythonLanguageService, Router, Validate (+1 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.04
-Nodes (20): handler(), GET, handler(), ItemService, JsonItemRepository, LanguageRepository, LanguageService, handler() (+12 more)
+Cohesion: 0.05
+Nodes (17): FyloTelemetryRepository, GET, handler(), LanguageRepository, LanguageService, handler(), OtlpValueDecoder, TelemetryService (+9 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.06
 Nodes (30): getAttribute(), FyloBrowser, env(), render(), cleanBooleanAttrs(), findEventTarget(), isSameNode(), morphChildren() (+22 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.09
-Nodes (6): writeExecutableHandler(), buildTestFactory(), TelemetryAlertWorker, YonCompiledRunner, write(), YonRubyRunner
+Cohesion: 0.05
+Nodes (27): createAppScaffold(), ensureEmptyDirectory(), canRunPlaywright(), decode(), resolveNodeCommand(), runCommand(), basename(), HandlerAdapter (+19 more)
 
 ### Community 5 - "Community 5"
+Cohesion: 0.1
+Nodes (6): createBackendOnlyApp(), writeExecutableHandler(), buildTestFactory(), TelemetryAlertWorker, YonCompiledRunner, write()
+
+### Community 6 - "Community 6"
 Cohesion: 0.08
 Nodes (7): FyloTelemetryStore, SpanFactory, Telemetry, TelemetryConfig, TelemetrySanitizer, TelemetryStore, TraceContextParser
 
-### Community 6 - "Community 6"
-Cohesion: 0.07
-Nodes (21): createAppScaffold(), ensureEmptyDirectory(), canRunPlaywright(), decode(), resolveNodeCommand(), runCommand(), basename(), HandlerAdapter (+13 more)
-
 ### Community 7 - "Community 7"
-Cohesion: 0.11
-Nodes (32): set(), applySecurity(), buildCurl(), buildExecution(), buildRequestPayload(), defaultParameterValue(), defaultRequestBody(), ensureOperationState() (+24 more)
+Cohesion: 0.08
+Nodes (8): handler(), ItemService, JsonItemRepository, handler(), handler(), RustLanguageService, loadManifests(), prehydratePersistentText()
 
 ### Community 8 - "Community 8"
 Cohesion: 0.11
-Nodes (22): appendEvents(), encryptionBanner(), errorMessage(), __fyloCollection(), get(), loadCollections(), loadMeta(), pollEvents() (+14 more)
+Nodes (32): set(), applySecurity(), buildCurl(), buildExecution(), buildRequestPayload(), defaultParameterValue(), defaultRequestBody(), ensureOperationState() (+24 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.1
@@ -112,16 +112,16 @@ Cohesion: 0.17
 Nodes (24): browserContentSecurityPolicy(), deleteDocument(), executeQuery(), FyloBrowser, fyloRoot(), getDocument(), getEncryptedFields(), isReadOnlyQuery() (+16 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.15
-Nodes (16): buildFyloBrowserPaths(), buildOperation(), buildSpec(), describeStatus(), docsContentSecurityPolicy(), docsScript(), docsStyles(), getDocsAssets() (+8 more)
+Cohesion: 0.22
+Nodes (17): appendEvents(), encryptionBanner(), errorMessage(), loadCollections(), loadMeta(), pollEvents(), previewOf(), renderDetail() (+9 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.2
 Nodes (7): addItem(), bindRefreshListener(), clearItems(), loadHealth(), loadingState(), loadItemsCount(), refresh()
 
 ### Community 13 - "Community 13"
-Cohesion: 0.16
-Nodes (3): FyloTelemetryRepository, OtlpValueDecoder, TelemetryService
+Cohesion: 0.19
+Nodes (15): buildFyloBrowserPaths(), buildOperation(), buildSpec(), describeStatus(), docsContentSecurityPolicy(), docsScript(), docsStyles(), getDocsAssets() (+7 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.14
@@ -133,7 +133,7 @@ Nodes (9): JavaLanguageService, POST, localFirstFetch(), ty_createScope(), __ty_
 
 ### Community 16 - "Community 16"
 Cohesion: 0.17
-Nodes (11): authFetch(), authHeaders(), createBackendOnlyApp(), decodeAnyValue(), describeEarlyExit(), extractPersistedSpans(), getAvailablePort(), getResourceAttribute() (+3 more)
+Nodes (10): authFetch(), authHeaders(), decodeAnyValue(), describeEarlyExit(), extractPersistedSpans(), getAvailablePort(), getResourceAttribute(), readTextStream() (+2 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.2
@@ -214,11 +214,11 @@ Nodes (1): DartLanguageService
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `get()` connect `Community 8` to `Community 0`, `Community 1`, `Community 2`, `Community 3`, `Community 5`, `Community 6`, `Community 7`, `Community 10`, `Community 14`, `Community 15`?**
-  _High betweenness centrality (0.287) - this node is a cross-community bridge._
-- **Why does `Compiler` connect `Community 0` to `Community 1`, `Community 4`?**
+- **Why does `get()` connect `Community 1` to `Community 0`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 10`, `Community 11`, `Community 14`, `Community 15`?**
+  _High betweenness centrality (0.286) - this node is a cross-community bridge._
+- **Why does `Compiler` connect `Community 0` to `Community 1`, `Community 5`?**
   _High betweenness centrality (0.100) - this node is a cross-community bridge._
-- **Why does `text()` connect `Community 0` to `Community 1`, `Community 4`, `Community 6`, `Community 7`, `Community 9`, `Community 10`, `Community 14`, `Community 16`?**
+- **Why does `text()` connect `Community 0` to `Community 1`, `Community 4`, `Community 5`, `Community 8`, `Community 9`, `Community 10`, `Community 14`, `Community 16`?**
   _High betweenness centrality (0.099) - this node is a cross-community bridge._
 - **Are the 33 inferred relationships involving `get()` (e.g. with `.request_id()` and `.version()`) actually correct?**
   _`get()` has 33 INFERRED edges - model-reasoned connections that need verification._

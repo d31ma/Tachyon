@@ -37,6 +37,24 @@ const TELEMETRY_ALERT_WORKER = `${EXAMPLES_DIR}/server/workers/telemetry-alert-w
 const allocatedTestPorts = new Set();
 let nextEphemeralTestPort = 22_000 + Math.floor(Math.random() * 10_000);
 
+/**
+ * @param {string} command
+ * @returns {boolean}
+ */
+function commandAvailable(command) {
+    try {
+        const probe = Bun.spawnSync({
+            cmd: [command, '--version'],
+            stdout: 'pipe',
+            stderr: 'pipe',
+        });
+        return probe.exitCode === 0;
+    }
+    catch {
+        return false;
+    }
+}
+
 /** @returns {string} */
 function itemTestId() {
     return `t${Math.random().toString(36).slice(2, 8)}`;
@@ -628,6 +646,8 @@ describe('Polyglot root route adapters', () => {
         expect(await res.json()).toHaveProperty('message', 'Hello from Java!');
     });
     test('DELETE /languages/dart executes the Dart adapter route', async () => {
+        if (!commandAvailable('dart'))
+            return;
         const res = await authFetch('/languages/dart', { method: 'DELETE' });
         expect(res.status).toEqual(200);
         expect(await res.json()).toHaveProperty('message', 'Hello from Dart!');
