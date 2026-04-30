@@ -2,7 +2,7 @@
 
 const OPENAPI_PATH = "__OPENAPI_PATH__";
 const DOCS_PATH = "__OPENAPI_DOCS_PATH__";
-const STORAGE_KEY = "tachyon:api-docs:v2";
+const STORAGE_KEY = "tachyon:api-docs:stable";
 const methodOrder = ["get", "post", "put", "patch", "delete", "head", "options"];
 
 /** @type {HTMLElement | null} */
@@ -499,6 +499,7 @@ function renderResponse(response) {
 /** @returns {[string, Record<string, any>][]} */
 function visibleRouteEntries() {
   const filter = state.filter.trim().toLowerCase();
+  const filterTerms = filter.split(/\s+/).filter(Boolean);
   const routeEntries = /** @type {[string, Record<string, any>][]} */ (Object.entries(state.spec?.paths || {}));
   if (!filter) return routeEntries;
   return routeEntries
@@ -517,7 +518,7 @@ function visibleRouteEntries() {
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
-        if (haystack.includes(filter)) nextOperations[method] = operation;
+        if (filterTerms.every((term) => haystack.includes(term))) nextOperations[method] = operation;
       }
       return /** @type {[string, Record<string, any>]} */ ([pathname, nextOperations]);
     })

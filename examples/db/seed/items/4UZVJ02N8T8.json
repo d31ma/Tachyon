@@ -1,0 +1,11 @@
+{
+  "name": "Pneumatic gripper with sensor feedback",
+  "source": "dashboard",
+  "tags": [
+    "robotics",
+    "gripper",
+    "sensors"
+  ],
+  "price": 349,
+  "inStock": false
+}

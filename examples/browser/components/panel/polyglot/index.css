@@ -1,0 +1,20 @@
+.callout {
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 16px;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.callout p {
+    margin: 0;
+    color: inherit;
+    opacity: 0.85;
+}
+
+md-list {
+    --md-list-container-color: transparent;
+    background: transparent;
+}

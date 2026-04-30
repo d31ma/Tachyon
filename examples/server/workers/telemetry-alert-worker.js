@@ -42,10 +42,10 @@
 
 class TelemetryAlertWorker {
   constructor() {
-    this.telemetryUrl = process.env.TELEMETRY_URL || 'http://127.0.0.1:8000/telemetry?limit=25'
-    this.slowMs = TelemetryAlertWorker.numberEnv('ALERT_SLOW_MS', 500)
-    this.minStatusCode = TelemetryAlertWorker.numberEnv('ALERT_STATUS_CODE', 500)
-    this.authorization = process.env.BASIC_AUTH_HEADER || ''
+    this.telemetryUrl = process.env.YON_TELEMETRY_URL || 'http://127.0.0.1:8000/languages/javascript/telemetry?limit=25'
+    this.slowMs = TelemetryAlertWorker.numberEnv('YON_ALERT_SLOW_MS', 500)
+    this.minStatusCode = TelemetryAlertWorker.numberEnv('YON_ALERT_STATUS_CODE', 500)
+    this.authorization = process.env.YON_BASIC_AUTH_HEADER || ''
   }
 
   /**

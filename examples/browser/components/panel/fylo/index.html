@@ -1,0 +1,42 @@
+<div class="surface panel-wide">
+    <div class="surface-head">
+        <h2 class="md-typescale-title-large">Fylo Browser</h2>
+        <span class="chip">{loadingState()}</span>
+    </div>
+    <p class="md-typescale-body-medium muted">Native database browser for any collection stored by `@d31ma/fylo`. Enable with `YON_DATA_BROWSER_ENABLED=true` and visit /_fylo.</p>
+    <logic :if="info && info.enabled">
+        <div class="stats-inline">
+            <div class="mini-stat">
+                <span>Collections</span>
+                <strong>{info.collections.length}</strong>
+            </div>
+            <div class="mini-stat">
+                <span>Documents</span>
+                <strong>{docsTotal()}</strong>
+            </div>
+            <div class="mini-stat">
+                <span>Root</span>
+                <strong>{info.root}</strong>
+            </div>
+        </div>
+        <ul class="list">
+            <loop :for="const collection of info.collections">
+                <li class="list-item">
+                    <div class="list-item-text">
+                        <strong>{collection.name}</strong>
+                        <span>{collection.docsStored || 0} docs - {collection.worm ? 'WORM' : 'mutable'}</span>
+                    </div>
+                </li>
+            </loop>
+        </ul>
+        <div class="surface-actions">
+            <a class="button button-primary" href="/_fylo">Open Fylo Browser</a>
+        </div>
+    </logic>
+    <logic :if="info && !info.enabled">
+        <p class="md-typescale-body-medium muted">The data browser is not enabled. Set `YON_DATA_BROWSER_ENABLED=true` and restart to mount it at /_fylo.</p>
+    </logic>
+    <logic :if="!info">
+        <p class="md-typescale-body-medium muted">Checking whether the Fylo Browser is mounted...</p>
+    </logic>
+</div>

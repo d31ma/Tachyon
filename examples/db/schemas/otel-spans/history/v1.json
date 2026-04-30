@@ -1,0 +1,17 @@
+{
+  "schema?": "^otlp\\.json\\.tracesdata$",
+  "requestId?": "^[A-Za-z0-9_-]{1,128}$",
+  "traceId": "^[a-f0-9]{32}$",
+  "spanId": "^[a-f0-9]{16}$",
+  "parentSpanId?": "^[a-f0-9]{16}$",
+  "kind": "^(server|internal|client|producer|consumer|unspecified|\\d+)$",
+  "name": "^.{1,256}$",
+  "route?": "^/.+$",
+  "method?": "^(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD)$",
+  "statusCode?": "^[1-5][0-9]{2}$",
+  "durationMs?": "^\\d+(\\.\\d+)?$",
+  "traceState?": "^.*$",
+  "startTimeUnixNano": "^\\d+$",
+  "endTimeUnixNano": "^\\d+$",
+  "otlpJson?": "^[\\s\\S]+$"
+}

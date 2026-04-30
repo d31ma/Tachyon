@@ -1,19 +1,323 @@
-:root {
-  --demo-ring: rgba(14, 165, 233, 0.16);
+/* Tachyon example design system: Material Design 2 inspired tokens and native controls. */
+
+:root,
+[data-theme="light"] {
+    --md-sys-color-primary: #3f51b5;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #e8eaf6;
+    --md-sys-color-on-primary-container: #1a237e;
+    --md-sys-color-secondary: #00796b;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #e0f2f1;
+    --md-sys-color-on-secondary-container: #004d40;
+    --md-sys-color-tertiary: #455a64;
+    --md-sys-color-on-tertiary: #ffffff;
+    --md-sys-color-tertiary-container: #eceff1;
+    --md-sys-color-on-tertiary-container: #263238;
+    --md-sys-color-error: #c62828;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #ffebee;
+    --md-sys-color-on-error-container: #b71c1c;
+    --md-sys-color-background: #fafafa;
+    --md-sys-color-on-background: #212121;
+    --md-sys-color-surface: #ffffff;
+    --md-sys-color-on-surface: #212121;
+    --md-sys-color-surface-variant: #eeeeee;
+    --md-sys-color-on-surface-variant: #616161;
+    --md-sys-color-outline: #9e9e9e;
+    --md-sys-color-outline-variant: #e0e0e0;
+    --md-sys-color-shadow: #000000;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #ffffff;
+    --md-sys-color-surface-container: #ffffff;
+    --md-sys-color-surface-container-high: #f5f5f5;
+    --md-sys-color-surface-container-highest: #eeeeee;
+    --md-sys-shape-corner-small: 4px;
+    --md-sys-shape-corner-medium: 4px;
+    --md-sys-shape-corner-large: 6px;
+    --md-sys-elevation-level1: 0 2px 1px -1px rgba(0, 0, 0, 0.20), 0 1px 1px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.12);
+    --md-sys-elevation-level2: 0 3px 3px -2px rgba(0, 0, 0, 0.20), 0 3px 4px rgba(0, 0, 0, 0.14), 0 1px 8px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="dark"] {
+    --md-sys-color-primary: #9fa8da;
+    --md-sys-color-on-primary: #111111;
+    --md-sys-color-primary-container: #303f9f;
+    --md-sys-color-on-primary-container: #e8eaf6;
+    --md-sys-color-secondary: #80cbc4;
+    --md-sys-color-on-secondary: #003d35;
+    --md-sys-color-secondary-container: #004d40;
+    --md-sys-color-on-secondary-container: #e0f2f1;
+    --md-sys-color-tertiary: #b0bec5;
+    --md-sys-color-on-tertiary: #263238;
+    --md-sys-color-tertiary-container: #37474f;
+    --md-sys-color-on-tertiary-container: #eceff1;
+    --md-sys-color-error: #ef9a9a;
+    --md-sys-color-on-error: #3b0707;
+    --md-sys-color-error-container: #5f1717;
+    --md-sys-color-on-error-container: #ffebee;
+    --md-sys-color-background: #121212;
+    --md-sys-color-on-background: #eeeeee;
+    --md-sys-color-surface: #1e1e1e;
+    --md-sys-color-on-surface: #eeeeee;
+    --md-sys-color-surface-variant: #2b2b2b;
+    --md-sys-color-on-surface-variant: #c7c7c7;
+    --md-sys-color-outline: #8d8d8d;
+    --md-sys-color-outline-variant: #3a3a3a;
+    --md-sys-color-surface-container-lowest: #0f0f0f;
+    --md-sys-color-surface-container-low: #181818;
+    --md-sys-color-surface-container: #1e1e1e;
+    --md-sys-color-surface-container-high: #242424;
+    --md-sys-color-surface-container-highest: #303030;
+}
+
+* {
+    box-sizing: border-box;
 }
 
 html {
-  color-scheme: light;
+    color-scheme: light dark;
+    overflow-x: clip;
+    background: var(--md-sys-color-background);
+    color: var(--md-sys-color-on-background);
+}
+
+html[data-theme="light"] {
+    color-scheme: light;
+}
+
+html[data-theme="dark"] {
+    color-scheme: dark;
 }
 
 body {
-  margin: 0;
+    margin: 0;
+    min-width: 0;
+    overflow-x: clip;
+    font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--md-sys-color-background);
+    color: var(--md-sys-color-on-background);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 a {
-  color: inherit;
+    color: var(--md-sys-color-primary);
+    text-decoration: none;
 }
 
-::selection {
-  background: var(--demo-ring);
+a:hover {
+    text-decoration: underline;
+}
+
+button,
+input,
+textarea {
+    font: inherit;
+}
+
+.surface {
+    position: relative;
+    min-width: 0;
+    max-width: 100%;
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: var(--md-sys-elevation-level1);
+}
+
+.surface-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.surface-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.muted {
+    color: var(--md-sys-color-on-surface-variant);
+    margin: 0;
+}
+
+.button {
+    min-height: 36px;
+    border: 1px solid transparent;
+    border-radius: var(--md-sys-shape-corner-medium);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 16px;
+    cursor: pointer;
+    font-weight: 500;
+    line-height: 1;
+    text-decoration: none;
+    max-width: 100%;
+    min-width: 0;
+    white-space: normal;
+    text-align: center;
+    overflow-wrap: anywhere;
+    transition: box-shadow 140ms ease, background 140ms ease;
+}
+
+.button:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+    text-decoration: none;
+}
+
+.button-primary {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    box-shadow: var(--md-sys-elevation-level1);
+}
+
+.button-outline {
+    background: transparent;
+    color: var(--md-sys-color-primary);
+    border: 1px solid var(--md-sys-color-outline);
+}
+
+.button-text {
+    background: transparent;
+    color: var(--md-sys-color-primary);
+}
+
+.icon-button {
+    min-width: 42px;
+    padding-inline: 14px;
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+}
+
+.chip,
+.link-chip {
+    border-radius: 16px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+    display: inline-block;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 30px;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+    white-space: normal;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+.link-chip:hover {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    text-decoration: none;
+}
+
+.chip-set,
+.list {
+    display: grid;
+    gap: 8px;
+}
+
+.chip-set {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+    min-width: 0;
+}
+
+.list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.list-item {
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-high);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.list-item-text {
+    display: grid;
+    gap: 4px;
+}
+
+.field-control {
+    width: 100%;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    box-sizing: border-box;
+    padding: 12px 14px;
+    outline: none;
+}
+
+.field-control:focus {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+}
+
+.md-typescale-headline-medium {
+    font-size: 2.75rem;
+    line-height: 1.15;
+    letter-spacing: 0;
+}
+
+.md-typescale-display-medium,
+.md-typescale-display-small {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 3rem;
+    letter-spacing: 0;
+}
+
+.md-typescale-title-large {
+    font-size: 1.25rem;
+    line-height: 1.25;
+    font-weight: 700;
+}
+
+.md-typescale-title-medium {
+    font-size: 1rem;
+    line-height: 1.35;
+    font-weight: 700;
+}
+
+.md-typescale-body-medium {
+    font-size: 0.98rem;
+    line-height: 1.6;
+}
+
+.md-typescale-body-small {
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.md-typescale-label-large,
+.md-typescale-label-medium,
+.md-typescale-label-small {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
 }

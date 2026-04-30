@@ -1,0 +1,15 @@
+<div class="surface">
+    <div class="surface-head">
+        <h2 class="md-typescale-title-large">Shared browser data</h2>
+        <span class="chip">{loadingState()}</span>
+    </div>
+    <logic :if="showcase">
+        <div class="callout">
+            <strong class="md-typescale-title-medium">{showcase.title}</strong>
+            <p class="md-typescale-body-medium">{showcase.summary}</p>
+        </div>
+    </logic>
+    <logic :if="!showcase">
+        <p class="md-typescale-body-medium muted">Fetching the browser-side data manifest.</p>
+    </logic>
+</div>

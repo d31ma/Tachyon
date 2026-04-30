@@ -1,7 +1,7 @@
 // @ts-check
 import { stat } from 'fs/promises';
 import path from 'path';
-import Router from '../server/route-handler.js';
+import Router from '../server/http/route-handler.js';
 /**
  * @typedef {object} StaticPreviewOptions
  * @property {boolean} [allowRootFallback]
@@ -94,8 +94,8 @@ export async function serveStaticPreviewRequest(distPath, req, options = {}) {
  */
 export async function createStaticPreviewServer(distPath, options = {}) {
     const server = Bun.serve({
-        port: options.port ?? Number(process.env.PORT || 3000),
-        hostname: options.hostname ?? process.env.HOST ?? '127.0.0.1',
+        port: options.port ?? Number(process.env.YON_PORT || 3000),
+        hostname: options.hostname ?? process.env.YON_HOST ?? '127.0.0.1',
         async fetch(req) {
             const url = new URL(req.url);
             return await serveStaticPreviewRequest(distPath, req)

@@ -14,8 +14,26 @@ afterEach(async () => {
         proc.kill();
         await proc.exited.catch(() => { });
     }
-    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+    await Promise.all(tempDirs.splice(0).map((dir) => removeTempDir(dir)));
 });
+
+/** @param {string} dir */
+async function removeTempDir(dir) {
+    for (let attempt = 1; attempt <= 8; attempt++) {
+        try {
+            await rm(dir, { recursive: true, force: true });
+            return;
+        }
+        catch (error) {
+            const code = /** @type {{ code?: string }} */ (error).code;
+            if (!['EBUSY', 'ENOTEMPTY', 'EPERM'].includes(String(code)) || attempt === 8) {
+                throw error;
+            }
+            await Bun.sleep(attempt * 100);
+        }
+    }
+}
+
 async function createExampleApp() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-preview-watch-'));
     tempDirs.push(root);
@@ -24,7 +42,7 @@ async function createExampleApp() {
         name: 'tachyon-preview-watch-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'main.js'), 'console.log("fixture boot")\n');
+    await writeFile(path.join(root, 'imports.js'), 'console.log("fixture boot")\n');
     await writeFile(path.join(root, 'routes', 'index.html'), `<main><h1>Alpha</h1></main>`);
     return root;
 }
@@ -64,7 +82,7 @@ timedTest('tac.preview --watch serves initial bundle and rebuilds on HTML route 
     const port = await getFreePort();
     const preview = Bun.spawn(['bun', path.join(import.meta.dir, '../../src/cli/preview.js'), '--watch'], {
         cwd: root,
-        env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' },
+        env: { ...process.env, YON_PORT: String(port), YON_HOST: '127.0.0.1' },
         stdout: 'ignore',
         stderr: 'ignore'
     });

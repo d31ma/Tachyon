@@ -1,0 +1,38 @@
+<div class="surface panel-wide">
+    <div class="surface-head">
+        <h2 class="md-typescale-title-large">Telemetry consumer</h2>
+        <span class="chip">{loadingState()}</span>
+    </div>
+    <p class="md-typescale-body-medium muted">This panel is powered by a Yon route that reads FYLO, parses the stored OTLP JSON payload, and returns a monitoring-friendly summary.</p>
+    <logic :if="telemetry">
+        <div class="stats-inline">
+            <div class="mini-stat">
+                <span>Spans</span>
+                <strong>{telemetry.summary.spanCount}</strong>
+            </div>
+            <div class="mini-stat">
+                <span>Requests</span>
+                <strong>{telemetry.summary.requestCount}</strong>
+            </div>
+            <div class="mini-stat">
+                <span>Errors</span>
+                <strong>{telemetry.summary.errorCount}</strong>
+            </div>
+        </div>
+        <ul class="event-list">
+            <loop :for="const entry of telemetry.recent">
+                <li class="event-row">
+                    <div class="event-row-head">
+                        <strong class="md-typescale-title-medium">{entry.name}</strong>
+                        <span class="event-row-meta">{entry.kind} - {entry.statusCode || 'n/a'} - {Math.round(entry.durationMs)} ms</span>
+                    </div>
+                    <p class="md-typescale-body-small">trace {entry.traceId}</p>
+                    <p class="md-typescale-body-small">route {entry.route || 'n/a'} - request {entry.requestId || 'n/a'}</p>
+                </li>
+            </loop>
+        </ul>
+    </logic>
+    <logic :if="!telemetry">
+        <p class="md-typescale-body-medium muted">Enable `YON_OTEL_ENABLED=true` to see FYLO-backed telemetry summaries here.</p>
+    </logic>
+</div>

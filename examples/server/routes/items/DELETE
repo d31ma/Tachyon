@@ -1,6 +1,0 @@
-#!/usr/bin/env bun
-
-const dataPath = `${process.cwd()}/server/data/items.json`
-
-await Bun.write(dataPath, '[]')
-Bun.stdout.write(JSON.stringify({}))

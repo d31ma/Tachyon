@@ -2,7 +2,7 @@
 // @ts-check
 import path from 'path';
 import { createAppScaffold } from '../runtime/app-scaffold.js';
-import logger from '../server/logger.js';
+import logger from '../server/observability/logger.js';
 const initLogger = logger.child({ scope: 'cli:init' });
 const targetArg = process.argv[2] || '.';
 const targetDir = path.resolve(process.cwd(), targetArg);

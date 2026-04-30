@@ -90,6 +90,7 @@ try {
     assertRun(run('bun', [yonInit, 'starter-app'], consumerRoot), 'bun yon.init starter-app');
     const starterPackage = JSON.parse(await readFile(path.join(starterRoot, 'package.json'), 'utf8'));
     const envExample = await readFile(path.join(starterRoot, '.env.example'), 'utf8');
+    const envTest = await readFile(path.join(starterRoot, '.env.test'), 'utf8');
     const route = await readFile(path.join(starterRoot, 'browser', 'pages', 'index.html'), 'utf8');
     expect(starterPackage.scripts?.bundle === 'tac.bundle', 'starter app bundle script should be tac.bundle');
     expect(starterPackage.scripts?.serve === 'yon.serve', 'starter app serve script should be yon.serve');
@@ -97,6 +98,7 @@ try {
     expect(typeof starterPackage.devDependencies?.[packageName] === 'string', `starter app should depend on ${packageName}`);
     expect(starterPackage.devDependencies?.[packageName]?.startsWith('^'), `${packageName} version should be caret-ranged`);
     expect(envExample.includes('TAC_FORMAT=esm'), '.env.example should include TAC_FORMAT=esm');
+    expect(envTest.includes('TAC_FORMAT=esm'), '.env.test should include TAC_FORMAT=esm');
     expect(route.includes('<hero />'), 'starter browser/pages/index.html should include <hero />');
     console.log(`Verified packed package contract for ${packageName}`);
 }

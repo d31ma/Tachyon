@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // @ts-check
-import Tac from '../compiler/template-compiler.js';
+import Compiler from '../compiler/index.js';
 const payload = await Bun.stdin.json();
-const html = await Tac.renderPageDocumentForWorker(payload.distPath, payload.pathname, payload.shellHTML, payload.layoutMapping);
+const html = await Compiler.renderPageDocumentForWorker(payload.distPath, payload.pathname, payload.shellHTML, payload.layoutMapping);
 Bun.stdout.write(html);

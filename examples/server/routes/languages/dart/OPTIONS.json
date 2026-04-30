@@ -1,0 +1,11 @@
+{
+    "DELETE": {
+        "200": {
+            "message": "^Hello from Dart!$",
+            "requestId": "^.{1,200}$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        }
+    }
+}

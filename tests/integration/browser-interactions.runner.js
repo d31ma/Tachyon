@@ -61,8 +61,8 @@ async function main() {
     await run('Component content renders in the browser', async () => {
         if (!page)
             throw new Error('Browser page failed to initialize');
-        await page.waitForSelector('[data-tac-scope=\"clicker\"] .panel, [data-tac-scope=\"ui-clicker\"] .panel', { timeout: TIMEOUT });
-        const clickers = await page.$$('[data-tac-scope=\"clicker\"] .panel, [data-tac-scope=\"ui-clicker\"] .panel');
+        await page.waitForSelector('[data-tac-scope=\"clicker\"] .panel, [data-tac-scope=\"clicker-ui\"] .panel', { timeout: TIMEOUT });
+        const clickers = await page.$$('[data-tac-scope=\"clicker\"] .panel, [data-tac-scope=\"clicker-ui\"] .panel');
         if (clickers.length < 1)
             throw new Error('Expected at least one rendered clicker');
     });
@@ -70,11 +70,11 @@ async function main() {
     await run('SPA navigation still works', async () => {
         if (!page)
             throw new Error('Browser page failed to initialize');
-        const apiLink = await page.$('a[href="/api"]');
+        const apiLink = await page.$('a[href="/languages/javascript"]');
         if (!apiLink)
             throw new Error('API link not found');
         await apiLink.click();
-        await page.waitForFunction(() => window.location.pathname === '/api', undefined, { timeout: TIMEOUT });
+        await page.waitForFunction(() => window.location.pathname === '/languages/javascript', undefined, { timeout: TIMEOUT });
         await page.goto(BASE, { waitUntil: 'domcontentloaded' });
         await page.waitForSelector('.hero', { timeout: TIMEOUT });
     });

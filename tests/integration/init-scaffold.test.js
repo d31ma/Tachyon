@@ -17,12 +17,14 @@ test('createAppScaffold writes a deployable starter app', async () => {
     expect(created).toBe(appDir);
     const packageJson = await readFile(path.join(appDir, 'package.json'), 'utf8');
     const homePage = await readFile(path.join(appDir, 'browser', 'pages', 'index.html'), 'utf8');
-    const mainScript = await readFile(path.join(appDir, 'browser', 'shared', 'scripts', 'main.js'), 'utf8');
+    const mainScript = await readFile(path.join(appDir, 'browser', 'shared', 'scripts', 'imports.js'), 'utf8');
     const sharedStyle = await readFile(path.join(appDir, 'browser', 'shared', 'styles', 'app.css'), 'utf8');
-    const handler = await readFile(path.join(appDir, 'server', 'routes', 'GET'), 'utf8');
+    const handler = await readFile(path.join(appDir, 'server', 'routes', 'GET.js'), 'utf8');
     expect(packageJson).toContain('"serve": "yon.serve"');
     expect(packageJson).toContain('"preview": "tac.preview --watch"');
     expect(packageJson).toContain('"@d31ma/tachyon"');
+    expect(await Bun.file(path.join(appDir, '.env.test')).exists()).toBe(true);
+    expect(await Bun.file(path.join(appDir, '.env.example')).exists()).toBe(true);
     expect(homePage).toContain('<hero />');
     expect(homePage).toContain('<slot />');
     expect(mainScript).toContain('../styles/app.css');

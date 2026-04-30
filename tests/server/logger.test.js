@@ -1,6 +1,6 @@
 // @ts-check
 import { expect, test } from 'bun:test';
-import { createLogger } from '../../src/server/logger.js';
+import { createLogger } from '../../src/server/observability/logger.js';
 const fixedNow = () => new Date('2026-04-10T12:00:00.000Z');
 test('pretty logger includes level, namespace, message, and structured fields', () => {
     /** @type {string[]} */

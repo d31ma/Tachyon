@@ -1,0 +1,709 @@
+/* Material Design 2 inspired tokens and primitives for the standalone FYLO shell.
+   The page avoids runtime custom elements so /_fylo stays quiet in the console. */
+
+:root,
+[data-theme="light"] {
+    color-scheme: light;
+    --md-sys-color-primary: #3f51b5;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #e8eaf6;
+    --md-sys-color-on-primary-container: #1a237e;
+    --md-sys-color-secondary: #00796b;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #e0f2f1;
+    --md-sys-color-on-secondary-container: #004d40;
+    --md-sys-color-tertiary: #455a64;
+    --md-sys-color-on-tertiary: #ffffff;
+    --md-sys-color-tertiary-container: #eceff1;
+    --md-sys-color-on-tertiary-container: #263238;
+    --md-sys-color-error: #c62828;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #ffebee;
+    --md-sys-color-on-error-container: #b71c1c;
+    --md-sys-color-background: #fafafa;
+    --md-sys-color-on-background: #212121;
+    --md-sys-color-surface: #ffffff;
+    --md-sys-color-on-surface: #212121;
+    --md-sys-color-surface-variant: #eeeeee;
+    --md-sys-color-on-surface-variant: #616161;
+    --md-sys-color-outline: #9e9e9e;
+    --md-sys-color-outline-variant: #e0e0e0;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #ffffff;
+    --md-sys-color-surface-container: #ffffff;
+    --md-sys-color-surface-container-high: #f5f5f5;
+    --md-sys-color-surface-container-highest: #eeeeee;
+
+    --md-sys-shape-corner-small: 4px;
+    --md-sys-shape-corner-medium: 4px;
+    --md-sys-shape-corner-large: 6px;
+
+    --md-sys-elevation-level1: 0 2px 1px -1px rgba(0, 0, 0, 0.20), 0 1px 1px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.12);
+    --md-sys-elevation-level2: 0 3px 3px -2px rgba(0, 0, 0, 0.20), 0 3px 4px rgba(0, 0, 0, 0.14), 0 1px 8px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="dark"] {
+    color-scheme: dark;
+    --md-sys-color-primary: #9fa8da;
+    --md-sys-color-on-primary: #111111;
+    --md-sys-color-primary-container: #303f9f;
+    --md-sys-color-on-primary-container: #e8eaf6;
+    --md-sys-color-secondary: #80cbc4;
+    --md-sys-color-on-secondary: #003d35;
+    --md-sys-color-secondary-container: #004d40;
+    --md-sys-color-on-secondary-container: #e0f2f1;
+    --md-sys-color-tertiary: #b0bec5;
+    --md-sys-color-on-tertiary: #263238;
+    --md-sys-color-tertiary-container: #37474f;
+    --md-sys-color-on-tertiary-container: #eceff1;
+    --md-sys-color-error: #ef9a9a;
+    --md-sys-color-on-error: #3b0707;
+    --md-sys-color-error-container: #5f1717;
+    --md-sys-color-on-error-container: #ffebee;
+    --md-sys-color-background: #121212;
+    --md-sys-color-on-background: #eeeeee;
+    --md-sys-color-surface: #1e1e1e;
+    --md-sys-color-on-surface: #eeeeee;
+    --md-sys-color-surface-variant: #2b2b2b;
+    --md-sys-color-on-surface-variant: #c7c7c7;
+    --md-sys-color-outline: #8d8d8d;
+    --md-sys-color-outline-variant: #3a3a3a;
+    --md-sys-color-surface-container-lowest: #0f0f0f;
+    --md-sys-color-surface-container-low: #181818;
+    --md-sys-color-surface-container: #1e1e1e;
+    --md-sys-color-surface-container-high: #242424;
+    --md-sys-color-surface-container-highest: #303030;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    overflow-x: clip;
+    background: var(--md-sys-color-background);
+    color: var(--md-sys-color-on-background);
+    font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+button,
+textarea {
+    font: inherit;
+}
+
+code,
+pre {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.md-typescale-headline-medium {
+    font: 400 28px/36px "Roboto", sans-serif;
+    letter-spacing: 0;
+}
+
+.md-typescale-title-large {
+    font: 500 22px/28px "Roboto", sans-serif;
+    letter-spacing: 0;
+}
+
+.md-typescale-title-medium {
+    font: 500 16px/24px "Roboto", sans-serif;
+    letter-spacing: 0;
+}
+
+.md-typescale-body-large {
+    font: 400 16px/24px "Roboto", sans-serif;
+    letter-spacing: 0;
+}
+
+.md-typescale-body-medium {
+    font: 400 14px/20px "Roboto", sans-serif;
+    letter-spacing: 0;
+}
+
+.md-typescale-body-small {
+    font: 400 12px/16px "Roboto", sans-serif;
+    letter-spacing: 0;
+}
+
+.md-typescale-label-large {
+    font: 500 14px/20px "Roboto", sans-serif;
+    letter-spacing: 0;
+}
+
+.button {
+    min-height: 36px;
+    border: 1px solid transparent;
+    border-radius: var(--md-sys-shape-corner-medium);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 16px;
+    background: transparent;
+    color: var(--md-sys-color-primary);
+    cursor: pointer;
+    font-weight: 500;
+    line-height: 1;
+    text-decoration: none;
+    max-width: 100%;
+}
+
+.button:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
+    text-decoration: none;
+}
+
+.button-primary {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    box-shadow: var(--md-sys-elevation-level1);
+}
+
+.button-primary:hover {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 86%, black);
+}
+
+.button-text {
+    color: var(--md-sys-color-primary);
+}
+
+.chip,
+.pill {
+    display: inline-block;
+    align-items: center;
+    min-height: 28px;
+    max-width: 100%;
+    border-radius: 16px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: normal;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+.field-control {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    padding: 12px;
+    outline: none;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.field-control:focus {
+    border-color: var(--md-sys-color-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--md-sys-color-primary) 24%, transparent);
+}
+
+.fylo-shell {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: clamp(16px, 3vw, 32px) clamp(12px, 3vw, 24px) 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-x: clip;
+}
+
+.fylo-hero {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: clamp(18px, 3vw, 28px);
+    border-left: 4px solid var(--md-sys-color-primary);
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    box-shadow: var(--md-sys-elevation-level1);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.fylo-hero .eyebrow {
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    opacity: 0.82;
+}
+
+.fylo-hero h1 {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.fylo-hero h1 code,
+.fylo-hero .lede code {
+    background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 10%, transparent);
+    padding: 2px 6px;
+    border-radius: var(--md-sys-shape-corner-small);
+}
+
+.fylo-hero .lede {
+    margin: 0;
+    opacity: 0.88;
+    overflow-wrap: anywhere;
+}
+
+.fylo-panel {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: clamp(16px, 2.5vw, 24px);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: var(--md-sys-elevation-level1);
+}
+
+.fylo-panel-header {
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.fylo-panel-header h2 {
+    margin: 0;
+}
+
+.muted {
+    margin: 0;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.fylo-collections {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.fylo-collection {
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    max-width: 100%;
+    padding: 12px 14px;
+    border: 1px solid transparent;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+}
+
+.fylo-collection:hover {
+    background: var(--md-sys-color-surface-container-highest);
+}
+
+.fylo-collection[aria-selected="true"] {
+    border-color: var(--md-sys-color-secondary);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+}
+
+.fylo-collection-name {
+    min-width: 0;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+.fylo-collection-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.pill-accent {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    border-color: transparent;
+}
+
+.pill-danger {
+    background: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
+    border-color: transparent;
+}
+
+.fylo-documents,
+.fylo-query-results {
+    min-width: 0;
+}
+
+.fylo-documents table,
+.fylo-query-results table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 12.5px;
+}
+
+.fylo-documents th,
+.fylo-documents td,
+.fylo-query-results th,
+.fylo-query-results td {
+    min-width: 0;
+    text-align: left;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+.fylo-documents th,
+.fylo-query-results th {
+    color: var(--md-sys-color-on-surface-variant);
+    font-weight: 500;
+    background: var(--md-sys-color-surface-container-high);
+}
+
+.fylo-documents th:first-child,
+.fylo-documents td.id,
+.fylo-query-results th:first-child,
+.fylo-query-results td.id {
+    width: min(34%, 18rem);
+}
+
+.fylo-documents td.id,
+.fylo-query-results td.id {
+    color: var(--md-sys-color-primary);
+    white-space: normal;
+}
+
+.fylo-documents td.preview,
+.fylo-query-results td.preview {
+    color: var(--md-sys-color-on-surface-variant);
+    white-space: normal;
+}
+
+.fylo-doc-row {
+    cursor: pointer;
+    transition: background 120ms ease;
+}
+
+.fylo-doc-row:hover,
+.fylo-doc-row[aria-selected="true"] {
+    background: var(--md-sys-color-surface-container-highest);
+}
+
+.fylo-detail .fylo-detail-heading {
+    margin: 16px 0 8px;
+    font: 500 14px/20px "Roboto", sans-serif;
+    letter-spacing: 0;
+    color: var(--md-sys-color-on-surface-variant);
+    text-transform: uppercase;
+}
+
+.fylo-detail .fylo-detail-heading:first-child {
+    margin-top: 0;
+}
+
+.fylo-detail pre,
+.fylo-query-results pre,
+.fylo-event-row pre,
+.fylo-history-entry pre {
+    margin: 0;
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+    border-radius: var(--md-sys-shape-corner-medium);
+    overflow-x: clip;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.fylo-detail pre,
+.fylo-query-results pre {
+    padding: 16px;
+    max-height: 480px;
+    overflow-y: auto;
+}
+
+.fylo-history {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.fylo-history-entry {
+    min-width: 0;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 16px;
+    background: var(--md-sys-color-surface-container-low);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.fylo-history-head {
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    overflow-wrap: anywhere;
+}
+
+.fylo-history-meta {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    overflow-wrap: anywhere;
+}
+
+.fylo-history-entry pre {
+    padding: 12px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.fylo-events-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.fylo-events {
+    min-width: 0;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 480px;
+    overflow-y: auto;
+}
+
+.fylo-event-row {
+    min-width: 0;
+    padding: 12px 14px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.fylo-event-head {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 12px;
+}
+
+.fylo-event-meta {
+    color: var(--md-sys-color-on-surface-variant);
+    overflow-wrap: anywhere;
+}
+
+.fylo-event-row pre {
+    padding: 10px 12px;
+    font-size: 11.5px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.fylo-query {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.fylo-query-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.fylo-encryption-banner {
+    padding: 12px 14px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-tertiary-container);
+    color: var(--md-sys-color-on-tertiary-container);
+    font-size: 13px;
+    margin-bottom: 12px;
+    overflow-wrap: anywhere;
+}
+
+.fylo-encryption-banner-revealed {
+    background: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
+}
+
+.fylo-encryption-banner code {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    padding: 1px 6px;
+    border-radius: var(--md-sys-shape-corner-small);
+}
+
+.fylo-encryption-banner .muted {
+    color: inherit;
+    opacity: 0.78;
+}
+
+.fylo-reveal-ui {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+}
+
+.fylo-error {
+    color: var(--md-sys-color-on-error-container);
+    background: var(--md-sys-color-error-container);
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 12px 14px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+    .fylo-shell {
+        padding: 12px 10px 36px;
+    }
+
+    .fylo-hero {
+        padding: 16px 14px;
+    }
+
+    .fylo-hero h1 {
+        font-size: 24px;
+        line-height: 32px;
+    }
+
+    .fylo-panel-header,
+    .fylo-collection,
+    .fylo-events-actions,
+    .fylo-query-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .fylo-panel-header .chip,
+    .fylo-collection-meta {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .fylo-events-actions .button,
+    .fylo-query-actions .button,
+    .fylo-reveal-ui .button {
+        width: 100%;
+    }
+
+    .fylo-reveal-ui {
+        grid-template-columns: 1fr;
+    }
+
+    .fylo-documents table,
+    .fylo-documents thead,
+    .fylo-documents tbody,
+    .fylo-documents tr,
+    .fylo-documents th,
+    .fylo-documents td,
+    .fylo-query-results table,
+    .fylo-query-results thead,
+    .fylo-query-results tbody,
+    .fylo-query-results tr,
+    .fylo-query-results th,
+    .fylo-query-results td {
+        display: block;
+        width: 100%;
+    }
+
+    .fylo-documents thead,
+    .fylo-query-results thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+
+    .fylo-documents tr,
+    .fylo-query-results tr {
+        border: 1px solid var(--md-sys-color-outline-variant);
+        border-radius: var(--md-sys-shape-corner-medium);
+        margin-bottom: 10px;
+        background: var(--md-sys-color-surface-container-low);
+        overflow: hidden;
+    }
+
+    .fylo-documents td,
+    .fylo-query-results td {
+        display: grid;
+        grid-template-columns: 4.5rem minmax(0, 1fr);
+        gap: 10px;
+        border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    }
+
+    .fylo-documents td:last-child,
+    .fylo-query-results td:last-child {
+        border-bottom: 0;
+    }
+
+    .fylo-documents td.id::before,
+    .fylo-query-results td.id::before {
+        content: "id";
+        color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .fylo-documents td.preview::before,
+    .fylo-query-results td.preview::before {
+        content: "preview";
+        color: var(--md-sys-color-on-surface-variant);
+    }
+}

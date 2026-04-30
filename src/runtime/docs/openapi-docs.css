@@ -1,22 +1,88 @@
-:root {
-  color-scheme: light;
-  --swagger-green: #49cc90;
-  --swagger-blue: #61affe;
-  --swagger-amber: #fca130;
-  --swagger-red: #f93e3e;
-  --swagger-purple: #9012fe;
-  --swagger-slate: #1f2937;
-  --swagger-line: #d8dde7;
-  --swagger-panel: #ffffff;
-  --swagger-panel-soft: #f8fafc;
-  --swagger-shell: #eef2f7;
-  --swagger-hero: #101826;
-  --swagger-text: #243447;
-  --swagger-muted: #667085;
-  --swagger-code: #17202a;
-  --swagger-code-text: #f8fafc;
-  --swagger-shadow: 0 18px 30px rgba(16, 24, 38, 0.08);
-  --swagger-radius: 14px;
+/* Material Design 2 inspired color tokens (light + dark via [data-theme]).
+   Mirrors the example homepage and /_fylo so /api-docs matches any Tachyon
+   app that adopts the M2 palette. */
+:root,
+[data-theme="light"] {
+    color-scheme: light;
+    --md-sys-color-primary: #3f51b5;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #e8eaf6;
+    --md-sys-color-on-primary-container: #1a237e;
+    --md-sys-color-secondary: #00796b;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #e0f2f1;
+    --md-sys-color-on-secondary-container: #004d40;
+    --md-sys-color-tertiary: #455a64;
+    --md-sys-color-on-tertiary: #ffffff;
+    --md-sys-color-tertiary-container: #eceff1;
+    --md-sys-color-on-tertiary-container: #263238;
+    --md-sys-color-error: #c62828;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #ffebee;
+    --md-sys-color-on-error-container: #b71c1c;
+    --md-sys-color-background: #fafafa;
+    --md-sys-color-on-background: #212121;
+    --md-sys-color-surface: #ffffff;
+    --md-sys-color-on-surface: #212121;
+    --md-sys-color-surface-variant: #eeeeee;
+    --md-sys-color-on-surface-variant: #616161;
+    --md-sys-color-outline: #9e9e9e;
+    --md-sys-color-outline-variant: #e0e0e0;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #ffffff;
+    --md-sys-color-surface-container: #ffffff;
+    --md-sys-color-surface-container-high: #f5f5f5;
+    --md-sys-color-surface-container-highest: #eeeeee;
+
+    /* Legacy --swagger-* tokens remapped to M2 - preserves the existing
+       class structure so the docs JS doesn't need to be rewritten. */
+    --swagger-green: var(--md-sys-color-primary);
+    --swagger-blue: #1976d2;
+    --swagger-amber: #f9a825;
+    --swagger-red: var(--md-sys-color-error);
+    --swagger-purple: var(--md-sys-color-tertiary);
+    --swagger-slate: var(--md-sys-color-on-surface);
+    --swagger-line: var(--md-sys-color-outline-variant);
+    --swagger-panel: var(--md-sys-color-surface-container);
+    --swagger-panel-soft: var(--md-sys-color-surface-container-low);
+    --swagger-shell: var(--md-sys-color-background);
+    --swagger-hero: var(--md-sys-color-primary-container);
+    --swagger-text: var(--md-sys-color-on-surface);
+    --swagger-muted: var(--md-sys-color-on-surface-variant);
+    --swagger-code: var(--md-sys-color-surface-container-highest);
+    --swagger-code-text: var(--md-sys-color-on-surface);
+    --swagger-shadow: 0 2px 1px -1px rgba(0, 0, 0, 0.20), 0 1px 1px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.12);
+    --swagger-radius: 6px;
+}
+
+[data-theme="dark"] {
+    color-scheme: dark;
+    --md-sys-color-primary: #9fa8da;
+    --md-sys-color-on-primary: #111111;
+    --md-sys-color-primary-container: #303f9f;
+    --md-sys-color-on-primary-container: #e8eaf6;
+    --md-sys-color-secondary-container: #004d40;
+    --md-sys-color-on-secondary-container: #e0f2f1;
+    --md-sys-color-tertiary: #b0bec5;
+    --md-sys-color-on-tertiary: #263238;
+    --md-sys-color-tertiary-container: #37474f;
+    --md-sys-color-on-tertiary-container: #eceff1;
+    --md-sys-color-error: #ef9a9a;
+    --md-sys-color-error-container: #5f1717;
+    --md-sys-color-on-error-container: #ffebee;
+    --md-sys-color-background: #121212;
+    --md-sys-color-on-background: #eeeeee;
+    --md-sys-color-surface: #1e1e1e;
+    --md-sys-color-on-surface: #eeeeee;
+    --md-sys-color-surface-variant: #2b2b2b;
+    --md-sys-color-on-surface-variant: #c7c7c7;
+    --md-sys-color-outline: #8d8d8d;
+    --md-sys-color-outline-variant: #3a3a3a;
+    --md-sys-color-surface-container-lowest: #0f0f0f;
+    --md-sys-color-surface-container-low: #181818;
+    --md-sys-color-surface-container: #1e1e1e;
+    --md-sys-color-surface-container-high: #242424;
+    --md-sys-color-surface-container-highest: #303030;
 }
 
 * {
@@ -25,15 +91,18 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
 }
 
 body {
   margin: 0;
-  background: linear-gradient(180deg, #f8fafc 0%, var(--swagger-shell) 100%);
-  color: var(--swagger-text);
-  font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  overflow-x: clip;
+  background: var(--md-sys-color-background);
+  color: var(--md-sys-color-on-background);
+  font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -44,24 +113,23 @@ textarea {
 }
 
 a {
-  color: #1f69b3;
+  color: var(--md-sys-color-primary);
 }
 
 a:hover {
-  color: #0f4c8a;
+  color: var(--md-sys-color-on-primary-container);
 }
 
 .docs-shell {
+  min-width: 0;
   padding-bottom: 48px;
 }
 
 .hero {
-  padding: 28px 24px 18px;
-  background:
-    radial-gradient(circle at top right, rgba(73, 204, 144, 0.2), transparent 32%),
-    linear-gradient(140deg, #111827 0%, var(--swagger-hero) 100%);
-  border-top: 4px solid var(--swagger-green);
-  color: #fff;
+  padding: 32px 24px 24px;
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+  border-top: 4px solid var(--md-sys-color-primary);
 }
 
 .hero-copy {
@@ -70,23 +138,28 @@ a:hover {
 
 .eyebrow {
   margin: 0 0 6px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--md-sys-color-on-primary-container);
+  opacity: 0.78;
 }
 
 .hero h1 {
   margin: 0;
   font-size: 34px;
+  font-weight: 400;
   line-height: 1.1;
+  color: var(--md-sys-color-on-primary-container);
+  overflow-wrap: anywhere;
 }
 
 .lede {
   max-width: 72rem;
   margin: 10px 0 0;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--md-sys-color-on-primary-container);
+  opacity: 0.85;
 }
 
 .hero-actions,
@@ -107,7 +180,7 @@ a:hover {
   justify-content: center;
   gap: 6px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 16px;
   padding: 8px 14px;
   text-decoration: none;
   font-weight: 700;
@@ -115,18 +188,27 @@ a:hover {
 
 .button {
   cursor: pointer;
+  border-radius: 4px;
 }
 
 .button-primary {
-  background: var(--swagger-green);
-  border-color: #2fa873;
-  color: white;
+  background: var(--md-sys-color-primary);
+  border-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+
+.button-primary:hover {
+  background: var(--md-sys-color-on-primary-container);
 }
 
 .button-secondary {
-  background: white;
-  border-color: var(--swagger-line);
-  color: var(--swagger-slate);
+  background: var(--md-sys-color-surface);
+  border-color: var(--md-sys-color-outline);
+  color: var(--md-sys-color-on-surface);
+}
+
+.button-secondary:hover {
+  background: var(--md-sys-color-surface-container-high);
 }
 
 .button:disabled {
@@ -152,6 +234,7 @@ a:hover {
 .route-card,
 .auth-card,
 .operation-card {
+  min-width: 0;
   background: var(--swagger-panel);
   border: 1px solid var(--swagger-line);
   box-shadow: var(--swagger-shadow);
@@ -165,13 +248,13 @@ a:hover {
 .toolbar-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(280px, 2fr) minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(min(100%, 280px), 2fr) minmax(min(100%, 220px), 1fr) auto;
   align-items: end;
 }
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
 }
 
 .summary-card {
@@ -191,16 +274,17 @@ a:hover {
   display: block;
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--swagger-muted);
 }
 
 .content-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(min(100%, 260px), 320px) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
+  min-width: 0;
 }
 
 .panel {
@@ -227,7 +311,7 @@ a:hover {
   margin: 0 0 8px;
   font-size: 13px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   color: var(--swagger-muted);
 }
 
@@ -244,12 +328,12 @@ a:hover {
   padding: 10px 12px;
   text-decoration: none;
   border: 1px solid var(--swagger-line);
-  border-radius: 12px;
-  background: #fff;
+  border-radius: 4px;
+  background: var(--md-sys-color-surface);
 }
 
 .nav-operation-link:hover {
-  background: var(--swagger-panel-soft);
+  background: var(--md-sys-color-surface-container-high);
 }
 
 .route-list,
@@ -280,21 +364,21 @@ a:hover {
 }
 
 .badge {
-  background: #eef7f0;
-  border-color: #c5ead7;
-  color: #156f53;
+  background: var(--md-sys-color-secondary-container);
+  border-color: transparent;
+  color: var(--md-sys-color-on-secondary-container);
 }
 
 .badge-success {
-  background: #eefbf4;
-  border-color: #c5ead7;
-  color: #156f53;
+  background: var(--md-sys-color-tertiary-container);
+  border-color: transparent;
+  color: var(--md-sys-color-on-tertiary-container);
 }
 
 .badge-error {
-  background: #fff0f0;
-  border-color: #ffd1d1;
-  color: #b42318;
+  background: var(--md-sys-color-error-container);
+  border-color: transparent;
+  color: var(--md-sys-color-on-error-container);
 }
 
 .method-pill {
@@ -303,18 +387,18 @@ a:hover {
   justify-content: center;
   min-width: 72px;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: 16px;
   color: white;
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .method-get { background: var(--swagger-green); }
 .method-post { background: var(--swagger-blue); }
 .method-put { background: var(--swagger-amber); }
-.method-patch { background: #50e3c2; color: #0b3b30; }
+.method-patch { background: var(--md-sys-color-tertiary); color: var(--md-sys-color-on-tertiary); }
 .method-delete { background: var(--swagger-red); }
 .method-head,
 .method-options { background: var(--swagger-purple); }
@@ -324,10 +408,10 @@ a:hover {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: #f8fafc;
-  border: 1px solid var(--swagger-line);
-  border-radius: 999px;
-  color: var(--swagger-muted);
+  background: var(--md-sys-color-surface-container-high);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 16px;
+  color: var(--md-sys-color-on-surface-variant);
   font-size: 12px;
 }
 
@@ -350,13 +434,14 @@ a:hover {
 }
 
 .operation-toggle:hover {
-  background: #f8fafc;
+  background: var(--md-sys-color-surface-container-high);
 }
 
 .operation-path {
   font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
   font-size: 13px;
   color: var(--swagger-slate);
+  overflow-wrap: anywhere;
 }
 
 .operation-title {
@@ -365,13 +450,13 @@ a:hover {
 }
 
 .operation-card.is-open {
-  border-color: #bdd5e5;
+  border-color: var(--md-sys-color-primary);
 }
 
 .operation-body {
   padding: 0 18px 18px;
-  border-top: 1px solid var(--swagger-line);
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.55) 0%, rgba(255, 255, 255, 0.8) 100%);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-low);
 }
 
 .operation-description {
@@ -411,11 +496,11 @@ a:hover {
 
 .field-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
 }
 
 .body-grid {
-  grid-template-columns: minmax(220px, 320px);
+  grid-template-columns: minmax(min(100%, 220px), 320px);
 }
 
 .field {
@@ -435,7 +520,7 @@ a:hover {
 .required {
   margin-left: 6px;
   font-style: normal;
-  color: #b42318;
+  color: var(--md-sys-color-error);
 }
 
 input,
@@ -443,10 +528,10 @@ select,
 textarea {
   width: 100%;
   padding: 11px 12px;
-  border-radius: 12px;
-  border: 1px solid #cbd5e1;
-  background: white;
-  color: var(--swagger-text);
+  border-radius: 4px;
+  border: 1px solid var(--md-sys-color-outline);
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
 }
 
 textarea {
@@ -459,15 +544,16 @@ textarea {
 input:focus,
 select:focus,
 textarea:focus {
-  outline: 2px solid rgba(97, 175, 254, 0.22);
-  border-color: #61affe;
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -1px;
+  border-color: var(--md-sys-color-primary);
 }
 
 .schema-panel {
-  border: 1px solid var(--swagger-line);
-  border-radius: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 4px;
   overflow: hidden;
-  background: white;
+  background: var(--md-sys-color-surface);
 }
 
 .schema-panel summary {
@@ -490,7 +576,10 @@ textarea:focus {
 pre {
   margin: 0;
   padding: 14px;
-  overflow: auto;
+  overflow-x: clip;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   background: var(--swagger-code);
   color: var(--swagger-code-text);
   font-size: 12px;
@@ -506,7 +595,7 @@ samp {
 .auth-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
 }
 
 .auth-card {

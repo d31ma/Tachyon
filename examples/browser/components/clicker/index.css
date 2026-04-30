@@ -1,0 +1,36 @@
+.clicker-card {
+    gap: 12px;
+}
+
+.clicker-badge {
+    display: inline-flex;
+    min-width: 36px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    padding: 4px 12px;
+    font-weight: 700;
+}
+
+.clicker-value {
+    color: var(--md-sys-color-on-surface);
+    line-height: 1;
+}
+
+.clicker-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+    .clicker-actions {
+        flex-direction: column;
+    }
+
+    .clicker-actions .button {
+        width: 100%;
+    }
+}

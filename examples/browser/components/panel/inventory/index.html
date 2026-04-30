@@ -1,0 +1,43 @@
+<div class="surface panel-wide" id="inventory">
+    <div class="surface-head">
+        <h2 class="md-typescale-title-large">Inventory lab</h2>
+        <div class="surface-actions">
+            <button type="button" class="button button-text" @click="refresh()">Refresh</button>
+            <button type="button" class="button button-text" @click="clearItems()">Clear</button>
+        </div>
+    </div>
+
+    <div class="inventory-form">
+        <input
+            class="field-control"
+            type="text"
+            aria-label="Create a backend item"
+            placeholder="Create a backend item"
+            :value="newItem"
+        />
+        <button type="button" class="button button-primary" @click="addItem()">Save</button>
+    </div>
+
+    <logic :if="feedback">
+        <div class="feedback-banner">
+            {feedback}
+        </div>
+    </logic>
+
+    <logic :if="items.length > 0">
+        <ul class="inventory-list">
+            <loop :for="let i = 0; i < items.length; i++">
+                <li class="inventory-item">
+                    <div class="inventory-item-text">
+                        <strong class="md-typescale-title-medium">{items[i].name}</strong>
+                        <p class="md-typescale-body-small">{items[i].source} - {formatDate(items[i].createdAt)}</p>
+                    </div>
+                    <span class="chip">{items[i].id.slice(0, 8)}</span>
+                </li>
+            </loop>
+        </ul>
+    </logic>
+    <logic :if="items.length === 0">
+        <p class="md-typescale-body-medium muted">No saved items yet. Create one and Yon will persist it for the next request.</p>
+    </logic>
+</div>

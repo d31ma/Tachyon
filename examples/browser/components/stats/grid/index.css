@@ -1,0 +1,35 @@
+.stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+    gap: 16px;
+    min-width: 0;
+}
+
+.stat-card {
+    gap: 8px;
+    min-width: 0;
+}
+
+.stat-label {
+    color: var(--md-sys-color-on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.stat-value {
+    color: var(--md-sys-color-on-surface);
+    line-height: 1.08;
+    overflow-wrap: anywhere;
+}
+
+@media (min-width: 641px) and (max-width: 900px) {
+    .stat-value {
+        font-size: 2rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .stats {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

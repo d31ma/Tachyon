@@ -1,0 +1,15 @@
+{
+  "name": "GET /languages/javascript",
+  "kind": "server",
+  "route": "/languages/javascript",
+  "method": "GET",
+  "statusCode": 200,
+  "durationMs": 14,
+  "traceId": "881d5ca2d9a4314817b2fde486cf4f28",
+  "spanId": "4a5b6c7d8e9f0a1b",
+  "parentSpanId": null,
+  "requestId": "4UZV1PU74CC",
+  "startTimeUnixNano": "1777855023584000000",
+  "endTimeUnixNano": "1777855023721000000",
+  "traceState": ""
+}

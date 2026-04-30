@@ -1,16 +1,20 @@
 {
     "name": "@d31ma/tachyon",
-    "version": "2.0.0",
+    "version": "26.18.30",
     "description": "A polyglot, file-system-routed full-stack framework for Bun",
     "author": "Chidelma",
     "license": "MIT",
     "type": "module",
-    "main": "./src/server/route-handler.js",
-    "types": "./src/server/route-handler.js",
+    "engines": {
+        "bun": ">=1.3.0"
+    },
+    "main": "./src/server/http/route-handler.js",
+    "types": "./src/server/http/route-handler.js",
     "exports": {
-        ".": "./src/server/route-handler.js",
+        ".": "./src/server/http/route-handler.js",
         "./server": "./src/server/yon.js",
-        "./compiler": "./src/compiler/template-compiler.js"
+        "./compiler": "./src/compiler/index.js",
+        "./decorators": "./src/runtime/decorators.js"
     },
     "bin": {
         "yon.init": "./bin/yon.init.js",
@@ -25,15 +29,18 @@
         "preview": "bun src/cli/preview.js --watch",
         "bundle:watch": "bun src/cli/bundle.js --watch",
         "start": "bun run serve",
+        "localstack:up": "docker compose -f docker-compose.localstack.yml up -d",
+        "localstack:down": "docker compose -f docker-compose.localstack.yml down",
+        "localstack:buckets": "bun scripts/create-localstack-buckets.js",
         "typecheck": "tsc --noEmit",
-        "test": "bun test",
-        "test:coverage": "bun test --coverage"
+        "test": "bun --env-file=.env.test test",
+        "test:coverage": "bun --env-file=.env.test test --coverage"
     },
     "files": [
         "bin/",
         "src/",
         "README.md",
-        ".env.example"
+        ".env.test"
     ],
     "keywords": [
         "tachyon",
@@ -50,14 +57,16 @@
         "url": "git+https://github.com/d31ma/Tachyon.git"
     },
     "publishConfig": {
-        "registry": "https://npm.pkg.github.com"
+        "registry": "https://npm.pkg.github.com",
+        "tag": "beta"
     },
     "homepage": "https://tachyon.del.ma",
     "bugs": {
         "url": "https://github.com/d31ma/Tachyon/issues"
     },
     "dependencies": {
-        "@d31ma/fylo": "^2.3.0"
+        "@d31ma/fylo": "26.18.29",
+        "@d31ma/ttid": "26.18.27-2"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "^20.8.9",

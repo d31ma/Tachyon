@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 // @ts-check
-import Router from "../server/route-handler.js";
-import Tac from "../compiler/template-compiler.js";
-import logger from "../server/logger.js";
+import Router from "../server/http/route-handler.js";
+import Compiler from "../compiler/index.js";
+import logger from "../server/observability/logger.js";
 import { access, mkdir, readdir, rm, stat } from "fs/promises";
 import { watch } from "fs";
 import path from "path";
@@ -14,7 +14,7 @@ import path from "path";
  * @typedef {{ incremental?: boolean }} BundleWatcherOptions
  */
 
-const distPath = `${process.cwd()}/dist`;
+const distPath = path.resolve(process.env.YON_DIST_PATH ?? path.join(process.cwd(), 'dist'));
 const watchMode = process.argv.includes('--watch');
 const skipInitialBuild = process.argv.includes('--skip-initial-build');
 const WATCH_DEBOUNCE_MS = 200;
@@ -59,9 +59,9 @@ export async function runBuild() {
     Router.resetStaticState();
     await rm(distPath, { recursive: true, force: true });
     await mkdir(distPath, { recursive: true });
-    await Tac.createStaticRoutes();
+    await Compiler.createStaticRoutes();
     await runWithConcurrency(Object.keys(Router.reqRoutes), BUILD_CONCURRENCY, buildRouteOutput);
-    await Tac.prerenderStaticPages(distPath);
+    await Compiler.prerenderStaticPages(distPath);
     bundleLogger.info('Bundle completed', {
         durationMs: Date.now() - start,
         routeCount: Object.keys(Router.reqRoutes).length,
@@ -92,7 +92,7 @@ function normalizeRelative(filePath) {
  */
 function classifyChange(targetPath) {
     const relative = normalizeRelative(path.relative(process.cwd(), targetPath));
-    if (Tac.isMainEntrypoint(relative))
+    if (Compiler.isMainEntrypoint(relative))
         return { type: 'main', relative };
     if (relative === 'package.json')
         return { type: 'full', relative };
@@ -134,8 +134,8 @@ async function runSelectiveBuild(change) {
         durationMs: Date.now() - start,
     });
     if (change.type === 'main') {
-        const previousRoutes = new Set(Tac.getBrowserRuntimeRoutes());
-        const outputRoutes = await Tac.bundleBrowserRuntimeAssets();
+        const previousRoutes = new Set(Compiler.getBrowserRuntimeRoutes());
+        const outputRoutes = await Compiler.bundleBrowserRuntimeAssets();
         for (const staleRoute of previousRoutes) {
             if (!outputRoutes.includes(staleRoute)) {
                 await rm(`${distPath}${staleRoute}`, { force: true });
@@ -144,7 +144,7 @@ async function runSelectiveBuild(change) {
         for (const route of outputRoutes) {
             await writeRouteOutput(route);
         }
-        await Tac.prerenderRoutes(distPath, Tac.getHtmlRoutes());
+        await Compiler.prerenderRoutes(distPath, Compiler.getHtmlRoutes());
         logIncrementalBuild();
         return;
     }
@@ -156,7 +156,7 @@ async function runSelectiveBuild(change) {
             await rm(outputPath, { force: true });
         }
         else {
-            await Tac.bundleAssetFile(change.relative);
+            await Compiler.bundleAssetFile(change.relative);
             await writeRouteOutput(`/shared/assets/${change.relative}`);
         }
         logIncrementalBuild();
@@ -171,16 +171,16 @@ async function runSelectiveBuild(change) {
             await runBuild();
             return;
         }
-        await Tac.bundleComponentFile(change.relative);
+        await Compiler.bundleComponentFile(change.relative);
         await writeRouteOutput(outputRoute);
-        await Tac.prerenderRoutes(distPath, Tac.getHtmlRoutes());
+        await Compiler.prerenderRoutes(distPath, Compiler.getHtmlRoutes());
         logIncrementalBuild();
         return;
     }
     if (change.type === 'page') {
         const sourcePath = path.join(Router.pagesPath, change.relative);
         const outputRoute = `/pages/${change.relative.replace(/\.html$/, '.js')}`;
-        const routePath = Tac.routePathFromPageSource(change.relative);
+        const routePath = Compiler.routePathFromPageSource(change.relative);
         if (!await pathExists(sourcePath)) {
             delete Router.reqRoutes[outputRoute];
             await rm(`${distPath}${outputRoute}`, { force: true });
@@ -188,9 +188,9 @@ async function runSelectiveBuild(change) {
             await runBuild();
             return;
         }
-        await Tac.bundlePageFile(change.relative);
+        await Compiler.bundlePageFile(change.relative);
         await writeRouteOutput(outputRoute);
-        await Tac.prerenderRoutes(distPath, Tac.getHtmlRoutes());
+        await Compiler.prerenderRoutes(distPath, Compiler.getHtmlRoutes());
         logIncrementalBuild();
         return;
     }
@@ -260,7 +260,7 @@ async function watchPaths(onChange) {
                 addWatcher(dir, 'directory');
             }
         }
-        for (const file of [...Tac.getMainEntryCandidates(), `${process.cwd()}/package.json`]) {
+        for (const file of [...Compiler.getMainEntryCandidates(), `${process.cwd()}/package.json`]) {
             active.add(file);
             addWatcher(file, 'file');
         }

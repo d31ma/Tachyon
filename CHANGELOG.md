@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Stage 3 decorator forms of the `Tac` runtime helpers, available as bare
+  identifiers in companion scripts: `@inject(key, fallback?)`,
+  `@provide(key)`, `@env(key, fallback?)`, `@onMount`, and `@emit(name)`. The
+  Tachyon compiler auto-imports these into companion scripts when it sees the
+  `@<name>` syntax, so user code references them without an `import` line.
+  Outside of companion scripts (tests, library code), import them from the
+  new `@d31ma/tachyon/decorators` package export. The existing instance-method
+  API (`this.inject`, `this.provide`, `this.onMount`, …) is unchanged.
+- Automatic prop-to-field binding: `Tac` copies values from `this.props` onto
+  any same-named instance field the subclass declared, removing the need for
+  boilerplate `this.foo = this.props.foo ?? default` assignments in the
+  constructor. A leading `$` on the field name is stripped when matching, so
+  `$`-prefixed persistent fields auto-bind to their unprefixed prop
+  counterparts (`$clicks` ↔ `props.clicks`); a direct match against the
+  prefixed key still takes precedence. Only fields the subclass explicitly
+  declared participate, and `props` and `tac` are skipped so a malicious
+  prop object cannot overwrite framework state.
+- New `./decorators` package export resolving to `src/runtime/decorators.js`.
+
+### Changed
+
+- The build-time compiler class previously exported as `Tac` from the
+  `./compiler` entry is now exported as `Compiler`, and its source moved from
+  `src/compiler/template-compiler.js` to `src/compiler/index.js`. The
+  `./compiler` package export still resolves; consumers who imported the
+  default export under the name `Tac` should rename the binding to `Compiler`
+  to avoid colliding with the runtime `Tac` class.
+- Internal reorganization of `src/server/`: flat files moved into
+  responsibility-scoped subdirectories. `route-handler.js`, `browser-env.js`,
+  and `schema-validator.js` are now under `src/server/http/`; `openapi.js`
+  under `src/server/openapi/`; `logger.js`, `console-logger.js`, and
+  `telemetry.js` under `src/server/observability/`; `process-pool.js` under
+  `src/server/process/`. `yon.js` stays at the `src/server/` root.
+  `package.json#main`, `#types`, and `exports."."` were updated to the new
+  `src/server/http/route-handler.js` path; `exports."./server"` is unchanged.
+- Build-time manifests (`route-manifest.json`, `shell-manifest.json`) moved
+  out of `src/runtime/` into `src/shared/manifests/` to separate generated
+  artifacts from runtime source. Compiler path constants and `.gitignore`
+  updated.
+
+### Removed
+
+- Unused `Compiler` import from `src/cli/serve.js`. The compiler module has
+  no top-level side effects, so the import was strictly dead.
+- Orphan `layout-manifest.json`. The compiler writes `Compiler.layoutMapping`
+  to `shell-manifest.json`; nothing in the codebase ever read or wrote
+  `layout-manifest.json`. Removed from `src/shared/manifests/` and
+  `.gitignore`.
+
 ## [2.0.0]
 
 Tachyon 2.0 is a full rewrite. The framework splits into `Tac` (frontend) and

@@ -1,0 +1,11 @@
+{
+  "name": "Industrial servo motor unit",
+  "source": "dashboard",
+  "tags": [
+    "manufacturing",
+    "automation",
+    "rotary"
+  ],
+  "price": 1249.99,
+  "inStock": true
+}
