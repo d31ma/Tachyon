@@ -32,31 +32,23 @@ jobs:
         with:
           bun-version: ${{ matrix.bun-version }}
 
-      - name: Configure GitHub Packages
+      - name: Configure npm registry
         run: |
           {
-            echo "@d31ma:registry=https://npm.pkg.github.com"
-            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
-            echo "always-auth=true"
+            echo "@d31ma:registry=https://registry.npmjs.org/"
           } > .npmrc
           cp .npmrc ~/.npmrc
           cat >> bunfig.toml <<'EOF'
 
           [install.scopes]
-          "@d31ma" = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
+          "@d31ma" = { url = "https://registry.npmjs.org/" }
           EOF
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Install example dependencies
         run: cd examples && bun install --frozen-lockfile
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Install Playwright Chromium
         run: bunx playwright install chromium
@@ -118,26 +110,20 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Configure GitHub Packages
+      - name: Configure npm registry
         run: |
           {
-            echo "@d31ma:registry=https://npm.pkg.github.com"
-            echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
-            echo "always-auth=true"
+            echo "@d31ma:registry=https://registry.npmjs.org/"
           } > .npmrc
           cp .npmrc ~/.npmrc
           cat >> bunfig.toml <<'EOF'
 
           [install.scopes]
-          "@d31ma" = { url = "https://npm.pkg.github.com", token = "$NODE_AUTH_TOKEN" }
+          "@d31ma" = { url = "https://registry.npmjs.org/" }
           EOF
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
       - name: Pack package under test
         run: bun pm pack --filename "$TACHYON_PACKAGE_TARBALL" --quiet
