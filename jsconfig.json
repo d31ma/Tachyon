@@ -26,5 +26,5 @@
     "examples/**/*.ts",
     "scripts/**/*.js"
   ],
-  "exclude": ["node_modules", "dist", "bin", "**/*.as.ts", "examples/dist", "examples/dist-debug", "examples/node_modules"]
+  "exclude": ["node_modules", "node_modules*", "dist", "bin", "**/*.as.ts", "examples/dist", "examples/dist-debug", "examples/node_modules", "examples/node_modules*"]
 }

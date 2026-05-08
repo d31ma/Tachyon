@@ -1,7 +1,7 @@
 // @ts-check
 import { mkdir, readdir, stat, writeFile } from 'fs/promises';
 import path from 'path';
-const version = '26.19.05';
+const version = '26.19.05-1';
 const defaultEnv = `YON_PORT=8000
 YON_HOST=127.0.0.1
 YON_HOSTNAME=127.0.0.1
@@ -62,6 +62,20 @@ dist
             '@d31ma/tachyon': `^${version}`
         }
     }, null, 2) + '\n',
+    'jsconfig.json': JSON.stringify({
+        compilerOptions: {
+            strict: true,
+            allowJs: true,
+            checkJs: true,
+            target: 'ESNext',
+            module: 'NodeNext',
+            moduleResolution: 'NodeNext',
+            types: ['@types/bun', '@types/node']
+        },
+        include: ['tachyon-env.d.ts', 'browser/**/*.js', 'browser/**/*.ts', 'server/**/*.js', 'server/**/*.ts']
+    }, null, 2) + '\n',
+    'tachyon-env.d.ts': `/// <reference types="@d31ma/tachyon/globals" />
+`,
     'README.md': `# Tachyon App
 
 ## Commands
