@@ -252,6 +252,8 @@ jobs:
 
     steps:
       - name: Publish via FOUNDRY
+        id: publish_github
+        continue-on-error: true
         uses: d31ma/FOUNDRY/.github/actions/publish-github-package@main
         with:
           package_name: ${{ needs.version.outputs.package_name }}
@@ -271,6 +273,19 @@ jobs:
             "@d31ma" = { url = "https://registry.npmjs.org/" }
             EOF
             bun install --frozen-lockfile
+
+      - name: Verify GitHub Packages artifact
+        env:
+          PACKAGE_NAME: ${{ needs.version.outputs.package_name }}
+          VERSION: ${{ needs.version.outputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+        run: |
+          cat > ~/.npmrc <<EOF
+          @d31ma:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+          always-auth=true
+          EOF
+          npm view "${PACKAGE_NAME}@${VERSION}" version --registry=https://npm.pkg.github.com
 
   promote-npm:
     name: Promote to npm registry
