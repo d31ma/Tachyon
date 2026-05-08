@@ -554,6 +554,30 @@ Tachyon intentionally treats language compilers as optional; plain `.wasm` works
 
 The same context, lifecycle, and event helpers are also exposed as Stage 3 decorators. They move the wiring out of the constructor and onto the field or method that owns the value. Companion scripts can use them as bare identifiers — the Tachyon compiler auto-imports them when it sees the `@<name>` syntax, so no `import` line is needed in user code.
 
+For editor and `checkJs` support in consuming apps, include Tachyon's ambient
+globals once in the app:
+
+```ts
+/// <reference types="@d31ma/tachyon/globals" />
+```
+
+The `yon.init` scaffold writes this to `tachyon-env.d.ts` automatically. It
+lets app-authored page and component scripts use bare `Tac`, `inject`,
+`provide`, `env`, `onMount`, `emit`, `render`, and `fylo` without local imports
+or `Cannot find name` diagnostics from TypeScript-aware tooling.
+
+If the app also uses plain ESLint `no-undef`, import Tachyon's globals map in
+the app's flat config:
+
+```js
+import tachyonGlobals from '@d31ma/tachyon/eslint-globals'
+
+export default [{
+  files: ['browser/**/*.{js,ts}'],
+  languageOptions: { globals: tachyonGlobals }
+}]
+```
+
 ```js
 export default class extends Tac {
   /** @type {string} */

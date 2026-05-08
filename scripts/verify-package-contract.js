@@ -92,6 +92,8 @@ try {
     const envExample = await readFile(path.join(starterRoot, '.env.example'), 'utf8');
     const envTest = await readFile(path.join(starterRoot, '.env.test'), 'utf8');
     const route = await readFile(path.join(starterRoot, 'browser', 'pages', 'index.html'), 'utf8');
+    const jsconfig = await readFile(path.join(starterRoot, 'jsconfig.json'), 'utf8');
+    const tachyonEnv = await readFile(path.join(starterRoot, 'tachyon-env.d.ts'), 'utf8');
     expect(starterPackage.scripts?.bundle === 'tac.bundle', 'starter app bundle script should be tac.bundle');
     expect(starterPackage.scripts?.serve === 'yon.serve', 'starter app serve script should be yon.serve');
     expect(starterPackage.scripts?.preview?.includes('tac.preview'), 'starter app preview script should include tac.preview');
@@ -100,6 +102,10 @@ try {
     expect(envExample.includes('TAC_FORMAT=esm'), '.env.example should include TAC_FORMAT=esm');
     expect(envTest.includes('TAC_FORMAT=esm'), '.env.test should include TAC_FORMAT=esm');
     expect(route.includes('<hero />'), 'starter browser/pages/index.html should include <hero />');
+    expect(jsconfig.includes('tachyon-env.d.ts'), 'starter jsconfig should include tachyon-env.d.ts');
+    expect(tachyonEnv.includes('@d31ma/tachyon/globals'), 'starter env types should include Tachyon globals');
+    const globalsCheck = run('bun', ['--eval', `import globals from '${packageName}/eslint-globals'; if (globals.Tac !== 'readonly') process.exit(1);`], starterRoot);
+    assertRun(globalsCheck, `${packageName}/eslint-globals import`);
     console.log(`Verified packed package contract for ${packageName}`);
 }
 finally {

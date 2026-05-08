@@ -20,9 +20,13 @@ test('createAppScaffold writes a deployable starter app', async () => {
     const mainScript = await readFile(path.join(appDir, 'browser', 'shared', 'scripts', 'imports.js'), 'utf8');
     const sharedStyle = await readFile(path.join(appDir, 'browser', 'shared', 'styles', 'app.css'), 'utf8');
     const handler = await readFile(path.join(appDir, 'server', 'routes', 'GET.js'), 'utf8');
+    const jsconfig = await readFile(path.join(appDir, 'jsconfig.json'), 'utf8');
+    const tachyonEnv = await readFile(path.join(appDir, 'tachyon-env.d.ts'), 'utf8');
     expect(packageJson).toContain('"serve": "yon.serve"');
     expect(packageJson).toContain('"preview": "tac.preview --watch"');
     expect(packageJson).toContain('"@d31ma/tachyon"');
+    expect(jsconfig).toContain('tachyon-env.d.ts');
+    expect(tachyonEnv).toContain('@d31ma/tachyon/globals');
     expect(await Bun.file(path.join(appDir, '.env.test')).exists()).toBe(true);
     expect(await Bun.file(path.join(appDir, '.env.example')).exists()).toBe(true);
     expect(homePage).toContain('<hero />');
