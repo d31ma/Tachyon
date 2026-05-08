@@ -199,7 +199,7 @@ jobs:
         env:
           PACKAGE_NAME: ${{ steps.read.outputs.package_name }}
           VERSION: ${{ steps.read.outputs.version }}
-          NODE_AUTH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
         run: |
           cat > ~/.npmrc <<EOF
           @d31ma:registry=https://npm.pkg.github.com
