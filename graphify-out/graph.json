@@ -2866,6 +2866,15 @@
       "norm_label": "globals.d.ts"
     },
     {
+      "label": "eslint-globals.js",
+      "file_type": "code",
+      "source_file": "src/types/eslint-globals.js",
+      "source_location": "L1",
+      "id": "src_types_eslint_globals_js",
+      "community": 58,
+      "norm_label": "eslint-globals.js"
+    },
+    {
       "label": "hot-reload-client.js",
       "file_type": "code",
       "source_file": "src/runtime/hot-reload-client.js",
@@ -3103,7 +3112,7 @@
       "label": "ensureEmptyDirectory()",
       "file_type": "code",
       "source_file": "src/runtime/app-scaffold.js",
-      "source_location": "L178",
+      "source_location": "L192",
       "id": "app_scaffold_ensureemptydirectory",
       "community": 1,
       "norm_label": "ensureemptydirectory()"
@@ -3112,7 +3121,7 @@
       "label": "createAppScaffold()",
       "file_type": "code",
       "source_file": "src/runtime/app-scaffold.js",
-      "source_location": "L198",
+      "source_location": "L212",
       "id": "app_scaffold_createappscaffold",
       "community": 1,
       "norm_label": "createappscaffold()"
@@ -3366,7 +3375,7 @@
       "source_file": "src/runtime/prerender-worker.js",
       "source_location": "L1",
       "id": "src_runtime_prerender_worker_js",
-      "community": 58,
+      "community": 59,
       "norm_label": "prerender-worker.js"
     },
     {
@@ -5427,7 +5436,7 @@
       "source_file": "src/server/observability/console-logger.js",
       "source_location": "L1",
       "id": "src_server_observability_console_logger_js",
-      "community": 59,
+      "community": 60,
       "norm_label": "console-logger.js"
     },
     {
@@ -6858,7 +6867,7 @@
       "source_file": "src/cli/init.js",
       "source_location": "L1",
       "id": "src_cli_init_js",
-      "community": 60,
+      "community": 61,
       "norm_label": "init.js"
     },
     {
@@ -14244,7 +14253,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "src/runtime/app-scaffold.js",
-      "source_location": "L178",
+      "source_location": "L192",
       "weight": 1.0,
       "_src": "src_runtime_app_scaffold_js",
       "_tgt": "app_scaffold_ensureemptydirectory",
@@ -14256,7 +14265,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "src/runtime/app-scaffold.js",
-      "source_location": "L198",
+      "source_location": "L212",
       "weight": 1.0,
       "_src": "src_runtime_app_scaffold_js",
       "_tgt": "app_scaffold_createappscaffold",
@@ -14268,7 +14277,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "src/runtime/app-scaffold.js",
-      "source_location": "L200",
+      "source_location": "L214",
       "weight": 1.0,
       "_src": "app_scaffold_createappscaffold",
       "_tgt": "app_scaffold_ensureemptydirectory",

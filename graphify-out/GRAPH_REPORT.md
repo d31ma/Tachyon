@@ -1,11 +1,11 @@
 # Graph Report - TACHYON  (2026-05-08)
 
 ## Corpus Check
-- 126 files · ~78,888 words
+- 127 files · ~79,136 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 855 nodes · 1610 edges · 34 communities detected
+- 856 nodes · 1610 edges · 34 communities detected
 - Extraction: 80% EXTRACTED · 20% INFERRED · 0% AMBIGUOUS · INFERRED: 323 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
@@ -235,7 +235,7 @@ Nodes (1): DartLanguageService
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `get()` connect `Community 5` to `Community 0`, `Community 1`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 12`, `Community 13`, `Community 17`, `Community 20`?**
-  _High betweenness centrality (0.255) - this node is a cross-community bridge._
+  _High betweenness centrality (0.254) - this node is a cross-community bridge._
 - **Why does `Compiler` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`?**
   _High betweenness centrality (0.109) - this node is a cross-community bridge._
 - **Why does `set()` connect `Community 3` to `Community 0`, `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 13`, `Community 16`, `Community 17`, `Community 25`?**
