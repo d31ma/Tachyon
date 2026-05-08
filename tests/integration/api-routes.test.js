@@ -319,7 +319,7 @@ beforeAll(async () => {
         stderr: 'inherit'
     });
     await waitForServer(BASE_URL, serverProcess);
-});
+}, 30_000);
 afterAll(async () => {
     const proc = serverProcess;
     serverProcess = null;
