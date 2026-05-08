@@ -275,25 +275,94 @@ jobs:
   promote-npm:
     name: Promote to npm registry
     needs: [version, publish]
-    if: needs.publish.result == 'success'
+    if: >-
+      ${{
+        always() &&
+        needs.version.result == 'success' &&
+        needs.version.outputs.tag_exists == 'false' &&
+        needs.version.outputs.npm_version_exists == 'false' &&
+        (
+          needs.publish.result == 'success' ||
+          (
+            needs.version.outputs.github_version_exists == 'true' &&
+            needs.publish.result == 'skipped'
+          )
+        )
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
       packages: read
-    uses: d31ma/FOUNDRY/.github/workflows/promote-npm.yml@main
-    with:
-      package_name: ${{ needs.version.outputs.package_name }}
-      version: ${{ needs.version.outputs.version }}
-      npm_dist_tag: latest
-      source_repository: ${{ github.repository }}
-    secrets:
-      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+
+    env:
+      PACKAGE_NAME: ${{ needs.version.outputs.package_name }}
+      VERSION: ${{ needs.version.outputs.version }}
+      NPM_DIST_TAG: latest
+      GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+
+      - name: Configure GitHub Packages read access
+        run: |
+          {
+            echo "@d31ma:registry=https://npm.pkg.github.com"
+            echo "//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}"
+            echo "always-auth=true"
+          } > "$RUNNER_TEMP/github-packages.npmrc"
+
+      - name: Verify GitHub Packages version exists
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/github-packages.npmrc
+        run: npm view "${PACKAGE_NAME}@${VERSION}" version --registry=https://npm.pkg.github.com
+
+      - name: Pack exact GitHub Packages artifact
+        id: pack
+        env:
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/github-packages.npmrc
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/npm-promotion"
+          npm pack "${PACKAGE_NAME}@${VERSION}" \
+            --registry=https://npm.pkg.github.com \
+            --pack-destination "$RUNNER_TEMP/npm-promotion" \
+            --json > "$RUNNER_TEMP/npm-promotion/pack.json"
+          TARBALL=$(node -e "const data = require(process.env.RUNNER_TEMP + '/npm-promotion/pack.json'); console.log(data[0].filename)")
+          echo "tarball=$RUNNER_TEMP/npm-promotion/$TARBALL" >> "$GITHUB_OUTPUT"
+
+      - name: Publish tarball to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            {
+              echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}"
+            } > "$RUNNER_TEMP/npm-publish.npmrc"
+            export NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/npm-publish.npmrc"
+          fi
+          npm publish "${{ steps.pack.outputs.tarball }}" --access public --tag "$NPM_DIST_TAG" --registry=https://registry.npmjs.org
 
   github-release:
     name: Create GitHub release
     runs-on: ubuntu-latest
     needs: [version, publish, promote-npm]
-    if: needs.version.outputs.tag_exists == 'false'
+    if: >-
+      ${{
+        always() &&
+        needs.version.outputs.tag_exists == 'false' &&
+        needs.promote-npm.result == 'success' &&
+        (
+          needs.publish.result == 'success' ||
+          needs.publish.result == 'skipped'
+        )
+      }}
     timeout-minutes: 10
     permissions:
       contents: write
