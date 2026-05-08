@@ -18,6 +18,19 @@
 let __fyloAuthHeader = null;
 
 /**
+ * Encodes Basic auth credentials as UTF-8 before Base64 conversion.
+ * @param {string} user
+ * @param {string} pass
+ * @returns {string}
+ */
+function __fyloBasicAuth(user, pass) {
+    const bytes = new TextEncoder().encode(`${user}:${pass}`);
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return `Basic ${btoa(binary)}`;
+}
+
+/**
  * Resolves the Fylo browser API base path. Reads from the shell-injected
  * `<meta name="fylo-browser-path">` tag, falling back to `/_fylo`.
  * @returns {string}
@@ -118,7 +131,7 @@ function createFyloClient(basePath) {
          * @param {string} pass
          */
         setCredentials(user, pass) {
-            __fyloAuthHeader = `Basic ${btoa(user + ':' + pass)}`;
+            __fyloAuthHeader = __fyloBasicAuth(user, pass);
         },
         clearCredentials() {
             __fyloAuthHeader = null;

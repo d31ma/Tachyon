@@ -1120,6 +1120,9 @@ const __ty_companion__ = await (async () => {
     const __ty_runtime_bindings__ = __ty_helpers__.createTacHelpers(__ty_props__);
     const __ty_instance__ = new __ty_Companion__(__ty_props__, __ty_runtime_bindings__);
     if (__ty_instance__) {
+        if (__ty_instance__.__tac_wasm_ready__ && typeof __ty_instance__.__tac_wasm_ready__.then === 'function') {
+            await __ty_instance__.__tac_wasm_ready__;
+        }
         __ty_helpers__.bindCompanion(__ty_instance__, __ty_props__, __ty_runtime_bindings__);
     }
     return __ty_instance__;
@@ -1582,7 +1585,12 @@ ${transformed}
 const __tac_wasm_source__ = ${sourceLabel};
 const __tac_wasm_methods__ = ${methods};
 const __tac_wasm_default_state__ = Object.freeze(${defaultState});
-const __tac_wasm_bytes__ = Uint8Array.from(atob(${JSON.stringify(bytesBase64)}), (char) => char.charCodeAt(0));
+const __tac_wasm_bytes__ = (() => {
+    const bin = atob(${JSON.stringify(bytesBase64)});
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+})();
 const __tac_text_encoder__ = new TextEncoder();
 const __tac_text_decoder__ = new TextDecoder();
 
@@ -1603,7 +1611,11 @@ function __tac_apply_state__(owner, message) {
 class TacWasmJsonRuntime {
     constructor(owner) {
         this.owner = owner;
-        const module = new WebAssembly.Module(__tac_wasm_bytes__);
+        this.exports = null;
+        this.ready = this.instantiate();
+    }
+
+    async instantiate() {
         let wasmMemory;
         const memoryView = () => {
             if (!(wasmMemory instanceof WebAssembly.Memory)) {
@@ -1611,7 +1623,7 @@ class TacWasmJsonRuntime {
             }
             return new Uint8Array(wasmMemory.buffer);
         };
-        const instance = new WebAssembly.Instance(module, {
+        const result = await WebAssembly.instantiate(__tac_wasm_bytes__, {
             env: {
                 abort(messagePtr, filePtr, line, column) {
                     throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' aborted at ' + line + ':' + column);
@@ -1651,6 +1663,7 @@ class TacWasmJsonRuntime {
                 },
             },
         });
+        const instance = result.instance ?? result;
         this.exports = instance.exports;
         if (!(this.exports.memory instanceof WebAssembly.Memory)) {
             throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' must export memory');
@@ -1663,31 +1676,43 @@ class TacWasmJsonRuntime {
         }
     }
 
+    requireExports() {
+        if (!this.exports) {
+            throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' has not finished loading');
+        }
+        return this.exports;
+    }
+
     writeJson(value) {
+        const exports = this.requireExports();
         const bytes = __tac_text_encoder__.encode(JSON.stringify(value ?? null));
-        const ptr = this.exports.alloc(bytes.length);
-        new Uint8Array(this.exports.memory.buffer).set(bytes, ptr);
+        const ptr = exports.alloc(bytes.length);
+        if (!ptr) throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' failed to allocate ' + bytes.length + ' bytes');
+        new Uint8Array(exports.memory.buffer).set(bytes, ptr);
         return { ptr, len: bytes.length };
     }
 
     dealloc(input) {
-        if (input && typeof this.exports.dealloc === 'function') {
-            this.exports.dealloc(input.ptr, input.len);
+        const exports = this.requireExports();
+        if (input && typeof exports.dealloc === 'function') {
+            exports.dealloc(input.ptr, input.len);
         }
     }
 
     readOutput() {
-        const ptr = this.exports.output_ptr();
-        const len = this.exports.output_len();
+        const exports = this.requireExports();
+        const ptr = exports.output_ptr();
+        const len = exports.output_len();
         if (!len) return {};
-        const memory = new Uint8Array(this.exports.memory.buffer);
+        const memory = new Uint8Array(exports.memory.buffer);
         return JSON.parse(__tac_text_decoder__.decode(memory.subarray(ptr, ptr + len)));
     }
 
     init(props) {
+        const exports = this.requireExports();
         const input = this.writeJson({ props });
         try {
-            this.exports.init(input.ptr, input.len);
+            exports.init(input.ptr, input.len);
             return __tac_apply_state__(this.owner, this.readOutput());
         }
         finally {
@@ -1696,6 +1721,7 @@ class TacWasmJsonRuntime {
     }
 
     call(method, args) {
+        const exports = this.requireExports();
         const methodInput = this.writeJson(method);
         const payloadInput = this.writeJson({
             args,
@@ -1705,7 +1731,7 @@ class TacWasmJsonRuntime {
                 .map((key) => [key, this.owner[key]])),
         });
         try {
-            this.exports.call(methodInput.ptr, methodInput.len, payloadInput.ptr, payloadInput.len);
+            exports.call(methodInput.ptr, methodInput.len, payloadInput.ptr, payloadInput.len);
             return __tac_apply_state__(this.owner, this.readOutput());
         }
         finally {
@@ -1724,6 +1750,11 @@ export default class extends Tac {
             enumerable: false,
             value: new TacWasmJsonRuntime(this),
         });
+        Object.defineProperty(this, '__tac_wasm_ready__', {
+            configurable: false,
+            enumerable: false,
+            value: this.__tac_wasm_runtime__.ready.then(() => this.__tac_wasm_runtime__.init(props)),
+        });
         for (const method of __tac_wasm_methods__) {
             Object.defineProperty(this, method, {
                 configurable: true,
@@ -1731,7 +1762,6 @@ export default class extends Tac {
                 value: (...args) => this.__tac_wasm_runtime__.call(method, args),
             });
         }
-        this.__tac_wasm_runtime__.init(props);
     }
 }
 `;

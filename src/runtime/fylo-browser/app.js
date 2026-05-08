@@ -12,6 +12,17 @@ if (!/** @type {any} */ (window).fylo) {
     let __fyloAuthHeader = null;
 
     /**
+     * @param {string} user
+     * @param {string} pass
+     */
+    function __fyloBasicAuth(user, pass) {
+        const bytes = new TextEncoder().encode(`${user}:${pass}`);
+        let binary = "";
+        for (const byte of bytes) binary += String.fromCharCode(byte);
+        return `Basic ${btoa(binary)}`;
+    }
+
+    /**
      * @param {string} url
      * @param {RequestInit} [init]
      */
@@ -80,7 +91,7 @@ if (!/** @type {any} */ (window).fylo) {
          * @param {string} pass
          */
         setCredentials(user, pass) {
-            __fyloAuthHeader = `Basic ${btoa(user + ":" + pass)}`;
+            __fyloAuthHeader = __fyloBasicAuth(user, pass);
         },
         clearCredentials() {
             __fyloAuthHeader = null;
