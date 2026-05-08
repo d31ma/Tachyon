@@ -1,7 +1,7 @@
 <div class="surface">
     <div class="surface-head">
         <h2 class="md-typescale-title-large">Shared browser data</h2>
-        <span class="chip">{loadingState()}</span>
+        <md-assist-chip :label="loadingState()"></md-assist-chip>
     </div>
     <logic :if="showcase">
         <div class="callout">

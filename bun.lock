@@ -5,8 +5,7 @@
     "": {
       "name": "@d31ma/tachyon",
       "dependencies": {
-        "@d31ma/fylo": "26.18.29",
-        "@d31ma/ttid": "26.18.27-2",
+        "@d31ma/fylo": "26.19.7",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.8.9",
@@ -20,11 +19,11 @@
     },
   },
   "packages": {
-    "@d31ma/chex": ["@d31ma/chex@26.18.27-2", "https://npm.pkg.github.com/download/@d31ma/chex/26.18.27-2/39aa3fa6b23bf3a3c704a5a9f88c310917687fd2", { "bin": { "chex.generate": "src/cli/generate-declarations.js" } }, "sha512-gIRmx6gRWbp780SdKThI+5Ty7E8ncmYddkxYZfjTqVfEeqfIVnK62+9OY+ZFqRSWatJZLUclA13Jkjo7xphkLA=="],
+    "@d31ma/chex": ["@d31ma/chex@26.18.27-2", "", { "bin": { "chex.generate": "src/cli/generate-declarations.js" } }, "sha512-5FVxxrbmF6ToQ5eeGkDofOFAmJpA/VjACER270bqGPJd2yYZv21G3vsgId/v3AUblRAvZvlDfovGNGzb/1XcoA=="],
 
-    "@d31ma/fylo": ["@d31ma/fylo@26.18.29", "https://npm.pkg.github.com/download/@d31ma/fylo/26.18.29/6432961139f0bd16a0dd6b34e54a6813d8a287fb", { "dependencies": { "@d31ma/chex": "26.18.27-2", "@d31ma/ttid": "26.18.27-2" }, "bin": { "fylo.admin": "dist/cli/index.js", "fylo.exec": "dist/cli/index.js", "fylo.query": "dist/cli/index.js" } }, "sha512-OVro5Z0ag2KuB6sl7Cc0uGR5SsiQGQLerwUApDx/NzFSEqiXe7TT80zIpG7EaH9xdrYhmpOAxicyHLrYFwqe3g=="],
+    "@d31ma/fylo": ["@d31ma/fylo@26.19.7", "", { "dependencies": { "@d31ma/chex": "26.18.27-2", "@d31ma/ttid": "26.18.27-2" }, "bin": { "fylo.query": "dist/cli/index.js", "fylo.admin": "dist/cli/index.js", "fylo.exec": "dist/cli/index.js" } }, "sha512-VTM4zi4LcXA8t2kBh2+4ynoBr0mw25wnhAeCVmiOSOve7XmIVyOZi8L578NsK7BAt99+0GQJD6ODVjbSJIM7bg=="],
 
-    "@d31ma/ttid": ["@d31ma/ttid@26.18.27-2", "https://npm.pkg.github.com/download/@d31ma/ttid/26.18.27-2/257e08d35dd48e7b7f7a9db1cf4910cf52f95aba", {}, "sha512-QEdXkUwhAgMsbwc6kNcphO+4zyF7FW3qqxYRdepmN2UoS+PepTujBCEQ4LnoaoqQIjqk819PAPxkCRtdzTYUDA=="],
+    "@d31ma/ttid": ["@d31ma/ttid@26.18.27-2", "", {}, "sha512-n4kxGaLTqdeaUYwfzLx6Co7hwTeJjlEkEDTGb+d6IiMFy6SMqk8KljohlRzyBtgDWmNAaZ4JmnnWt3PtZ4Sgkw=="],
 
     "@happy-dom/global-registrator": ["@happy-dom/global-registrator@20.9.0", "", { "dependencies": { "@types/node": ">=20.0.0", "happy-dom": "^20.9.0" } }, "sha512-lBW6/m5BIFl3pMuWPNN0lIOYw9LMCmPfix53ExS3FBi4E+NELEljQ3xH6aAV9IYiQRfn9YIIgzzMrD0vIcD7tw=="],
 
@@ -32,7 +31,7 @@
 
     "@types/deno": ["@types/deno@2.5.0", "", {}, "sha512-g8JS38vmc0S87jKsFzre+0ZyMOUDHPVokEJymSCRlL57h6f/FdKPWBXgdFh3Z8Ees9sz11qt9VWELU9Y9ZkiVw=="],
 
-    "@types/node": ["@types/node@20.19.39", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-orrrD74MBUyK8jOAD/r0+lfa1I2MO6I+vAkmAWzMYbCcgrN4lCrmK52gRFQq/JRxfYPfonkr4b0jcY7Olqdqbw=="],
+    "@types/node": ["@types/node@20.19.40", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-xxx6M2IpSTnnKcR0cMvIiohkiCx20/oRPtWGbenFygKCGl3zqUzdNjQ/1V4solq1LU+dgv0nQzeGOuqkqZGg0Q=="],
 
     "@types/whatwg-mimetype": ["@types/whatwg-mimetype@3.0.2", "", {}, "sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA=="],
 

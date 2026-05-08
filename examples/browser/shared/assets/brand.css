@@ -2,6 +2,28 @@
 
 :root,
 [data-theme="light"] {
+    --md-ref-typeface-plain: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --md-ref-typeface-brand: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --md-sys-typescale-label-large-font: var(--md-ref-typeface-plain);
+    --md-sys-typescale-label-medium-font: var(--md-ref-typeface-plain);
+    --md-sys-typescale-label-small-font: var(--md-ref-typeface-plain);
+    --md-sys-typescale-label-large-font-family: var(--md-ref-typeface-plain);
+    --md-sys-typescale-label-medium-font-family: var(--md-ref-typeface-plain);
+    --md-sys-typescale-label-small-font-family: var(--md-ref-typeface-plain);
+    --md-sys-typescale-label-large-weight: 500;
+    --md-sys-typescale-label-large-tracking: 0px;
+    --md-filled-button-label-text-font: var(--md-ref-typeface-plain);
+    --md-filled-button-label-text-weight: 520;
+    --md-filled-button-label-text-tracking: 0.005em;
+    --md-outlined-button-label-text-font: var(--md-ref-typeface-plain);
+    --md-outlined-button-label-text-weight: 520;
+    --md-outlined-button-label-text-tracking: 0.005em;
+    --md-text-button-label-text-font: var(--md-ref-typeface-plain);
+    --md-text-button-label-text-weight: 520;
+    --md-text-button-label-text-tracking: 0.005em;
+    --md-assist-chip-label-text-font: var(--md-ref-typeface-plain);
+    --md-assist-chip-label-text-weight: 500;
+    --md-assist-chip-label-text-tracking: 0.01em;
     --md-sys-color-primary: #3f51b5;
     --md-sys-color-on-primary: #ffffff;
     --md-sys-color-primary-container: #e8eaf6;
@@ -163,8 +185,10 @@ textarea {
     gap: 8px;
     padding: 0 16px;
     cursor: pointer;
-    font-weight: 500;
-    line-height: 1;
+    font-size: 0.925rem;
+    font-weight: 520;
+    letter-spacing: 0.005em;
+    line-height: 1.2;
     text-decoration: none;
     max-width: 100%;
     min-width: 0;
@@ -214,9 +238,10 @@ textarea {
     min-width: 0;
     min-height: 30px;
     padding: 0 12px;
-    font-size: 12px;
+    font-size: 0.78rem;
     font-weight: 500;
-    letter-spacing: 0;
+    letter-spacing: 0.01em;
+    line-height: 1.35;
     white-space: normal;
     text-align: left;
     overflow-wrap: anywhere;
@@ -317,7 +342,6 @@ textarea {
 .md-typescale-label-medium,
 .md-typescale-label-small {
     font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.015em;
 }

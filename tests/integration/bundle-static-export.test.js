@@ -1,6 +1,6 @@
 // @ts-check
 import { afterEach, expect, test } from 'bun:test';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import path from 'path';
 import { tmpdir } from 'os';
 import { pathToFileURL } from 'url';
@@ -9,6 +9,7 @@ const timedTest = /** @type {any} */ (test);
 /** @type {string[]} */
 const tempDirs = [];
 const bundleEntrypoint = path.join(process.cwd(), 'src/cli/bundle.js');
+const wasmClickerFixture = 'AGFzbQEAAAABFgRgAX8Bf2ACf38AYAR/f39/AGAAAX8DBwYAAQECAwMFAwEAAQYLAn8BQQALfwFBAAsHRAcGbWVtb3J5AgAFYWxsb2MAAAdkZWFsbG9jAAEEaW5pdAACBGNhbGwAAwpvdXRwdXRfcHRyAAQKb3V0cHV0X2xlbgAFCiwGBQBBgBALAgALCwBB5AAkAEEmJAELCwBByAEkAEEoJAELBAAjAAsEACMBCwtbAgBB5AALJnsic3RhdGUiOnsiY2xpY2tzIjowLCJsYWJlbCI6IlJlYWR5In19AEHIAQsoeyJzdGF0ZSI6eyJjbGlja3MiOjEsImxhYmVsIjoiQ2xpY2tlZCJ9fQ==';
 async function createFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bundle-'));
     tempDirs.push(root);
@@ -203,6 +204,60 @@ async function createCompanionScriptFixture() {
     await writeFile(path.join(root, 'components', 'clicker.css'), `.clicker { border: 2px solid tomato; font-weight: 700; }`);
     await writeFile(path.join(root, 'routes', 'index.html'), `<clicker label="Companion" />`);
     return root;
+}
+async function createWasmCompanionFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-wasm-companion-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'components'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-wasm-companion-fixture',
+        private: true,
+    }, null, 2));
+    await writeFile(path.join(root, 'components', 'clicker.html'), `<button @click="increment()">Wasm {label}: {clicks}</button>`);
+    await writeFile(path.join(root, 'components', 'clicker.wasm'), Buffer.from(wasmClickerFixture, 'base64'));
+    await writeFile(path.join(root, 'components', 'clicker.tac.json'), JSON.stringify({
+        abi: 'tac-wasm-json@1',
+        state: {
+            clicks: 99,
+            label: 'Manifest',
+        },
+        methods: ['increment'],
+    }, null, 2));
+    await writeFile(path.join(root, 'routes', 'index.html'), `<clicker />`);
+    return root;
+}
+async function createWasmSourceCompanionFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-wasm-source-companion-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'components'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-wasm-source-companion-fixture',
+        private: true,
+    }, null, 2));
+    await writeFile(path.join(root, 'components', 'clicker.html'), `<button @click="increment()">Wasm {label}: {clicks}</button>`);
+    await writeFile(path.join(root, 'components', 'clicker.wat'), '(module)');
+    await writeFile(path.join(root, 'components', 'clicker.tac.json'), JSON.stringify({
+        abi: 'tac-wasm-json@1',
+        state: {
+            clicks: 99,
+            label: 'Manifest',
+        },
+        methods: ['increment'],
+    }, null, 2));
+    await writeFile(path.join(root, 'routes', 'index.html'), `<clicker />`);
+    const compilerPath = path.join(root, 'fake-wat2wasm');
+    await writeFile(compilerPath, `#!/usr/bin/env bun
+const outIndex = process.argv.indexOf('-o') + 1;
+if (outIndex <= 0 || !process.argv[outIndex]) {
+  console.error('missing -o output');
+  process.exit(1);
+}
+await Bun.write(process.argv[outIndex], Buffer.from(${JSON.stringify(wasmClickerFixture)}, 'base64'));
+`);
+    await chmod(compilerPath, 0o755);
+    return { root, compilerPath };
 }
 async function createGlobalTacFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-global-tac-'));
@@ -576,6 +631,60 @@ timedTest('component companion scripts in JavaScript or TypeScript and scoped cs
     expect(buttonId).toBeDefined();
     const updated = await render(buttonId);
     expect(updated).toContain('Clicked: 1');
+});
+timedTest('prebuilt Wasm companions use the Tac JSON ABI through generated adapters', { timeout: 20000 }, async () => {
+    const cwd = await createWasmCompanionFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    expect(stderr).toBe('');
+    const pageModulePath = path.join(cwd, 'dist', 'pages', 'index.js');
+    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?wasm-companion=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    const buttonId = initial.match(/<button[^>]* id="([^"]+)"/)?.[1];
+    expect(initial).toContain('Wasm Ready: 0');
+    expect(buttonId).toBeDefined();
+    const updated = await render(buttonId);
+    expect(updated).toContain('Wasm Clicked: 1');
+});
+timedTest('source-backed Wasm companions compile before adapter generation', { timeout: 20000 }, async () => {
+    const { root: cwd, compilerPath } = await createWasmSourceCompanionFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        env: {
+            ...process.env,
+            TACHYON_WASM_WAT2WASM: compilerPath,
+        },
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    expect(stderr).toBe('');
+    const pageModulePath = path.join(cwd, 'dist', 'pages', 'index.js');
+    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?wasm-source-companion=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    const buttonId = initial.match(/<button[^>]* id="([^"]+)"/)?.[1];
+    expect(initial).toContain('Wasm Ready: 0');
+    expect(buttonId).toBeDefined();
+    const updated = await render(buttonId);
+    expect(updated).toContain('Wasm Clicked: 1');
 });
 timedTest('components can emit custom events handled by their parent wrapper', { timeout: 20000 }, async () => {
     const cwd = await createComponentEmitFixture();

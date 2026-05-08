@@ -40,7 +40,9 @@ declare global {
   const render: typeof import("../runtime/decorators.js").render;
   /**
    * FYLO collection query helper — globally available in Tac companion scripts
-   * and on `window` for plain script tags. Bootstrapped by imports.js.
+   * and on `window` for plain script tags. Bootstrapped by
+   * `src/runtime/fylo-global.js`, which self-creates `window.fylo` from the
+   * shell-injected `<meta name="fylo-browser-path">` tag.
    *
    * Usage:
    *   await fylo.users.find({ $ops: [{ role: { $eq: 'admin' } }] })
@@ -49,9 +51,11 @@ declare global {
    *   await fylo.users.del('usr_xxx')
    *   await fylo.sql('SELECT * FROM users LIMIT 10')
    *   await fylo.collections()
+   *   fylo.setCredentials('user', 'pass')
+   *   fylo.clearCredentials()
    *
    * Reserved property names (not usable as collection names): enabled, root,
-   * sql, collections.
+   * sql, collections, setCredentials, clearCredentials, meta.
    */
   const fylo: FyloApi;
 
@@ -69,7 +73,7 @@ declare global {
     };
     /**
      * Global FYLO client. Same as the global `fylo` — populated by
-     * browser/shared/scripts/imports.js. Property access returns a
+     * src/runtime/fylo-global.js. Property access returns a
      * per-collection proxy; sql/collections live as own properties.
      */
     fylo?: FyloApi;
@@ -81,9 +85,12 @@ declare global {
    */
   interface FyloCollectionProxy {
     find(query?: Record<string, unknown>): Promise<FyloQueryResult>;
+    list(limit?: number): Promise<{ docs: Array<{ id: string; doc: unknown }>; error?: string; encryptedFields?: string[]; revealed?: boolean }>;
     get(id: string): Promise<FyloDocResponse>;
+    events(since?: number): Promise<{ collection: string; events: unknown[]; offset: number; exists: boolean; error?: string }>;
     patch(id: string, doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; error?: string }>;
     del(id: string): Promise<{ ok?: boolean; error?: string }>;
+    rebuild(): Promise<{ ok?: boolean; result?: unknown; error?: string }>;
   }
 
   /**
@@ -93,8 +100,11 @@ declare global {
   interface FyloApiCommands {
     enabled: boolean;
     root?: string;
+    setCredentials(user: string, pass: string): void;
+    clearCredentials(): void;
     sql(source: string): Promise<FyloQueryResult>;
     collections(): Promise<FyloCollectionsResponse>;
+    meta(): Promise<{ root: string; readOnly: boolean; revealed: boolean; path: string } | null>;
   }
 
   /**

@@ -47,21 +47,15 @@
   <div class="main-area">
     <header class="app-bar topbar">
       <div class="app-bar-left">
-        <button type="button" class="button icon-button" @click="toggleSidebar()">Menu</button>
+        <md-text-button @click="toggleSidebar()">Menu</md-text-button>
         <div class="app-bar-title md-typescale-title-medium">Dashboard</div>
-        <span class="chip">release</span>
+        <md-assist-chip label="release"></md-assist-chip>
       </div>
       <div class="app-bar-right">
-        <a class="button button-text" href="/_fylo">
-          Fylo
-        </a>
-        <a class="button button-text" href="/api-docs">
-          Open API docs
-        </a>
-        <button type="button" class="button button-outline" @click="refreshAll()">
-          Refresh
-        </button>
-        <button type="button" class="button icon-button" @click="toggleTheme()">Theme</button>
+        <md-text-button href="/_fylo">Fylo</md-text-button>
+        <md-text-button href="/api-docs">Open API docs</md-text-button>
+        <md-outlined-button @click="refreshAll()">Refresh</md-outlined-button>
+        <md-text-button @click="toggleTheme()">Theme</md-text-button>
       </div>
     </header>
 
@@ -73,7 +67,7 @@
           <p class="page-header-lede md-typescale-body-medium">{subtitle}</p>
         </div>
         <div class="page-header-actions">
-          <button type="button" class="button button-primary" @click="refreshAll()">Reload live data</button>
+          <md-filled-button @click="refreshAll()">Reload live data</md-filled-button>
         </div>
       </section>
 
@@ -134,11 +128,17 @@
         <div class="section-head">
           <span class="section-head-icon" aria-hidden="true"></span>
           <h2 class="md-typescale-title-large">Scoped components</h2>
-          <span class="chip">companions</span>
+          <md-assist-chip label="companions"></md-assist-chip>
         </div>
         <div class="component-grid">
           <clicker :clicks="0" label="Persistent clicks" />
           <clicker-ui :clicks="$visits" label="Session clicks" />
+          <wasm-clicker />
+          <wasm-assemblyscript />
+          <wasm-rust />
+          <wasm-c />
+          <wasm-go />
+          <wasm-zig />
         </div>
       </section>
     </main>

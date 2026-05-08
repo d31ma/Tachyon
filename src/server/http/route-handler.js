@@ -169,7 +169,7 @@ export default class Router {
             // Security headers
             "X-Frame-Options": "DENY",
             "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": process.env.YON_CONTENT_SECURITY_POLICY || "default-src 'self'",
+            "Content-Security-Policy": process.env.YON_CONTENT_SECURITY_POLICY || "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'",
             "Referrer-Policy": "strict-origin-when-cross-origin",
         };
         if (request?.headers.get('origin') && allowOrigin && allowOrigin !== '*') {

@@ -1,7 +1,7 @@
 // @ts-check
 import { mkdir, readdir, stat, writeFile } from 'fs/promises';
 import path from 'path';
-const version = '26.18.30';
+const version = '26.19.05';
 const defaultEnv = `YON_PORT=8000
 YON_HOST=127.0.0.1
 YON_HOSTNAME=127.0.0.1
@@ -9,6 +9,7 @@ YON_DEV=true
 YON_LOG_LEVEL=info
 YON_LOG_FORMAT=pretty
 YON_TRUST_PROXY=
+YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'
 TAC_FORMAT=esm
 TAC_PUBLIC_ENV=
 YON_MAX_BODY_BYTES=1048576
@@ -25,15 +26,7 @@ YON_OTEL_SERVICE_VERSION=
 YON_OTEL_CAPTURE_IP=false
 FYLO_ROOT=db/collections
 FYLO_SCHEMA_DIR=db/schemas
-# Optional: set to s3-prefix to store FYLO prefix indexes through Bun.S3Client.
-# FYLO 26.18.29 uses each collection name directly as its S3 bucket name;
-# no bucket-prefix variable is required.
-FYLO_INDEX_BACKEND=
-FYLO_S3_ACCESS_KEY_ID=
-FYLO_S3_SECRET_ACCESS_KEY=
-FYLO_S3_SESSION_TOKEN=
-FYLO_S3_REGION=
-FYLO_S3_ENDPOINT=
+FYLO_INDEX_BACKEND=local-fs
 FYLO_ENCRYPTION_KEY=
 FYLO_CIPHER_SALT=
 YON_DATA_BROWSER_ENABLED=false
@@ -146,6 +139,7 @@ To use a different FYLO root or schema directory, set:
 \`\`\`env
 FYLO_ROOT=/path/to/custom/root
 FYLO_SCHEMA_DIR=/path/to/custom/schemas
+FYLO_INDEX_BACKEND=local-fs
 \`\`\`
 `,
     'server/data/.gitkeep': ``,

@@ -1,7 +1,7 @@
 <div class="surface panel-wide">
     <div class="surface-head">
         <h2 class="md-typescale-title-large">Telemetry consumer</h2>
-        <span class="chip">{loadingState()}</span>
+        <md-assist-chip :label="loadingState()"></md-assist-chip>
     </div>
     <p class="md-typescale-body-medium muted">This panel is powered by a Yon route that reads FYLO, parses the stored OTLP JSON payload, and returns a monitoring-friendly summary.</p>
     <logic :if="telemetry">

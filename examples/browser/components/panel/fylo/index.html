@@ -1,7 +1,7 @@
 <div class="surface panel-wide">
     <div class="surface-head">
         <h2 class="md-typescale-title-large">Fylo Browser</h2>
-        <span class="chip">{loadingState()}</span>
+        <md-assist-chip :label="loadingState()"></md-assist-chip>
     </div>
     <p class="md-typescale-body-medium muted">Native database browser for any collection stored by `@d31ma/fylo`. Enable with `YON_DATA_BROWSER_ENABLED=true` and visit /_fylo.</p>
     <logic :if="info && info.enabled">
@@ -19,18 +19,18 @@
                 <strong>{info.root}</strong>
             </div>
         </div>
-        <ul class="list">
+        <md-list>
             <loop :for="const collection of info.collections">
-                <li class="list-item">
+                <md-list-item>
                     <div class="list-item-text">
                         <strong>{collection.name}</strong>
                         <span>{collection.docsStored || 0} docs - {collection.worm ? 'WORM' : 'mutable'}</span>
                     </div>
-                </li>
+                </md-list-item>
             </loop>
-        </ul>
+        </md-list>
         <div class="surface-actions">
-            <a class="button button-primary" href="/_fylo">Open Fylo Browser</a>
+            <md-filled-button href="/_fylo">Open Fylo Browser</md-filled-button>
         </div>
     </logic>
     <logic :if="info && !info.enabled">

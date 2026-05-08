@@ -310,9 +310,6 @@ beforeAll(async () => {
             YON_OTEL_ROOT: telemetryRoot,
             YON_ITEMS_DATA_PATH: itemDataPath,
             YON_DIST_PATH: testDistPath,
-            // Keep this test hermetic: .env.test uses LocalStack indexes for the
-            // example app, but the telemetry root here is per-run and temporary.
-            FYLO_INDEX_BACKEND: '',
             YON_OTEL_SERVICE_NAME: 'tachyon-tests',
             TAC_PUBLIC_ENV: 'PUBLIC_API_BASE_URL',
             PUBLIC_API_BASE_URL: 'https://api.example.com',

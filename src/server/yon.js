@@ -1,6 +1,6 @@
 // @ts-check
 import path from 'path';
-import TTID from '@d31ma/ttid';
+import Fylo from '@d31ma/fylo';
 import Router from "./http/route-handler.js";
 import Pool from "./process/process-pool.js";
 import Validate from "./http/schema-validator.js";
@@ -552,14 +552,14 @@ export default class Yon {
     }
     /**
      * @param {Request} request
-     * @returns {string}
+     * @returns {Promise<string>}
      */
-    static getRequestId(request) {
+    static async getRequestId(request) {
         const incoming = request.headers.get(Yon.REQUEST_ID_HEADER)?.trim();
         if (incoming && incoming.length <= Yon.MAX_REQUEST_ID_LENGTH) {
             return incoming;
         }
-        return TTID.generate();
+        return await Fylo.uniqueTTID(undefined);
     }
     /**
      * @param {string} handler
@@ -757,7 +757,7 @@ export default class Yon {
             const pathname = url.pathname;
             const method = request.method;
             const clientInfo = Yon.getClientInfo(request, server?.requestIP(/** @type {BunRequest} */ (request))?.address ?? null);
-            const requestId = Yon.getRequestId(request);
+            const requestId = await Yon.getRequestId(request);
             /** @type {RequestContext} */
             const context = {
                 requestId,
@@ -893,7 +893,7 @@ export default class Yon {
                 const path = new URL(request.url).pathname;
                 const method = request.method;
                 const clientInfo = Yon.getClientInfo(request, server?.requestIP(/** @type {BunRequest} */ (request))?.address ?? null);
-                const requestId = Yon.getRequestId(request);
+                const requestId = await Yon.getRequestId(request);
                 /** @type {RequestContext} */
                 const context = {
                     requestId,

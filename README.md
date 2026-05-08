@@ -9,8 +9,9 @@ Tachyon is a polyglot, file-system-routed full-stack framework for [Bun](https:/
 
 - Polyglot backend handlers with executable files and shebangs
 - Tac pages and components with `index.html` / `component.html` templates
-- Companion `*.js`, `*.ts`, and `*.css` files beside templates
+- Companion `*.js`, `*.ts`, `*.wasm`, source-backed Wasm (`*.as.ts`, `*.rs`, `*.c`, `*.go`, `*.zig`, `*.wat`), and `*.css` files beside templates
 - OOP-style companion classes with `export default class extends Tac`
+- Wasm-backed Tac companions through the `tac-wasm-json@1` ABI and generated adapters
 - Automatic session persistence for `$`-prefixed instance fields
 - Local-first browser `fetch()` for Tac page/component scripts with IndexedDB-backed read caching and mutation-aware invalidation
 - Explicit browser env allowlisting through `TAC_PUBLIC_ENV` and `this.env(...)`
@@ -89,6 +90,7 @@ The example app in [examples/](examples/) demonstrates Tac and Yon working toget
 - reactive page state
 - persisted `$` fields
 - local-first fetches
+- prebuilt Tac Wasm companions with source examples in WAT, AssemblyScript, Rust, C, Go, and Zig
 - backend handlers in multiple languages
 - shared data, shared assets, and a browser entry
 - middleware, OpenAPI docs, route manifests, and component companions
@@ -117,7 +119,7 @@ YON_ALLOW_METHODS=GET,POST,PUT,DELETE,PATCH,OPTIONS
 YON_BASIC_AUTH=
 YON_BASIC_AUTH_HASH=
 YON_VALIDATE=true
-YON_CONTENT_SECURITY_POLICY=default-src 'self'
+YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'
 YON_ENABLE_HSTS=false
 
 YON_HANDLER_TIMEOUT_MS=30000
@@ -137,11 +139,7 @@ YON_MIDDLEWARE_PATH=./middleware
 
 FYLO_ROOT=db/collections
 FYLO_SCHEMA_DIR=db/schemas
-FYLO_INDEX_BACKEND=s3-prefix
-FYLO_S3_ACCESS_KEY_ID=test
-FYLO_S3_SECRET_ACCESS_KEY=test
-FYLO_S3_REGION=us-east-1
-FYLO_S3_ENDPOINT=http://localhost:4566
+FYLO_INDEX_BACKEND=local-fs
 
 YON_DATA_BROWSER_ENABLED=false
 YON_DATA_BROWSER_READONLY=true
@@ -163,42 +161,36 @@ Generate a Bun password hash with:
 bun -e "console.log(await Bun.password.hash('user:pass'))"
 ```
 
-## LocalStack for FYLO S3 Indexes
+## FYLO Storage
 
-Tachyon's checked-in `.env.test` uses LocalStack for FYLO `s3-prefix` indexes:
+Tachyon uses `@d31ma/fylo@26.19.7`, which is filesystem-first and uses the
+FYLO `local-fs` index backend by default. Set `FYLO_ROOT` to the directory that
+should contain FYLO-managed collections:
 
 ```env
-FYLO_INDEX_BACKEND=s3-prefix
-FYLO_S3_ACCESS_KEY_ID=test
-FYLO_S3_SECRET_ACCESS_KEY=test
-FYLO_S3_REGION=us-east-1
-FYLO_S3_ENDPOINT=http://localhost:4566
+FYLO_ROOT=db/collections
+FYLO_SCHEMA_DIR=db/schemas
+FYLO_INDEX_BACKEND=local-fs
 ```
 
-Start LocalStack and create one local S3 bucket per FYLO collection before running tests or the LocalStack-backed example seed:
-
-```bash
-bun run localstack:up
-bun run localstack:buckets
-bun --env-file=.env.test test
-```
-
-For the example app, use:
+Run the example seed and server with the normal example environment:
 
 ```bash
 cd examples
-bun --env-file=.env.localstack run seed
-bun --env-file=.env.localstack run serve
+bun --env-file=.env run seed
+bun --env-file=.env run serve
 ```
 
-Useful maintenance commands:
+FYLO owns everything inside `FYLO_ROOT`, including document shards, local prefix
+indexes, event journals, locks, and WORM history. With `local-fs`, each
+collection stores compact index files under
+`<FYLO_ROOT>/<collection>/.fylo/local-fs/`, so no external indexing service is
+required.
 
-```bash
-bun run localstack:down
-docker compose -f docker-compose.localstack.yml down -v
-```
-
-`@d31ma/fylo@26.18.29` uses each collection name directly as its S3 bucket name for `s3-prefix` indexes. LocalStack keeps those names local, so generic collection buckets such as `items`, `users`, and `otel-spans` do not collide with AWS's global bucket namespace.
+`FYLO_INDEX_BACKEND=s3-client` is also passed through to FYLO when you want FYLO
+to store index keys through Bun's S3 client. The old `s3-prefix`/LocalStack
+configuration is intentionally rejected so stale deployment env cannot silently
+fall back to a different backend.
 
 ## Backend Routing
 
@@ -295,7 +287,7 @@ Every handler receives this request object:
 ```
 
 If an inbound `X-Request-Id` header is present, Yon preserves it for upstream
-correlation. Otherwise Yon generates a TTID request ID using `@d31ma/ttid`.
+correlation. Otherwise Yon generates a TTID request ID through `@d31ma/fylo`.
 
 Yon invokes pure function/class handlers directly for dynamic runtimes and
 generates tiny build wrappers for compiled/static runtimes. No third-party
@@ -473,6 +465,90 @@ Available helpers through `Tac`:
 - `this.isBrowser`
 - `this.isServer`
 - `this.props`
+
+### Wasm Companions
+
+Tac can also load prebuilt WebAssembly companions. The browser still receives a generated JavaScript adapter that extends `Tac`, so templates keep the same shape:
+
+```html
+<!-- browser/components/clicker/index.html -->
+<button @click="increment()">{label}: {clicks}</button>
+```
+
+Place the Wasm module and manifest beside the template:
+
+```text
+browser/components/clicker/
+  index.html
+  index.wasm
+  index.tac.json
+```
+
+Or give Tachyon source and let `bun serve` / `bun run bundle` compile it before generating the Tac adapter:
+
+```text
+browser/components/clicker/
+  index.html
+  index.rs
+  index.tac.json
+```
+
+Source-backed companions are selected before a sibling `index.wasm`, so app authors can keep a checked-in fallback while local development still compiles from source when the compiler is available. If source compilation fails and a sibling `.wasm` exists, Tachyon logs a warning and uses the prebuilt fallback; without a fallback, the bundle fails with the compiler error.
+
+`index.tac.json` declares the stable Tac ABI:
+
+```json
+{
+  "abi": "tac-wasm-json@1",
+  "state": {
+    "clicks": 0,
+    "label": "Ready"
+  },
+  "methods": ["increment"]
+}
+```
+
+The Wasm module must export:
+
+- `memory`
+- `alloc(size) -> ptr`
+- `dealloc(ptr, len)`
+- `init(ptr, len)`
+- `call(methodPtr, methodLen, payloadPtr, payloadLen)`
+- `output_ptr() -> ptr`
+- `output_len() -> len`
+
+`init` receives JSON shaped as `{ "props": { ... } }`. `call` receives the method name as JSON plus a payload shaped as `{ "args": [...], "props": { ... }, "state": { ... } }`. Both functions report their response through `output_ptr` / `output_len`; the response JSON can contain `{ "state": { ... }, "result": ..., "effects": [...] }`.
+
+Supported effects:
+
+- `{ "type": "emit", "name": "saved", "detail": { ... } }`
+- `{ "type": "provide", "key": "theme", "value": "dark" }`
+- `{ "type": "rerender" }`
+
+Any language can participate by compiling to a `.wasm` module that follows this ABI. Tachyon keeps rendering, event binding, persistence, local-first fetch, and DOM access in the generated adapter rather than exposing the DOM directly to Wasm.
+
+Tachyon currently knows how to compile these source companions when the matching compiler is installed on the app author's machine:
+
+- `index.as.ts` with `asc`; install with `bun add -d assemblyscript`
+- `index.rs` with `rustc`; install Rust and run `rustup target add wasm32-unknown-unknown`
+- `index.c` with `clang`; install LLVM/Clang with WebAssembly target support
+- `index.go` with `tinygo`; standard Go's browser Wasm target uses a Go runtime shim and is not the Tac ABI shape
+- `index.zig` with `zig`
+- `index.wat` with `wat2wasm`; install WABT
+
+Compiler path overrides are available for CI or non-standard installs: `TACHYON_WASM_ASC`, `TACHYON_WASM_RUSTC`, `TACHYON_WASM_CLANG`, `TACHYON_WASM_TINYGO`, `TACHYON_WASM_ZIG`, and `TACHYON_WASM_WAT2WASM`.
+
+The checked-in examples under `examples/browser/components/wasm/` use real source-backed companion filenames plus sibling `.wasm` fallbacks, so the example app runs without requiring every language compiler to be installed:
+
+- `clicker/index.wat` for raw WebAssembly text
+- `assemblyscript/index.as.ts`
+- `rust/index.rs`
+- `c/index.c`
+- `go/index.go`
+- `zig/index.zig`
+
+Tachyon intentionally treats language compilers as optional; plain `.wasm` works without adding a framework dependency. For strict CSP deployments, keep `script-src 'wasm-unsafe-eval'` in `YON_CONTENT_SECURITY_POLICY` so browsers can instantiate Wasm modules.
 
 ### Decorator Form
 
