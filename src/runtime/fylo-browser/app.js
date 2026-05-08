@@ -3,16 +3,30 @@
 const BROWSER_PATH = "__FYLO_BROWSER_PATH__";
 
 // ── Inline FYLO global bootstrap ───────────────────────────────────────────
-// The standalone /_fylo shell doesn't load the app's `imports.js`, so
-// `window.fylo` isn't defined. We inline the same bootstrap snippet here so
-// every API call can go through the global Proxy instead of raw fetch().
+// This file is served as raw text (with __FYLO_BROWSER_PATH__ string-replaced
+// at runtime by FyloBrowser.registerRoutes), so it cannot use ES imports. The
+// framework runtime (fylo-global.js) provides the same client for companion
+// scripts; this inline copy is only used by the standalone /_fylo shell.
 if (!/** @type {any} */ (window).fylo) {
+    /** @type {string | null} */
+    let __fyloAuthHeader = null;
+
+    /**
+     * @param {string} url
+     * @param {RequestInit} [init]
+     */
+    async function __fyloFetch(url, init = {}) {
+        const headers = new Headers(init.headers || {});
+        if (__fyloAuthHeader) headers.set("Authorization", __fyloAuthHeader);
+        return fetch(url, { ...init, headers });
+    }
+
     /**
      * @param {string} path
      * @param {Record<string, unknown>} body
      */
     async function __fyloPostJson(path, body) {
-        const r = await fetch(`${BROWSER_PATH}${path}`, {
+        const r = await __fyloFetch(`${BROWSER_PATH}${path}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
@@ -29,17 +43,17 @@ if (!/** @type {any} */ (window).fylo) {
             },
             /** @param {number} [limit] */
             async list(limit = 25) {
-                const r = await fetch(`${BROWSER_PATH}/api/docs?collection=${encodeURIComponent(collection)}&limit=${limit}`);
+                const r = await __fyloFetch(`${BROWSER_PATH}/api/docs?collection=${encodeURIComponent(collection)}&limit=${limit}`);
                 return r.json();
             },
             /** @param {string} id */
             async get(id) {
-                const r = await fetch(`${BROWSER_PATH}/api/doc?collection=${encodeURIComponent(collection)}&id=${encodeURIComponent(id)}`);
+                const r = await __fyloFetch(`${BROWSER_PATH}/api/doc?collection=${encodeURIComponent(collection)}&id=${encodeURIComponent(id)}`);
                 return r.json();
             },
             /** @param {number} [since] */
             async events(since = 0) {
-                const r = await fetch(`${BROWSER_PATH}/api/events?collection=${encodeURIComponent(collection)}&since=${since}`);
+                const r = await __fyloFetch(`${BROWSER_PATH}/api/events?collection=${encodeURIComponent(collection)}&since=${since}`);
                 return r.json();
             },
             /** @param {string} id @param {Record<string, unknown>} doc */
@@ -48,7 +62,7 @@ if (!/** @type {any} */ (window).fylo) {
             },
             /** @param {string} id */
             async del(id) {
-                const r = await fetch(`${BROWSER_PATH}/api/delete?collection=${encodeURIComponent(collection)}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
+                const r = await __fyloFetch(`${BROWSER_PATH}/api/delete?collection=${encodeURIComponent(collection)}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
                 return r.json();
             },
             async rebuild() {
@@ -61,19 +75,29 @@ if (!/** @type {any} */ (window).fylo) {
         enabled: false,
         /** @type {string | undefined} */
         root: undefined,
+        /**
+         * @param {string} user
+         * @param {string} pass
+         */
+        setCredentials(user, pass) {
+            __fyloAuthHeader = `Basic ${btoa(user + ":" + pass)}`;
+        },
+        clearCredentials() {
+            __fyloAuthHeader = null;
+        },
         /** @param {string} source */
         sql(source) {
             return __fyloPostJson("/api/query", { kind: "sql", source });
         },
         async collections() {
-            const r = await fetch(`${BROWSER_PATH}/api/collections`, { cache: "reload" });
+            const r = await __fyloFetch(`${BROWSER_PATH}/api/collections`, { cache: "reload" });
             if (!r.ok) return { root: "", collections: [] };
             const d = await r.json();
             __fyloState.root = d.root;
             return d;
         },
         async meta() {
-            const r = await fetch(`${BROWSER_PATH}/api/meta`, { cache: "reload" });
+            const r = await __fyloFetch(`${BROWSER_PATH}/api/meta`, { cache: "reload" });
             if (!r.ok) return null;
             return r.json();
         },
@@ -94,7 +118,8 @@ if (!/** @type {any} */ (window).fylo) {
     });
 
     // Probe meta once — if the browser route is mounted, flip enabled and cache the root.
-    /** @type {any} */ (window).fylo.meta()
+    __fyloFetch(`${BROWSER_PATH}/api/meta`, { cache: "reload" })
+        .then(r => r.ok ? r.json() : null)
         .then((/** @type {any} */ meta) => {
             if (meta) {
                 __fyloState.enabled = true;

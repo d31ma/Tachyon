@@ -1,6 +1,6 @@
 {
     "name": "@d31ma/tachyon",
-    "version": "26.18.30",
+    "version": "26.19.05",
     "description": "A polyglot, file-system-routed full-stack framework for Bun",
     "author": "Chidelma",
     "license": "MIT",
@@ -29,9 +29,6 @@
         "preview": "bun src/cli/preview.js --watch",
         "bundle:watch": "bun src/cli/bundle.js --watch",
         "start": "bun run serve",
-        "localstack:up": "docker compose -f docker-compose.localstack.yml up -d",
-        "localstack:down": "docker compose -f docker-compose.localstack.yml down",
-        "localstack:buckets": "bun scripts/create-localstack-buckets.js",
         "typecheck": "tsc --noEmit",
         "test": "bun --env-file=.env.test test",
         "test:coverage": "bun --env-file=.env.test test --coverage"
@@ -65,8 +62,7 @@
         "url": "https://github.com/d31ma/Tachyon/issues"
     },
     "dependencies": {
-        "@d31ma/fylo": "26.18.29",
-        "@d31ma/ttid": "26.18.27-2"
+        "@d31ma/fylo": "26.19.7"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "^20.8.9",

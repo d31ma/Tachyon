@@ -8,58 +8,63 @@
  * @property {string=} endpoint
  * @property {string=} region
  *
- * @typedef {{ backend: 's3-prefix', s3?: FyloS3IndexOptions }} FyloS3IndexConfig
- * @typedef {{ root: string, index?: FyloS3IndexConfig }} TachyonFyloOptions
+ * @typedef {{ backend: 'local-fs' }} FyloLocalFsIndexOptions
+ * @typedef {{ backend: 's3-client', s3?: FyloS3IndexOptions }} FyloS3ClientIndexOptions
+ * @typedef {FyloLocalFsIndexOptions | FyloS3ClientIndexOptions} FyloIndexOptions
+ * @typedef {{ root: string, index: FyloIndexOptions }} TachyonFyloOptions
  */
 
 /**
  * @param {NodeJS.ProcessEnv} env
  * @param {string[]} names
- * @returns {string | undefined}
  */
 function envValue(env, names) {
     for (const name of names) {
-        const value = env[name]?.trim();
-        if (value) return value;
+        const value = env[name];
+        if (typeof value === 'string' && value.trim()) return value.trim();
     }
+
     return undefined;
 }
 
 /**
  * @param {NodeJS.ProcessEnv} env
- * @returns {FyloS3IndexOptions}
+ * @returns {FyloS3IndexOptions | undefined}
  */
-function s3Options(env) {
-    return {
-        accessKeyId: envValue(env, ['FYLO_S3_ACCESS_KEY_ID', 'AWS_ACCESS_KEY_ID']),
-        secretAccessKey: envValue(env, ['FYLO_S3_SECRET_ACCESS_KEY', 'AWS_SECRET_ACCESS_KEY']),
-        sessionToken: envValue(env, ['FYLO_S3_SESSION_TOKEN', 'AWS_SESSION_TOKEN']),
-        endpoint: envValue(env, ['FYLO_S3_ENDPOINT', 'AWS_ENDPOINT_URL_S3', 'AWS_ENDPOINT_URL']),
-        region: envValue(env, ['FYLO_S3_REGION', 'AWS_REGION', 'AWS_DEFAULT_REGION']),
+function fyloS3Options(env) {
+    const options = {
+        accessKeyId: envValue(env, ['AWS_ACCESS_KEY_ID', 'FYLO_S3_ACCESS_KEY_ID']),
+        secretAccessKey: envValue(env, ['AWS_SECRET_ACCESS_KEY', 'FYLO_S3_SECRET_ACCESS_KEY']),
+        sessionToken: envValue(env, ['AWS_SESSION_TOKEN', 'FYLO_S3_SESSION_TOKEN']),
+        endpoint: envValue(env, ['AWS_ENDPOINT_URL_S3', 'AWS_ENDPOINT_URL', 'FYLO_S3_ENDPOINT']),
+        region: envValue(env, ['AWS_REGION', 'AWS_DEFAULT_REGION', 'FYLO_S3_REGION']),
     };
+    const entries = Object.entries(options).filter(([, value]) => value !== undefined);
+
+    return entries.length ? Object.fromEntries(entries) : undefined;
 }
 
 /**
  * Builds FYLO constructor options from Tachyon's runtime environment.
  *
- * FYLO 26.18.29 removed bucket-prefix configuration for S3 indexes. With
- * `s3-prefix`, each collection name is used directly as its S3 bucket name.
+ * FYLO 26.19 indexes through local-fs by default. Tachyon makes that default
+ * explicit so deployments can audit the selected index backend from env alone.
  *
  * @param {string} root
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {TachyonFyloOptions}
  */
 export function fyloOptions(root, env = process.env) {
-    const backend = envValue(env, ['FYLO_INDEX_BACKEND']);
-    if (backend !== 's3-prefix') {
-        return { root };
+    const backend = envValue(env, ['FYLO_INDEX_BACKEND']) ?? 'local-fs';
+
+    if (backend === 'local-fs') {
+        return { root, index: { backend: 'local-fs' } };
     }
 
-    return {
-        root,
-        index: {
-            backend: 's3-prefix',
-            s3: s3Options(env),
-        },
-    };
+    if (backend === 's3-client') {
+        const s3 = fyloS3Options(env);
+        return s3 ? { root, index: { backend: 's3-client', s3 } } : { root, index: { backend: 's3-client' } };
+    }
+
+    throw new Error(`Unsupported FYLO_INDEX_BACKEND "${backend}". Use "local-fs" or "s3-client".`);
 }

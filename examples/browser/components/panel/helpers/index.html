@@ -1,18 +1,18 @@
 <div class="surface" id="frontend">
     <div class="surface-head">
         <h2 class="md-typescale-title-large">Tac helpers</h2>
-        <span class="chip">frontend</span>
+        <md-assist-chip label="frontend"></md-assist-chip>
     </div>
     <p class="md-typescale-body-medium muted">Theme and draft text below persist automatically because the class fields are prefixed with `$`.</p>
-    <textarea
-        class="field-control"
-        rows="5"
-        aria-label="Draft note"
+    <md-outlined-text-field
+        type="textarea"
+        class="input"
         placeholder="Draft note"
         :value="$draftNote"
-    ></textarea>
+        @input="$draftNote = $event.target.value"
+    ></md-outlined-text-field>
     <div class="surface-actions">
-        <button type="button" class="button button-text" @click="toggleTheme()">Toggle theme</button>
-        <button type="button" class="button button-text" @click="clearDraft()">Clear draft</button>
+        <md-text-button @click="toggleTheme()">Toggle theme</md-text-button>
+        <md-text-button @click="clearDraft()">Clear draft</md-text-button>
     </div>
 </div>

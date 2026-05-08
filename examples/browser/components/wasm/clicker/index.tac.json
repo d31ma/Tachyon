@@ -1,0 +1,8 @@
+{
+  "abi": "tac-wasm-json@1",
+  "state": {
+    "clicks": 0,
+    "label": "Ready"
+  },
+  "methods": ["increment"]
+}

@@ -319,15 +319,21 @@ const ty_createHelpers = (modulePath) => {
     const fylo = (() => {
         const noopCollection = {
             find: async () => ({ error: 'Fylo browser not enabled' }),
+            list: async () => ({ error: 'Fylo browser not enabled' }),
             get: async () => ({ error: 'Fylo browser not enabled' }),
+            events: async () => ({ error: 'Fylo browser not enabled' }),
             patch: async () => ({ error: 'Fylo browser not enabled' }),
             del: async () => ({ error: 'Fylo browser not enabled' }),
+            rebuild: async () => ({ error: 'Fylo browser not enabled' }),
         }
         const noopBase = {
             enabled: false,
             root: undefined,
+            setCredentials() {},
+            clearCredentials() {},
             sql: async () => ({ error: 'Fylo browser not enabled' }),
             collections: async () => ({ root: '', collections: [] }),
+            meta: async () => null,
         }
         const noop = new Proxy(noopBase, {
             get(target, prop) {

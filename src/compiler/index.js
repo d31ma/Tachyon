@@ -2,7 +2,9 @@
 import Router from "../server/http/route-handler.js";
 import { createPublicBrowserEnvResponse, PUBLIC_BROWSER_ENV_PATH, withPublicBrowserEnv } from "../server/http/browser-env.js";
 import logger from "../server/observability/logger.js";
-import { access, mkdir, readFile, writeFile } from 'fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { existsSync } from "fs";
+import { tmpdir } from 'os';
 import path from "path";
 import { pathToFileURL } from "url";
 /**
@@ -11,7 +13,12 @@ import { pathToFileURL } from "url";
  * @typedef {{ path: string, allowSelf: boolean }} LayoutEntry
  * @typedef {Record<string, LayoutEntry>} LayoutMap
  * @typedef {'esm' | 'global'} OutputFormat
- * @typedef {{ html: string, hasSlot: boolean, script?: string, scriptLang: string, companionImportPath?: string }} TemplateData
+ * @typedef {'ecmascript' | 'wasm-json' | 'wasm-source'} CompanionTarget
+ * @typedef {'wat' | 'assemblyscript' | 'rust' | 'c' | 'go' | 'zig'} WasmSourceLanguage
+ * @typedef {{ extension: string, target: 'ecmascript' | 'wasm-json' } | { extension: string, target: 'wasm-source', language: WasmSourceLanguage }} CompanionProvider
+ * @typedef {{ sourcePath: string, importPath: string, provider: CompanionProvider }} CompanionScript
+ * @typedef {{ abi: 'tac-wasm-json@1', methods?: string[], state?: Record<string, unknown> }} TacWasmManifest
+ * @typedef {{ html: string, hasSlot: boolean, script?: string, scriptLang: string, companion?: CompanionScript, companionImportPath?: string }} TemplateData
  * @typedef {{ static?: string, element?: string }} TemplateNode
  * @typedef {Record<string, string>} AttributeMap
  * @typedef {{ version: string, modules: Map<string, Function>, register: (id: string, factory: Function) => Function, load: (id: string) => Promise<Function> }} TacRegistry
@@ -60,8 +67,20 @@ export default class Compiler {
     static outputFormat = Compiler.resolveOutputFormat();
     /** @type {string[]} */
     static mainEntryCandidates = ['imports.ts', 'imports.js'];
+    /** @type {CompanionProvider[]} */
+    static companionProviders = [
+        { extension: '.js', target: 'ecmascript' },
+        { extension: '.ts', target: 'ecmascript' },
+        { extension: '.as.ts', target: 'wasm-source', language: 'assemblyscript' },
+        { extension: '.rs', target: 'wasm-source', language: 'rust' },
+        { extension: '.c', target: 'wasm-source', language: 'c' },
+        { extension: '.go', target: 'wasm-source', language: 'go' },
+        { extension: '.zig', target: 'wasm-source', language: 'zig' },
+        { extension: '.wat', target: 'wasm-source', language: 'wat' },
+        { extension: '.wasm', target: 'wasm-json' },
+    ];
     /** @type {string[]} */
-    static companionScriptExtensions = ['.js', '.ts'];
+    static companionScriptExtensions = Compiler.companionProviders.map((provider) => provider.extension);
     /** Names of decorators auto-imported into companion scripts when referenced as `@<name>`. */
     static companionDecoratorNames = ['inject', 'provide', 'env', 'onMount', 'emit', 'render'];
     /** @type {Set<string>} */
@@ -375,14 +394,38 @@ export default class Compiler {
             : sourcePath;
     }
     /** @param {string} sourcePath */
-    static async getCompanionScriptPath(sourcePath) {
+    static async getCompanionScript(sourcePath) {
         const basePath = Compiler.templateBasePath(sourcePath);
-        for (const extension of Compiler.companionScriptExtensions) {
-            const candidate = `${basePath}${extension}`;
-            if (await Bun.file(candidate).exists())
-                return candidate;
+        for (const provider of Compiler.companionProviders) {
+            const candidate = `${basePath}${provider.extension}`;
+            if (await Bun.file(candidate).exists()) {
+                return {
+                    sourcePath: candidate,
+                    importPath: Compiler.toRelativeImportPath(sourcePath, candidate),
+                    provider,
+                };
+            }
         }
         return null;
+    }
+    /** @param {string} sourcePath */
+    static async getCompanionScriptPath(sourcePath) {
+        return (await Compiler.getCompanionScript(sourcePath))?.sourcePath ?? null;
+    }
+    /**
+     * @param {CompanionScript} companion
+     * @returns {string}
+     */
+    static companionBasePath(companion) {
+        return companion.sourcePath.slice(0, -companion.provider.extension.length);
+    }
+    /** @param {CompanionScript} companion */
+    static companionManifestPath(companion) {
+        return `${Compiler.companionBasePath(companion)}.tac.json`;
+    }
+    /** @param {CompanionScript} companion */
+    static companionWasmFallbackPath(companion) {
+        return `${Compiler.companionBasePath(companion)}.wasm`;
     }
     /** @param {string} sourcePath */
     static async getCompanionStylePath(sourcePath) {
@@ -823,7 +866,7 @@ export default class Compiler {
             }
         });
         let htmlContent = await rewriter.transform(new Response(data)).text();
-        const companionScriptPath = await Compiler.getCompanionScriptPath(sourcePath);
+        const companion = await Compiler.getCompanionScript(sourcePath);
         const companionStylePath = await Compiler.getCompanionStylePath(sourcePath);
         if (companionStylePath) {
             const css = await readFile(companionStylePath, 'utf8');
@@ -835,9 +878,8 @@ export default class Compiler {
             hasSlot,
             script: scriptContent || undefined,
             scriptLang,
-            companionImportPath: companionScriptPath
-                ? Compiler.toRelativeImportPath(sourcePath, companionScriptPath)
-                : undefined
+            companion: companion ?? undefined,
+            companionImportPath: companion?.importPath
         };
     }
     // ── HTML → AST parsing ─────────────────────────────────────────────────────
@@ -1068,7 +1110,8 @@ export default class Compiler {
         const { bindingNames: dynamicImportBindings, moduleImports: dynamicModuleImports, scriptContent, } = Compiler.liftDynamicImports(rawScriptContent);
         const moduleImports = [...dynamicModuleImports];
         const factoryBindings = [...dynamicImportBindings];
-        const companionLoader = data.companionImportPath
+        const companionImportPath = data.companion?.importPath ?? data.companionImportPath;
+        const companionLoader = companionImportPath
             ? `
 const __ty_companion__ = await (async () => {
     const __ty_companion_module__ = await __ty_companion_import__();
@@ -1082,8 +1125,8 @@ const __ty_companion__ = await (async () => {
     return __ty_instance__;
 })();`
             : `const __ty_companion__ = null;`;
-        if (data.companionImportPath) {
-            moduleImports.push(`__ty_companion_import__: () => import(${JSON.stringify(data.companionImportPath)})`);
+        if (companionImportPath) {
+            moduleImports.push(`__ty_companion_import__: () => import(${JSON.stringify(companionImportPath)})`);
             factoryBindings.push('__ty_companion_import__');
         }
         const factorySource = `
@@ -1287,6 +1330,432 @@ ${transformed}
             }
         });
     }
+    /**
+     * @param {CompanionScript} companion
+     * @returns {Promise<TacWasmManifest>}
+     */
+    static async readTacWasmManifest(companion) {
+        const manifestPath = Compiler.companionManifestPath(companion);
+        if (!await Bun.file(manifestPath).exists()) {
+            throw new Error(`Tac Wasm companion '${Compiler.toSourceLabel(companion.sourcePath)}' requires '${Compiler.toSourceLabel(manifestPath)}'`);
+        }
+        /** @type {unknown} */
+        const rawManifest = await Bun.file(manifestPath).json();
+        if (!rawManifest || typeof rawManifest !== 'object')
+            throw new Error(`Tac Wasm manifest '${Compiler.toSourceLabel(manifestPath)}' must be a JSON object`);
+        const manifest = /** @type {Record<string, unknown>} */ (rawManifest);
+        if (manifest.abi !== 'tac-wasm-json@1')
+            throw new Error(`Tac Wasm manifest '${Compiler.toSourceLabel(manifestPath)}' must declare "abi": "tac-wasm-json@1"`);
+        if (manifest.methods !== undefined && (!Array.isArray(manifest.methods) || manifest.methods.some((name) => typeof name !== 'string'))) {
+            throw new Error(`Tac Wasm manifest '${Compiler.toSourceLabel(manifestPath)}' field "methods" must be an array of strings`);
+        }
+        if (manifest.state !== undefined && (!manifest.state || typeof manifest.state !== 'object' || Array.isArray(manifest.state))) {
+            throw new Error(`Tac Wasm manifest '${Compiler.toSourceLabel(manifestPath)}' field "state" must be an object`);
+        }
+        return /** @type {TacWasmManifest} */ ({
+            abi: 'tac-wasm-json@1',
+            methods: /** @type {string[]} */ (manifest.methods ?? []),
+            state: /** @type {Record<string, unknown>} */ (manifest.state ?? {}),
+        });
+    }
+    /**
+     * @param {string} command
+     * @param {string} sourcePath
+     * @param {string} envVar
+     * @param {boolean} [includeNodeModules]
+     * @returns {string | null}
+     */
+    static findWasmCompiler(command, sourcePath, envVar, includeNodeModules = false) {
+        const override = process.env[envVar];
+        if (override)
+            return override;
+        const executable = process.platform === 'win32' && command === 'asc' ? 'asc.cmd' : command;
+        const home = process.env.HOME ?? '';
+        /** @type {Record<string, string[]>} */
+        const preferredCandidates = {
+            asc: [path.join(home, '.bun', 'bin', executable)],
+            rustc: [path.join(home, '.cargo', 'bin', executable)],
+            clang: [
+                '/opt/homebrew/opt/llvm/bin/clang',
+                '/usr/local/opt/llvm/bin/clang',
+            ],
+            tinygo: [
+                '/opt/homebrew/bin/tinygo',
+                '/usr/local/bin/tinygo',
+            ],
+            wat2wasm: [
+                '/opt/homebrew/bin/wat2wasm',
+                '/usr/local/bin/wat2wasm',
+            ],
+            zig: [
+                '/opt/homebrew/bin/zig',
+                '/usr/local/bin/zig',
+            ],
+        };
+        const pathCandidates = (process.env.PATH ?? '')
+            .split(path.delimiter)
+            .filter(Boolean)
+            .map((entry) => path.join(entry, executable));
+        const candidates = includeNodeModules
+            ? [
+                path.join(process.cwd(), 'node_modules', '.bin', executable),
+                path.join(path.dirname(sourcePath), 'node_modules', '.bin', executable),
+                path.join(import.meta.dir, '..', '..', 'node_modules', '.bin', executable),
+                ...(preferredCandidates[command] ?? []),
+                ...pathCandidates,
+            ]
+            : [
+                ...(preferredCandidates[command] ?? []),
+                ...pathCandidates,
+            ];
+        return candidates.find((candidate) => existsSync(candidate)) ?? null;
+    }
+    /** @returns {string | null} */
+    static findWasmLinker() {
+        return [
+            '/opt/homebrew/opt/lld/bin/wasm-ld',
+            '/opt/homebrew/opt/lld@21/bin/wasm-ld',
+            '/usr/local/opt/lld/bin/wasm-ld',
+            '/usr/local/opt/lld@21/bin/wasm-ld',
+        ].find((linkerPath) => existsSync(linkerPath)) ?? null;
+    }
+    /**
+     * @param {CompanionScript} companion
+     * @param {string} languageName
+     * @param {string} command
+     * @param {string} envVar
+     * @param {(compilerPath: string, outputPath: string) => string[]} createArgs
+     * @param {string} installHint
+     * @param {boolean} [includeNodeModules]
+     * @returns {Promise<Uint8Array>}
+     */
+    static async runWasmSourceCompiler(companion, languageName, command, envVar, createArgs, installHint, includeNodeModules = false) {
+        const compilerPath = Compiler.findWasmCompiler(command, companion.sourcePath, envVar, includeNodeModules);
+        if (!compilerPath) {
+            throw new Error(`${languageName} Tac companion '${Compiler.toSourceLabel(companion.sourcePath)}' requires '${command}' to compile to Wasm. ${installHint} You can also set ${envVar} to the compiler path.`);
+        }
+        const tempDir = await mkdtemp(path.join(tmpdir(), 'tachyon-tac-wasm-'));
+        const outputPath = path.join(tempDir, 'companion.wasm');
+        try {
+            const proc = Bun.spawn(createArgs(compilerPath, outputPath), {
+                cwd: process.cwd(),
+                stdout: 'pipe',
+                stderr: 'pipe',
+            });
+            const [stdout, stderr, exitCode] = await Promise.all([
+                new Response(proc.stdout).text(),
+                new Response(proc.stderr).text(),
+                proc.exited,
+            ]);
+            if (exitCode !== 0) {
+                const details = [stdout, stderr].filter(Boolean).join('\n').trim();
+                throw new Error(`${languageName} failed to compile '${Compiler.toSourceLabel(companion.sourcePath)}'${details ? `:\n${details}` : ''}`);
+            }
+            return await Bun.file(outputPath).bytes();
+        }
+        finally {
+            await rm(tempDir, { recursive: true, force: true });
+        }
+    }
+    /**
+     * @param {CompanionScript} companion
+     * @returns {Promise<Uint8Array>}
+     */
+    static async compileWasmSourceCompanion(companion) {
+        if (companion.provider.target !== 'wasm-source')
+            throw new Error(`Tac companion '${Compiler.toSourceLabel(companion.sourcePath)}' is not a source-backed Wasm companion`);
+        switch (companion.provider.language) {
+            case 'assemblyscript':
+                return Compiler.runWasmSourceCompiler(
+                    companion,
+                    'AssemblyScript',
+                    'asc',
+                    'TACHYON_WASM_ASC',
+                    (compilerPath, outputPath) => [compilerPath, companion.sourcePath, '--target', 'release', '--outFile', outputPath],
+                    "Install it with 'bun add -d assemblyscript'.",
+                    true
+                );
+            case 'rust':
+                return Compiler.runWasmSourceCompiler(
+                    companion,
+                    'Rust',
+                    'rustc',
+                    'TACHYON_WASM_RUSTC',
+                    (compilerPath, outputPath) => [compilerPath, companion.sourcePath, '--crate-type=cdylib', '--target=wasm32-unknown-unknown', '-O', '-o', outputPath],
+                    "Install Rust and add the target with 'rustup target add wasm32-unknown-unknown'."
+                );
+            case 'c':
+                return Compiler.runWasmSourceCompiler(
+                    companion,
+                    'C',
+                    'clang',
+                    'TACHYON_WASM_CLANG',
+                    (compilerPath, outputPath) => {
+                        const linkerPath = Compiler.findWasmLinker();
+                        return [
+                            compilerPath,
+                            '--target=wasm32',
+                            ...(linkerPath ? [`-fuse-ld=${linkerPath}`] : []),
+                            '-O3',
+                            '-nostdlib',
+                            '-Wl,--no-entry',
+                            '-Wl,--export-memory',
+                            '-Wl,--export-all',
+                            '-Wl,--allow-undefined',
+                            companion.sourcePath,
+                            '-o',
+                            outputPath,
+                        ];
+                    },
+                    "Install LLVM/Clang with WebAssembly target support."
+                );
+            case 'go':
+                return Compiler.runWasmSourceCompiler(
+                    companion,
+                    'Go',
+                    'tinygo',
+                    'TACHYON_WASM_TINYGO',
+                    (compilerPath, outputPath) => [compilerPath, 'build', '-target', 'wasm-unknown', '-no-debug', '-opt', 'z', '-o', outputPath, companion.sourcePath],
+                    "Install TinyGo; standard Go's browser Wasm target includes a Go runtime shim and is not the Tac ABI shape."
+                );
+            case 'zig':
+                return Compiler.runWasmSourceCompiler(
+                    companion,
+                    'Zig',
+                    'zig',
+                    'TACHYON_WASM_ZIG',
+                    (compilerPath, outputPath) => [compilerPath, 'build-exe', companion.sourcePath, '-target', 'wasm32-freestanding', '-fno-entry', '-rdynamic', '-O', 'ReleaseSmall', `-femit-bin=${outputPath}`],
+                    'Install Zig with wasm32-freestanding target support.'
+                );
+            case 'wat':
+                return Compiler.runWasmSourceCompiler(
+                    companion,
+                    'WebAssembly text',
+                    'wat2wasm',
+                    'TACHYON_WASM_WAT2WASM',
+                    (compilerPath, outputPath) => [compilerPath, companion.sourcePath, '-o', outputPath],
+                    'Install WABT to get wat2wasm.'
+                );
+        }
+        throw new Error(`Unsupported Tac Wasm source language '${/** @type {{ language: string }} */ (companion.provider).language}' for '${Compiler.toSourceLabel(companion.sourcePath)}'`);
+    }
+    /**
+     * @param {CompanionScript} companion
+     * @returns {Promise<Uint8Array>}
+     */
+    static async getTacWasmBytes(companion) {
+        if (companion.provider.target === 'wasm-json')
+            return Bun.file(companion.sourcePath).bytes();
+        if (companion.provider.target === 'wasm-source') {
+            try {
+                return await Compiler.compileWasmSourceCompanion(companion);
+            }
+            catch (error) {
+                const fallbackPath = Compiler.companionWasmFallbackPath(companion);
+                if (await Bun.file(fallbackPath).exists()) {
+                    Compiler.compilerLogger.warn('Falling back to prebuilt Tac Wasm companion', {
+                        companion: Compiler.toSourceLabel(companion.sourcePath),
+                        fallback: Compiler.toSourceLabel(fallbackPath),
+                        error: error instanceof Error ? error.message : String(error),
+                    });
+                    return Bun.file(fallbackPath).bytes();
+                }
+                throw error;
+            }
+        }
+        throw new Error(`Tac companion '${Compiler.toSourceLabel(companion.sourcePath)}' is not a Wasm companion`);
+    }
+    /**
+     * @param {string} sourcePath
+     * @param {Uint8Array} wasmBytes
+     * @param {TacWasmManifest} manifest
+     * @returns {string}
+     */
+    static createTacWasmAdapterSource(sourcePath, wasmBytes, manifest) {
+        const importPath = Compiler.toRelativeImportPath(sourcePath, `${import.meta.dir}/../runtime/tac.js`);
+        const bytesBase64 = Buffer.from(wasmBytes).toString('base64');
+        const methods = JSON.stringify(manifest.methods ?? []);
+        const defaultState = JSON.stringify(manifest.state ?? {}).replace(/</g, '\\u003c');
+        const sourceLabel = JSON.stringify(Compiler.toSourceLabel(sourcePath));
+        return `import Tac from ${JSON.stringify(importPath)};
+
+const __tac_wasm_source__ = ${sourceLabel};
+const __tac_wasm_methods__ = ${methods};
+const __tac_wasm_default_state__ = Object.freeze(${defaultState});
+const __tac_wasm_bytes__ = Uint8Array.from(atob(${JSON.stringify(bytesBase64)}), (char) => char.charCodeAt(0));
+const __tac_text_encoder__ = new TextEncoder();
+const __tac_text_decoder__ = new TextDecoder();
+
+function __tac_apply_state__(owner, message) {
+    if (!message || typeof message !== 'object') return undefined;
+    const state = message.state && typeof message.state === 'object' ? message.state : undefined;
+    if (state) Object.assign(owner, state);
+    const effects = Array.isArray(message.effects) ? message.effects : [];
+    for (const effect of effects) {
+        if (!effect || typeof effect !== 'object') continue;
+        if (effect.type === 'emit') owner.tac.emit(String(effect.name || ''), effect.detail);
+        if (effect.type === 'provide') owner.tac.provide(String(effect.key || ''), effect.value);
+        if (effect.type === 'rerender') owner.tac.rerender();
+    }
+    return Object.prototype.hasOwnProperty.call(message, 'result') ? message.result : undefined;
+}
+
+class TacWasmJsonRuntime {
+    constructor(owner) {
+        this.owner = owner;
+        const module = new WebAssembly.Module(__tac_wasm_bytes__);
+        const instance = new WebAssembly.Instance(module, {
+            env: {
+                abort(messagePtr, filePtr, line, column) {
+                    throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' aborted at ' + line + ':' + column);
+                },
+                trace() {},
+            },
+            wasi_snapshot_preview1: {
+                args_get() { return 0; },
+                args_sizes_get(argcPtr, argvBufSizePtr) {
+                    return 0;
+                },
+                clock_time_get() { return 0; },
+                environ_get() { return 0; },
+                environ_sizes_get() { return 0; },
+                fd_close() { return 0; },
+                fd_fdstat_get() { return 0; },
+                fd_seek() { return 0; },
+                fd_write() { return 0; },
+                poll_oneoff() { return 0; },
+                proc_exit(code) {
+                    throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' exited with code ' + code);
+                },
+                random_get(ptr, len) {
+                    return 0;
+                },
+            },
+        });
+        this.exports = instance.exports;
+        if (!(this.exports.memory instanceof WebAssembly.Memory)) {
+            throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' must export memory');
+        }
+        for (const name of ['alloc', 'init', 'call', 'output_ptr', 'output_len']) {
+            if (typeof this.exports[name] !== 'function') {
+                throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' must export ' + name + '()');
+            }
+        }
+    }
+
+    writeJson(value) {
+        const bytes = __tac_text_encoder__.encode(JSON.stringify(value ?? null));
+        const ptr = this.exports.alloc(bytes.length);
+        new Uint8Array(this.exports.memory.buffer).set(bytes, ptr);
+        return { ptr, len: bytes.length };
+    }
+
+    dealloc(input) {
+        if (input && typeof this.exports.dealloc === 'function') {
+            this.exports.dealloc(input.ptr, input.len);
+        }
+    }
+
+    readOutput() {
+        const ptr = this.exports.output_ptr();
+        const len = this.exports.output_len();
+        if (!len) return {};
+        const memory = new Uint8Array(this.exports.memory.buffer);
+        return JSON.parse(__tac_text_decoder__.decode(memory.subarray(ptr, ptr + len)));
+    }
+
+    init(props) {
+        const input = this.writeJson({ props });
+        try {
+            this.exports.init(input.ptr, input.len);
+            return __tac_apply_state__(this.owner, this.readOutput());
+        }
+        finally {
+            this.dealloc(input);
+        }
+    }
+
+    call(method, args) {
+        const methodInput = this.writeJson(method);
+        const payloadInput = this.writeJson({
+            args,
+            props: this.owner.props,
+            state: Object.fromEntries(Object.keys(this.owner)
+                .filter((key) => key !== 'props' && key !== 'tac' && !key.startsWith('__ty_'))
+                .map((key) => [key, this.owner[key]])),
+        });
+        try {
+            this.exports.call(methodInput.ptr, methodInput.len, payloadInput.ptr, payloadInput.len);
+            return __tac_apply_state__(this.owner, this.readOutput());
+        }
+        finally {
+            this.dealloc(methodInput);
+            this.dealloc(payloadInput);
+        }
+    }
+}
+
+export default class extends Tac {
+    constructor(props = {}, tac) {
+        super(props, tac);
+        Object.assign(this, structuredClone(__tac_wasm_default_state__));
+        Object.defineProperty(this, '__tac_wasm_runtime__', {
+            configurable: false,
+            enumerable: false,
+            value: new TacWasmJsonRuntime(this),
+        });
+        for (const method of __tac_wasm_methods__) {
+            Object.defineProperty(this, method, {
+                configurable: true,
+                enumerable: false,
+                value: (...args) => this.__tac_wasm_runtime__.call(method, args),
+            });
+        }
+        this.__tac_wasm_runtime__.init(props);
+    }
+}
+`;
+    }
+    /**
+     * @param {CompanionScript} companion
+     * @returns {BunPlugin}
+     */
+    static createWasmCompanionPlugin(companion) {
+        const filter = Compiler.createFilePathFilter(companion.sourcePath);
+        return /** @type {BunPlugin} */ ({
+            name: `tachyon-tac-wasm-companion:${companion.sourcePath}`,
+            target: /** @type {import("bun").Target} */ ('browser'),
+            setup(build) {
+                build.onLoad({ filter }, async () => {
+                    const manifest = await Compiler.readTacWasmManifest(companion);
+                    const wasmBytes = await Compiler.getTacWasmBytes(companion);
+                    return {
+                        contents: Compiler.createTacWasmAdapterSource(companion.sourcePath, wasmBytes, manifest),
+                        loader: 'js',
+                    };
+                });
+            }
+        });
+    }
+    /**
+     * @param {TemplateData} data
+     * @param {string} sourcePath
+     * @returns {BunPlugin[]}
+     */
+    static createCompanionPlugins(data, sourcePath) {
+        if (data.companion) {
+            if (data.companion.provider.target === 'ecmascript')
+                return [Compiler.createCompanionScriptPlugin(data.companion.sourcePath)];
+            if (data.companion.provider.target === 'wasm-json' || data.companion.provider.target === 'wasm-source')
+                return [Compiler.createWasmCompanionPlugin(data.companion)];
+            throw new Error(`Unsupported Tac companion target '${data.companion.provider.target}' for '${Compiler.toSourceLabel(data.companion.sourcePath)}'`);
+        }
+        if (data.companionImportPath) {
+            const companionPath = path.resolve(path.dirname(sourcePath), data.companionImportPath);
+            return [Compiler.createCompanionScriptPlugin(companionPath)];
+        }
+        return [];
+    }
     // ── Build & register a single template module ──────────────────────────────
     /**
      * @param {TemplateData} data
@@ -1312,7 +1781,7 @@ ${transformed}
             minify: { whitespace: true, syntax: true },
             splitting: false,
             plugins: [
-                ...(data.companionImportPath ? [Compiler.createCompanionScriptPlugin(path.resolve(path.dirname(sourcePath), data.companionImportPath))] : []),
+                ...Compiler.createCompanionPlugins(data, sourcePath),
                 Compiler.createTemplatePlugin({
                     data,
                     dir,

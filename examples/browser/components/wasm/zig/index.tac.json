@@ -1,0 +1,9 @@
+{
+  "abi": "tac-wasm-json@1",
+  "sourceLanguage": "Zig",
+  "state": {
+    "clicks": 0,
+    "label": "Zig!!"
+  },
+  "methods": ["increment"]
+}

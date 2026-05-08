@@ -1,0 +1,9 @@
+{
+  "abi": "tac-wasm-json@1",
+  "sourceLanguage": "Go",
+  "state": {
+    "clicks": 0,
+    "label": "Go!!!"
+  },
+  "methods": ["increment"]
+}

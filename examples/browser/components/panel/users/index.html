@@ -4,20 +4,20 @@
             <h2 class="md-typescale-title-large">Users</h2>
             <p class="md-typescale-body-small muted">Reads <code>fylo.users.find()</code> directly from the browser. The <code>fylo</code> global is compiler-injected - no manual import.</p>
         </div>
-        <span class="chip">{loadingState()}</span>
+        <md-assist-chip :label="loadingState()"></md-assist-chip>
     </div>
     <logic :if="users.length > 0">
-        <ul class="list">
+        <md-list>
             <loop :for="const user of users">
-                <li class="list-item">
+                <md-list-item>
                     <div class="list-item-text">
                         <strong>{user.email}</strong>
                         <span>{user.role} - {user.id}</span>
                     </div>
-                    <span class="chip">{user.role}</span>
-                </li>
+                    <md-assist-chip :label="user.role"></md-assist-chip>
+                </md-list-item>
             </loop>
-        </ul>
+        </md-list>
     </logic>
     <logic :if="users.length === 0 && !loading">
         <p class="md-typescale-body-medium muted">No users yet. Run <code>bun run seed</code> to import db/seed/users/*.json.</p>
