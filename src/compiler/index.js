@@ -1604,10 +1604,29 @@ class TacWasmJsonRuntime {
     constructor(owner) {
         this.owner = owner;
         const module = new WebAssembly.Module(__tac_wasm_bytes__);
+        let wasmMemory;
+        const memoryView = () => {
+            if (!(wasmMemory instanceof WebAssembly.Memory)) {
+                throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' memory is not available yet');
+            }
+            return new Uint8Array(wasmMemory.buffer);
+        };
         const instance = new WebAssembly.Instance(module, {
             env: {
                 abort(messagePtr, filePtr, line, column) {
                     throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' aborted at ' + line + ':' + column);
+                },
+                memcpy(dest, src, len) {
+                    memoryView().copyWithin(dest, src, src + len);
+                    return dest;
+                },
+                memmove(dest, src, len) {
+                    memoryView().copyWithin(dest, src, src + len);
+                    return dest;
+                },
+                memset(dest, value, len) {
+                    memoryView().fill(value & 255, dest, dest + len);
+                    return dest;
                 },
                 trace() {},
             },
@@ -1636,6 +1655,7 @@ class TacWasmJsonRuntime {
         if (!(this.exports.memory instanceof WebAssembly.Memory)) {
             throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' must export memory');
         }
+        wasmMemory = this.exports.memory;
         for (const name of ['alloc', 'init', 'call', 'output_ptr', 'output_len']) {
             if (typeof this.exports[name] !== 'function') {
                 throw new Error('Tac Wasm companion ' + __tac_wasm_source__ + ' must export ' + name + '()');
