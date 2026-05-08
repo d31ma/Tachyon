@@ -1,7 +1,7 @@
 # Graph Report - TACHYON  (2026-05-08)
 
 ## Corpus Check
-- 123 files · ~77,643 words
+- 123 files · ~77,717 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
