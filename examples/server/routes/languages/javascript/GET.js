@@ -1,4 +1,4 @@
-import LanguageService from '../../../services/language-service.js';
+import LanguageService from '@/services/language-service.js';
 
 const service = new LanguageService();
 

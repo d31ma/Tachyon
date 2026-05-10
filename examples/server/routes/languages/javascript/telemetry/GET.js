@@ -1,4 +1,4 @@
-import TelemetryService from '../../../../services/telemetry-service.js'
+import TelemetryService from '@/services/telemetry-service.js'
 
 const service = new TelemetryService()
 

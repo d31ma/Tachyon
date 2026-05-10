@@ -15,7 +15,10 @@
     "allowImportingTsExtensions": true,
     "maxNodeModuleJsDepth": 0,
     "skipLibCheck": true,
-    "noUncheckedSideEffectImports": false
+    "noUncheckedSideEffectImports": false,
+    "paths": {
+      "@/*": ["./examples/server/*"]
+    }
   },
   "include": [
     "src/**/*.d.ts",
