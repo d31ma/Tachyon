@@ -339,7 +339,7 @@ export default class Compiler {
     static pageModulePublicPath(pathname) {
         return pathname === '/'
             ? '/pages/index.js'
-            : `/pages${pathname}/index.js`;
+            : `/pages${Router.routeToFilesystemPath(pathname)}/index.js`;
     }
 
     /**
