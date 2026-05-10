@@ -1,4 +1,4 @@
-import ItemService from '../../../../services/item-service.ts'
+import ItemService from '@/services/item-service.ts'
 
 const service = new ItemService()
 

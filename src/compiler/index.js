@@ -350,7 +350,7 @@ export default class Compiler {
     static pageModuleFilePath(distPath, pathname) {
         return pathname === '/'
             ? path.join(distPath, 'pages', 'index.js')
-            : path.join(distPath, 'pages', pathname.slice(1), 'index.js');
+            : path.join(distPath, 'pages', Router.routeToFilesystemPath(pathname).slice(1), 'index.js');
     }
 
     /** @param {string | undefined} scriptLang */

@@ -331,6 +331,14 @@ export default class Router {
         if (routeMethod) {
             Router.allRoutes.get(route)?.add(routeMethod);
             Router.routeHandlers[route] ??= {};
+            if (Router.routeHandlers[route][routeMethod]) {
+                const existing = path.posix.basename(Router.routeHandlers[route][routeMethod]);
+                const incoming = path.posix.basename(routeFilePath);
+                throw new Error(
+                    `Duplicate ${routeMethod} handler for '${route}' — both '${existing}' and '${incoming}' exist. ` +
+                    `Remove one so only a single handler file remains per route and method.`
+                );
+            }
             Router.routeHandlers[route][routeMethod] = path.join(Router.routesPath, routeFilePath);
         }
         if (await routeOptionsFile.exists() && !Router.routeConfigs[route]) {
