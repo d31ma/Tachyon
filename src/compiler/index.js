@@ -1056,9 +1056,9 @@ export default class Compiler {
         }
         let renderSource = body.join('\n')
             .replaceAll(/`<loop :for="(.*?)">`|`<\/loop>`/g, (_, expr) => expr ? `for(${expr}) {` : '}')
-            .replaceAll(/`<logic :if="(.*?)">`|`<\/logic>`/g, (_, expr) => expr ? `if(${expr}) {` : '}')
-            .replaceAll(/`<logic :else-if="(.*?)">`|`<\/logic>`/g, (_, expr) => expr ? `else if(${expr}) {` : '}')
-            .replaceAll(/`<logic else="">`|`<\/logic>`/g, (_, expr) => expr ? `else {` : '}');
+            .replaceAll(/`<logic :if="(.*?)">`/g, (_, expr) => `if(${expr}) {`)
+            .replaceAll(/`<logic :else-if="(.*?)">`/g, (_, expr) => `else if(${expr}) {`)
+            .replaceAll(/(`<logic else="">`)|(`<\/logic>`)/g, (_, expr) => expr ? `else {` : '}');
         // Bind dynamic attributes :attr="expr" → attr="${escaped expr}"
         renderSource = renderSource.replaceAll(/:(\w[\w-]*)="([^"]*)"/g, '$1="${ty_escapeAttr($2)}"');
         // Transform component invocations
@@ -1118,7 +1118,8 @@ export default class Compiler {
             const bindingName = componentName.replaceAll('-', '_');
             if (!seenBindings.has(bindingName)) {
                 seenBindings.add(bindingName);
-                moduleImports.push(`${bindingName}: () => import('/components/${componentPath}')`);
+                moduleImports.push(`${bindingName}: () => import('/components/${componentPath}').then(m => m.default || m)`);
+                factoryBindings.push(bindingName);
             }
         }
         const companionImportPath = data.companion?.importPath ?? data.companionImportPath;
