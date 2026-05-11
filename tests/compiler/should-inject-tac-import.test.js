@@ -71,4 +71,23 @@ describe('Compiler.shouldInjectTacImport', () => {
         expect(Compiler.shouldInjectTacImport(`import { Tac } from './utils.js';\nexport default class extends Tac {}`))
             .toBe(false);
     });
+
+    test('returns true when import without semicolon does not reference Tac (TS no-semicolon)', () => {
+        const source = [
+            `import dayjs from 'dayjs'`,
+            `type InventoryItem = {`,
+            `    id: string`,
+            `    name: string`,
+            `}`,
+            `export default class extends Tac {`,
+            `    items: InventoryItem[] = []`,
+            `}`,
+        ].join('\n');
+        expect(Compiler.shouldInjectTacImport(source)).toBe(true);
+    });
+
+    test('returns false when import type Tac is present', () => {
+        expect(Compiler.shouldInjectTacImport(`import type Tac from './tac.js';\nexport default class extends Tac {}`))
+            .toBe(false);
+    });
 });

@@ -443,7 +443,7 @@ export default class Compiler {
             .replace(/\/\*[\s\S]*?\*\//g, '')
             .replace(/\/\/.*$/gm, '')
             .replace(/(['"`])(?:\\.|(?!\1).)*\1/g, '');
-        return !(/^\s*import\b[^;]*\bTac\b/m.test(stripped)
+        return !(/^\s*import\s+(?:type\s+)?(?:\{[^}]*\bTac\b[^}]*\}|\bTac\b)/m.test(stripped)
             || /^\s*(?:const|let|var|class|function)\s+Tac\b/m.test(stripped));
     }
     /**
