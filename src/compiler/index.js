@@ -1058,7 +1058,7 @@ export default class Compiler {
             .replaceAll(/`<loop :for="(.*?)">`|`<\/loop>`/g, (_, expr) => expr ? `for(${expr}) {` : '}')
             .replaceAll(/`<logic :if="(.*?)">`/g, (_, expr) => `if(${expr}) {`)
             .replaceAll(/`<logic :else-if="(.*?)">`/g, (_, expr) => `else if(${expr}) {`)
-            .replaceAll(/`<logic else="">`|`<\/logic>`/g, (_, expr) => expr ? `else {` : '}');
+            .replaceAll(/(`<logic else="">`)|(`<\/logic>`)/g, (_, expr) => expr ? `else {` : '}');
         // Bind dynamic attributes :attr="expr" → attr="${escaped expr}"
         renderSource = renderSource.replaceAll(/:(\w[\w-]*)="([^"]*)"/g, '$1="${ty_escapeAttr($2)}"');
         // Transform component invocations
@@ -1119,6 +1119,7 @@ export default class Compiler {
             if (!seenBindings.has(bindingName)) {
                 seenBindings.add(bindingName);
                 moduleImports.push(`${bindingName}: () => import('/components/${componentPath}').then(m => m.default || m)`);
+                factoryBindings.push(bindingName);
             }
         }
         const companionImportPath = data.companion?.importPath ?? data.companionImportPath;
