@@ -1114,14 +1114,11 @@ export default class Compiler {
         const seenBindings = new Set(factoryBindings);
         for (const match of renderSource.matchAll(/data-tac-module="\/components\/([^"]+)"/g)) {
             const componentPath = match[1];
-            const segments = componentPath.split('/');
-            const lastSegment = segments[segments.length - 1];
-            const dirName = segments.length > 1 ? segments[0] : lastSegment.replace(/\.[^.]+$/, '');
-            const bindingName = dirName.replaceAll('-', '_');
+            const componentName = Compiler.normalizeComponentName(componentPath.replace(/\.js$/, '.html'));
+            const bindingName = componentName.replaceAll('-', '_');
             if (!seenBindings.has(bindingName)) {
                 seenBindings.add(bindingName);
                 moduleImports.push(`${bindingName}: () => import('/components/${componentPath}')`);
-                factoryBindings.push(bindingName);
             }
         }
         const companionImportPath = data.companion?.importPath ?? data.companionImportPath;
