@@ -1005,7 +1005,7 @@ export default class Compiler {
                     }
                 },
                 text(text) {
-                    if (text.text.trim() && !insideScript && !insideStyle) {
+                    if (text.text && !insideScript && !insideStyle) {
                         parsed.push({ element: `\`${interpolate(text.text)}\`` });
                     }
                 }
@@ -1110,6 +1110,17 @@ export default class Compiler {
         const { bindingNames: dynamicImportBindings, moduleImports: dynamicModuleImports, scriptContent, } = Compiler.liftDynamicImports(rawScriptContent);
         const moduleImports = [...dynamicModuleImports];
         const factoryBindings = [...dynamicImportBindings];
+        // Add component module imports referenced by HTML template component tags
+        const seenBindings = new Set(factoryBindings);
+        for (const match of renderSource.matchAll(/data-tac-module="\/components\/([^"]+)"/g)) {
+            const componentPath = match[1];
+            const componentName = Compiler.normalizeComponentName(componentPath.replace(/\.js$/, '.html'));
+            const bindingName = componentName.replaceAll('-', '_');
+            if (!seenBindings.has(bindingName)) {
+                seenBindings.add(bindingName);
+                moduleImports.push(`${bindingName}: () => import('/components/${componentPath}')`);
+            }
+        }
         const companionImportPath = data.companion?.importPath ?? data.companionImportPath;
         const companionLoader = companionImportPath
             ? `
