@@ -439,8 +439,12 @@ export default class Compiler {
     }
     /** @param {string} source */
     static shouldInjectTacImport(source) {
-        return !(/^\s*import\s+[\s\S]*?\bTac\b[\s\S]*?\bfrom\b/m.test(source)
-            || /^\s*(?:const|let|var|class|function)\s+Tac\b/m.test(source));
+        const stripped = source
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/\/\/.*$/gm, '')
+            .replace(/(['"`])(?:\\.|(?!\1).)*\1/g, '');
+        return !(/^\s*import\s+(?:type\s+)?(?:\{[^}]*\bTac\b[^}]*\}|\bTac\b)/m.test(stripped)
+            || /^\s*(?:const|let|var|class|function)\s+Tac\b/m.test(stripped));
     }
     /**
      * Returns the subset of supported decorator names that the source uses as
