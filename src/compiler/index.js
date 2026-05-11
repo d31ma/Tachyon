@@ -1118,7 +1118,7 @@ export default class Compiler {
             const bindingName = componentName.replaceAll('-', '_');
             if (!seenBindings.has(bindingName)) {
                 seenBindings.add(bindingName);
-                moduleImports.push(`${bindingName}: () => import('/components/${componentPath}').then(m => m.default || m)`);
+                moduleImports.push(`${bindingName}: (p) => import('/components/${componentPath}').then(async (m) => { const f = m.default || m; return await f(p) })`);
                 factoryBindings.push(bindingName);
             }
         }
@@ -1315,7 +1315,6 @@ ${transformed}
      */
     static createCompanionScriptPlugin(sourcePath) {
         const filter = Compiler.createFilePathFilter(sourcePath);
-        const frameworkEntryPath = `${import.meta.dir}/../runtime/tac.js`;
         const decoratorsEntryPath = `${import.meta.dir}/../runtime/decorators.js`;
         const fyloGlobalEntryPath = `${import.meta.dir}/../runtime/fylo-global.js`;
         return /** @type {BunPlugin} */ ({
@@ -1334,8 +1333,8 @@ ${transformed}
                         contents = `import { fylo } from ${JSON.stringify(importPath)};\n${contents}`;
                     }
                     if (Compiler.shouldInjectTacImport(contents)) {
-                        const importPath = Compiler.toRelativeImportPath(sourcePath, frameworkEntryPath);
-                        contents = `import Tac from ${JSON.stringify(importPath)};\n${contents}`;
+                        const tacInline = `var noopHelpers={isBrowser:!1,isServer:!0,bindPersistentFields:()=>{},env:(_,f)=>f,props:{},emit:()=>!1,fetch:(i,n)=>fetch(i,n),inject:(_,f)=>f,onMount:()=>{},provide:()=>{},rerender:()=>{}};class Tac{props;tac;constructor(props={},tac=noopHelpers){this.props=props,this.tac=tac}}`;
+                        contents = `${tacInline}\n${contents}`;
                     }
                     return {
                         contents,

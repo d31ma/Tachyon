@@ -745,3 +745,97 @@ timedTest('components can emit custom events handled by their parent wrapper', {
         Object.assign(globalThis, previousGlobals);
     }
 });
+
+// ── regression: issue #57 — large companion scripts must include class Tac ────
+async function createLargeCompanionFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-large-companion-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'components'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-large-companion-fixture',
+        private: true,
+    }, null, 2));
+    await writeFile(path.join(root, 'components', 'big.html'), `<strong class="big-widget">{label}</strong>`);
+    // Companion script exceeding ~1.3 KB to trigger the bundler size threshold
+    const padding = '// ' + 'x'.repeat(1500);
+    await writeFile(path.join(root, 'components', 'big.js'), `${padding}
+export default class extends Tac {
+    label = 'BigWidget'
+
+    constructor(props = {}) {
+        super(props)
+    }
+}
+`);
+    await writeFile(path.join(root, 'routes', 'index.html'), `<big />`);
+    return root;
+}
+
+timedTest('large companion scripts over 1.3KB include class Tac definition', { timeout: 20000 }, async () => {
+    const cwd = await createLargeCompanionFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const distComponentPath = path.join(cwd, 'dist', 'components', 'big.js');
+    const componentSource = await readFile(distComponentPath, 'utf8');
+    expect(componentSource).toContain('class Tac{');
+    expect(componentSource).toContain('extends Tac');
+});
+
+// ── regression: issue #58 — component import bindings accept props and call factory ────
+async function createComponentImportBindingFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-import-binding-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'components'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-import-binding-fixture',
+        private: true,
+    }, null, 2));
+    await writeFile(path.join(root, 'components', 'greeting.html'), `<span class="greeting">Hello {name}</span>`);
+    await writeFile(path.join(root, 'components', 'greeting.js'), `export default class extends Tac {
+    name = 'World'
+    constructor(props = {}) {
+        super(props)
+        this.name = String(this.props.name ?? 'World')
+    }
+}
+`);
+    await writeFile(path.join(root, 'routes', 'index.html'), `<greeting name="Tachyon" />`);
+    return root;
+}
+
+timedTest('page-level component import bindings accept props and call the factory', { timeout: 20000 }, async () => {
+    const cwd = await createComponentImportBindingFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    // Verify the generated page module has the fixed binding pattern: (p) => import(...).then(async (m) => { const f = m.default || m; return await f(p) })
+    const pageModulePath = path.join(cwd, 'dist', 'pages', 'index.js');
+    const pageSource = await readFile(pageModulePath, 'utf8');
+    expect(pageSource).toMatch(/\(\w\)=>import\("[^"]+"\)\.then\(async\(\w\)=>\{/);
+    // Functional test: import and render to verify the factory is called correctly
+    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?import-binding=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    expect(initial).toContain('Hello Tachyon');
+});
