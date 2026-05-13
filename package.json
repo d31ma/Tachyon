@@ -1,6 +1,6 @@
 {
     "name": "@d31ma/tachyon",
-    "version": "26.20.01-3",
+    "version": "26.20.02",
     "description": "A polyglot, file-system-routed full-stack framework for Bun",
     "author": "Chidelma",
     "license": "MIT",
@@ -16,7 +16,8 @@
         "./compiler": "./src/compiler/index.js",
         "./decorators": "./src/runtime/decorators.js",
         "./globals": "./src/types/globals.d.ts",
-        "./eslint-globals": "./src/types/eslint-globals.js"
+        "./eslint-globals": "./src/types/eslint-globals.js",
+        "./src/*": "./src/*"
     },
     "bin": {
         "yon.init": "./bin/yon.init.js",

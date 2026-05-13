@@ -956,7 +956,18 @@ export default class Yon {
                     else if (method === "OPTIONS") {
                         requestKind = 'options';
                         const routePath = route === '/' ? '' : Router.routeToFilesystemPath(route);
-                        res = new Response(Bun.file(`${Router.routesPath}${routePath}/${Router.optionsFileName}`), { status: 200, headers: { ...Router.getHeaders(request), 'Content-Type': 'application/json' } });
+                        responseHeaders = Router.getHeaders(request);
+                        const isPreflight = request.headers.get('origin') && request.headers.get('Access-Control-Request-Method');
+                        if (isPreflight) {
+                            res = new Response(null, { status: 204, headers: responseHeaders });
+                        }
+                        else if ((process.env.YON_BASIC_AUTH || process.env.YON_BASIC_AUTH_HASH)
+                            && !await Yon.isAuthorizedClient(request.headers.get('authorization'), process.env.YON_BASIC_AUTH, process.env.YON_BASIC_AUTH_HASH)) {
+                            res = Response.json({ detail: "Unauthorized Client" }, { status: 401, headers: { ...responseHeaders, "WWW-Authenticate": 'Basic realm="Secure Area"' } });
+                        }
+                        else {
+                            res = new Response(Bun.file(`${Router.routesPath}${routePath}/${Router.optionsFileName}`), { status: 200, headers: { ...responseHeaders, 'Content-Type': 'application/json' } });
+                        }
                     }
                     else {
                         if (Router.middleware?.before) {

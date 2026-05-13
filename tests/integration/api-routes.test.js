@@ -485,8 +485,13 @@ describe('Request body parsing', () => {
 // OPTIONS Route
 // ===========================================================================
 describe('OPTIONS route', () => {
-    test('OPTIONS /languages/typescript/items returns schema JSON', async () => {
+    test('unauthenticated direct OPTIONS returns 401', async () => {
         const res = await fetch(`${BASE_URL}/languages/typescript/items`, { method: 'OPTIONS' });
+        expect(res.status).toEqual(401);
+    });
+
+    test('authenticated direct OPTIONS returns schema JSON', async () => {
+        const res = await authFetch('/languages/typescript/items', { method: 'OPTIONS' });
         expect(res.status).toEqual(200);
         expect(res.headers.get('content-type')).toContain('application/json');
         const body = await res.json();
@@ -494,30 +499,34 @@ describe('OPTIONS route', () => {
         expect(body).toHaveProperty('POST');
         expect(body).toHaveProperty('DELETE');
     });
-    test('OPTIONS /languages/javascript returns schema JSON', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, { method: 'OPTIONS' });
+
+    test('authenticated OPTIONS /languages/javascript returns schema JSON', async () => {
+        const res = await authFetch('/languages/javascript', { method: 'OPTIONS' });
         expect(res.status).toEqual(200);
         const body = await res.json();
         expect(body).toHaveProperty('GET');
         expect(body).toHaveProperty('POST');
         expect(body).toHaveProperty('PUT');
     });
-    test('OPTIONS /languages/python/versions/:version returns schema JSON', async () => {
-        const res = await fetch(`${BASE_URL}/languages/python/versions/v2`, { method: 'OPTIONS' });
+
+    test('authenticated OPTIONS /languages/python/versions/:version returns schema JSON', async () => {
+        const res = await authFetch('/languages/python/versions/v2', { method: 'OPTIONS' });
         expect(res.status).toEqual(200);
         const body = await res.json();
         expect(body).toHaveProperty('GET');
         expect(body).toHaveProperty('DELETE');
         expect(body).toHaveProperty('PATCH');
     });
+
     test('OPTIONS schema has numeric status code keys', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, { method: 'OPTIONS' });
+        const res = await authFetch('/languages/javascript', { method: 'OPTIONS' });
         const body = await res.json();
         expect(body.GET).toHaveProperty('200');
         expect(body.GET).toHaveProperty('500');
         expect(body.GET['200']).toHaveProperty('message');
     });
-    test('OPTIONS preflight response includes configured CORS headers', async () => {
+
+    test('OPTIONS preflight (CORS) returns 204 with headers, no schema body', async () => {
         const res = await fetch(`${BASE_URL}/languages/javascript`, {
             method: 'OPTIONS',
             headers: {
@@ -526,7 +535,8 @@ describe('OPTIONS route', () => {
                 'Access-Control-Request-Headers': 'Content-Type,Authorization',
             },
         });
-        expect(res.status).toEqual(200);
+        expect(res.status).toEqual(204);
+        expect(await res.text()).toBe('');
         expect(res.headers.get('access-control-allow-origin')).toBe('https://app.example.com');
         expect(res.headers.get('access-control-allow-methods')).toBe('GET,POST,PUT,DELETE,PATCH,OPTIONS');
         expect(res.headers.get('access-control-allow-headers')).toBe('Content-Type,Authorization');
