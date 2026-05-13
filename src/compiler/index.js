@@ -1915,16 +1915,28 @@ export default class extends Tac {
         const packages = await packageFile.json();
         const modules = Object.keys(packages.dependencies ?? {});
         for (const mod of modules) {
+            // Scoped packages use a + separator in route paths so the /
+            // in @scope/name is not treated as a path segment delimiter.
+            const routeKey = mod.replace('/', '+');
+            // Resolve to a file path so Bun.build handles scoped packages
+            // without trying to open @scope as a root directory.
+            let entry = mod;
+            try {
+                const resolved = Bun.resolveSync(mod, process.cwd());
+                if (resolved && resolved !== mod)
+                    entry = resolved;
+            }
+            catch {
+                // Fall through — Bun.build may still resolve the bare specifier
+            }
             try {
                 const result = await Bun.build({
-                    // Let Bun resolve package exports/main/module fields instead
-                    // of manually guessing node_modules entry files.
-                    entrypoints: [mod],
+                    entrypoints: [entry],
                     minify: true
                 });
                 for (const output of result.outputs) {
-                    Router.reqRoutes[`/modules/${mod}.js`] = {
-                        GET: () => jsResponse(`/modules/${mod}.js`, output)
+                    Router.reqRoutes[`/modules/${routeKey}.js`] = {
+                        GET: () => jsResponse(`/modules/${routeKey}.js`, output)
                     };
                 }
             }
