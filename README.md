@@ -1,9 +1,17 @@
-# Tachyon
+<p align="center">
+  <a href="https://www.npmjs.com/package/@d31ma/tachyon"><img src="https://img.shields.io/npm/v/@d31ma/tachyon?style=flat&label=npm" alt="npm version"></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-bun-f9f1e0?style=flat&logo=bun" alt="bun"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat" alt="license"></a>
+</p>
 
-Tachyon is a polyglot, file-system-routed full-stack framework for [Bun](https://bun.sh).
+<h1 align="center">Tachyon</h1>
 
-- `Tac` is the frontend layer.
-- `Yon` is the backend/runtime layer.
+<p align="center">
+  A polyglot, file-system-routed full-stack framework for <a href="https://bun.sh">Bun</a>.<br/>
+  <code>Tac</code> is the frontend layer. <code>Yon</code> is the backend/runtime layer.
+</p>
+
+---
 
 ## Features
 
@@ -23,6 +31,8 @@ Tachyon is a polyglot, file-system-routed full-stack framework for [Bun](https:/
 - Built-in health/readiness endpoints
 - Proxy-aware request context, CORS enforcement, and optional rate limiting
 
+---
+
 ## Install
 
 ```bash
@@ -40,6 +50,8 @@ If you are a `d31ma` member and want the private beta channel from GitHub Packag
 always-auth=true
 ```
 
+---
+
 ## Quick Start
 
 ```bash
@@ -51,13 +63,16 @@ bun run serve
 
 Useful commands:
 
-```bash
-bun run serve
-bun run bundle
-bun run preview
-```
+<table>
+<tr><th align="left">Command</th><th align="left">Description</th></tr>
+<tr><td><code>bun run serve</code></td><td>Shape-aware dev server — frontend, backend, or full-stack on one port</td></tr>
+<tr><td><code>bun run bundle</code></td><td>Build static <code>dist/</code> output</td></tr>
+<tr><td><code>bun run preview</code></td><td>Serve the built <code>dist/</code> directory</td></tr>
+</table>
 
 `bun run serve` is shape-aware: `browser/` only bundles and serves the frontend, `server/` only serves backend routes, and apps with both folders run as a full-stack app on one port.
+
+---
 
 ## Scaffold Layout
 
@@ -95,7 +110,10 @@ The example app in [examples/](examples/) demonstrates Tac and Yon working toget
 - shared data, shared assets, and a browser entry
 - middleware, OpenAPI docs, route manifests, and component companions
 
-## Configuration
+---
+
+<details>
+<summary><h2 style="display:inline">Configuration</h2></summary>
 
 Create a `.env` file in your app root. All variables are optional.
 
@@ -146,14 +164,14 @@ YON_DATA_BROWSER_READONLY=true
 YON_DATA_BROWSER_REVEAL=false
 ```
 
-Notes:
-
-- `YON_TRUST_PROXY=loopback` is a good default when running behind a local reverse proxy.
-- Set both `YON_RATE_LIMIT_MAX` and `YON_RATE_LIMIT_WINDOW_MS` to enable the built-in in-memory limiter.
-- For distributed deployments, export a custom `rateLimiter` from `middleware.js`.
-- Prefer `YON_BASIC_AUTH_HASH` over plaintext `YON_BASIC_AUTH` in production.
-- FYLO-owned storage settings use the `FYLO_*` prefix because they are consumed by `@d31ma/fylo`.
-- Tachyon-owned runtime settings use `YON_*` or `TAC_*`; avoid mixed prefixes such as `YON_FYLO_*`.
+> **Notes:**
+>
+> - `YON_TRUST_PROXY=loopback` is a good default when running behind a local reverse proxy.
+> - Set both `YON_RATE_LIMIT_MAX` and `YON_RATE_LIMIT_WINDOW_MS` to enable the built-in in-memory limiter.
+> - For distributed deployments, export a custom `rateLimiter` from `middleware.js`.
+> - Prefer `YON_BASIC_AUTH_HASH` over plaintext `YON_BASIC_AUTH` in production.
+> - FYLO-owned storage settings use the `FYLO_*` prefix because they are consumed by `@d31ma/fylo`.
+> - Tachyon-owned runtime settings use `YON_*` or `TAC_*`; avoid mixed prefixes such as `YON_FYLO_*`.
 
 Generate a Bun password hash with:
 
@@ -161,7 +179,12 @@ Generate a Bun password hash with:
 bun -e "console.log(await Bun.password.hash('user:pass'))"
 ```
 
-## FYLO Storage
+</details>
+
+---
+
+<details>
+<summary><h2 style="display:inline">FYLO Storage</h2></summary>
 
 Tachyon uses `@d31ma/fylo@26.19.7`, which is filesystem-first and uses the
 FYLO `local-fs` index backend by default. Set `FYLO_ROOT` to the directory that
@@ -191,6 +214,10 @@ required.
 to store index keys through Bun's S3 client. The old `s3-prefix`/LocalStack
 configuration is intentionally rejected so stale deployment env cannot silently
 fall back to a different backend.
+
+</details>
+
+---
 
 ## Backend Routing
 
@@ -294,19 +321,19 @@ generates tiny build wrappers for compiled/static runtimes. No third-party
 adapter dependency is added; compiled handlers use the language toolchain already
 on the developer or deployment machine.
 
-```text
-Language      Supported handler shape
-JavaScript    export function handler(request) / default class GET.handler()
-TypeScript    export function handler(request) / default class GET.handler()
-Python        def handler(request) / class GET.handler()
-Ruby          def handler(request) / class GET#handler
-PHP           function handler($request) / class GET::handler
-Dart          handler(Map<String, dynamic> request)
-Go            func Handler(request map[string]any) any
-Java          POST.handler(Map<String, Object> request)
-C#            GET.Handler(JsonElement request)
-Rust          pub fn handler(request: &JsonValue) -> impl Display
-```
+<table>
+<tr><th align="left">Language</th><th align="left">Supported handler shape</th></tr>
+<tr><td>JavaScript</td><td><code>export function handler(request)</code> / <code>default class GET.handler()</code></td></tr>
+<tr><td>TypeScript</td><td><code>export function handler(request)</code> / <code>default class GET.handler()</code></td></tr>
+<tr><td>Python</td><td><code>def handler(request)</code> / <code>class GET.handler()</code></td></tr>
+<tr><td>Ruby</td><td><code>def handler(request)</code> / <code>class GET#handler</code></td></tr>
+<tr><td>PHP</td><td><code>function handler($request)</code> / <code>class GET::handler</code></td></tr>
+<tr><td>Dart</td><td><code>handler(Map&lt;String, dynamic&gt; request)</code></td></tr>
+<tr><td>Go</td><td><code>func Handler(request map[string]any) any</code></td></tr>
+<tr><td>Java</td><td><code>POST.handler(Map&lt;String, Object&gt; request)</code></td></tr>
+<tr><td>C#</td><td><code>GET.Handler(JsonElement request)</code></td></tr>
+<tr><td>Rust</td><td><code>pub fn handler(request: &amp;JsonValue) -&gt; impl Display</code></td></tr>
+</table>
 
 Java and Rust intentionally stay dependency-free. Yon generates a tiny JSON
 adapter beside the compiled wrapper:
@@ -360,6 +387,8 @@ every string leaf is passed to CHEX as the regex pattern to validate.
 Numeric status codes may live directly under the method object, which is the
 style used by the example app.
 
+---
+
 ## Frontend Routing
 
 Tac page routes live in `browser/pages`.
@@ -389,6 +418,8 @@ Companion scripts can be JavaScript or TypeScript:
 
 - `clicker.js`
 - `clicker.ts`
+
+---
 
 ## Tac Templates
 
@@ -446,6 +477,8 @@ Anonymous companion classes are fully supported:
 ```js
 export default class extends Tac {}
 ```
+
+---
 
 ## Tac Companion Scripts
 
@@ -528,16 +561,34 @@ Supported effects:
 
 Any language can participate by compiling to a `.wasm` module that follows this ABI. Tachyon keeps rendering, event binding, persistence, local-first fetch, and DOM access in the generated adapter rather than exposing the DOM directly to Wasm.
 
+<details>
+<summary><h3 style="display:inline">Compiler Support</h3></summary>
+
 Tachyon currently knows how to compile these source companions when the matching compiler is installed on the app author's machine:
 
-- `index.as.ts` with `asc`; install with `bun add -d assemblyscript`
-- `index.rs` with `rustc`; install Rust and run `rustup target add wasm32-unknown-unknown`
-- `index.c` with `clang`; install LLVM/Clang with WebAssembly target support
-- `index.go` with `tinygo`; standard Go's browser Wasm target uses a Go runtime shim and is not the Tac ABI shape
-- `index.zig` with `zig`
-- `index.wat` with `wat2wasm`; install WABT
+<table>
+<tr><th align="left">Extension</th><th align="left">Compiler</th><th align="left">Install</th></tr>
+<tr><td><code>index.as.ts</code></td><td><code>asc</code></td><td><code>bun add -d assemblyscript</code></td></tr>
+<tr><td><code>index.rs</code></td><td><code>rustc</code></td><td>Install Rust + <code>rustup target add wasm32-unknown-unknown</code></td></tr>
+<tr><td><code>index.c</code></td><td><code>clang</code></td><td>Install LLVM/Clang with WebAssembly target support</td></tr>
+<tr><td><code>index.go</code></td><td><code>tinygo</code></td><td>Standard Go browser Wasm target uses a Go runtime shim, not the Tac ABI shape</td></tr>
+<tr><td><code>index.zig</code></td><td><code>zig</code></td><td></td></tr>
+<tr><td><code>index.wat</code></td><td><code>wat2wasm</code></td><td>Install WABT</td></tr>
+</table>
 
-Compiler path overrides are available for CI or non-standard installs: `TACHYON_WASM_ASC`, `TACHYON_WASM_RUSTC`, `TACHYON_WASM_CLANG`, `TACHYON_WASM_TINYGO`, `TACHYON_WASM_ZIG`, and `TACHYON_WASM_WAT2WASM`.
+Compiler path overrides are available for CI or non-standard installs:
+
+<table>
+<tr><th align="left">Variable</th><th align="left">Compiler</th></tr>
+<tr><td><code>TACHYON_WASM_ASC</code></td><td>AssemblyScript</td></tr>
+<tr><td><code>TACHYON_WASM_RUSTC</code></td><td>Rust</td></tr>
+<tr><td><code>TACHYON_WASM_CLANG</code></td><td>C (Clang)</td></tr>
+<tr><td><code>TACHYON_WASM_TINYGO</code></td><td>Go (TinyGo)</td></tr>
+<tr><td><code>TACHYON_WASM_ZIG</code></td><td>Zig</td></tr>
+<tr><td><code>TACHYON_WASM_WAT2WASM</code></td><td>WAT (wabt)</td></tr>
+</table>
+
+</details>
 
 The checked-in examples under `examples/browser/components/wasm/` use real source-backed companion filenames plus sibling `.wasm` fallbacks, so the example app runs without requiring every language compiler to be installed:
 
@@ -605,11 +656,14 @@ export default class extends Tac {
 
 Decorator semantics:
 
-- `@inject(key, fallback?)` — field decorator; field is initialized from `tac.inject(key, fallback)`.
-- `@provide(key)` — field decorator; the field's initial value is registered with `tac.provide(key, value)` after construction.
-- `@env(key, fallback?)` — field decorator; field is initialized from `tac.env(key, fallback)`.
-- `@onMount` — method decorator; the method is registered as an `onMount` handler bound to the instance.
-- `@emit(name)` — method decorator; the method's return value (or its resolved value, for async methods) is emitted as `name`. Rejections propagate without emitting.
+<table>
+<tr><th align="left">Decorator</th><th align="left">Kind</th><th align="left">Behavior</th></tr>
+<tr><td><code>@inject(key, fallback?)</code></td><td>field</td><td>Field initialized from <code>tac.inject(key, fallback)</code></td></tr>
+<tr><td><code>@provide(key)</code></td><td>field</td><td>Initial value registered with <code>tac.provide(key, value)</code> after construction</td></tr>
+<tr><td><code>@env(key, fallback?)</code></td><td>field</td><td>Field initialized from <code>tac.env(key, fallback)</code></td></tr>
+<tr><td><code>@onMount</code></td><td>method</td><td>Method registered as an <code>onMount</code> handler bound to the instance</td></tr>
+<tr><td><code>@emit(name)</code></td><td>method</td><td>Return value (or resolved value for async) emitted as <code>name</code>. Rejections propagate without emitting.</td></tr>
+</table>
 
 `@inject` and `@env` mirror the underlying `tac.inject` / `tac.env` types and may return `undefined` when no fallback is supplied; declare the field's JSDoc type accordingly.
 
@@ -679,6 +733,8 @@ Important boundary:
 
 There is no secure way to give a browser script a secret and also keep that secret hidden from the browser.
 
+---
+
 ## API Docs
 
 Yon exposes an OpenAPI 3.1 document at `/openapi.json` and a self-hosted Tachyon docs UI at `/api-docs`.
@@ -688,7 +744,10 @@ Yon exposes an OpenAPI 3.1 document at `/openapi.json` and a self-hosted Tachyon
 - the docs page is rendered by Tachyon-owned HTML, CSS, and JavaScript instead of a third-party docs bundle
 - the docs UI supports request authorization, operation filtering, deep links, cURL generation, and live "try it out" execution with response inspection
 
-## OpenTelemetry Storage
+---
+
+<details>
+<summary><h2 style="display:inline">OpenTelemetry Storage</h2></summary>
 
 Yon can persist OpenTelemetry trace data into FYLO without adding an SDK dependency stack.
 
@@ -769,6 +828,8 @@ bun run telemetry:alerts
 
 It polls the telemetry endpoint, flags slow routes and server errors, and prints structured JSON that can be shipped to another service or cron job.
 
+</details>
+
 ### `$` Field Persistence
 
 `$`-prefixed instance fields are automatically persisted to `sessionStorage`.
@@ -819,6 +880,8 @@ On the Yon side, handler responses are also given an inferred content type now:
 
 That scope is applied to the generated wrapper around each component instance.
 
+---
+
 ## Shared Frontend Files
 
 - `browser/shared/assets/*` is served at `/shared/assets/*`
@@ -830,7 +893,10 @@ If `imports.js` imports CSS, Tachyon emits `/imports.css` and links it from gene
 
 The example app uses a local `imports.js` plus shared assets/data. Keep demo-only browser helpers out of published runtime code; shared production styles should live under `browser/shared/assets` or `browser/shared/styles`.
 
-## Build Output
+---
+
+<details>
+<summary><h2 style="display:inline">Build Output</h2></summary>
 
 `tac.bundle` writes a static-ready `dist/` directory.
 
@@ -853,29 +919,41 @@ dist/
   imports.css
 ```
 
-Notes:
+> **Notes:**
+>
+> - there is no `dist/layouts/` output
+> - page shells are represented through `shells.json`
+> - static assets are emitted under `dist/shared/assets/`
+> - the runtime now uses one app shell template and injects the HMR client only in development
 
-- there is no `dist/layouts/` output
-- page shells are represented through `shells.json`
-- static assets are emitted under `dist/shared/assets/`
-- the runtime now uses one app shell template and injects the HMR client only in development
+</details>
+
+---
 
 ## Commands
 
-- `yon.serve` detects `browser/` and `server/` contents and serves the frontend, backend, or full-stack app
-- `tac.bundle` builds `dist/`
-- `tac.bundle --watch` keeps `dist/` fresh
-- `tac.preview` serves `dist/`
-- `tac.preview --watch` rebuilds and previews frontend output together
+<table>
+<tr><th align="left">Command</th><th align="left">Description</th></tr>
+<tr><td><code>yon.serve</code></td><td>Detects <code>browser/</code> and <code>server/</code> contents, serves frontend, backend, or full-stack app</td></tr>
+<tr><td><code>tac.bundle</code></td><td>Builds <code>dist/</code></td></tr>
+<tr><td><code>tac.bundle --watch</code></td><td>Keeps <code>dist/</code> fresh</td></tr>
+<tr><td><code>tac.preview</code></td><td>Serves <code>dist/</code></td></tr>
+<tr><td><code>tac.preview --watch</code></td><td>Rebuilds and previews frontend output together</td></tr>
+</table>
+
+---
 
 ## Operations
 
 Built-in endpoints:
 
-- `/health`
-- `/healthz`
-- `/ready`
-- `/readyz`
+<table>
+<tr><th align="left">Endpoint</th><th align="left">Purpose</th></tr>
+<tr><td><code>/health</code></td><td>Health check</td></tr>
+<tr><td><code>/healthz</code></td><td>Health check (k8s convention)</td></tr>
+<tr><td><code>/ready</code></td><td>Readiness check</td></tr>
+<tr><td><code>/readyz</code></td><td>Readiness check (k8s convention)</td></tr>
+</table>
 
 Tachyon also supports:
 
@@ -885,6 +963,8 @@ Tachyon also supports:
 - middleware-provided distributed rate limiting
 - cache headers for runtime assets, chunks, shared assets, and shared data
 - document-request detection using browser navigation headers such as `Sec-Fetch-Dest` / `Sec-Fetch-Mode`, with `Accept: text/html` kept as a fallback
+
+---
 
 ## Distributed Rate Limiting
 
@@ -900,6 +980,8 @@ YON_RATE_LIMIT_WINDOW_MS=60000
 UPSTASH_RATE_LIMIT_PREFIX=tachyon:rate-limit
 ```
 
+---
+
 ## Security
 
 - security headers on all responses
@@ -909,6 +991,8 @@ UPSTASH_RATE_LIMIT_PREFIX=tachyon:rate-limit
 - JWT expiry rejection when decodable
 - route request/response validation through `OPTIONS.json`
 
+---
+
 ## Production Notes
 
 - prefer `YON_BASIC_AUTH_HASH`
@@ -916,6 +1000,8 @@ UPSTASH_RATE_LIMIT_PREFIX=tachyon:rate-limit
 - configure `YON_TRUST_PROXY` when behind nginx, Caddy, or Cloudflare
 - use a shared rate limiter for multi-instance deployments
 - validate the built frontend with `tac.preview` before deploy
+
+---
 
 ## License
 
