@@ -20,7 +20,7 @@
 - Companion `*.js`, `*.ts`, `*.wasm`, source-backed Wasm (`*.as.ts`, `*.rs`, `*.c`, `*.go`, `*.zig`, `*.wat`), and `*.css` files beside templates
 - OOP-style companion classes with `export default class extends Tac`
 - Wasm-backed Tac companions through the `tac-wasm-json@1` ABI and generated adapters
-- Automatic session persistence for `$`-prefixed instance fields
+- Automatic persistence for `$`-prefixed (sessionStorage) and `$$`-prefixed (localStorage) instance fields
 - Local-first browser `fetch()` for Tac page/component scripts with IndexedDB-backed read caching and mutation-aware invalidation
 - Explicit browser env allowlisting through `TAC_PUBLIC_ENV` and `this.env(...)`
 - Static export with prerendered `dist/**/index.html`
@@ -103,7 +103,7 @@ The runtime still supports TypeScript companion scripts when you want them.
 The example app in [examples/](examples/) demonstrates Tac and Yon working together:
 
 - reactive page state
-- persisted `$` fields
+- persisted `$` (sessionStorage) and `$$` (localStorage) fields
 - local-first fetches
 - prebuilt Tac Wasm companions with source examples in WAT, AssemblyScript, Rust, C, Go, and Zig
 - backend handlers in multiple languages
@@ -186,7 +186,7 @@ bun -e "console.log(await Bun.password.hash('user:pass'))"
 <details>
 <summary><h2 style="display:inline">FYLO Storage</h2></summary>
 
-Tachyon uses `@d31ma/fylo@26.19.7`, which is filesystem-first and uses the
+Tachyon uses `@d31ma/fylo@26.20.5`, which is filesystem-first and uses the
 FYLO `local-fs` index backend by default. Set `FYLO_ROOT` to the directory that
 should contain FYLO-managed collections:
 
@@ -687,11 +687,11 @@ export default class extends Tac {
 }
 ```
 
-`$`-prefixed persistent fields are reactive too, and still write through to `sessionStorage`. `this.rerender()` remains available for rare cases where code mutates nested object/array contents in place instead of assigning a new field value.
+`$`-prefixed and `$$`-prefixed persistent fields are reactive too, and still write through to `sessionStorage` / `localStorage`. `this.rerender()` remains available for rare cases where code mutates nested object/array contents in place instead of assigning a new field value.
 
 ### Prop Auto-Binding
 
-`Tac` automatically copies values from `this.props` onto any same-named instance field declared on the subclass. A leading `$` on the field name is stripped when matching, so a `$`-prefixed persistent field automatically pairs with the unprefixed prop key:
+`Tac` automatically copies values from `this.props` onto any same-named instance field declared on the subclass. A leading `$` or `$$` on the field name is stripped when matching, so a `$`-prefixed or `$$`-prefixed persistent field automatically pairs with the unprefixed prop key:
 
 ```js
 export default class extends Tac {
@@ -703,6 +703,8 @@ export default class extends Tac {
 
   /** @type {number} */
   $clicks = 0                 // populated from props.clicks (leading $ stripped on match)
+  /** @type {string} */
+  $$theme = 'light'           // populated from props.theme (leading $$ stripped on match)
 }
 ```
 
@@ -830,17 +832,23 @@ It polls the telemetry endpoint, flags slow routes and server errors, and prints
 
 </details>
 
-### `$` Field Persistence
+### `$` and `$$` Field Persistence
 
 `$`-prefixed instance fields are automatically persisted to `sessionStorage`.
+`$$`-prefixed instance fields are automatically persisted to `localStorage`.
 
 ```js
 export default class extends Tac {
   /** @type {number} */
-  $count = 0
+  $count = 0         // sessionStorage
+  /** @type {string} */
+  $$theme = 'dark'   // localStorage
 
   increment() {
     this.$count += 1
+  }
+  toggle() {
+    this.$$theme = this.$$theme === 'dark' ? 'light' : 'dark'
   }
 }
 ```
@@ -849,7 +857,7 @@ The persistence key is generated from:
 
 - the Tac module path
 - the current page path or generated component instance identity
-- the field name
+- the field name (including the `$` or `$$` prefix)
 
 That makes the key stable across reloads and unique per persisted field instance.
 

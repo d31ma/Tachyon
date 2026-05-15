@@ -73,6 +73,7 @@ test('production HTML fallback does not inject the development HMR client', asyn
   apps.push(app)
 
   await app.writeFile('browser/pages/index.html', '<main>Production shell</main>')
+  app.runBin('tac.bundle')
 
   const port = await getFreePort()
   const proc = startTachyon(app, {
@@ -98,13 +99,9 @@ test('production HTML fallback does not inject the development HMR client', asyn
   const htmlRes = await fetch(`${baseUrl}/`, { headers: { Accept: 'text/html' } })
   const html = await htmlRes.text()
   const clientRes = await fetch(`${baseUrl}/hot-reload-client.js`)
-  const clientCode = await clientRes.text()
 
   expect(htmlRes.status).toBe(200)
   expect(html).toContain('/spa-renderer.js')
   expect(html).not.toContain('/hot-reload-client.js')
-  expect(clientRes.status).toBe(200)
-  expect(clientCode).toContain('.ok')
-  expect(clientCode).toContain('event:')
-  expect(clientCode).toContain('reload')
+  expect(clientRes.status).toBe(404)
 })

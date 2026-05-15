@@ -47,7 +47,7 @@ function fyloS3Options(env) {
 /**
  * Builds FYLO constructor options from Tachyon's runtime environment.
  *
- * FYLO 26.19 indexes through local-fs by default. Tachyon makes that default
+ * FYLO 26.20 indexes through local-fs by default. Tachyon makes that default
  * explicit so deployments can audit the selected index backend from env alone.
  *
  * @param {string} root

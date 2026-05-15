@@ -1,7 +1,7 @@
 // @ts-check
 import { mkdir, readdir, stat, writeFile } from 'fs/promises';
 import path from 'path';
-const version = '26.19.05-1';
+const version = '26.20.05';
 const defaultEnv = `YON_PORT=8000
 YON_HOST=127.0.0.1
 YON_HOSTNAME=127.0.0.1

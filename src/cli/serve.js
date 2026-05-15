@@ -118,7 +118,8 @@ async function loadMiddleware() {
 const appShape = await detectAppShape();
 const frontendEnabled = appShape.frontend;
 const backendEnabled = appShape.backend;
-const hmrEnabled = frontendEnabled || bundleWatchEnabled;
+const isProduction = process.env.NODE_ENV === 'production';
+const hmrEnabled = (frontendEnabled || bundleWatchEnabled) && !isProduction;
 async function configureRoutes(isReload = false) {
     Router.resetStaticState();
     if (isReload)
@@ -129,14 +130,24 @@ async function configureRoutes(isReload = false) {
         Yon.createServerRoutes();
         Pool.prewarmAllHandlers();
     }
-    if (frontendEnabled) {
+    if (frontendEnabled && !isProduction) {
         await Router.validatePageRoutes();
     }
 }
 if (frontendEnabled) {
-    const { runBuild } = await import('./bundle.js');
-    await runBuild();
-    Router.resetStaticState();
+    if (isProduction) {
+        if (!await pathExists(distPath)) {
+            serveLogger.error('dist/ directory not found', {
+                distPath,
+                suggestion: "Run 'tac.bundle' during the Docker build stage so dist/ is available at serve time.",
+            });
+            process.exit(1);
+        }
+    } else {
+        const { runBuild } = await import('./bundle.js');
+        await runBuild();
+        Router.resetStaticState();
+    }
 }
 await configureRoutes();
 if (hmrEnabled) {
@@ -279,13 +290,12 @@ const server = Bun.serve({
     routes: Router.reqRoutes,
     port: serverPort,
     hostname: serverHostname,
-    development: !!process.env.YON_DEV,
+    development: !isProduction && !!process.env.YON_DEV,
 });
 serveLogger.info('Server started', {
     url: `http://${server.hostname}:${server.port}`,
     startupMs: Date.now() - start,
-    bundleWatchEnabled,
-    hmrEnabled,
+    production: isProduction,
     appMode: appShape.mode,
     frontendEnabled,
     backendEnabled,

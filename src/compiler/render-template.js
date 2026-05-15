@@ -419,6 +419,36 @@ const ty_createHelpers = (modulePath) => {
     }
 
     /**
+     * @param {string} storageKey
+     * @param {unknown} fallback
+     * @returns {unknown}
+     */
+    const readLocalValue = (storageKey, fallback = undefined) => {
+        if (!isBrowser) return fallback
+        try {
+            const stored = globalThis.localStorage.getItem(storageKey)
+            return stored === null ? fallback : JSON.parse(stored)
+        } catch {
+            return fallback
+        }
+    }
+
+    /**
+     * @param {string} storageKey
+     * @param {unknown} value
+     */
+    const writeLocalValue = (storageKey, value) => {
+        if (!isBrowser) return
+        try {
+            if (value === undefined) {
+                globalThis.localStorage.removeItem(storageKey)
+                return
+            }
+            globalThis.localStorage.setItem(storageKey, JSON.stringify(value))
+        } catch {}
+    }
+
+    /**
      * @param {Record<string, unknown>} controller
      * @param {TacProps} props
      */
@@ -429,7 +459,27 @@ const ty_createHelpers = (modulePath) => {
         controller[TY_BOUND_PERSISTENT_FIELDS] = boundFields
         const persistScope = resolvePersistScope(props)
         for (const fieldName of Object.keys(controller)) {
-            if (!fieldName.startsWith('$') || boundFields.has(fieldName))
+            if (boundFields.has(fieldName))
+                continue
+            if (fieldName.startsWith('$$')) {
+                const storageKey = `tac:${persistScope}:${fieldName}`
+                let currentValue = readLocalValue(storageKey, controller[fieldName])
+                Object.defineProperty(controller, fieldName, {
+                    configurable: true,
+                    enumerable: true,
+                    get() {
+                        return currentValue
+                    },
+                    set(nextValue) {
+                        currentValue = nextValue
+                        writeLocalValue(storageKey, nextValue)
+                    },
+                })
+                controller[fieldName] = currentValue
+                boundFields.add(fieldName)
+                continue
+            }
+            if (!fieldName.startsWith('$'))
                 continue
             const storageKey = `tac:${persistScope}:${fieldName}`
             let currentValue = readSessionValue(storageKey, controller[fieldName])
@@ -527,8 +577,9 @@ const ty_createHelpers = (modulePath) => {
      * Post-construction binding for a companion instance: assigns props/tac
      * (defensive — Tac's constructor already does this for `extends Tac`),
      * merges props onto same-named instance fields, and then binds persistent
-     * ($-prefixed) fields. Props must run before persistence so they act as
-     * defaults; stored session values still win after a reload.
+     * ($-prefixed for sessionStorage, $$-prefixed for localStorage) fields.
+     * Props must run before persistence so they act as defaults; stored
+     * session / local values still win after a reload.
      *
      * @param {Record<string, unknown>} instance
      * @param {TacProps} props
@@ -545,6 +596,13 @@ const ty_createHelpers = (modulePath) => {
                     if (fieldName === 'props' || fieldName === 'tac') continue
                     if (Object.prototype.hasOwnProperty.call(propBag, fieldName)) {
                         instance[fieldName] = propBag[fieldName]
+                        continue
+                    }
+                    if (fieldName.startsWith('$$')) {
+                        const stripped = fieldName.slice(2)
+                        if (Object.prototype.hasOwnProperty.call(propBag, stripped)) {
+                            instance[fieldName] = propBag[stripped]
+                        }
                         continue
                     }
                     if (fieldName.startsWith('$')) {

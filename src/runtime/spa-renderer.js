@@ -75,28 +75,34 @@ const tac = getTacGlobal();
 const delegatedEvents = new Set();
 
 /**
- * Static HTML is rendered before the browser can read sessionStorage. Patch
- * marked persistent text nodes immediately so `$` fields do not visibly reset
+ * Static HTML is rendered before the browser can read sessionStorage /
+ * localStorage. Patch marked persistent text nodes immediately so `$`
+ * (sessionStorage) and `$$` (localStorage) fields do not visibly reset
  * while the full Tac route hydration is still loading manifests/modules.
  */
 function prehydratePersistentText() {
     try {
         const nodes = document.querySelectorAll('[data-tac-persist-field]');
         for (const node of nodes) {
-            if (!(node instanceof HTMLElement))
-                continue;
-            const fieldName = node.dataset.tacPersistField;
-            const scope = node.closest('[data-tac-module]');
-            if (!(scope instanceof HTMLElement) || !fieldName)
-                continue;
-            const modulePath = scope.dataset.tacModule;
-            if (!modulePath || !scope.id)
-                continue;
-            const stored = sessionStorage.getItem(`tac:${modulePath}:${scope.id}:${fieldName}`);
-            if (stored === null)
-                continue;
-            const value = JSON.parse(stored);
-            node.textContent = value === null || value === undefined ? '' : String(value);
+            try {
+                if (!(node instanceof HTMLElement))
+                    continue;
+                const fieldName = node.dataset.tacPersistField;
+                const scope = node.closest('[data-tac-module]');
+                if (!(scope instanceof HTMLElement) || !fieldName)
+                    continue;
+                const modulePath = scope.dataset.tacModule;
+                if (!modulePath || !scope.id)
+                    continue;
+                const storageKey = `tac:${modulePath}:${scope.id}:${fieldName}`;
+                const storage = fieldName.startsWith('$$') ? localStorage : sessionStorage;
+                const stored = storage.getItem(storageKey);
+                if (stored === null)
+                    continue;
+                const value = JSON.parse(stored);
+                node.textContent = value === null || value === undefined ? '' : String(value);
+            }
+            catch { }
         }
     }
     catch { }
