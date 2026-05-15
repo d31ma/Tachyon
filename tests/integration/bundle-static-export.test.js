@@ -746,6 +746,80 @@ timedTest('components can emit custom events handled by their parent wrapper', {
     }
 });
 
+timedTest('spa prehydration skips malformed persisted fields without blocking valid ones', { timeout: 20000 }, async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-spa-prehydrate-'));
+    tempDirs.push(root);
+    const runtimeSource = await readFile(path.join(process.cwd(), 'src/runtime/spa-renderer.js'), 'utf8');
+    const prehydrateMarker = '\nprehydratePersistentText();';
+    const prehydrateIndex = runtimeSource.indexOf(prehydrateMarker);
+    if (prehydrateIndex < 0)
+        throw new Error('Expected spa-renderer.js to call prehydratePersistentText()');
+    const prehydrateEnd = prehydrateIndex + prehydrateMarker.length;
+    const prehydrateModulePath = path.join(root, 'prehydrate.js');
+    await writeFile(prehydrateModulePath, runtimeSource
+        .slice(0, prehydrateEnd)
+        .replace("import { cleanBooleanAttrs, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';\n", ''));
+    const windowInstance = new Window();
+    /** @type {Record<string, unknown>} */
+    const previousGlobals = {
+        window: globalThis.window,
+        document: globalThis.document,
+        HTMLElement: globalThis.HTMLElement,
+        sessionStorage: globalThis.sessionStorage,
+        localStorage: globalThis.localStorage,
+        fetch: globalThis.fetch,
+        history: globalThis.history,
+        location: globalThis.location,
+        addEventListener: globalThis.addEventListener,
+        CustomEvent: globalThis.CustomEvent,
+        SyntaxError: globalThis.SyntaxError,
+    };
+    try {
+        windowInstance.SyntaxError = SyntaxError;
+        Object.assign(globalThis, {
+            window: windowInstance,
+            document: windowInstance.document,
+            HTMLElement: windowInstance.HTMLElement,
+            sessionStorage: windowInstance.sessionStorage,
+            localStorage: windowInstance.localStorage,
+            history: windowInstance.history,
+            location: windowInstance.location,
+            addEventListener: windowInstance.addEventListener.bind(windowInstance),
+            CustomEvent: windowInstance.CustomEvent,
+            SyntaxError,
+            fetch: /** @type {typeof fetch} */ (async (input) => {
+                const url = String(input);
+                if (url.endsWith('/routes.json'))
+                    return new Response(JSON.stringify({}), { headers: { 'Content-Type': 'application/json' } });
+                if (url.endsWith('/shells.json'))
+                    return new Response(JSON.stringify({}), { headers: { 'Content-Type': 'application/json' } });
+                return new Response('', { status: 404 });
+            }),
+        });
+        document.body.innerHTML = `
+            <div id="fixture" data-tac-module="/pages/index.js">
+                <span id="bad" data-tac-persist-field="$$theme">light</span>
+                <span id="good" data-tac-persist-field="$clicks">0</span>
+            </div>
+        `;
+        windowInstance.localStorage.setItem('tac:/pages/index.js:fixture:$$theme', 'not-json{{{');
+        windowInstance.sessionStorage.setItem('tac:/pages/index.js:fixture:$clicks', JSON.stringify(7));
+
+        await import(`${pathToFileURL(prehydrateModulePath).href}?prehydrate=${Date.now()}`);
+
+        expect(document.getElementById('bad')?.textContent).toBe('light');
+        expect(document.getElementById('good')?.textContent).toBe('7');
+    }
+    finally {
+        await windowInstance.happyDOM.close();
+        Object.assign(globalThis, previousGlobals);
+        for (const key of Object.keys(previousGlobals)) {
+            if (previousGlobals[key] === undefined)
+                Reflect.deleteProperty(globalThis, key);
+        }
+    }
+});
+
 // ── regression: issue #57 — large companion scripts must include class Tac ────
 async function createLargeCompanionFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-large-companion-'));

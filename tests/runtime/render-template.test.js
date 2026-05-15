@@ -110,7 +110,7 @@ with (__ty_scope__) {
 }`;
     const modified = source
         .replace('// module_imports', '')
-        .replace('"__TY_FACTORY_SOURCE__"', JSON.stringify(factorySource));
+        .replace('"__TY_FACTORY_SOURCE__"', () => JSON.stringify(factorySource));
     const tmpPath = path.join(os.tmpdir(), `tachyon-tpl-${Bun.randomUUIDv7()}.js`);
     await Bun.write(tmpPath, modified);
     const { default: factory } = await import(tmpPath);
@@ -266,6 +266,7 @@ describe('render-template browser-side (with window)', () => {
         previousGlobals = {
             window: globalThis.window,
             sessionStorage: globalThis.sessionStorage,
+            localStorage: globalThis.localStorage,
             CustomEvent: globalThis.CustomEvent,
             indexedDB: globalThis.indexedDB,
             fetch: globalThis.fetch,
@@ -273,6 +274,7 @@ describe('render-template browser-side (with window)', () => {
         Object.assign(globalThis, {
             window: windowInstance,
             sessionStorage: windowInstance.sessionStorage,
+            localStorage: windowInstance.localStorage,
             CustomEvent: windowInstance.CustomEvent,
             indexedDB: createFakeIndexedDB(),
         });
@@ -500,6 +502,125 @@ describe('render-template browser-side (with window)', () => {
         expect(r.val).toBe('safe');
         windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$draft');
     });
+    test('persistent $$ fields restore value from localStorage', async () => {
+        windowInstance.localStorage.setItem('tac:__TY_MODULE_PATH__:fixture:$$theme', JSON.stringify('dark'));
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const controller = { $$theme: 'light' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            helpers.bindPersistentFields(controller)
+            __ty_test__.val = controller.$$theme
+        `);
+        await factory();
+        expect(r.val).toBe('dark');
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+    });
+    test('persistent $$ fields keep their initial value when localStorage is empty', async () => {
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const controller = { $$theme: 'system' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            helpers.bindPersistentFields(controller)
+            __ty_test__.val = controller.$$theme
+        `);
+        await factory();
+        expect(r.val).toBe('system');
+    });
+    test('persistent $$ field writes JSON to localStorage on assignment', async () => {
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+        const factory = await buildTestFactory(`
+            const controller = { $$theme: 'light' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            helpers.bindPersistentFields(controller)
+            controller.$$theme = 'oled'
+        `);
+        await factory();
+        const stored = windowInstance.localStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+        expect(JSON.parse(stored ?? 'null')).toBe('oled');
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+    });
+    test('persistent $$ fields use unprefixed props as defaults without overwriting stored values', async () => {
+        windowInstance.localStorage.setItem('tac:__TY_MODULE_PATH__:fixture:$$theme', JSON.stringify('stored'));
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const controller = { $$theme: 'light' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture', theme: 'prop-theme' })
+            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            __ty_test__.val = controller.$$theme
+        `);
+        await factory();
+        expect(r.val).toBe('stored');
+        expect(JSON.parse(windowInstance.localStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$$theme') ?? 'null')).toBe('stored');
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+    });
+    test('persistent $$ fields fall back to unprefixed props when localStorage is empty', async () => {
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const controller = { $$theme: 'light' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture', theme: 'prop-theme' })
+            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            __ty_test__.val = controller.$$theme
+        `);
+        await factory();
+        expect(r.val).toBe('prop-theme');
+        expect(JSON.parse(windowInstance.localStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$$theme') ?? 'null')).toBe('prop-theme');
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+    });
+    test('persistent $$ field assignments write localStorage and schedule rerender', async () => {
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+        const r = testResults();
+        r.calls = 0;
+        (/** @type {any} */ (windowInstance)).__ty_rerender = () => { r.calls += 1; };
+        const factory = await buildTestFactory(`
+            const controller = { $$theme: 'light' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            controller.$$theme = 'dark'
+            __ty_test__.value = controller.$$theme
+        `);
+        await factory();
+        expect(r.value).toBe('dark');
+        expect(JSON.parse(windowInstance.localStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$$theme') ?? 'null')).toBe('dark');
+        expect(r.calls).toBe(1);
+        delete (/** @type {any} */ (windowInstance)).__ty_rerender;
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+    });
+    test('persistent $$ fields are safe with malformed localStorage data', async () => {
+        windowInstance.localStorage.setItem('tac:__TY_MODULE_PATH__:fixture:$$theme', 'not-valid-json{{{');
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const controller = { $$theme: 'safe' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            helpers.bindPersistentFields(controller)
+            __ty_test__.val = controller.$$theme
+        `);
+        await factory();
+        expect(r.val).toBe('safe');
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+    });
+    test('$ and $$ fields coexist without interfering', async () => {
+        windowInstance.sessionStorage.setItem('tac:__TY_MODULE_PATH__:fixture:$clicks', JSON.stringify(5));
+        windowInstance.localStorage.setItem('tac:__TY_MODULE_PATH__:fixture:$$theme', JSON.stringify('dark'));
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const controller = { $clicks: 0, $$theme: 'light' }
+            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            helpers.bindPersistentFields(controller)
+            controller.$clicks += 1
+            controller.$$theme = 'oled'
+            __ty_test__.clicks = controller.$clicks
+            __ty_test__.theme = controller.$$theme
+        `);
+        await factory();
+        expect(r.clicks).toBe(6);
+        expect(r.theme).toBe('oled');
+        expect(JSON.parse(windowInstance.sessionStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$clicks') ?? 'null')).toBe(6);
+        expect(JSON.parse(windowInstance.localStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$$theme') ?? 'null')).toBe('oled');
+        windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$clicks');
+        windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
+    });
     test('successful non-GET requests invalidate cached GET responses for the same URL', async () => {
         const r = testResults();
         (/** @type {any} */ (windowInstance)).__ty_fetch_cache_db__ = null;
@@ -582,6 +703,18 @@ describe('render-template prerender-environment (window=globalThis, __ty_prerend
         `);
         await factory();
         expect(r.val).toBe(100);
+    });
+    test('persistent $$ fields do not crash during prerender', async () => {
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const controller = { $$theme: 'dark' }
+            const helpers = __ty_helpers__.createTacHelpers({})
+            helpers.bindPersistentFields(controller)
+            controller.$$theme = 'light'
+            __ty_test__.val = controller.$$theme
+        `);
+        await factory();
+        expect(r.val).toBe('light');
     });
     test('inject returns fallback during prerender', async () => {
         const r = testResults();
