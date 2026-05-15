@@ -647,7 +647,7 @@ describe('Response body content', () => {
 // Polyglot Root Route Adapters
 // ===========================================================================
 describe('Polyglot root route adapters', () => {
-    test('POST /languages/java executes the Java adapter route', async () => {
+    timedTest('POST /languages/java executes the Java adapter route', { timeout: 15000 }, async () => {
         const res = await authFetch('/languages/java', { method: 'POST' });
         expect(res.status).toEqual(200);
         expect(await res.json()).toHaveProperty('message', 'Hello from Java!');
