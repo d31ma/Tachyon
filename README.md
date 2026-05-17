@@ -83,8 +83,9 @@ browser/
     index.js
     index.css
   components/
-    hero.html
-    hero.css
+    hero/
+      index.html
+      index.css
   shared/
     scripts/
     styles/
@@ -129,6 +130,7 @@ TAC_FORMAT=esm
 
 YON_ALLOW_HEADERS=Content-Type,Authorization
 YON_ALLOW_ORIGINS=
+YON_CORS_ORIGIN=
 YON_ALLOW_CREDENTIALS=false
 YON_ALLOW_EXPOSE_HEADERS=
 YON_ALLOW_MAX_AGE=3600
@@ -139,6 +141,7 @@ YON_BASIC_AUTH_HASH=
 YON_VALIDATE=true
 YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'
 YON_ENABLE_HSTS=false
+YON_SKIP_BUNDLE=false
 
 YON_HANDLER_TIMEOUT_MS=30000
 YON_MAX_BODY_BYTES=1048576
@@ -155,7 +158,7 @@ YON_SHARED_STYLES_PATH=browser/shared/styles
 YON_SHARED_DATA_PATH=browser/shared/data
 YON_MIDDLEWARE_PATH=./middleware
 
-FYLO_ROOT=db/collections
+FYLO_ROOT=db
 FYLO_SCHEMA_DIR=db/schemas
 FYLO_INDEX_BACKEND=local-fs
 
@@ -186,12 +189,12 @@ bun -e "console.log(await Bun.password.hash('user:pass'))"
 <details>
 <summary><h2 style="display:inline">FYLO Storage</h2></summary>
 
-Tachyon uses `@d31ma/fylo@26.20.5`, which is filesystem-first and uses the
+Tachyon uses `@d31ma/fylo@26.20.7`, which is filesystem-first and uses the
 FYLO `local-fs` index backend by default. Set `FYLO_ROOT` to the directory that
 should contain FYLO-managed collections:
 
 ```env
-FYLO_ROOT=db/collections
+FYLO_ROOT=db
 FYLO_SCHEMA_DIR=db/schemas
 FYLO_INDEX_BACKEND=local-fs
 ```
@@ -200,14 +203,13 @@ Run the example seed and server with the normal example environment:
 
 ```bash
 cd examples
-bun --env-file=.env run seed
 bun --env-file=.env run serve
 ```
 
 FYLO owns everything inside `FYLO_ROOT`, including document shards, local prefix
 indexes, event journals, locks, and WORM history. With `local-fs`, each
 collection stores compact index files under
-`<FYLO_ROOT>/<collection>/.fylo/local-fs/`, so no external indexing service is
+`<FYLO_ROOT>/.collections/<collection>/index/`, so no external indexing service is
 required.
 
 `FYLO_INDEX_BACKEND=s3-client` is also passed through to FYLO when you want FYLO
@@ -409,15 +411,30 @@ Tac components live in `browser/components`.
 
 ```text
 browser/components/
-  clicker.html
-  clicker.js
-  clicker.css
+  clicker/
+    index.html
+    index.js
+    index.css
 ```
 
 Companion scripts can be JavaScript or TypeScript:
 
-- `clicker.js`
-- `clicker.ts`
+- `index.js`
+- `index.ts`
+
+Tac uses one component naming convention: each component folder segment is
+lowercase alphanumeric and has an `index.html` template. The component tag is
+the folder path joined with hyphens:
+
+```text
+browser/components/clicker/index.html       -> <clicker />
+browser/components/panel/users/index.html   -> <panel-users />
+```
+
+Flat templates and hyphenated folder names such as
+`browser/components/clicker.html` and `browser/components/panel-users/index.html`
+are rejected so app structure, generated module paths, CSS scopes, and template
+tags all use the same naming rule.
 
 ---
 
@@ -802,7 +819,7 @@ curl -i \
 You should see:
 
 - `Traceparent` and `X-Trace-Id` in the response headers
-- persisted FYLO documents under `.tachyon-otel/otel-spans/.fylo/`
+- persisted FYLO documents under `.tachyon-otel/.collections/otel-spans/`
 - one server span and one nested handler span for the request
 
 ### Consuming Telemetry From FYLO
@@ -880,7 +897,7 @@ On the Yon side, handler responses are also given an inferred content type now:
 
 ### Scoped Component CSS
 
-`component.css` is automatically wrapped with a component scope:
+`index.css` is automatically wrapped with a component scope:
 
 ```css
 @scope ([data-tac-scope="clicker"]) { ... }
@@ -908,6 +925,19 @@ The example app uses a local `imports.js` plus shared assets/data. Keep demo-onl
 
 `tac.bundle` writes a static-ready `dist/` directory.
 
+`yon.serve --no-bundle` or `YON_SKIP_BUNDLE=true` starts the server without
+regenerating `dist/`, which is useful when another build pipeline owns frontend
+output. For post-processing that should run after every Tachyon bundle, export a
+`postBundle` hook from `tac.config.js`:
+
+```js
+export default {
+  async postBundle({ distRoot }) {
+    // patch distRoot/index.html, write runtime config, copy deployment assets, etc.
+  }
+}
+```
+
 Typical output:
 
 ```text
@@ -916,7 +946,7 @@ dist/
   docs/index.html
   pages/index.js
   pages/docs/index.js
-  components/clicker.js
+  components/clicker/index.js
   modules/*.js
   shared/assets/*
   shared/data/*

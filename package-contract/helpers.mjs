@@ -50,6 +50,19 @@ export function assertRun(result, label) {
   )
 }
 
+async function removeWithRetry(root, attempts = 5) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await rm(root, { recursive: true, force: true })
+      return
+    } catch (error) {
+      if (!['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error?.code)) throw error
+      if (attempt === attempts) return
+      await new Promise((resolve) => setTimeout(resolve, 150 * attempt))
+    }
+  }
+}
+
 export function tachyonTarball() {
   if (process.env.TACHYON_PACKAGE_TARBALL) return process.env.TACHYON_PACKAGE_TARBALL
   if (packedTarball) return packedTarball
@@ -124,7 +137,7 @@ export async function createTachyonApp() {
       return readFile(path.join(root, relativePath), 'utf8')
     },
     async cleanup() {
-      await rm(root, { recursive: true, force: true })
+      await removeWithRetry(root)
     },
   }
 }

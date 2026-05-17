@@ -6,6 +6,7 @@ import logger from "../server/observability/logger.js";
 import { access, mkdir, readdir, rm, stat } from "fs/promises";
 import { watch } from "fs";
 import path from "path";
+import { pathToFileURL } from "url";
 
 /**
  * @typedef {'main' | 'full' | 'page' | 'component' | 'asset'} BuildChangeType
@@ -20,6 +21,24 @@ const skipInitialBuild = process.argv.includes('--skip-initial-build');
 const WATCH_DEBOUNCE_MS = 200;
 const BUILD_CONCURRENCY = 8;
 const bundleLogger = logger.child({ scope: 'cli:bundle' });
+/** @returns {Promise<((context: { distRoot: string }) => Promise<void> | void) | null>} */
+async function loadPostBundleHook() {
+    const configPath = path.resolve(process.cwd(), 'tac.config.js');
+    try {
+        await access(configPath);
+    }
+    catch {
+        return null;
+    }
+    const config = (await import(`${pathToFileURL(configPath).href}?t=${Date.now()}`)).default;
+    return typeof config?.postBundle === 'function' ? config.postBundle : null;
+}
+async function runPostBundleHook() {
+    const hook = await loadPostBundleHook();
+    if (!hook)
+        return;
+    await hook({ distRoot: distPath });
+}
 /**
  * @template T
  * @param {T[]} items
@@ -62,6 +81,7 @@ export async function runBuild() {
     await Compiler.createStaticRoutes();
     await runWithConcurrency(Object.keys(Router.reqRoutes), BUILD_CONCURRENCY, buildRouteOutput);
     await Compiler.prerenderStaticPages(distPath);
+    await runPostBundleHook();
     bundleLogger.info('Bundle completed', {
         durationMs: Date.now() - start,
         routeCount: Object.keys(Router.reqRoutes).length,
@@ -145,6 +165,7 @@ async function runSelectiveBuild(change) {
             await writeRouteOutput(route);
         }
         await Compiler.prerenderRoutes(distPath, Compiler.getHtmlRoutes());
+        await runPostBundleHook();
         logIncrementalBuild();
         return;
     }
@@ -159,6 +180,7 @@ async function runSelectiveBuild(change) {
             await Compiler.bundleAssetFile(change.relative);
             await writeRouteOutput(`/shared/assets/${change.relative}`);
         }
+        await runPostBundleHook();
         logIncrementalBuild();
         return;
     }
@@ -174,6 +196,7 @@ async function runSelectiveBuild(change) {
         await Compiler.bundleComponentFile(change.relative);
         await writeRouteOutput(outputRoute);
         await Compiler.prerenderRoutes(distPath, Compiler.getHtmlRoutes());
+        await runPostBundleHook();
         logIncrementalBuild();
         return;
     }
@@ -191,6 +214,7 @@ async function runSelectiveBuild(change) {
         await Compiler.bundlePageFile(change.relative);
         await writeRouteOutput(outputRoute);
         await Compiler.prerenderRoutes(distPath, Compiler.getHtmlRoutes());
+        await runPostBundleHook();
         logIncrementalBuild();
         return;
     }

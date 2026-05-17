@@ -1,7 +1,7 @@
 // @ts-check
 import { test, beforeAll, afterAll, expect, describe } from 'bun:test';
 import Fylo from '@d31ma/fylo';
-import { mkdir, mkdtemp, rm } from 'fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 /**
@@ -184,11 +184,15 @@ async function waitForTelemetrySpans(requestId) {
             /** @type {Array<{ resource: Record<string, any>, scope: Record<string, any>, span: Record<string, any> }>} */
             const spans = [];
             for await (const doc of fylo.findDocs('otel-spans', {}).collect()) {
+                spans.push(...extractPersistedSpans(/** @type {Record<string, any>} */ (doc)));
                 for (const traceDoc of Object.values(/** @type {Record<string, any>} */ (doc))) {
                     if (traceDoc && typeof traceDoc === 'object') {
                         spans.push(...extractPersistedSpans(/** @type {Record<string, any>} */ (traceDoc)));
                     }
                 }
+            }
+            for (const doc of await readTelemetryDocsFromDisk()) {
+                spans.push(...extractPersistedSpans(doc));
             }
             const matches = spans.filter((entry) => getAttribute(entry.span, 'tachyon.request.id') === requestId);
             if (matches.length >= 2) {
@@ -200,6 +204,24 @@ async function waitForTelemetrySpans(requestId) {
         await Bun.sleep(50);
     }
     return [];
+}
+
+async function readTelemetryDocsFromDisk() {
+    /** @type {Array<Record<string, any>>} */
+    const docs = [];
+    const docsRoot = path.join(telemetryRoot, '.collections', 'otel-spans', 'docs');
+    try {
+        for await (const relativePath of new Bun.Glob('**/*.json').scan({ cwd: docsRoot })) {
+            try {
+                docs.push(JSON.parse(await readFile(path.join(docsRoot, relativePath), 'utf8')));
+            } catch {
+                // Ignore partially-written telemetry docs while the server flushes spans.
+            }
+        }
+    } catch {
+        // Collection may not exist yet if the first span hasn't been written.
+    }
+    return docs;
 }
 
 /**
@@ -839,8 +861,8 @@ describe('Telemetry and browser env', () => {
         const spans = await waitForTelemetrySpans(requestId);
         expect(spans.length).toBeGreaterThanOrEqual(2);
 
-        const requestSpan = spans.find((entry) => entry.span.kind === 2);
-        const handlerSpan = spans.find((entry) => entry.span.kind === 1);
+        const requestSpan = spans.find((entry) => getAttribute(entry.span, 'http.route') === '/languages/javascript');
+        const handlerSpan = spans.find((entry) => normalizeTelemetryPath(getAttribute(entry.span, 'code.file.path')).includes('/examples/server/routes/languages/javascript/GET.js'));
 
         expect(requestSpan).toBeDefined();
         expect(handlerSpan).toBeDefined();

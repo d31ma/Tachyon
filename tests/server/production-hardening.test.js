@@ -5,6 +5,7 @@ import Router from '../../src/server/http/route-handler.js';
 import Yon from '../../src/server/yon.js';
 const originalTrustProxy = process.env.YON_TRUST_PROXY;
 const originalContentSecurityPolicy = process.env.YON_CONTENT_SECURITY_POLICY;
+const originalCorsOrigin = process.env.YON_CORS_ORIGIN;
 const originalRoutesPath = Router.routesPath;
 afterEach(() => {
     if (originalTrustProxy === undefined)
@@ -15,6 +16,10 @@ afterEach(() => {
         delete process.env.YON_CONTENT_SECURITY_POLICY;
     else
         process.env.YON_CONTENT_SECURITY_POLICY = originalContentSecurityPolicy;
+    if (originalCorsOrigin === undefined)
+        delete process.env.YON_CORS_ORIGIN;
+    else
+        process.env.YON_CORS_ORIGIN = originalCorsOrigin;
     Router.routesPath = originalRoutesPath;
 });
 test('cache policy marks HTML and stable runtime assets as no-cache', () => {
@@ -34,6 +39,16 @@ test('default CSP allows first-class Tac Wasm companions', () => {
     delete process.env.YON_CONTENT_SECURITY_POLICY;
     const headers = Router.getHeaders();
     expect(headers['Content-Security-Policy']).toContain("script-src 'self' 'wasm-unsafe-eval'");
+});
+test('YON_CORS_ORIGIN configures cross-origin response headers', () => {
+    process.env.YON_CORS_ORIGIN = 'http://localhost:5173';
+    const request = new Request('http://127.0.0.1:9877/api', {
+        headers: { origin: 'http://localhost:5173' },
+    });
+    const headers = Router.getHeaders(request);
+    expect(headers['Access-Control-Allow-Origin']).toBe('http://localhost:5173');
+    expect(headers['Access-Control-Allow-Methods']).toContain('OPTIONS');
+    expect(headers.Vary).toBe('Origin');
 });
 test('trusted proxy support resolves forwarded client metadata', () => {
     process.env.YON_TRUST_PROXY = 'loopback';

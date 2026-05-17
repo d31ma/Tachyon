@@ -113,7 +113,7 @@ export default class Router {
             ?? [];
     }
     static get allowedOrigins() {
-        return Router.splitConfigList(process.env.YON_ALLOW_ORIGINS);
+        return Router.splitConfigList(process.env.YON_CORS_ORIGIN || process.env.YON_ALLOW_ORIGINS);
     }
 
     /**
@@ -165,7 +165,7 @@ export default class Router {
             "Access-Control-Allow-Credentials": process.env.YON_ALLOW_CREDENTIALS || "false",
             "Access-Control-Expose-Headers": process.env.YON_ALLOW_EXPOSE_HEADERS || "",
             "Access-Control-Max-Age": process.env.YON_ALLOW_MAX_AGE || "",
-            "Access-Control-Allow-Methods": process.env.YON_ALLOW_METHODS || "",
+            "Access-Control-Allow-Methods": process.env.YON_ALLOW_METHODS || (process.env.YON_CORS_ORIGIN ? Router.allMethods.join(',') : ""),
             // Security headers
             "X-Frame-Options": "DENY",
             "X-Content-Type-Options": "nosniff",

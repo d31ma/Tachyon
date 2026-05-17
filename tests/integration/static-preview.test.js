@@ -20,6 +20,16 @@ async function createDistFixture() {
     await writeFile(path.join(root, 'dist', 'shared', 'assets', 'logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
     return path.join(root, 'dist');
 }
+async function createDynamicDistFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-preview-dynamic-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'dist', 'folder', '_name'), { recursive: true });
+    await mkdir(path.join(root, 'dist', 'pages', 'folder', '_name'), { recursive: true });
+    await writeFile(path.join(root, 'dist', 'routes.json'), JSON.stringify({ '/folder/:name': { ':name': 1 } }));
+    await writeFile(path.join(root, 'dist', 'folder', '_name', 'index.html'), '<!DOCTYPE html><html><body><h1>Folder</h1></body></html>');
+    await writeFile(path.join(root, 'dist', 'pages', 'folder', '_name', 'index.js'), 'export default async () => async () => "Folder";');
+    return path.join(root, 'dist');
+}
 async function createDistFixtureWithoutRoot() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-preview-missing-root-'));
     tempDirs.push(root);
@@ -73,6 +83,24 @@ test('static preview explains missing root entry points', async () => {
         expect(await root.text()).toContain('No previewable file was found for "/"');
         expect(docs.status).toBe(200);
         expect(await docs.text()).toContain('<h1>Docs</h1>');
+    }
+    finally {
+        server.stop();
+    }
+});
+test('static preview resolves dynamic route templates to portable dist paths', async () => {
+    const distPath = await createDynamicDistFixture();
+    const server = await createStaticPreviewServer(distPath, { port: 0, hostname: '127.0.0.1' });
+    try {
+        const base = `http://${server.hostname}:${server.port}`;
+        const [shell, module] = await Promise.all([
+            fetch(`${base}/folder/drafts`),
+            fetch(`${base}/pages/folder/:name/index.js`)
+        ]);
+        expect(shell.status).toBe(200);
+        expect(await shell.text()).toContain('<h1>Folder</h1>');
+        expect(module.status).toBe(200);
+        expect(await module.text()).toContain('export default');
     }
     finally {
         server.stop();
