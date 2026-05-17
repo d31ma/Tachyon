@@ -20,7 +20,7 @@
         </md-list>
     </logic>
     <logic :if="users.length === 0 && !loading">
-        <p class="md-typescale-body-medium muted">No users yet. Run <code>bun run seed</code> to import db/seed/users/*.json.</p>
+        <p class="md-typescale-body-medium muted">No users yet. Check <code>FYLO_ROOT</code> and the committed data under <code>db/.collections/users</code>.</p>
     </logic>
     <logic :if="error">
         <div class="users-error md-typescale-body-medium">{error}</div>

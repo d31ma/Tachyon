@@ -1,7 +1,7 @@
 // @ts-check
 import { mkdir, readdir, stat, writeFile } from 'fs/promises';
 import path from 'path';
-const version = '26.20.05';
+const version = '26.20.07';
 const defaultEnv = `YON_PORT=8000
 YON_HOST=127.0.0.1
 YON_HOSTNAME=127.0.0.1
@@ -19,12 +19,13 @@ YON_RATE_LIMIT_WINDOW_MS=
 YON_HMR_TOKEN=
 YON_HMR_MAX_CLIENTS=20
 YON_ENABLE_HSTS=false
+YON_SKIP_BUNDLE=false
 YON_OTEL_ENABLED=false
 YON_OTEL_ROOT=
 YON_OTEL_SERVICE_NAME=@d31ma/tachyon
 YON_OTEL_SERVICE_VERSION=
 YON_OTEL_CAPTURE_IP=false
-FYLO_ROOT=db/collections
+FYLO_ROOT=db
 FYLO_SCHEMA_DIR=db/schemas
 FYLO_INDEX_BACKEND=local-fs
 FYLO_ENCRYPTION_KEY=
@@ -32,6 +33,7 @@ FYLO_CIPHER_SALT=
 YON_DATA_BROWSER_ENABLED=false
 YON_DATA_BROWSER_READONLY=true
 YON_DATA_BROWSER_REVEAL=false
+YON_CORS_ORIGIN=
 YON_PAGES_PATH=browser/pages
 YON_COMPONENTS_PATH=browser/components
 YON_ASSETS_PATH=browser/shared/assets
@@ -70,7 +72,7 @@ dist
             target: 'ESNext',
             module: 'NodeNext',
             moduleResolution: 'NodeNext',
-            types: ['@types/bun', '@types/node']
+            types: ['bun-types', '@types/node']
         },
         include: ['tachyon-env.d.ts', 'browser/**/*.js', 'browser/**/*.ts', 'server/**/*.js', 'server/**/*.ts']
     }, null, 2) + '\n',
@@ -104,7 +106,7 @@ document.documentElement.setAttribute('data-theme', 'light')
 }
 `,
     'db/schemas/.gitkeep': ``,
-    'db/collections/.gitkeep': ``,
+    'db/.collections/.gitkeep': ``,
     'db/README.md': `# db/
 
 This folder is the default FYLO root for the application.
@@ -114,7 +116,7 @@ This folder is the default FYLO root for the application.
 \`\`\`
 db/
 ├── schemas/       # Versioned schemas consumed by FYLO strict validation
-└── collections/   # FYLO document store, managed exclusively by @d31ma/fylo
+└── .collections/  # FYLO document store, managed exclusively by @d31ma/fylo
 \`\`\`
 
 ## schemas/
@@ -132,7 +134,7 @@ db/schemas/<collection>/
 When schemas declare \`$encrypted\` fields, FYLO will use AES-GCM encryption for
 those values. The manifest's \`current\` field selects the head schema version.
 
-## collections/
+## .collections/
 
 **Do not modify the contents of this directory by hand.**
 
@@ -143,7 +145,7 @@ this directory can corrupt storage state and cause data loss.
 To rebuild the index from document files:
 
 \`\`\`bash
-fylo.admin rebuild <collection> --root db/collections
+fylo.admin rebuild <collection> --root db
 \`\`\`
 
 ## Overriding the root
@@ -178,12 +180,12 @@ FYLO_INDEX_BACKEND=local-fs
 .brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
 .brand a { color: inherit; text-decoration: none; }
 `,
-    'browser/components/hero.html': `<section class="hero">
+    'browser/components/hero/index.html': `<section class="hero">
   <h1>Build your next Bun app with Tachyon.</h1>
   <p>File-system routes, reactive Tac pages, static export, and preview tooling are already wired in.</p>
 </section>
 `,
-    'browser/components/hero.css': `.hero { padding: 2rem; border-radius: 1.5rem; background: linear-gradient(135deg, #1d4ed8, #0f766e); }
+    'browser/components/hero/index.css': `.hero { padding: 2rem; border-radius: 1.5rem; background: linear-gradient(135deg, #1d4ed8, #0f766e); }
 .hero h1 { margin: 0 0 0.75rem; font-size: clamp(2rem, 6vw, 4rem); }
 .hero p { margin: 0; max-width: 42rem; line-height: 1.6; }
 `

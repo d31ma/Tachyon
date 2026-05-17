@@ -11,20 +11,34 @@ const TY_BOUND_PERSISTENT_FIELDS = '__ty_bound_persistent_fields__'
 const TY_BOUND_REACTIVE_FIELDS = '__ty_bound_reactive_fields__'
 const TY_INTERNAL_FIELDS = new Set(['props', 'tac', TY_BOUND_PERSISTENT_FIELDS, TY_BOUND_REACTIVE_FIELDS])
 
+/** @param {string} name */
+const ty_camelCasePropName = (name) => name.replace(/-([a-zA-Z0-9])/g, (_match, char) => char.toUpperCase())
+
 /**
  * @param {unknown} props
  * @returns {TacProps}
  */
 const ty_decodeProps = (props) => {
+    /** @param {TacProps} propBag */
+    const withCamelAliases = (propBag) => {
+        for (const key of Object.keys(propBag)) {
+            if (!key.includes('-')) continue
+            const camelKey = ty_camelCasePropName(key)
+            if (camelKey !== key && !Object.prototype.hasOwnProperty.call(propBag, camelKey))
+                propBag[camelKey] = propBag[key]
+        }
+        return propBag
+    }
+
     if (typeof props === 'string') {
         try {
-            return JSON.parse(decodeURIComponent(props))
+            return withCamelAliases(JSON.parse(decodeURIComponent(props)))
         } catch {
             return /** @type {TacProps} */ ({})
         }
     }
 
-    return props && typeof props === 'object' ? /** @type {TacProps} */ (props) : /** @type {TacProps} */ ({})
+    return props && typeof props === 'object' ? withCamelAliases(/** @type {TacProps} */ (props)) : /** @type {TacProps} */ ({})
 }
 
 /**

@@ -19,6 +19,9 @@ import { serveStaticPreviewRequest } from "../runtime/static-preview.js";
 /** Debounce delay (ms) applied to file-watcher events before triggering an HMR reload */
 const HMR_DEBOUNCE_MS = 1000;
 const bundleWatchEnabled = process.argv.includes('--bundle-watch');
+const skipBundle = process.argv.includes('--no-bundle')
+    || process.env.YON_SKIP_BUNDLE === '1'
+    || process.env.YON_SKIP_BUNDLE === 'true';
 const start = Date.now();
 let bundleWatcher = null;
 const distPath = path.resolve(process.env.YON_DIST_PATH ?? path.join(process.cwd(), 'dist'));
@@ -143,14 +146,14 @@ if (frontendEnabled) {
             });
             process.exit(1);
         }
-    } else {
+    } else if (!skipBundle) {
         const { runBuild } = await import('./bundle.js');
         await runBuild();
         Router.resetStaticState();
     }
 }
 await configureRoutes();
-if (hmrEnabled) {
+if (hmrEnabled && !skipBundle) {
     const bundleArgs = frontendEnabled
         ? ['bun', bundleCliPath, '--watch', '--skip-initial-build']
         : ['bun', bundleCliPath, '--watch'];

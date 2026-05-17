@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import HandlerAdapter from '../../src/server/process/handler-adapter.js';
 import Pool from '../../src/server/process/process-pool.js';
+import Yon from '../../src/server/yon.js';
 import YonCompiledRunner from '../../src/server/process/adapters/yon-compiled-runner.js';
 
 /** @type {string[]} */
@@ -17,6 +18,16 @@ afterEach(async () => {
 /** @param {ReadableStream<Uint8Array>} stream */
 async function text(stream) {
     return new Response(stream).text();
+}
+
+/** @param {string} output */
+function responseBody(output) {
+    const start = output.indexOf(Yon.RESPONSE_START);
+    if (start === -1)
+        return output;
+    const bodyStart = start + Yon.RESPONSE_START.length;
+    const end = output.indexOf(Yon.RESPONSE_END, bodyStart);
+    return end === -1 ? output : output.slice(bodyStart, end);
 }
 
 /**
@@ -84,7 +95,7 @@ export async function handler(request) {
     const [stdout, stderr, exitCode] = await Promise.all([text(proc.stdout), text(proc.stderr), proc.exited]);
     expect(exitCode).toBe(0);
     expect(stderr).toBe('');
-    expect(JSON.parse(stdout)).toEqual({ message: 'ok', requestId: 'abc' });
+    expect(JSON.parse(responseBody(stdout))).toEqual({ message: 'ok', requestId: 'abc' });
 });
 
 test('resolves extensioned route modules without shebangs', async () => {
@@ -108,7 +119,53 @@ test('resolves extensioned route modules without shebangs', async () => {
     const [stdout, stderr, exitCode] = await Promise.all([text(proc.stdout), text(proc.stderr), proc.exited]);
     expect(exitCode).toBe(0);
     expect(stderr).toBe('');
-    expect(JSON.parse(stdout)).toEqual({ message: 'ok', requestId: 'abc' });
+    expect(JSON.parse(responseBody(stdout))).toEqual({ message: 'ok', requestId: 'abc' });
+});
+
+test('JavaScript handler console output is sidebanded away from the response frame', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-console-sideband-'));
+    tempDirs.push(root);
+    const handlerPath = path.join(root, 'POST.js');
+    await Bun.write(handlerPath, `export async function handler() {
+  console.log('[adapter] doing work')
+  return { ok: true }
+}
+`);
+    const cmd = Pool.resolveHandlerCommand(handlerPath);
+    const proc = Bun.spawn({
+        cmd,
+        stdin: 'pipe',
+        stdout: 'pipe',
+        stderr: 'pipe',
+    });
+    proc.stdin.write(JSON.stringify({ context: { requestId: 'abc' } }));
+    proc.stdin.end();
+    const [stdout, stderr, exitCode] = await Promise.all([text(proc.stdout), text(proc.stderr), proc.exited]);
+    expect(exitCode).toBe(0);
+    expect(stderr).toContain('[log] [adapter] doing work');
+    expect(JSON.parse(responseBody(stdout))).toEqual({ ok: true });
+});
+
+test('Yon returns JavaScript handler response before background timers finish', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bg-response-'));
+    tempDirs.push(root);
+    const handlerPath = path.join(root, 'POST.js');
+    await Bun.write(handlerPath, `export async function handler() {
+  setTimeout(() => console.log('[bg] finished'), 600)
+  return { ok: true }
+}
+`);
+    const startedAt = performance.now();
+    const response = await Yon.getResponse([handlerPath], {}, {
+        requestId: 'abc',
+        ipAddress: '127.0.0.1',
+        protocol: 'http',
+        host: 'localhost',
+    }, undefined);
+    const elapsedMs = performance.now() - startedAt;
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body ?? '{}')).toEqual({ ok: true });
+    expect(elapsedMs).toBeLessThan(500);
 });
 
 test('runs Python class handlers without user stdin/stdout code', async () => {

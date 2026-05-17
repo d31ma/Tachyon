@@ -7,8 +7,7 @@ This folder is the database layer for the example app.
 ```text
 db/
 |-- schemas/       # Versioned FYLO/CHEX schemas, developer-owned
-|-- seed/          # Human-editable seed documents, developer-owned
-`-- collections/   # FYLO-managed storage, do not hand-edit
+`-- .collections/  # Committed example FYLO storage
 ```
 
 ## schemas/
@@ -22,22 +21,18 @@ db/schemas/<collection>/
     `-- v1.json
 ```
 
-The files in `history/` are CHEX regex schemas. Each leaf schema value is a regex string, and the JSON filename under `seed/` is the document id, so schemas should not include redundant `id`, `createdAt`, or `updatedAt` fields.
+The files in `history/` are CHEX regex schemas. Each leaf schema value is a regex string, and FYLO stores document identity in the collection path, so schemas should not include redundant `id`, `createdAt`, or `updatedAt` fields.
 
-## seed/
+## .collections/
 
-Seed files live at:
+`db/` is the example app's FYLO root (`FYLO_ROOT=db`). The checked-in data intentionally uses FYLO's production layout:
 
 ```text
-db/seed/<collection>/<document-id>.json
+db/.collections/<collection>/docs/<prefix>/<document-id>.json
 ```
 
-Run `bun run seed` from `examples/` to validate and import these documents into FYLO.
-
-## collections/
-
-`db/collections/` is owned by FYLO. Do not modify files under `.fylo/` by hand. If collection state drifts, rebuild indexes from the managed docs with:
+Do not place bare JSON files directly under a collection directory. FYLO owns each collection's `docs/`, `index/`, `events/`, and `locks/` folders. If collection state drifts, rebuild indexes from the managed docs with:
 
 ```bash
-fylo.admin rebuild <collection> --root db/collections
+fylo.admin rebuild <collection> --root db
 ```

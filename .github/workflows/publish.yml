@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      promote_npm:
+        description: Promote the GitHub Packages artifact to npm after stability is confirmed
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -154,8 +160,6 @@ jobs:
 
     steps:
       - name: Publish via FOUNDRY
-        id: publish_github
-        continue-on-error: true
         uses: d31ma/FOUNDRY/.github/actions/publish-github-package@main
         with:
           package_name: ${{ needs.version.outputs.package_name }}
@@ -190,88 +194,66 @@ jobs:
           npm view "${PACKAGE_NAME}@${VERSION}" version --registry=https://npm.pkg.github.com
 
   promote-npm:
-    name: Promote to npm registry
+    name: Request npm promotion
     needs: [version, publish]
     if: >-
       ${{
         always() &&
-        needs.version.result == 'success' &&
-        needs.version.outputs.npm_version_exists == 'false' &&
+        github.event_name == 'workflow_dispatch' &&
+        inputs.promote_npm == true &&
         (
           needs.publish.result == 'success' ||
-          (
-            needs.version.outputs.github_version_exists == 'true' &&
-            needs.publish.result == 'skipped'
-          )
+          needs.version.outputs.github_version_exists == 'true'
         )
       }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       contents: read
-      id-token: write
-      packages: read
-
-    env:
-      PACKAGE_NAME: ${{ needs.version.outputs.package_name }}
-      VERSION: ${{ needs.version.outputs.version }}
-      NPM_DIST_TAG: latest
-      GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
 
     steps:
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          registry-url: https://registry.npmjs.org
-
-      - name: Configure GitHub Packages read access
-        run: |
-          {
-            echo "@d31ma:registry=https://npm.pkg.github.com"
-            echo "//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}"
-            echo "always-auth=true"
-          } > "$RUNNER_TEMP/github-packages.npmrc"
-
-      - name: Verify GitHub Packages version exists
+      - name: Dispatch FOUNDRY npm promotion
         env:
-          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/github-packages.npmrc
-        run: npm view "${PACKAGE_NAME}@${VERSION}" version --registry=https://npm.pkg.github.com
-
-      - name: Pack exact GitHub Packages artifact
-        id: pack
-        env:
-          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/github-packages.npmrc
+          GH_TOKEN: ${{ secrets.FOUNDRY_DISPATCH_TOKEN }}
+          PACKAGE_NAME: ${{ needs.version.outputs.package_name }}
+          VERSION: ${{ needs.version.outputs.version }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/npm-promotion"
-          npm pack "${PACKAGE_NAME}@${VERSION}" \
-            --registry=https://npm.pkg.github.com \
-            --pack-destination "$RUNNER_TEMP/npm-promotion" \
-            --json > "$RUNNER_TEMP/npm-promotion/pack.json"
-          TARBALL=$(node -e "const data = require(process.env.RUNNER_TEMP + '/npm-promotion/pack.json'); console.log(data[0].filename)")
-          echo "tarball=$RUNNER_TEMP/npm-promotion/$TARBALL" >> "$GITHUB_OUTPUT"
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::FOUNDRY_DISPATCH_TOKEN is required to request npm promotion from FOUNDRY."
+            exit 1
+          fi
 
-      - name: Publish tarball to npm
-        run: |
-          set -euo pipefail
-          npm publish "${{ steps.pack.outputs.tarball }}" \
-            --access public \
-            --tag "$NPM_DIST_TAG" \
-            --provenance \
-            --registry=https://registry.npmjs.org
+          jq -n \
+            --arg package_name "$PACKAGE_NAME" \
+            --arg version "$VERSION" \
+            --arg npm_dist_tag "latest" \
+            --arg npm_auth_mode "trusted" \
+            --arg source_repository "$SOURCE_REPOSITORY" \
+            '{
+              event_type: "promote-npm",
+              client_payload: {
+                package_name: $package_name,
+                version: $version,
+                npm_dist_tag: $npm_dist_tag,
+                npm_auth_mode: $npm_auth_mode,
+                source_repository: $source_repository
+              }
+            }' |
+            gh api repos/d31ma/FOUNDRY/dispatches --input -
 
   github-release:
     name: Create GitHub release
     runs-on: ubuntu-latest
-    needs: [version, publish, promote-npm]
+    needs: [version, publish]
     if: >-
       ${{
         always() &&
-        needs.promote-npm.result == 'success' &&
+        needs.version.outputs.tag_exists == 'false' &&
         (
           needs.publish.result == 'success' ||
-          needs.publish.result == 'skipped'
+          needs.version.outputs.github_version_exists == 'true'
         )
       }}
     timeout-minutes: 10
@@ -290,12 +272,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then
-            echo "Tag v$VERSION already exists; reusing it."
-          else
-            git tag -a "v$VERSION" -m "v$VERSION"
-            git push origin "v$VERSION"
-          fi
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin "v$VERSION"
 
       - name: Create GitHub release
         env:

@@ -168,6 +168,23 @@ export default class Compiler {
         return segments.join('-').toLowerCase();
     }
 
+    /** @param {string} route */
+    static validateComponentRoute(route) {
+        const normalized = route.replaceAll('\\', '/');
+        const segments = normalized.split('/');
+        const isIndexTemplate = segments.at(-1) === 'index.html';
+        const validSegment = /^[a-z][a-z0-9]*$/;
+        const hasValidName = segments.length >= 2
+            && segments.slice(0, -1).every((segment) => validSegment.test(segment));
+        if (isIndexTemplate && hasValidName)
+            return;
+        throw new Error([
+            `Invalid Tac component path '${route}'.`,
+            'Components must use lowercase alphanumeric folders with an index.html template.',
+            "Example: browser/components/user/card/index.html is used as <user-card />.",
+        ].join(' '));
+    }
+
     /** @param {string} tagName */
     static classifyElementTag(tagName) {
         const normalized = tagName.toLowerCase();
@@ -186,6 +203,20 @@ export default class Compiler {
     static isWebComponentTag(tagName) {
         return /^[a-z][.0-9_a-z]*-[.0-9_a-z-]*$/.test(tagName)
             && !Compiler.reservedCustomElementNames.has(tagName);
+    }
+
+    /** @param {string} expr */
+    static compileLoopExpression(expr) {
+        const trimmed = expr.trim();
+        if (/^(?:let|const|var)\s/.test(trimmed))
+            return `for(${trimmed}) {`;
+        const forOfMatch = trimmed.match(/^([a-zA-Z_$][\w$]*)\s+of\s+([\s\S]+)$/);
+        if (forOfMatch)
+            return `for(let ${forOfMatch[1]} of ${forOfMatch[2]}) {`;
+        const forInMatch = trimmed.match(/^([a-zA-Z_$][\w$]*)\s+in\s+([\s\S]+)$/);
+        if (forInMatch)
+            return `for(let ${forInMatch[1]} in ${forInMatch[2]}) {`;
+        return `for(${trimmed}) {`;
     }
 
     /**
@@ -787,7 +818,7 @@ export default class Compiler {
                 const route = routes[currentIndex];
                 const outputFile = route === '/'
                     ? path.join(distPath, 'index.html')
-                    : path.join(distPath, route.slice(1), 'index.html');
+                    : path.join(distPath, Router.routeToFilesystemPath(route).slice(1), 'index.html');
                 const html = routes.length === 1
                     ? await Compiler.renderPageDocument(distPath, route, shellHTML)
                     : await Compiler.renderPageDocumentIsolated(distPath, route, shellHTML);
@@ -824,6 +855,7 @@ export default class Compiler {
     /** @param {string} comp */
     static async bundleComponentFile(comp) {
         comp = comp.replaceAll('\\', '/');
+        Compiler.validateComponentRoute(comp);
         const componentName = Compiler.normalizeComponentName(comp);
         const modulePath = comp.replace('.html', '.js');
         const sourcePath = `${Router.componentsPath}/${comp}`;
@@ -909,8 +941,10 @@ export default class Compiler {
                 .replaceAll('${', '\\${');
             /** @param {string} name @param {string} value @param {string} hash */
             const formatAttr = (name, value, hash) => {
-                if (name.startsWith('@'))
-                    return `${name}="\${await ty_invokeEvent('${hash}', async ($event) => { const __event__ = $event; return ${value} })}"`;
+                if (name.startsWith('@')) {
+                    const eventHash = genHash();
+                    return `${name}="\${await ty_invokeEvent('${eventHash}', async ($event) => { const __event__ = $event; return ${value} }, '${hash}')}"`;
+                }
                 if (name === ':value')
                     return `value="\${ty_escapeAttr(ty_assignValue('${hash}', '${value}', ${value}))}"`;
                 return `${name}="${escapeTemplateLiteral(value)}"`;
@@ -1059,7 +1093,7 @@ export default class Compiler {
             }
         }
         let renderSource = body.join('\n')
-            .replaceAll(/`<loop :for="(.*?)">`|`<\/loop>`/g, (_, expr) => expr ? `for(${expr}) {` : '}')
+            .replaceAll(/`<loop :for="(.*?)">`|`<\/loop>`/g, (_, expr) => expr ? Compiler.compileLoopExpression(expr) : '}')
             .replaceAll(/`<logic :if="(.*?)">`/g, (_, expr) => `if(${expr}) {`)
             .replaceAll(/`<logic :else-if="(.*?)">`/g, (_, expr) => `else if(${expr}) {`)
             .replaceAll(/(`<logic else="">`)|(`<\/logic>`)/g, (_, expr) => expr ? `else {` : '}');
@@ -1077,7 +1111,7 @@ export default class Compiler {
                 if (key === 'lazy')
                     continue;
                 if (key.startsWith('@')) {
-                    events.push(`${key}="${value.replace(/(ty_invokeEvent\(')([^']+)(')/g, `$1${hash}$3`)}"`);
+                    events.push(`${key}="${value.replace(/ty_invokeEvent\('([^']+)',([\s\S]*?),\s*'([^']+)'\)/g, `ty_invokeEvent('$1',$2,'${hash}')`)}"`);
                 }
                 else {
                     // Convert template-literal expr "${foo()}" → foo(), static value → JSON literal
@@ -1099,10 +1133,13 @@ export default class Compiler {
             const filepath = Compiler.compMapping.get(component);
             return `
                 elements += \`<div id="${genId}" data-tac-scope="${component}" data-tac-module="/components/${filepath}" ${events.join(' ')}>\`
-                if(!compRenders.has('${hash}')) {
-                    render = await ${renderName}(${propsObj})
+                const __ty_child_props_${hash} = ${propsObj}
+                const __ty_child_props_sig_${hash} = JSON.stringify(__ty_child_props_${hash})
+                if(!compRenders.has('${hash}') || compRenderProps.get('${hash}') !== __ty_child_props_sig_${hash}) {
+                    render = await ${renderName}(__ty_child_props_${hash})
                     elements += await render(elemId, event, '${hash}')
                     compRenders.set('${hash}', render)
+                    compRenderProps.set('${hash}', __ty_child_props_sig_${hash})
                 } else {
                     render = compRenders.get('${hash}')
                     elements += await render(elemId, event, '${hash}')
@@ -1179,6 +1216,7 @@ with (__ty_scope__) {
     }
 
     const compRenders = new Map();
+    const compRenderProps = new Map();
 
     return async function(elemId, event, compId) {
         const counters = { id: {}, ev: {}, bind: {}, persist: {} };
@@ -1188,20 +1226,21 @@ with (__ty_scope__) {
 
         __ty_helpers__.setRenderContext({ componentRootId: ty_componentRootId, elemId, event });
 
-        const ty_generateId = (hash, source) => {
+        const ty_generateId = (hash, source, displayHash = hash) => {
             const key = compId ? hash + '-' + compId : hash;
             const map = counters[source];
+            const displayKey = compId ? displayHash + '-' + compId : displayHash;
 
             if (key in map) {
-                return 'ty-' + key + '-' + map[key]++;
+                return 'ty-' + displayKey + '-' + map[key]++;
             }
 
             map[key] = 1;
-            return 'ty-' + key + '-0';
+            return 'ty-' + displayKey + '-0';
         };
 
-        const ty_invokeEvent = async (hash, action) => {
-            if (elemId === ty_generateId(hash, 'ev')) {
+        const ty_invokeEvent = async (hash, action, targetHash = hash) => {
+            if (elemId === ty_generateId(hash, 'ev', targetHash)) {
                 if (typeof action === 'function') await action(event);
                 else {
                     const toCall = (event && !action.endsWith(')')) ? action + "('" + event + "')" : action;

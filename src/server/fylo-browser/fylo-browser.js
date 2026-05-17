@@ -101,8 +101,8 @@ async function getEncryptedFields(collection) {
 
 /**
  * Walk each collection directory in the FYLO root and emit a warning if we
- * find bare JSON files at the top level (siblings of `.fylo/`). FYLO writes
- * documents at `<collection>/.fylo/docs/<2-char>/<TTID>.json`; anything else
+ * find bare JSON files at the top level. FYLO writes documents at
+ * `.collections/<collection>/docs/<2-char>/<TTID>.json`; anything else
  * is almost certainly a developer placing seed data in the wrong spot.
  * @param {string} root
  */
@@ -110,18 +110,18 @@ async function warnOnHandPlacedDocs(root) {
     /** @type {string[]} */
     let collectionDirs = [];
     try {
-        collectionDirs = await Array.fromAsync(new Bun.Glob('*/').scan({ cwd: root, onlyFiles: false }));
+        collectionDirs = await Array.fromAsync(new Bun.Glob('*/').scan({ cwd: path.join(root, '.collections'), onlyFiles: false }));
     } catch {
         return;
     }
     for (const dir of collectionDirs) {
         const collection = dir.replace(/\/$/, '');
         if (!collection || collection.startsWith('.')) continue;
-        const collectionPath = path.join(root, collection);
+        const collectionPath = path.join(root, '.collections', collection);
         const bareFiles = await Array.fromAsync(new Bun.Glob('*.json').scan({ cwd: collectionPath }));
         if (bareFiles.length > 0) {
             browserLogger.warn(
-                `Found ${bareFiles.length} bare *.json file(s) under ${collection}/ — db/collections is FYLO-managed. Move seed data to db/seed/${collection}/ and run "bun run seed".`,
+                `Found ${bareFiles.length} bare *.json file(s) under ${collection}/ — FYLO stores documents under .collections/${collection}/docs/<prefix>/ instead.`,
                 { collection, files: bareFiles.slice(0, 5) },
             );
         }
@@ -288,7 +288,7 @@ async function listCollections() {
     /** @type {string[]} */
     let names = [];
     try {
-        const dir = await Array.fromAsync(new Bun.Glob('*/').scan({ cwd: root, onlyFiles: false }));
+        const dir = await Array.fromAsync(new Bun.Glob('*/').scan({ cwd: path.join(root, '.collections'), onlyFiles: false }));
         names = dir.map((entry) => entry.replace(/\/$/, '')).filter((name) => name && !name.startsWith('.'));
     } catch {
         names = [];
@@ -459,7 +459,7 @@ async function tailEvents(url) {
     const since = Number.isFinite(sinceParam) && sinceParam >= 0 ? Math.trunc(sinceParam) : 0;
     const limitParam = Number(url.searchParams.get('limit') ?? 100);
     const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.trunc(limitParam), 500) : 100;
-    const eventsPath = path.join(fyloRoot(), collection, '.fylo', 'events', `${collection}.ndjson`);
+    const eventsPath = path.join(fyloRoot(), '.collections', collection, 'events', `${collection}.ndjson`);
     const file = Bun.file(eventsPath);
     if (!await file.exists()) {
         return { collection, events: [], offset: 0, exists: false };
@@ -587,10 +587,9 @@ export default class FyloBrowser {
             root: fyloRoot(),
             readOnly: readOnly(),
         });
-        // Wishlist: db/collections/ is owned by FYLO. If we spot bare *.json
-        // files at the wrong layer (i.e. siblings of .fylo/ instead of under
-        // .fylo/docs/<prefix>/), flag them — likely hand-edited seed data
-        // that should live under db/seed/ and be imported via `bun run seed`.
+        // Wishlist: FYLO owns .collections/. If we spot bare *.json files at
+        // the wrong layer (instead of under docs/<prefix>/), flag them before the browser shows an empty
+        // collection that looks production-shaped but is not queryable.
         warnOnHandPlacedDocs(fyloRoot()).catch(() => { /* non-fatal */ });
 
         /** @type {(handler: (request?: Request, server?: import('bun').Server<any>) => Promise<Response> | Response, route: string) => (request?: Request, server?: import('bun').Server<any>) => Promise<Response> | Response} */

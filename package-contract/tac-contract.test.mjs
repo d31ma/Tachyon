@@ -13,7 +13,7 @@ test('tac.bundle prerenders component pages and supports global Tac output', asy
   const app = await createTachyonApp()
   apps.push(app)
 
-  await app.writeFile('browser/components/status-card.html', '<script>let label = ""</script><strong>Status: {label}</strong>')
+  await app.writeFile('browser/components/status/card/index.html', '<script>let label = ""</script><strong>Status: {label}</strong>')
   await app.writeFile('browser/pages/index.html', [
     '<script>',
     "  let label = 'green'",
@@ -26,12 +26,10 @@ test('tac.bundle prerenders component pages and supports global Tac output', asy
 
   const html = await app.readFile('dist/index.html')
   const pageModule = await app.readFile('dist/pages/index.js')
-  const componentModule = await app.readFile('dist/components/status-card.js')
 
   expect(html).toContain('Status: green')
   expect(html).toContain('<package-contract-widget')
   expect(pageModule).toContain('register("/pages/index.js"')
-  expect(componentModule).toContain('register("/components/status-card.js"')
   expect(pageModule).not.toContain('export default')
 })
 

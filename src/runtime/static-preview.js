@@ -19,10 +19,46 @@ async function pathExists(filePath) {
         return false;
     }
 }
+/** @param {string} distPath */
+async function loadRoutes(distPath) {
+    try {
+        return /** @type {Record<string, Record<string, number>>} */ (await Bun.file(path.join(distPath, 'routes.json')).json());
+    }
+    catch {
+        return {};
+    }
+}
+/**
+ * @param {string} pathname
+ * @param {Record<string, Record<string, number>>} routes
+ */
+function resolveRouteTemplate(pathname, routes) {
+    const segments = pathname.split('/').filter(Boolean);
+    for (const [route, slugs] of Object.entries(routes)) {
+        const routeSegments = route.split('/').filter(Boolean);
+        if (routeSegments.length !== segments.length)
+            continue;
+        let matches = true;
+        for (let index = 0; index < routeSegments.length; index++) {
+            const segment = routeSegments[index];
+            if (!(segment in slugs) && segment !== segments[index]) {
+                matches = false;
+                break;
+            }
+        }
+        if (matches)
+            return route;
+    }
+    return pathname;
+}
 /** @param {string} pathname */
 function shouldTreatAsAsset(pathname) {
     const basename = path.posix.basename(pathname);
     return basename.includes('.');
+}
+/** @param {string} pathname */
+function routeToPortablePath(pathname) {
+    return pathname.replace(/(^|\/):([^/]+)/g, '$1_$2');
 }
 /**
  * @param {string} distPath
@@ -51,11 +87,15 @@ function buildPreviewNotFoundMessage(distPath, pathname) {
 export async function resolvePreviewFile(distPath, pathname, options = {}) {
     const allowRootFallback = options.allowRootFallback ?? true;
     const normalized = pathname === '/' ? '/' : pathname.replace(/\/+$/, '') || '/';
-    const directFile = path.join(distPath, normalized === '/' ? 'index.html' : normalized.slice(1));
+    const routeTemplate = shouldTreatAsAsset(normalized)
+        ? normalized
+        : resolveRouteTemplate(normalized, await loadRoutes(distPath));
+    const portable = routeToPortablePath(routeTemplate);
+    const directFile = path.join(distPath, portable === '/' ? 'index.html' : portable.slice(1));
     if (await pathExists(directFile))
         return directFile;
     if (!shouldTreatAsAsset(normalized)) {
-        const nestedIndex = path.join(distPath, normalized === '/' ? 'index.html' : normalized.slice(1), 'index.html');
+        const nestedIndex = path.join(distPath, portable === '/' ? 'index.html' : portable.slice(1), 'index.html');
         if (await pathExists(nestedIndex))
             return nestedIndex;
         if (allowRootFallback) {

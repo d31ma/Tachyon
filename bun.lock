@@ -5,7 +5,7 @@
     "": {
       "name": "@d31ma/tachyon",
       "dependencies": {
-        "@d31ma/fylo": "26.20.5",
+        "@d31ma/fylo": "26.20.7",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.8.9",
@@ -21,7 +21,7 @@
   "packages": {
     "@d31ma/chex": ["@d31ma/chex@26.20.2", "", { "bin": { "chex.generate": "src/cli/generate-declarations.js" } }, "sha512-3eFubSXhok8AYDAdjOJ+IhbC/TCfB2ZwIUINkjmkRlADtrY7NNSfgpE3263pc8EjwFPeyprXVGtn824+FylKoQ=="],
 
-    "@d31ma/fylo": ["@d31ma/fylo@26.20.5", "", { "dependencies": { "@d31ma/chex": "^26.20.2", "@d31ma/ttid": "26.18.27-2" }, "bin": { "fylo.query": "dist/cli/index.js", "fylo.admin": "dist/cli/index.js", "fylo.exec": "dist/cli/index.js" } }, "sha512-sI12/Mtzp5jLesxaebeAKl3rtN2YMn1fWZlb463++6AeS/2SBJVnNxRH8eODEL3VSgXBnfxJNo1Wxsb2kmVlOw=="],
+    "@d31ma/fylo": ["@d31ma/fylo@26.20.7", "", { "dependencies": { "@d31ma/chex": "^26.20.2", "@d31ma/ttid": "26.18.27-2" }, "bin": { "fylo.query": "dist/cli/index.js", "fylo.admin": "dist/cli/index.js", "fylo.exec": "dist/cli/index.js" } }, "sha512-M0Hb/YyCjvLyhs5MhtCFVwXvgxUzRLRpOsjr+QMGPEsdWV4PzXvjVC8uFtGM1VBd8unbsSPTJgonbuM2Tarp1Q=="],
 
     "@d31ma/ttid": ["@d31ma/ttid@26.18.27-2", "", {}, "sha512-n4kxGaLTqdeaUYwfzLx6Co7hwTeJjlEkEDTGb+d6IiMFy6SMqk8KljohlRzyBtgDWmNAaZ4JmnnWt3PtZ4Sgkw=="],
 

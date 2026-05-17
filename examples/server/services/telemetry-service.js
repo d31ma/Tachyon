@@ -27,10 +27,21 @@ class OtlpValueDecoder {
 
 export default class TelemetryService {
     /**
+     * @param {string | undefined} value
+     * @returns {string | undefined}
+     */
+    static envPath(value) {
+        return value && value.trim() ? value : undefined;
+    }
+
+    /**
      * @param {{ repository?: FyloTelemetryRepository, collection?: string, root?: string }} [options]
      */
     constructor(options = {}) {
-        const root = options.root ?? process.env.YON_OTEL_ROOT ?? process.env.FYLO_ROOT ?? `${process.cwd()}/db/collections`;
+        const root = TelemetryService.envPath(options.root)
+            ?? TelemetryService.envPath(process.env.YON_OTEL_ROOT)
+            ?? TelemetryService.envPath(process.env.FYLO_ROOT)
+            ?? `${process.cwd()}/db`;
         const collection = options.collection ?? 'otel-spans';
         this.repository = options.repository ?? new FyloTelemetryRepository({ root, collection });
         this.collection = collection;
@@ -79,7 +90,12 @@ export default class TelemetryService {
         /** @type {Array<Record<string, unknown>>} */
         const spans = [];
         for (const entry of await this.repository.findPersistedEntries()) {
-            spans.push(...this.extractPersistedSpans(entry));
+            if (typeof entry.otlpJson === 'string') {
+                spans.push(...this.extractPersistedSpans(entry));
+            }
+            else {
+                spans.push(this.normalizeFlatSpan(entry));
+            }
         }
         return spans;
     }

@@ -56,6 +56,8 @@ import logger from './observability/logger.js';
  * @typedef {(request: Request) => Promise<Response | null>} FrontendRequestHandler
  */
 export default class Yon {
+    static RESPONSE_START = '\x1fTACHYON_RESPONSE\x1e';
+    static RESPONSE_END = '\x1eTACHYON_RESPONSE\x1f';
     static processLogger = logger.child({ scope: 'yon' });
     static requestLogger = logger.child({ scope: 'http' });
     static handlerLogger = logger.child({ scope: 'handler' });
@@ -98,6 +100,104 @@ export default class Yon {
             }
         }
         return partial;
+    }
+    /**
+     * Drains text already read from a stream plus the remaining stream data,
+     * logging complete lines and returning the trailing partial line.
+     * @param {ReadableStream<Uint8Array>} stream
+     * @param {string} initial
+     * @param {(line: string) => void} onLine
+     * @returns {Promise<string>}
+     */
+    static async drainStreamWithInitial(stream, initial, onLine) {
+        let partial = initial;
+        /** @param {string} text */
+        const flushLines = (text) => {
+            const lines = text.split('\n');
+            partial = lines.pop() ?? "";
+            for (const line of lines) {
+                if (line.length > 0)
+                    onLine(line);
+            }
+        };
+        if (partial.includes('\n'))
+            flushLines(partial);
+        for await (const chunk of stream) {
+            flushLines(partial + Yon.decoder.decode(chunk));
+        }
+        return partial;
+    }
+    /**
+     * Reads a sentinel-framed handler response from stdout. Older adapters that
+     * do not frame stdout still fall back to the legacy stdout-until-exit path.
+     * @param {ReadableStream<Uint8Array>} stream
+     * @param {(line: string) => void} onLine
+     * @returns {Promise<{ body: string, responseBytes: number, framed: boolean, stdoutDone: Promise<string> }>}
+     */
+    static async readHandlerStdout(stream, onLine) {
+        let buffer = "";
+        const reader = stream.getReader();
+        /** @param {string} text */
+        const logLines = (text) => {
+            const lines = text.split('\n');
+            const partial = lines.pop() ?? "";
+            for (const line of lines) {
+                if (line.length > 0)
+                    onLine(line);
+            }
+            return partial;
+        };
+        /**
+         * @param {string} initial
+         */
+        const drainReader = async (initial) => {
+            let partial = initial;
+            if (partial.includes('\n'))
+                partial = logLines(partial);
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done)
+                    return partial;
+                partial = logLines(partial + Yon.decoder.decode(value));
+            }
+        };
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done)
+                break;
+            buffer += Yon.decoder.decode(value);
+            const start = buffer.indexOf(Yon.RESPONSE_START);
+            if (start === -1) {
+                if (buffer.length > Yon.RESPONSE_START.length) {
+                    buffer = logLines(buffer);
+                }
+                continue;
+            }
+            const prefix = buffer.slice(0, start);
+            if (prefix)
+                logLines(prefix);
+            const bodyStart = start + Yon.RESPONSE_START.length;
+            const end = buffer.indexOf(Yon.RESPONSE_END, bodyStart);
+            if (end === -1)
+                continue;
+            const body = buffer.slice(bodyStart, end);
+            const trailing = buffer.slice(end + Yon.RESPONSE_END.length);
+            const stdoutDone = drainReader(trailing).finally(() => reader.releaseLock());
+            return {
+                body,
+                responseBytes: Yon.byteLength(body),
+                framed: true,
+                stdoutDone,
+            };
+        }
+        reader.releaseLock();
+        const partial = logLines(buffer);
+        return {
+            body: partial,
+            responseBytes: Yon.byteLength(partial),
+            framed: false,
+            stdoutDone: Promise.resolve(''),
+        };
     }
     /** @param {string | undefined} value */
     static byteLength(value) {
@@ -422,25 +522,52 @@ export default class Yon {
         const proc = Pool.acquireHandler(cmd[0]);
         proc.stdin.write(JSON.stringify({ ...stdin, context }));
         proc.stdin.end();
-        const [out, err] = await Promise.all([
-            Yon.drainStream(proc.stdout, line => Yon.handlerLogger.info('Handler stdout output', {
+        let errorBytes = 0;
+        let sawStderr = false;
+        const stderrDone = Yon.drainStream(proc.stderr, line => {
+            sawStderr = true;
+            errorBytes += Yon.byteLength(line);
+            Yon.handlerLogger.error('Handler stderr output', {
                 requestId: context.requestId,
                 pid: proc.pid,
                 output: line,
-            })),
-            Yon.drainStream(proc.stderr, line => Yon.handlerLogger.error('Handler stderr output', {
-                requestId: context.requestId,
-                pid: proc.pid,
-                output: line,
-            })),
-        ]);
-        const usage = await Yon.logHandlerResourceUsage(proc, context, cmd[0], Yon.byteLength(out), Yon.byteLength(err));
+            });
+        });
+        const out = await Yon.readHandlerStdout(proc.stdout, line => Yon.handlerLogger.info('Handler stdout output', {
+            requestId: context.requestId,
+            pid: proc.pid,
+            output: line,
+        }));
+        if (out.framed) {
+            await Telemetry.endSpan(handlerSpan, {
+                statusCode: 200,
+                attributes: {
+                    'tachyon.handler.response_bytes': out.responseBytes,
+                    'tachyon.handler.error_bytes': errorBytes,
+                },
+            });
+            void Promise.all([out.stdoutDone, stderrDone]).then(async ([stdoutRemainder, stderrRemainder]) => {
+                errorBytes += Yon.byteLength(stderrRemainder);
+                if (stdoutRemainder.length > 0) {
+                    Yon.handlerLogger.info('Handler stdout output', {
+                        requestId: context.requestId,
+                        pid: proc.pid,
+                        output: stdoutRemainder,
+                    });
+                }
+                await Yon.logHandlerResourceUsage(proc, context, cmd[0], out.responseBytes, errorBytes);
+            }).catch(() => { });
+            return out.body.length > 0 ? { status: 200, body: out.body } : { status: 200 };
+        }
+        const err = await stderrDone;
+        errorBytes += Yon.byteLength(err);
+        const usage = await Yon.logHandlerResourceUsage(proc, context, cmd[0], out.responseBytes, errorBytes);
         await Telemetry.endSpan(handlerSpan, {
-            statusCode: err.length > 0 ? 500 : 200,
+            statusCode: err.length > 0 || sawStderr ? 500 : 200,
             attributes: usage,
         });
-        if (out.length > 0)
-            return { status: 200, body: out };
+        if (out.body.length > 0)
+            return { status: 200, body: out.body };
         if (err.length > 0)
             return { status: 500, body: Yon.handlerErrorBody(err) };
         return { status: 200 };

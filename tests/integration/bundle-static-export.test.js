@@ -43,7 +43,7 @@ async function createSeparatedStructureFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-separated-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'browser', 'pages', 'docs'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'components'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'components', 'hero'), { recursive: true });
     await mkdir(path.join(root, 'browser', 'shared', 'scripts'), { recursive: true });
     await mkdir(path.join(root, 'browser', 'shared', 'styles'), { recursive: true });
     await mkdir(path.join(root, 'server', 'routes'), { recursive: true });
@@ -54,7 +54,7 @@ async function createSeparatedStructureFixture() {
     await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'imports.js'), 'import "../styles/app.css";\n');
     await writeFile(path.join(root, 'browser', 'shared', 'styles', 'app.css'), 'body { background: rgb(1, 2, 3); }\n');
     await writeFile(path.join(root, 'server', 'routes', 'GET.js'), 'export async function handler() {\n  return { ok: true }\n}\n');
-    await writeFile(path.join(root, 'browser', 'components', 'hero.html'), '<section class="hero">Hero</section>');
+    await writeFile(path.join(root, 'browser', 'components', 'hero', 'index.html'), '<section class="hero">Hero</section>');
     await writeFile(path.join(root, 'browser', 'pages', 'index.html'), `<script>document.title = "Separated Home"</script><div class="shell"><slot /><hero /></div>`);
     await writeFile(path.join(root, 'browser', 'pages', 'docs', 'index.html'), `<script>document.title = "Separated Docs"</script><p>Docs from pages</p>`);
     return root;
@@ -63,12 +63,12 @@ async function createTagClassificationFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-tag-classification-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'hero', 'card'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-tag-classification-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'hero-card.html'), `<article class="hero-card">Tachyon component wins</article>`);
+    await writeFile(path.join(root, 'components', 'hero', 'card', 'index.html'), `<article class="hero-card">Tachyon component wins</article>`);
     await writeFile(path.join(root, 'routes', 'index.html'), [
         '<hero-card />',
         '<user-card data-kind="web-component"></user-card>',
@@ -96,6 +96,103 @@ function status() {
 <loop :for="let i = 0; i < tasks.length; i++">
   <button @click="toggle(i)">{status()}</button>
 </loop>`);
+    return root;
+}
+async function createBareLoopEventFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bare-loop-event-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-bare-loop-event-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'routes', 'index.html'), `<script>
+let folder = 'inbox';
+let folders = ['inbox', 'sent', 'trash'];
+let selected = 'none';
+function select(next) {
+    selected = next;
+}
+function currentFolder() {
+    return folder;
+}
+</script>
+<loop :for="folder of folders">
+  <button @click="select(folder)">{folder}</button>
+</loop>
+<p>Selected {selected}</p>
+<p>Prop {currentFolder()}</p>`);
+    return root;
+}
+async function createMultiEventLoopFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-multi-event-loop-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-multi-event-loop-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'routes', 'index.html'), `<script>
+let rows = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+let selected = 'none';
+let dragged = 'none';
+function select(id) { selected = id; }
+function drag(id) { dragged = id; }
+</script>
+<loop :for="row of rows">
+  <button @click="select(row.id)" @dragstart="drag(row.id)">{row.id}</button>
+</loop>
+<p>Selected {selected}</p>
+<p>Dragged {dragged}</p>`);
+    return root;
+}
+async function createPropRefreshFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-prop-refresh-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'data', 'loader'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-prop-refresh-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'components', 'data', 'loader', 'index.js'), `export default class extends Tac {
+    loaded = 'missing'
+    constructor(props = {}) {
+        super(props)
+        this.loaded = String(this.props.id ?? 'missing')
+    }
+}
+`);
+    await writeFile(path.join(root, 'components', 'data', 'loader', 'index.html'), `<p>Loaded {loaded}</p>`);
+    await writeFile(path.join(root, 'routes', 'index.html'), `<script>
+let selected = 'a';
+function choose(id) { selected = id; }
+</script>
+<button @click="choose('b')">Choose B</button>
+<data-loader :id="selected" />`);
+    return root;
+}
+async function createKebabPropFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-kebab-prop-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'email', 'detail'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-kebab-prop-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'components', 'email', 'detail', 'index.js'), `export default class extends Tac {
+    emailId = 'missing'
+    legacy = 'missing'
+    constructor(props = {}) {
+        super(props)
+        this.emailId = String(this.props.emailId ?? 'missing')
+        this.legacy = String(this.props['email-id'] ?? 'missing')
+    }
+}
+`);
+    await writeFile(path.join(root, 'components', 'email', 'detail', 'index.html'), `<p>Email {emailId}</p><p>Legacy {legacy}</p>`);
+    await writeFile(path.join(root, 'routes', 'index.html'), `<script>let selectedMail = 'm-123'</script><email-detail :email-id="selectedMail" />`);
     return root;
 }
 async function createEscapingFixture() {
@@ -180,13 +277,13 @@ async function createCompanionScriptFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-script-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'clicker'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-companion-script-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'clicker.html'), `<button class="clicker" @click="increment()">{label}: {clicks}</button>`);
-    await writeFile(path.join(root, 'components', 'clicker.ts'), `export default class extends Tac {
+    await writeFile(path.join(root, 'components', 'clicker', 'index.html'), `<button class="clicker" @click="increment()">{label}: {clicks}</button>`);
+    await writeFile(path.join(root, 'components', 'clicker', 'index.ts'), `export default class extends Tac {
     clicks: number = 0
     label = 'Ready'
 
@@ -201,7 +298,7 @@ async function createCompanionScriptFixture() {
     }
 }
 `);
-    await writeFile(path.join(root, 'components', 'clicker.css'), `.clicker { border: 2px solid tomato; font-weight: 700; }`);
+    await writeFile(path.join(root, 'components', 'clicker', 'index.css'), `.clicker { border: 2px solid tomato; font-weight: 700; }`);
     await writeFile(path.join(root, 'routes', 'index.html'), `<clicker label="Companion" />`);
     return root;
 }
@@ -209,14 +306,14 @@ async function createWasmCompanionFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-wasm-companion-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'clicker'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-wasm-companion-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'clicker.html'), `<button @click="increment()">Wasm {label}: {clicks}</button>`);
-    await writeFile(path.join(root, 'components', 'clicker.wasm'), Buffer.from(wasmClickerFixture, 'base64'));
-    await writeFile(path.join(root, 'components', 'clicker.tac.json'), JSON.stringify({
+    await writeFile(path.join(root, 'components', 'clicker', 'index.html'), `<button @click="increment()">Wasm {label}: {clicks}</button>`);
+    await writeFile(path.join(root, 'components', 'clicker', 'index.wasm'), Buffer.from(wasmClickerFixture, 'base64'));
+    await writeFile(path.join(root, 'components', 'clicker', 'index.tac.json'), JSON.stringify({
         abi: 'tac-wasm-json@1',
         state: {
             clicks: 99,
@@ -231,14 +328,14 @@ async function createWasmSourceCompanionFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-wasm-source-companion-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'clicker'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-wasm-source-companion-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'clicker.html'), `<button @click="increment()">Wasm {label}: {clicks}</button>`);
-    await writeFile(path.join(root, 'components', 'clicker.wat'), '(module)');
-    await writeFile(path.join(root, 'components', 'clicker.tac.json'), JSON.stringify({
+    await writeFile(path.join(root, 'components', 'clicker', 'index.html'), `<button @click="increment()">Wasm {label}: {clicks}</button>`);
+    await writeFile(path.join(root, 'components', 'clicker', 'index.wat'), '(module)');
+    await writeFile(path.join(root, 'components', 'clicker', 'index.tac.json'), JSON.stringify({
         abi: 'tac-wasm-json@1',
         state: {
             clicks: 99,
@@ -247,8 +344,8 @@ async function createWasmSourceCompanionFixture() {
         methods: ['increment'],
     }, null, 2));
     await writeFile(path.join(root, 'routes', 'index.html'), `<clicker />`);
-    const compilerPath = path.join(root, 'fake-wat2wasm');
-    await writeFile(compilerPath, `#!/usr/bin/env bun
+    const compilerScriptPath = path.join(root, process.platform === 'win32' ? 'fake-wat2wasm.js' : 'fake-wat2wasm');
+    await writeFile(compilerScriptPath, `#!/usr/bin/env bun
 const outIndex = process.argv.indexOf('-o') + 1;
 if (outIndex <= 0 || !process.argv[outIndex]) {
   console.error('missing -o output');
@@ -256,19 +353,25 @@ if (outIndex <= 0 || !process.argv[outIndex]) {
 }
 await Bun.write(process.argv[outIndex], Buffer.from(${JSON.stringify(wasmClickerFixture)}, 'base64'));
 `);
-    await chmod(compilerPath, 0o755);
+    await chmod(compilerScriptPath, 0o755);
+    const compilerPath = process.platform === 'win32'
+        ? path.join(root, 'fake-wat2wasm.cmd')
+        : compilerScriptPath;
+    if (process.platform === 'win32') {
+        await writeFile(compilerPath, '@echo off\r\nbun "%~dp0fake-wat2wasm.js" %*\r\n');
+    }
     return { root, compilerPath };
 }
 async function createGlobalTacFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-global-tac-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'badge'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-global-tac-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'badge.html'), `<script>let label = ''</script><strong class="badge">Badge: {label}</strong>`);
+    await writeFile(path.join(root, 'components', 'badge', 'index.html'), `<script>let label = ''</script><strong class="badge">Badge: {label}</strong>`);
     await writeFile(path.join(root, 'routes', 'index.html'), `<script>let title = 'Global Tac'</script><badge :label="title" />`);
     return root;
 }
@@ -296,12 +399,12 @@ async function createComponentEmitFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-component-emit-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'child', 'picker'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-component-emit-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'child-picker.html'), `<script>
+    await writeFile(path.join(root, 'components', 'child', 'picker', 'index.html'), `<script>
 let label = 'fallback';
 function choose() {
     emit('selected', { label, source: 'child-picker' });
@@ -429,6 +532,60 @@ timedTest('tac.bundle classifies component, web component, native, and unknown t
     expect(home).toContain('<mystery');
     expect(home).toContain('Unknown tag survives with warning');
 });
+timedTest('tac.bundle rejects flat component template filenames', { timeout: 20000 }, async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-flat-component-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'components'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-flat-component-fixture',
+        private: true,
+    }, null, 2));
+    await writeFile(path.join(root, 'components', 'legacy-card.html'), '<article>Legacy</article>');
+    await writeFile(path.join(root, 'routes', 'index.html'), '<legacy-card />');
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd: root,
+        stdout: 'pipe',
+        stderr: 'pipe',
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited,
+    ]);
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("Invalid Tac component path 'legacy-card.html'");
+    expect(stderr).toContain('lowercase alphanumeric folders with an index.html template');
+});
+timedTest('tac.bundle rejects hyphenated component folder names', { timeout: 20000 }, async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-hyphen-component-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'panel-users'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-hyphen-component-fixture',
+        private: true,
+    }, null, 2));
+    await writeFile(path.join(root, 'components', 'panel-users', 'index.html'), '<article>Panel users</article>');
+    await writeFile(path.join(root, 'routes', 'index.html'), '<panel-users />');
+
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd: root,
+        stdout: 'pipe',
+        stderr: 'pipe',
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited,
+    ]);
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("Invalid Tac component path 'panel-users/index.html'");
+    expect(stderr).toContain('lowercase alphanumeric folders with an index.html template');
+});
 timedTest('loop-scoped event handlers can access loop variables when rerendered', { timeout: 20000 }, async () => {
     const cwd = await createLoopEventFixture();
     const proc = Bun.spawn(['bun', bundleEntrypoint], {
@@ -454,6 +611,86 @@ timedTest('loop-scoped event handlers can access loop variables when rerendered'
     await render(buttonId);
     const updated = await render();
     expect(updated).toContain('done');
+});
+timedTest('bare loop variables are block scoped and do not overwrite template scope', { timeout: 20000 }, async () => {
+    const cwd = await createBareLoopEventFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    expect(stderr).toBe('');
+    const pageModulePath = path.join(cwd, 'dist', 'pages', 'index.js');
+    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?bare-loop-event=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    const buttonIds = [...initial.matchAll(/<button[^>]* id="([^"]+)"/g)].map((match) => match[1]);
+    expect(buttonIds).toHaveLength(3);
+    expect(initial).toContain('Prop inbox');
+    await render(buttonIds[1]);
+    const updated = await render();
+    expect(updated).toContain('Selected sent');
+    expect(updated).toContain('Prop inbox');
+});
+timedTest('multiple event handlers on one loop element keep handler counters aligned', { timeout: 20000 }, async () => {
+    const cwd = await createMultiEventLoopFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    expect(stderr).toBe('');
+    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'index.js')).href}?multi-event=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    const buttonIds = [...initial.matchAll(/<button[^>]* id="([^"]+)"/g)].map((match) => match[1]);
+    expect(buttonIds).toHaveLength(3);
+    await render(buttonIds[1], new Event('click'));
+    expect(await render()).toContain('Selected b');
+});
+timedTest('component factories refresh when parent props change', { timeout: 20000 }, async () => {
+    const cwd = await createPropRefreshFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    expect(stderr).toBe('');
+    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'index.js')).href}?prop-refresh=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    const buttonId = initial.match(/<button[^>]* id="([^"]+)"/)?.[1];
+    expect(buttonId).toBeTruthy();
+    expect(initial).toContain('Loaded a');
+    await render(buttonId);
+    expect(await render()).toContain('Loaded b');
+});
+timedTest('component props expose kebab-case attributes as camelCase aliases', { timeout: 20000 }, async () => {
+    const cwd = await createKebabPropFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    expect(stderr).toBe('');
+    const pageModulePath = path.join(cwd, 'dist', 'pages', 'index.js');
+    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?kebab-prop=${Date.now()}`);
+    const render = await pageModule.default();
+    const html = await render();
+    expect(html).toContain('Email m-123');
+    expect(html).toContain('Legacy m-123');
 });
 timedTest('template interpolation and dynamic attributes are escaped by default', { timeout: 20000 }, async () => {
     const cwd = await createEscapingFixture();
@@ -571,10 +808,10 @@ timedTest('TAC_FORMAT=global emits registry modules that prerender successfully'
     expect(stderr).toBe('');
     const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
     const pageModule = await readFile(path.join(cwd, 'dist', 'pages', 'index.js'), 'utf8');
-    const componentModule = await readFile(path.join(cwd, 'dist', 'components', 'badge.js'), 'utf8');
+    const componentModule = await readFile(path.join(cwd, 'dist', 'components', 'badge', 'index.js'), 'utf8');
     expect(home).toContain('Badge: Global Tac');
     expect(pageModule).toContain('register("/pages/index.js"');
-    expect(componentModule).toContain('register("/components/badge.js"');
+    expect(componentModule).toContain('register("/components/badge/index.js"');
     expect(pageModule).not.toContain('export default');
     expect(componentModule).not.toContain('export default');
 });
@@ -825,15 +1062,15 @@ async function createLargeCompanionFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-large-companion-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'big'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-large-companion-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'big.html'), `<strong class="big-widget">{label}</strong>`);
+    await writeFile(path.join(root, 'components', 'big', 'index.html'), `<strong class="big-widget">{label}</strong>`);
     // Companion script exceeding ~1.3 KB to trigger the bundler size threshold
     const padding = '// ' + 'x'.repeat(1500);
-    await writeFile(path.join(root, 'components', 'big.js'), `${padding}
+    await writeFile(path.join(root, 'components', 'big', 'index.js'), `${padding}
 export default class extends Tac {
     label = 'BigWidget'
 
@@ -860,7 +1097,7 @@ timedTest('large companion scripts over 1.3KB include class Tac definition', { t
     ]);
     if (exitCode !== 0)
         throw new Error(stderr);
-    const distComponentPath = path.join(cwd, 'dist', 'components', 'big.js');
+    const distComponentPath = path.join(cwd, 'dist', 'components', 'big', 'index.js');
     const componentSource = await readFile(distComponentPath, 'utf8');
     expect(componentSource).toContain('class Tac{');
     expect(componentSource).toContain('extends Tac');
@@ -871,13 +1108,13 @@ async function createComponentImportBindingFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-import-binding-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components'), { recursive: true });
+    await mkdir(path.join(root, 'components', 'greeting'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-import-binding-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'greeting.html'), `<span class="greeting">Hello {name}</span>`);
-    await writeFile(path.join(root, 'components', 'greeting.js'), `export default class extends Tac {
+    await writeFile(path.join(root, 'components', 'greeting', 'index.html'), `<span class="greeting">Hello {name}</span>`);
+    await writeFile(path.join(root, 'components', 'greeting', 'index.js'), `export default class extends Tac {
     name = 'World'
     constructor(props = {}) {
         super(props)
