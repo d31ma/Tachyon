@@ -1501,13 +1501,14 @@ describe('Rate limiting', () => {
                 fetch(`${baseUrl}/api`, { headers: authHeaders() }),
                 fetch(`${baseUrl}/api`, { headers: authHeaders() }),
             ]);
-            expect(first.status).toBe(200);
-            expect(second.status).toBe(200);
-            expect(third.status).toBe(429);
-            expect(third.headers.get('ratelimit-limit')).toBe('2');
-            expect(third.headers.get('ratelimit-remaining')).toBe('0');
-            expect(third.headers.get('retry-after')).not.toBeNull();
-            const body = await third.json();
+            const responses = [first, second, third];
+            expect(responses.filter((res) => res.status === 200).length).toBe(2);
+            const limited = responses.find((res) => res.status === 429);
+            expect(limited).toBeDefined();
+            expect(limited?.headers.get('ratelimit-limit')).toBe('2');
+            expect(limited?.headers.get('ratelimit-remaining')).toBe('0');
+            expect(limited?.headers.get('retry-after')).not.toBeNull();
+            const body = await limited?.json();
             expect(body.detail).toBe('Too many requests');
         }
         finally {
