@@ -4,12 +4,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      promote_npm:
-        description: Promote the GitHub Packages artifact to npm after stability is confirmed
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -194,13 +188,11 @@ jobs:
           npm view "${PACKAGE_NAME}@${VERSION}" version --registry=https://npm.pkg.github.com
 
   promote-npm:
-    name: Request npm promotion
+    name: Promote to npm
     needs: [version, publish]
     if: >-
       ${{
         always() &&
-        github.event_name == 'workflow_dispatch' &&
-        inputs.promote_npm == true &&
         (
           needs.publish.result == 'success' ||
           needs.version.outputs.github_version_exists == 'true'
@@ -229,7 +221,7 @@ jobs:
             --arg package_name "$PACKAGE_NAME" \
             --arg version "$VERSION" \
             --arg npm_dist_tag "latest" \
-            --arg npm_auth_mode "trusted" \
+            --arg npm_auth_mode "token" \
             --arg source_repository "$SOURCE_REPOSITORY" \
             '{
               event_type: "promote-npm",
