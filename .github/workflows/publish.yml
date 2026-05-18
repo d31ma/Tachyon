@@ -69,6 +69,7 @@ jobs:
     outputs:
       package_name: ${{ steps.read.outputs.package_name }}
       version: ${{ steps.read.outputs.version }}
+      registry_version: ${{ steps.read.outputs.registry_version }}
       tag_exists: ${{ steps.check.outputs.exists }}
       github_version_exists: ${{ steps.check_github.outputs.exists }}
       npm_version_exists: ${{ steps.check_npm.outputs.exists }}
@@ -84,10 +85,13 @@ jobs:
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
           VERSION=$(node -p "require('./package.json').version")
+          REGISTRY_VERSION=$(node -p "require('./package.json').version.split('.').map((part, index) => index < 3 && /^[0-9]+$/.test(part) ? String(Number(part)) : part).join('.')")
           echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "registry_version=$REGISTRY_VERSION" >> "$GITHUB_OUTPUT"
           echo "Package: $PACKAGE_NAME"
           echo "Version: $VERSION"
+          echo "Registry version: $REGISTRY_VERSION"
 
       - name: Check version tag
         id: check
@@ -105,7 +109,7 @@ jobs:
         id: check_github
         env:
           PACKAGE_NAME: ${{ steps.read.outputs.package_name }}
-          VERSION: ${{ steps.read.outputs.version }}
+          VERSION: ${{ steps.read.outputs.registry_version }}
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
         run: |
           cat > ~/.npmrc <<EOF
@@ -125,7 +129,7 @@ jobs:
         id: check_npm
         env:
           PACKAGE_NAME: ${{ steps.read.outputs.package_name }}
-          VERSION: ${{ steps.read.outputs.version }}
+          VERSION: ${{ steps.read.outputs.registry_version }}
         run: |
           if npm view "${PACKAGE_NAME}@${VERSION}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
@@ -177,7 +181,7 @@ jobs:
       - name: Verify GitHub Packages artifact
         env:
           PACKAGE_NAME: ${{ needs.version.outputs.package_name }}
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.registry_version }}
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
         run: |
           cat > ~/.npmrc <<EOF
@@ -193,6 +197,8 @@ jobs:
     if: >-
       ${{
         always() &&
+        needs.version.result == 'success' &&
+        needs.version.outputs.npm_version_exists == 'false' &&
         (
           needs.publish.result == 'success' ||
           needs.version.outputs.github_version_exists == 'true'
@@ -208,7 +214,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.FOUNDRY_DISPATCH_TOKEN }}
           PACKAGE_NAME: ${{ needs.version.outputs.package_name }}
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.registry_version }}
           SOURCE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
