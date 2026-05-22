@@ -7,17 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Aligned CHEX cache key format with `@d31ma/chex` v26.21.02, which requires
-  `.schema.json` extension in schema references and uses `path:`-prefixed cache
-  keys. The previous bare-key format caused cache misses and disk I/O fallback,
-  breaking schema validation at runtime.
-- Renamed route `OPTIONS.json` files to `OPTIONS.schema.json` so the schema
-  validator correctly discovers them. Schema history files (`v1.json`) renamed
-  to `v1.schema.json` for consistency. Test env file moved from root to
-  `tests/.env.test`.
-
 ## [26.21.05] — 2026-05-22
 
 ### Added
@@ -70,6 +59,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `shell-manifest.json`; nothing in the codebase ever read or wrote
   `layout-manifest.json`. Removed from `src/shared/manifests/` and
   `.gitignore`.
+
+### Fixed
+
+- Upgraded `@d31ma/fylo` to `26.21.2` (bringing `@d31ma/chex` `26.21.02`),
+  which introduced a `SchemaValidator` API requiring `.schema.json` extension
+  in schema references and `path:`-prefixed cache keys. Aligned
+  `validateWithChex` to seed the CHEX cache with the expected key format.
+- Updated `Router.optionsFileName` from `OPTIONS.json` to `OPTIONS.schema.json`
+  so the route handler discovers the renamed schema files.
+- Renamed route `OPTIONS.json` files to `OPTIONS.schema.json` and schema
+  history files (`v1.json`) to `v1.schema.json` for consistency with the
+  framework's naming convention. Test env file moved from root to
+  `tests/.env.test`.
 
 ## [2.0.0]
 
