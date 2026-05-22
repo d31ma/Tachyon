@@ -66,7 +66,7 @@
         "url": "https://github.com/d31ma/Tachyon/issues"
     },
     "dependencies": {
-        "@d31ma/fylo": "26.20.7"
+        "@d31ma/fylo": "^26.21.2"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "^20.8.9",

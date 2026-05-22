@@ -41,12 +41,12 @@ export default class Validate {
      */
     static async validateWithChex(data, schema, route, parentRoute, method, io) {
         const key = Validate.schemaCacheKey(parentRoute, method, io);
-        // CHEX resolves bare schema references as paths, requiring a .schema.json
-        // extension, and looks up its cache under a 'path:'-prefixed key.  Seed
-        // the cache with the exact key CHEX will request so it skips disk I/O.
-        const chexKey = `path:${key}.schema.json`;
-        Validate.chexSchemas.set(chexKey, schema);
-        await chexValidateData(`${key}.schema.json`, data, { schemaDir: null, cache: Validate.chexSchemas });
+        // CHEX treats schema references ending in .schema.json as paths and
+        // looks up its cache under a 'path:'-prefixed key.  Seed the cache
+        // with the exact key CHEX will request so it skips disk I/O.
+        const chexKey = `${key}.schema.json`;
+        Validate.chexSchemas.set(`path:${chexKey}`, schema);
+        await chexValidateData(chexKey, data, { schemaDir: null, cache: Validate.chexSchemas });
     }
 
     /**
