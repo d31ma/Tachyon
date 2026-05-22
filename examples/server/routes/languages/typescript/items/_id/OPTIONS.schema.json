@@ -1,0 +1,75 @@
+{
+    "GET": {
+        "200": {
+            "id": "^[0-9A-Za-z_-]+$",
+            "name": "^.{1,120}$",
+            "source": "^[0-9A-Za-z_-]+$",
+            "createdAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "updatedAt?": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "304": {},
+        "404": {
+            "detail": "^item not found$"
+        },
+        "410": {
+            "detail": "^item was deleted$"
+        },
+        "500": {
+            "detail": "^internal server error$"
+        }
+    },
+    "PUT": {
+        "request": {
+            "body": {
+                "name": "^.{1,120}$",
+                "source?": "^[0-9A-Za-z_-]+$"
+            }
+        },
+        "200": {
+            "id": "^[0-9A-Za-z_-]+$",
+            "name": "^.{1,120}$",
+            "source": "^[0-9A-Za-z_-]+$",
+            "createdAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "updatedAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "204": {},
+        "400": {
+            "detail": "^name is required$"
+        },
+        "404": {
+            "detail": "^item not found$"
+        }
+    },
+    "PATCH": {
+        "request": {
+            "body": {
+                "name?": "^.{1,120}$",
+                "source?": "^[0-9A-Za-z_-]+$"
+            }
+        },
+        "200": {
+            "id": "^[0-9A-Za-z_-]+$",
+            "name": "^.{1,120}$",
+            "source": "^[0-9A-Za-z_-]+$",
+            "createdAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "updatedAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "204": {},
+        "400": {
+            "detail": "^(patch body is required|name is required)$"
+        },
+        "404": {
+            "detail": "^item not found$"
+        }
+    },
+    "DELETE": {
+        "200": {
+            "id": "^[0-9A-Za-z_-]+$",
+            "deletedAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "204": {},
+        "404": {
+            "detail": "^item not found$"
+        }
+    }
+}
