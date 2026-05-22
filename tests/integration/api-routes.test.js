@@ -142,7 +142,7 @@ async function createBackendOnlyApp(prefix) {
     const root = await mkdtemp(path.join(tmpdir(), prefix));
     const routeDir = path.join(root, 'server', 'routes', 'api');
     await mkdir(routeDir, { recursive: true });
-    await Bun.write(path.join(routeDir, 'OPTIONS.json'), JSON.stringify({
+    await Bun.write(path.join(routeDir, 'OPTIONS.schema.json'), JSON.stringify({
         GET: {
             200: {
                 message: '^ok$',
@@ -545,7 +545,7 @@ describe('OPTIONS route', () => {
         const body = await res.json();
         expect(body.GET).toHaveProperty('200');
         expect(body.GET).toHaveProperty('500');
-        expect(body.GET['200']).toHaveProperty('message');
+        expect(body.GET['200']).toHaveProperty('message?');
     });
 
     test('OPTIONS preflight (CORS) returns 204 with headers, no schema body', async () => {

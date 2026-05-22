@@ -1,0 +1,37 @@
+{
+    "GET": {
+        "200": {
+            "language": "^ruby$",
+            "message": "^Hello from Ruby!$",
+            "requestId": "^.{1,200}$"
+        },
+        "401": {
+            "code": "^401$",
+            "detail": "^unauthorized$"
+        },
+        "402": {
+            "code": "^402$",
+            "detail": "^payment required$"
+        },
+        "403": {
+            "code": "^403$",
+            "detail": "^forbidden$"
+        },
+        "404": {
+            "code": "^404$",
+            "detail": "^not found$"
+        },
+        "405": {
+            "code": "^405$",
+            "detail": "^method not allowed$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        },
+        "request": {
+            "query": {
+                "code?": "^[0-9]+$"
+            }
+        }
+    }
+}

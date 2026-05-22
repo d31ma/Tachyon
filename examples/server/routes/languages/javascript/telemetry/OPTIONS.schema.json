@@ -1,0 +1,24 @@
+{
+  "GET": {
+    "request": {
+      "query": {
+        "limit?": "^(?:[1-9]|[1-4][0-9]|50)$"
+      }
+    },
+    "200": {
+      "summary": {
+        "enabled": "^(?:true|false)$",
+        "collection": "^[0-9A-Za-z_-]+$",
+        "spanCount": "^[0-9]+$",
+        "requestCount": "^[0-9]+$",
+        "errorCount": "^[0-9]+$"
+      },
+      "recent": [
+        "^\\[object Object\\]$"
+      ]
+    },
+    "500": {
+      "detail": "^[\\s\\S]+$"
+    }
+  }
+}

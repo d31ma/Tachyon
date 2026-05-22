@@ -1,0 +1,97 @@
+{
+    "GET": {
+        "200": {
+            "code?": "^200$",
+            "message?": "^(?:ok|Hello from Yon on Bun!)$",
+            "runtime?": {
+                "name": "^[\\s\\S]+$",
+                "version": "^[\\s\\S]+$"
+            },
+            "context?": {
+                "^[\\s\\S]+$": "^[\\s\\S]*$"
+            },
+            "frontend?": "^[\\s\\S]+$",
+            "backend?": "^[\\s\\S]+$"
+        },
+        "201": {
+            "code": "^201$",
+            "message": "^created$"
+        },
+        "202": {
+            "code": "^202$",
+            "message": "^accepted$"
+        },
+        "203": {
+            "code": "^203$",
+            "message": "^non-authoritative$"
+        },
+        "205": {
+            "code": "^205$",
+            "message": "^reset content$"
+        },
+        "206": {
+            "code": "^206$",
+            "total": "^[0-9]+$",
+            "message": "^partial$"
+        },
+        "304": {},
+        "400": {
+            "detail": "^bad request$"
+        },
+        "404": {
+            "detail": "^not found$"
+        },
+        "500": {
+            "detail": "^internal server error$"
+        },
+        "request": {
+            "query?": {
+                "^[\\s\\S]+$": "^[\\s\\S]*$"
+            }
+        }
+    },
+    "POST": {
+        "200": {
+            "message": "^Hello from Yon language service!$",
+            "snapshot": {
+                "frontend": "^Tac$",
+                "backend": "^Yon$",
+                "requestId": "^.{1,200}$",
+                "generatedAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            }
+        },
+        "201": {
+            "detail": "^created$"
+        },
+        "400": {
+            "detail": "^bad request$"
+        },
+        "500": {
+            "detail": "^internal server error$"
+        },
+        "request": {}
+    },
+    "PUT": {
+        "200": {
+            "message": "^Hello from Yon on Bun!$",
+            "method": "^PUT$",
+            "context": {
+                "^[\\s\\S]+$": "^[\\s\\S]*$"
+            },
+            "snapshot": {
+                "frontend": "^Tac$",
+                "backend": "^Yon$",
+                "requestId": "^.{1,200}$",
+                "generatedAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+            }
+        },
+        "204": {},
+        "400": {
+            "detail": "^bad request$"
+        },
+        "500": {
+            "detail": "^internal server error$"
+        },
+        "request": {}
+    }
+}

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.21.05] — 2026-05-22
+
 ### Added
 
 - Stage 3 decorator forms of the `Tac` runtime helpers, available as bare
@@ -57,6 +59,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to `shell-manifest.json`; nothing in the codebase ever read or wrote
   `layout-manifest.json`. Removed from `src/shared/manifests/` and
   `.gitignore`.
+
+### Fixed
+
+- Upgraded `@d31ma/fylo` to `26.21.2` (bringing `@d31ma/chex` `26.21.02`),
+  which introduced a `SchemaValidator` API requiring `.schema.json` extension
+  in schema references and `path:`-prefixed cache keys. Aligned
+  `validateWithChex` to seed the CHEX cache with the expected key format.
+- Updated `Router.optionsFileName` from `OPTIONS.json` to `OPTIONS.schema.json`
+  so the route handler discovers the renamed schema files.
+- Renamed route `OPTIONS.json` files to `OPTIONS.schema.json` and schema
+  history files (`v1.json`) to `v1.schema.json` for consistency with the
+  framework's naming convention. Test env file moved from root to
+  `tests/.env.test`.
 
 ## [2.0.0]
 
@@ -144,6 +159,7 @@ should expect to touch imports, bin names, and any code that assumed the old
 
 See the Git history and GitHub release notes for pre-2.0 changes.
 
-[Unreleased]: https://github.com/d31ma/Tachyon/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.21.05...HEAD
+[26.21.05]: https://github.com/d31ma/Tachyon/compare/v2.0.0...v26.21.05
 [2.0.0]: https://github.com/d31ma/Tachyon/compare/v1.11.1...v2.0.0
 [1.11.1]: https://github.com/d31ma/Tachyon/releases/tag/v1.11.1

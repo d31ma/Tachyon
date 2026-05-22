@@ -1,0 +1,70 @@
+{
+    "GET": {
+        "200": {
+            "language": "^python$",
+            "message": "^Hello from Python!$",
+            "requestId": "^.{1,200}$"
+        },
+        "300": {
+            "location": "^/.+$"
+        },
+        "301": {
+            "location": "^/.+$"
+        },
+        "302": {
+            "location": "^/.+$"
+        },
+        "303": {
+            "code": "^303$",
+            "location": "^/redirect$"
+        },
+        "304": {},
+        "305": {
+            "code": "^305$",
+            "location": "^/redirect$"
+        },
+        "307": {
+            "code": "^307$",
+            "location": "^/redirect$"
+        },
+        "308": {
+            "code": "^308$",
+            "location": "^/redirect$"
+        },
+        "400": {
+            "code": "^400$",
+            "detail": "^bad request$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        },
+        "request": {
+            "query": {
+                "code?": "^[0-9]+$"
+            }
+        }
+    },
+    "DELETE": {
+        "200": {},
+        "204": {},
+        "400": {
+            "detail": "^bad request$"
+        },
+        "404": {
+            "detail": "^not found$"
+        },
+        "500": {
+            "detail": "^internal server error$"
+        }
+    },
+    "PATCH": {
+        "200": {},
+        "204": {},
+        "400": {
+            "detail": "^bad request$"
+        },
+        "500": {
+            "detail": "^internal server error$"
+        }
+    }
+}

@@ -1,0 +1,36 @@
+{
+    "GET": {
+        "200": {}
+    },
+    "POST": {
+        "request": {
+            "body": {
+                "id?": "^[0-9A-Za-z_-]+$",
+                "name": "^.{1,120}$",
+                "source?": "^[0-9A-Za-z_-]+$"
+            }
+        },
+        "201": {
+            "id": "^[0-9A-Za-z_-]+$",
+            "name": "^.{1,120}$",
+            "source": "^[0-9A-Za-z_-]+$",
+            "createdAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+        },
+        "204": {},
+        "400": {
+            "detail": "^name is required$"
+        },
+        "409": {
+            "detail": "^item already exists$"
+        },
+        "500": {
+            "detail": "^internal server error$"
+        }
+    },
+    "DELETE": {
+        "200": {
+            "detail": "^items cleared$"
+        },
+        "204": {}
+    }
+}

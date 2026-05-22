@@ -77,7 +77,7 @@ export default class Router {
     static sharedScriptsPath = Router.resolveWorkspacePath('YON_SHARED_SCRIPTS_PATH', ['browser/shared/scripts']);
     static sharedStylesPath = Router.resolveWorkspacePath('YON_SHARED_STYLES_PATH', ['browser/shared/styles']);
     static middlewarePath = process.env.YON_MIDDLEWARE_PATH || `${process.cwd()}/middleware`;
-    static optionsFileName = 'OPTIONS.json';
+    static optionsFileName = 'OPTIONS.schema.json';
     /** @type {Middleware | null} */
     static middleware = null;
     /** @type {RateLimiter | null} */
