@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Aligned CHEX cache key format with `@d31ma/chex` v26.21.02, which requires
+  `.schema.json` extension in schema references and uses `path:`-prefixed cache
+  keys. The previous bare-key format caused cache misses and disk I/O fallback,
+  breaking schema validation at runtime.
+- Renamed route `OPTIONS.json` files to `OPTIONS.schema.json` so the schema
+  validator correctly discovers them. Schema history files (`v1.json`) renamed
+  to `v1.schema.json` for consistency. Test env file moved from root to
+  `tests/.env.test`.
+
+## [26.21.05] — 2026-05-22
+
 ### Added
 
 - Stage 3 decorator forms of the `Tac` runtime helpers, available as bare
@@ -144,6 +157,7 @@ should expect to touch imports, bin names, and any code that assumed the old
 
 See the Git history and GitHub release notes for pre-2.0 changes.
 
-[Unreleased]: https://github.com/d31ma/Tachyon/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.21.05...HEAD
+[26.21.05]: https://github.com/d31ma/Tachyon/compare/v2.0.0...v26.21.05
 [2.0.0]: https://github.com/d31ma/Tachyon/compare/v1.11.1...v2.0.0
 [1.11.1]: https://github.com/d31ma/Tachyon/releases/tag/v1.11.1
