@@ -1699,7 +1699,7 @@ describe('Parameter length limits', () => {
 // Status code endpoints — verifies status matching across Yon language adapters
 // ===========================================================================
 describe('Status code endpoint', () => {
-    test.each([
+    const cases = [
         ['GET', 'javascript', 200], ['GET', 'javascript', 201], ['GET', 'javascript', 202], ['GET', 'javascript', 203],
         ['GET', 'javascript', 205], ['GET', 'javascript', 206],
         ['GET', 'typescript', 207], ['GET', 'typescript', 208], ['GET', 'typescript', 226],
@@ -1714,9 +1714,13 @@ describe('Status code endpoint', () => {
         ['DELETE', 'dart', 429], ['DELETE', 'dart', 431], ['DELETE', 'dart', 451], ['DELETE', 'dart', 500], ['DELETE', 'dart', 501],
         ['PATCH', 'rust', 502], ['PATCH', 'rust', 503], ['PATCH', 'rust', 504], ['PATCH', 'rust', 505], ['PATCH', 'rust', 506],
         ['PATCH', 'rust', 507], ['PATCH', 'rust', 508], ['PATCH', 'rust', 510], ['PATCH', 'rust', 511],
-    ])('%s /languages/%s?code=%i returns the requested status', async (method, language, code) => {
-        const res = await authFetch(`/languages/${language}?code=${code}`, { method });
-        expect(res.status).toEqual(code);
+    ];
+
+    timedTest('returns requested status codes across Yon language adapters', { timeout: 60000 }, async () => {
+        for (const [method, language, code] of cases) {
+            const res = await authFetch(`/languages/${language}?code=${code}`, { method });
+            expect(res.status).toEqual(code);
+        }
     });
 });
 // ===========================================================================
