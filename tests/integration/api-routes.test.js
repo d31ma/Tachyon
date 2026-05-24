@@ -1716,8 +1716,30 @@ describe('Status code endpoint', () => {
         ['PATCH', 'rust', 507], ['PATCH', 'rust', 508], ['PATCH', 'rust', 510], ['PATCH', 'rust', 511],
     ];
 
+    // Per-language runtime dependency. Skip cases whose runtime is missing
+    // from the host so CI runners without a particular toolchain (Dart on
+    // ubuntu-latest, for example) don't fail the matrix.
+    /** @type {Record<string, string>} */
+    const requiredCommands = {
+        javascript: 'bun',
+        typescript: 'bun',
+        python: 'python3',
+        ruby: 'ruby',
+        php: 'php',
+        go: 'go',
+        java: 'javac',
+        csharp: 'dotnet',
+        dart: 'dart',
+        rust: 'rustc',
+    };
+
     timedTest('returns requested status codes across Yon language adapters', { timeout: 60000 }, async () => {
         for (const [method, language, code] of cases) {
+            const required = requiredCommands[String(language)];
+            if (required && !commandAvailable(required)) {
+                console.warn(`[status-code-endpoint] Skipping ${method} /languages/${language}?code=${code}: '${required}' not available`);
+                continue;
+            }
             const res = await authFetch(`/languages/${language}?code=${code}`, { method });
             expect(res.status).toEqual(code);
         }
