@@ -403,9 +403,29 @@ export default class Router {
         if (searchParams.size > 0) {
             stdin.query = Router.parseKVParams(searchParams);
         }
+        // Handler path is recorded by validateRoute with the full
+        // `yon.<ext>` filename. If routeHandlers is missing the entry —
+        // for example, during the brief window of an HMR
+        // resetStaticState/validate cycle — scan the method directory
+        // for a `yon.*` sibling so we never return an extensionless
+        // path that posix_spawn would ENOENT on.
+        let handlerPath = Router.routeHandlers[route]?.[request.method];
+        if (!handlerPath) {
+            const methodDir = `${Router.routesPath}${Router.routeToFilesystemPath(route)}/${request.method}`;
+            if (existsSync(methodDir)) {
+                const match = Array.from(new Bun.Glob(`${Router.routeFileName}.*`).scanSync({ cwd: methodDir }))[0];
+                if (match)
+                    handlerPath = `${methodDir}/${match}`;
+            }
+            if (!handlerPath) {
+                throw Response.json(
+                    { detail: `Handler temporarily unavailable for ${request.method} ${route}` },
+                    { status: 503, headers: Router.getHeaders(request) }
+                );
+            }
+        }
         return {
-            handler: Router.routeHandlers[route]?.[request.method]
-                ?? `${Router.routesPath}${Router.routeToFilesystemPath(route)}/${request.method}/${Router.routeFileName}`,
+            handler: handlerPath,
             stdin,
             config: requestConfig
         };
