@@ -25,9 +25,8 @@ async function createDynamicDistFixture() {
     tempDirs.push(root);
     await mkdir(path.join(root, 'dist', 'folder', '_name'), { recursive: true });
     await mkdir(path.join(root, 'dist', 'pages', 'folder', '_name'), { recursive: true });
-    await writeFile(path.join(root, 'dist', 'routes.json'), JSON.stringify({ '/folder/:name': { ':name': 1 } }));
     await writeFile(path.join(root, 'dist', 'folder', '_name', 'index.html'), '<!DOCTYPE html><html><body><h1>Folder</h1></body></html>');
-    await writeFile(path.join(root, 'dist', 'pages', 'folder', '_name', 'index.js'), 'export default async () => async () => "Folder";');
+    await writeFile(path.join(root, 'dist', 'pages', 'folder', '_name', 'tac.js'), 'export default async () => async () => "Folder";');
     return path.join(root, 'dist');
 }
 async function createDistFixtureWithoutRoot() {
@@ -95,7 +94,7 @@ test('static preview resolves dynamic route templates to portable dist paths', a
         const base = `http://${server.hostname}:${server.port}`;
         const [shell, module] = await Promise.all([
             fetch(`${base}/folder/drafts`),
-            fetch(`${base}/pages/folder/:name/index.js`)
+            fetch(`${base}/pages/folder/:name/tac.js`)
         ]);
         expect(shell.status).toBe(200);
         expect(await shell.text()).toContain('<h1>Folder</h1>');

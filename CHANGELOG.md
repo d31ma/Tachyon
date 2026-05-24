@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.21.7] — 2026-05-24
+
+### Added
+
+- New `POST /languages/javascript/fylo` example route that drives the full
+  FYLO machine-interface suite (~25 ops). Moved off the lightweight
+  `/languages/javascript` dashboard endpoint so diagnostics stays fast.
+
+### Changed
+
+- **BREAKING**: Tac page and component templates now use `tac.html` (with
+  optional sibling `tac.js`/`tac.ts`/`tac.css`/`tac.wasm`/`tac.tac.json` and
+  source-backed companions). The previous `index.html` convention for Tac
+  source is removed; bundled `dist/**/index.html` output is unchanged so
+  static hosting and previews behave as before, while dist page/component
+  modules emit as `tac.js`.
+- **BREAKING**: Yon route handlers move to `server/routes/<path>/<METHOD>/yon.<ext>`.
+  The HTTP method is now the parent directory of the handler file, and every
+  handler file is named `yon.<ext>` regardless of language. The companion
+  `OPTIONS.schema.json` continues to sit as a sibling of the method
+  directories. Polyglot class-based handlers (Java, C#, Python, PHP, Ruby)
+  derive their class name from the `yon` basename, producing a Pascal-cased
+  `Yon` class.
+- Repo restructure: `package-contract/` moved to `tests/package-contract/`,
+  `stress/` moved to `tests/stress/`, and integration test runners/workers
+  moved to `tests/integration/helpers/`. `bun test`, `test:blackbox`, and
+  `stress:tac` scripts updated accordingly. Pure layout change with no
+  runtime behavior change.
+- Upgraded `@d31ma/fylo` to `26.21.6`. The Tachyon-facing surface
+  (`new Fylo(fyloOptions(root))`, `Fylo.uniqueTTID`, `executeSQL`,
+  `findDocs`, `inspectCollection`) is unchanged; the bump tracks upstream
+  bug fixes and the `LocalQueue` / `publish` / `consume` queue exports
+  that example apps may consume directly.
+
+### Internal
+
+- Replaced the in-place `tsc --noEmit` typecheck with
+  `scripts/typecheck.js`, a wrapper that runs `tsc --noEmit -p
+  tsconfig.src.json` against the scoped src-only project with a generous
+  watchdog (`TACHYON_TYPECHECK_TIMEOUT_MS`, default 10 minutes). The
+  scoped src project is the deterministic semantic-type-safety gate
+  required by the release policy. Tests and examples have their own
+  `tsconfig.tests.json` / `tsconfig.examples.json` projects but are not
+  part of the release blocker — pass them to the same runner when needed.
+- Restored `tsconfig.json` to inherit from `tsconfig.base.json` so Bun's
+  runtime module resolver picks up the `@/*` → `./examples/server/*`
+  path alias used by the example polyglot route handlers.
+- `Pool.prewarmAllHandlers` fallback handler path updated to the new
+  `<METHOD>/<routeFileName>` layout. The previous `<METHOD>` fallback
+  silently produced non-existent paths after the Yon rename and dropped
+  most polyglot handlers from the warmed-process pool.
+- Restored `static chexSchemas = new Map()` on `Validate`; the schema
+  validator's response-matching path requires it, and the working tree
+  had it removed mid-refactor.
+- `FyloMachineRepository.ensureDemoSchema()` now writes to a
+  `fylo-demo-items` collection instead of `items`, so the demo run no
+  longer overwrites the real items schema that other example routes
+  validate against.
+
 ## [26.21.05] — 2026-05-22
 
 ### Added
@@ -159,7 +218,8 @@ should expect to touch imports, bin names, and any code that assumed the old
 
 See the Git history and GitHub release notes for pre-2.0 changes.
 
-[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.21.05...HEAD
+[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.21.7...HEAD
+[26.21.7]: https://github.com/d31ma/Tachyon/compare/v26.21.05...v26.21.7
 [26.21.05]: https://github.com/d31ma/Tachyon/compare/v2.0.0...v26.21.05
 [2.0.0]: https://github.com/d31ma/Tachyon/compare/v1.11.1...v2.0.0
 [1.11.1]: https://github.com/d31ma/Tachyon/releases/tag/v1.11.1

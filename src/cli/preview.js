@@ -75,8 +75,8 @@ async function startPreviewBundleWatcher() {
             await runFreshBundleBuild();
             lastFingerprint = await buildFingerprint();
         }
-        catch (err) {
-            previewLogger.error('Preview rebuild failed', { err });
+        catch (error) {
+            previewLogger.error('Preview rebuild failed', { err: error });
         }
         finally {
             building = false;

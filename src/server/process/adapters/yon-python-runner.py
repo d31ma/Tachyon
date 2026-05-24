@@ -21,7 +21,8 @@ class YonPythonRunner:
 
     @staticmethod
     def route_class_name(handler_path):
-        return os.path.basename(handler_path).split(".", 1)[0]
+        base = os.path.basename(handler_path).split(".", 1)[0]
+        return base[:1].upper() + base[1:] if base else "Yon"
 
     @staticmethod
     def resolve_handler(module, handler_path):

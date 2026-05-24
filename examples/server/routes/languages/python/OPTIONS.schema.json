@@ -3,7 +3,19 @@
         "200": {
             "language": "^python$",
             "message": "^Hello from Python!$",
-            "requestId": "^.{1,200}$"
+            "requestId": "^.{1,200}$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "id?": "^[0-9A-Z]+$",
+                "document?": {
+                    "language": "^python$",
+                    "source": "^fylo\\.exec$",
+                    "requestId": "^.{1,200}$"
+                },
+                "matched?": "^[0-9]+$",
+                "operations?": ["^[A-Za-z]+$"],
+                "resultCount?": "^[0-9]+$"
+            }
         },
         "300": {
             "location": "^/.+$"
@@ -39,7 +51,7 @@
             "detail": "^[\\s\\S]+$"
         },
         "request": {
-            "query": {
+            "query?": {
                 "code?": "^[0-9]+$"
             }
         }

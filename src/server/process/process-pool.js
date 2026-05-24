@@ -109,7 +109,7 @@ export default class Pool {
                 if (method === 'OPTIONS')
                     continue;
                 const handler = Router.routeHandlers[route]?.[method]
-                    ?? `${Router.routesPath}${route === '/' ? '' : route}/${method}`;
+                    ?? `${Router.routesPath}${route === '/' ? '' : route}/${method}/${Router.routeFileName}`;
                 if (existsSync(handler))
                     Pool.prewarmHandler(handler);
             }

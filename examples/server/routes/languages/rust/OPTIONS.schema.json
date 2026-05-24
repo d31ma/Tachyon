@@ -2,7 +2,12 @@
     "PATCH": {
         "200": {
             "message": "^Hello from Rust!$",
-            "requestId": "^.{1,200}$"
+            "requestId": "^.{1,200}$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "operations": ["^[A-Za-z]+$"],
+                "resultCount": "^[0-9]+$"
+            }
         },
         "500": {
             "detail": "^[\\s\\S]+$"

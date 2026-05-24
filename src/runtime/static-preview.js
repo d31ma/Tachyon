@@ -1,5 +1,5 @@
 // @ts-check
-import { stat } from 'fs/promises';
+import { readdir, stat } from 'fs/promises';
 import path from 'path';
 import Router from '../server/http/route-handler.js';
 /**
@@ -19,14 +19,40 @@ async function pathExists(filePath) {
         return false;
     }
 }
-/** @param {string} distPath */
-async function loadRoutes(distPath) {
+/**
+ * @param {string} distPath
+ * @param {string} currentDir
+ * @param {Record<string, Record<string, number>>} routes
+ */
+async function collectRoutes(distPath, currentDir, routes) {
+    let entries = [];
     try {
-        return /** @type {Record<string, Record<string, number>>} */ (await Bun.file(path.join(distPath, 'routes.json')).json());
+        entries = await readdir(path.join(distPath, currentDir), { withFileTypes: true });
     }
     catch {
-        return {};
+        return routes;
     }
+
+    if (entries.some((entry) => entry.isFile() && entry.name === 'index.html')) {
+        const routePath = currentDir ? `/${currentDir}` : '/';
+        const segments = routePath.split('/').filter(Boolean);
+        /** @type {Record<string, number>} */
+        const slugs = {};
+        segments.forEach((segment, index) => {
+            if (segment.startsWith('_'))
+                slugs[`:${segment.slice(1)}`] = index;
+        });
+        routes[routePath.replace(/(^|\/)_([^/]+)/g, '$1:$2')] = slugs;
+    }
+
+    await Promise.all(entries
+        .filter((entry) => entry.isDirectory() && !['pages', 'components', 'modules', 'shared'].includes(entry.name))
+        .map((entry) => collectRoutes(distPath, path.posix.join(currentDir, entry.name), routes)));
+    return routes;
+}
+/** @param {string} distPath */
+async function loadRoutes(distPath) {
+    return collectRoutes(distPath, '', {});
 }
 /**
  * @param {string} pathname

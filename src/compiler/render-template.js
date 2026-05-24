@@ -646,8 +646,8 @@ const ty_createHelpers = (modulePath) => {
         const resolved = new URL(import.meta.url)
         resolved.pathname = resolved.pathname.replace(/\/(?:pages|components)\/.*$/, modulePath)
 
-        const mod = await import(resolved.href)
-        if (typeof mod.default === 'function') return mod.default
+        const module = await import(resolved.href)
+        if (typeof module.default === 'function') return module.default
 
         throw new Error(`Tac module "${modulePath}" did not export a renderer`)
     }
@@ -667,6 +667,15 @@ const ty_createHelpers = (modulePath) => {
         rerender,
         fylo,
         loadTacModule,
+        /**
+         * @param {unknown} switchValue
+         * @param {unknown} caseValue
+         */
+        matchSwitchCase(switchValue, caseValue) {
+            return Array.isArray(caseValue)
+                ? caseValue.some((value) => Object.is(value, switchValue))
+                : Object.is(caseValue, switchValue)
+        },
         /**
          * @param {{ componentRootId?: string | null, elemId?: string | null, event?: unknown }} context
          */

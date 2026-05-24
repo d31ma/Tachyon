@@ -3,7 +3,19 @@
         "200": {
             "language": "^ruby$",
             "message": "^Hello from Ruby!$",
-            "requestId": "^.{1,200}$"
+            "requestId": "^.{1,200}$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "id?": "^[0-9A-Z]+$",
+                "document?": {
+                    "language": "^ruby$",
+                    "source": "^fylo\\.exec$",
+                    "requestId": "^.{1,200}$"
+                },
+                "matched?": "^[0-9]+$",
+                "operations?": ["^[A-Za-z]+$"],
+                "resultCount?": "^[0-9]+$"
+            }
         },
         "401": {
             "code": "^401$",
@@ -29,7 +41,7 @@
             "detail": "^[\\s\\S]+$"
         },
         "request": {
-            "query": {
+            "query?": {
                 "code?": "^[0-9]+$"
             }
         }

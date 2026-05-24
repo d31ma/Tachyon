@@ -3,7 +3,12 @@
         "200": {
             "language": "^typescript$",
             "message": "^Hello from TypeScript!$",
-            "requestId": "^.{1,200}$"
+            "requestId": "^.{1,200}$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "operations": ["^[A-Za-z]+$"],
+                "resultCount": "^[0-9]+$"
+            }
         },
         "207": {
             "code": "^207$",
@@ -33,7 +38,7 @@
             "detail": "^[\\s\\S]+$"
         },
         "request": {
-            "query": {
+            "query?": {
                 "code?": "^[0-9]+$"
             }
         }

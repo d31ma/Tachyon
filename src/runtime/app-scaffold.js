@@ -26,7 +26,7 @@ YON_OTEL_SERVICE_NAME=@d31ma/tachyon
 YON_OTEL_SERVICE_VERSION=
 YON_OTEL_CAPTURE_IP=false
 FYLO_ROOT=db
-FYLO_SCHEMA_DIR=db/schemas
+FYLO_SCHEMA=db/schemas
 FYLO_INDEX_BACKEND=local-fs
 FYLO_ENCRYPTION_KEY=
 FYLO_CIPHER_SALT=
@@ -101,7 +101,7 @@ document.documentElement.setAttribute('data-theme', 'light')
 `,
     'browser/shared/assets/.gitkeep': ``,
     'browser/shared/data/.gitkeep': ``,
-    'server/routes/GET.js': `export async function handler() {
+    'server/routes/GET/yon.js': `export async function handler() {
   return { ok: true, framework: 'Tachyon' }
 }
 `,
@@ -154,13 +154,13 @@ To use a different FYLO root or schema directory, set:
 
 \`\`\`env
 FYLO_ROOT=/path/to/custom/root
-FYLO_SCHEMA_DIR=/path/to/custom/schemas
+FYLO_SCHEMA=/path/to/custom/schemas
 FYLO_INDEX_BACKEND=local-fs
 \`\`\`
 `,
     'server/data/.gitkeep': ``,
     'server/deps/.gitkeep': ``,
-    'browser/pages/index.html': `<div class="shell">
+    'browser/pages/tac.html': `<div class="shell">
   <div class="brand">
     <strong>Tachyon</strong>
     <nav>
@@ -173,19 +173,19 @@ FYLO_INDEX_BACKEND=local-fs
   <hero />
 </div>
 `,
-    'browser/pages/index.js': `document.title = "Tachyon App"
+    'browser/pages/tac.js': `document.title = "Tachyon App"
 `,
-    'browser/pages/index.css': `body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+    'browser/pages/tac.css': `body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
 .shell { max-width: 72rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
 .brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
 .brand a { color: inherit; text-decoration: none; }
 `,
-    'browser/components/hero/index.html': `<section class="hero">
+    'browser/components/hero/tac.html': `<section class="hero">
   <h1>Build your next Bun app with Tachyon.</h1>
   <p>File-system routes, reactive Tac pages, static export, and preview tooling are already wired in.</p>
 </section>
 `,
-    'browser/components/hero/index.css': `.hero { padding: 2rem; border-radius: 1.5rem; background: linear-gradient(135deg, #1d4ed8, #0f766e); }
+    'browser/components/hero/tac.css': `.hero { padding: 2rem; border-radius: 1.5rem; background: linear-gradient(135deg, #1d4ed8, #0f766e); }
 .hero h1 { margin: 0 0 0.75rem; font-size: clamp(2rem, 6vw, 4rem); }
 .hero p { margin: 0; max-width: 42rem; line-height: 1.6; }
 `

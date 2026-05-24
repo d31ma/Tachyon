@@ -604,20 +604,9 @@ export default class Yon {
         });
         for await (const chunk of proc.stdout) {
             const body = Yon.decoder.decode(chunk);
-            const lines = body.split('\n');
-            const partial = lines.pop() ?? "";
-            for (const line of lines) {
-                if (line.length > 0) {
-                    Yon.handlerLogger.info('Handler stdout output', {
-                        requestId: context.requestId,
-                        pid: proc.pid,
-                        output: line,
-                    });
-                }
-            }
-            responseBytes += Yon.byteLength(partial);
-            if (partial.length > 0)
-                yield { status: 200, body: partial };
+            responseBytes += Yon.byteLength(body);
+            if (body.length > 0)
+                yield { status: 200, body };
         }
         const errRemainder = await stderrDone;
         const errorBytes = Yon.byteLength(errRemainder)
@@ -667,11 +656,11 @@ export default class Yon {
         if (!basicAuth)
             return false;
         // Timing-safe comparison prevents brute-force timing oracle attacks
-        const a = Buffer.from(basicAuth);
-        const b = Buffer.from(provided);
-        if (a.length !== b.length)
+        const expectedCredentials = Buffer.from(basicAuth);
+        const providedCredentials = Buffer.from(provided);
+        if (expectedCredentials.length !== providedCredentials.length)
             return false;
-        return crypto.timingSafeEqual(a, b);
+        return crypto.timingSafeEqual(expectedCredentials, providedCredentials);
     }
     /** @param {FrontendRequestHandler | null} handler */
     static setFrontendRequestHandler(handler) {
@@ -792,8 +781,8 @@ export default class Yon {
             try {
                 await Validate.validateData(handler, "req", stdin);
             }
-            catch (e) {
-                const detail = e instanceof Error ? e.message : String(e);
+            catch (validationError) {
+                const detail = validationError instanceof Error ? validationError.message : String(validationError);
                 return Response.json({ detail }, { status: 400, headers: responseHeaders });
             }
         }
@@ -804,9 +793,10 @@ export default class Yon {
                         if (process.env.YON_VALIDATE !== undefined) {
                             try {
                                 await Validate.validateData(handler, status === 200 ? "res" : "err", body);
+                                controller.enqueue(body);
                             }
-                            catch (e) {
-                                const detail = e instanceof Error ? e.message : String(e);
+                            catch (validationError) {
+                                const detail = validationError instanceof Error ? validationError.message : String(validationError);
                                 controller.enqueue(JSON.stringify({ detail }));
                             }
                         }
@@ -823,12 +813,19 @@ export default class Yon {
         const matchedStatus = body ? await Validate.matchStatusCode(handler, body) : null;
         const finalStatus = matchedStatus ?? status;
         if (process.env.YON_VALIDATE !== undefined) {
+            if (body && matchedStatus === null) {
+                const routePath = Yon.routeRelativeHandler(handler);
+                return Response.json(
+                    { detail: `Response body does not match any declared status code for '${routePath}'` },
+                    { status: 422, headers: responseHeaders }
+                );
+            }
             const ioKey = matchedStatus ? String(matchedStatus) : (status === 200 ? "res" : "err");
             try {
                 await Validate.validateData(handler, ioKey, body);
             }
-            catch (e) {
-                const detail = e instanceof Error ? e.message : String(e);
+            catch (validationError) {
+                const detail = validationError instanceof Error ? validationError.message : String(validationError);
                 return Response.json({ detail }, { status: 422, headers: responseHeaders });
             }
         }
@@ -908,7 +905,7 @@ export default class Yon {
                 context.traceState = requestSpan.traceState;
             }
             /** @type {Response | undefined} */
-            let res;
+            let response;
             let requestKind = 'inline';
             /** @type {Record<string, string> | undefined} */
             let responseHeaders;
@@ -916,64 +913,64 @@ export default class Yon {
                 const originRejection = Yon.rejectDisallowedOrigin(request);
                 if (originRejection) {
                     requestKind = 'cors';
-                    res = originRejection;
+                    response = originRejection;
                 } else {
                     const rateLimit = await Yon.takeRateLimit(request, context, pathname);
                     responseHeaders = rateLimit.headers;
                     if (rateLimit.rejection) {
                         requestKind = 'rate-limit';
-                        res = rateLimit.rejection;
+                        response = rateLimit.rejection;
                     }
                 }
-                if (!res && Router.middleware?.before) {
+                if (!response && Router.middleware?.before) {
                     const earlyResponse = await Router.middleware.before(request, context);
                     if (earlyResponse) {
                         requestKind = 'middleware';
-                        res = earlyResponse;
+                        response = earlyResponse;
                     }
                 }
-                if (!res && (process.env.YON_BASIC_AUTH || process.env.YON_BASIC_AUTH_HASH)) {
+                if (!response && (process.env.YON_BASIC_AUTH || process.env.YON_BASIC_AUTH_HASH)) {
                     const authorization = request.headers.get('authorization');
                     if (!await Yon.isAuthorizedClient(authorization, process.env.YON_BASIC_AUTH, process.env.YON_BASIC_AUTH_HASH)) {
-                        res = Response.json(
+                        response = Response.json(
                             { detail: 'Unauthorized Client' },
                             { status: 401, headers: { ...Router.getHeaders(request), 'WWW-Authenticate': 'Basic realm="Secure Area"' } },
                         );
                     }
                 }
-                if (!res) {
-                    res = await handler(request, server);
+                if (!response) {
+                    response = await handler(request, server);
                     if (Router.middleware?.after) {
-                        res = await Router.middleware.after(request, res, context);
+                        response = await Router.middleware.after(request, response, context);
                     }
                 }
-            } catch (err) {
-                if (err instanceof Response) {
-                    res = err;
+            } catch (error) {
+                if (error instanceof Response) {
+                    response = error;
                 } else {
                     Yon.processLogger.error('Unhandled inline route error', {
-                        err,
+                        err: error,
                         requestId,
                         method,
                         path: pathname,
                         route: routeLabel,
                     });
-                    res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request) });
+                    response = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request) });
                 }
             }
-            if (!res) {
-                res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request) });
+            if (!response) {
+                response = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request) });
             }
-            res = Yon.withAdditionalHeaders(res, responseHeaders);
-            res = Yon.withCacheControl(res, request);
-            res = Yon.withRequestId(res, requestId);
-            res = Telemetry.withTraceHeaders(res, requestSpan);
+            response = Yon.withAdditionalHeaders(response, responseHeaders);
+            response = Yon.withCacheControl(response, request);
+            response = Yon.withRequestId(response, requestId);
+            response = Telemetry.withTraceHeaders(response, requestSpan);
             await Telemetry.endSpan(requestSpan, {
-                statusCode: res.status,
+                statusCode: response.status,
                 attributes: {
                     'tachyon.request.kind': requestKind,
-                    'http.response.status_code': res.status,
-                    'http.response.cache_control': res.headers.get('cache-control') ?? undefined,
+                    'http.response.status_code': response.status,
+                    'http.response.cache_control': response.headers.get('cache-control') ?? undefined,
                 },
             });
             Yon.requestLogger.info('Request completed', {
@@ -983,11 +980,11 @@ export default class Yon {
                 path: pathname,
                 route: routeLabel,
                 kind: requestKind,
-                status: res.status,
+                status: response.status,
                 durationMs: Date.now() - start,
                 ipAddress: clientInfo.ipAddress,
             });
-            return res;
+            return response;
         };
     }
     /**
@@ -1044,7 +1041,7 @@ export default class Yon {
                     context.traceState = requestSpan.traceState;
                 }
                 /** @type {Response | undefined} */
-                let res;
+                let response;
                 let requestKind = 'handler';
                 /** @type {Record<string, string> | undefined} */
                 let responseHeaders;
@@ -1052,17 +1049,17 @@ export default class Yon {
                     const originRejection = Yon.rejectDisallowedOrigin(request);
                     if (originRejection) {
                         requestKind = 'cors';
-                        res = originRejection;
+                        response = originRejection;
                     }
                     else {
                         const rateLimit = await Yon.takeRateLimit(request, context, path);
                         responseHeaders = rateLimit.headers;
                         if (rateLimit.rejection) {
                             requestKind = 'rate-limit';
-                            res = rateLimit.rejection;
+                            response = rateLimit.rejection;
                         }
                     }
-                    if (res) {
+                    if (response) {
                         // no-op, request already handled
                     }
                     else if ((method === 'GET' || method === 'HEAD')
@@ -1071,13 +1068,13 @@ export default class Yon {
                         requestKind = 'frontend';
                         const frontendResponse = await Yon.frontendRequestHandler?.(request);
                         if (frontendResponse) {
-                            res = frontendResponse;
+                            response = frontendResponse;
                         }
                         else {
                             const shellHTML = await Yon.renderShellHTML({
                                 includeHotReloadClient: process.env.NODE_ENV !== 'production'
                             });
-                            res = new Response(shellHTML, { status: 200, headers: { 'Content-Type': 'text/html' } });
+                            response = new Response(shellHTML, { status: 200, headers: { 'Content-Type': 'text/html' } });
                         }
                     }
                     else if (method === "OPTIONS") {
@@ -1086,14 +1083,14 @@ export default class Yon {
                         responseHeaders = Router.getHeaders(request);
                         const isPreflight = request.headers.get('origin') && request.headers.get('Access-Control-Request-Method');
                         if (isPreflight) {
-                            res = new Response(null, { status: 204, headers: responseHeaders });
+                            response = new Response(null, { status: 204, headers: responseHeaders });
                         }
                         else if ((process.env.YON_BASIC_AUTH || process.env.YON_BASIC_AUTH_HASH)
                             && !await Yon.isAuthorizedClient(request.headers.get('authorization'), process.env.YON_BASIC_AUTH, process.env.YON_BASIC_AUTH_HASH)) {
-                            res = Response.json({ detail: "Unauthorized Client" }, { status: 401, headers: { ...responseHeaders, "WWW-Authenticate": 'Basic realm="Secure Area"' } });
+                            response = Response.json({ detail: "Unauthorized Client" }, { status: 401, headers: { ...responseHeaders, "WWW-Authenticate": 'Basic realm="Secure Area"' } });
                         }
                         else {
-                            res = new Response(Bun.file(`${Router.routesPath}${routePath}/${Router.optionsFileName}`), { status: 200, headers: { ...responseHeaders, 'Content-Type': 'application/json' } });
+                            response = new Response(Bun.file(`${Router.routesPath}${routePath}/${Router.optionsFileName}`), { status: 200, headers: { ...responseHeaders, 'Content-Type': 'application/schema+json' } });
                         }
                     }
                     else {
@@ -1101,47 +1098,47 @@ export default class Yon {
                             const earlyResponse = await Router.middleware.before(request, context);
                             if (earlyResponse) {
                                 requestKind = 'middleware';
-                                res = earlyResponse;
+                                response = earlyResponse;
                             }
                         }
-                        if (!res) {
+                        if (!response) {
                             const { handler, stdin, config } = await Router.processRequest(/** @type {BunRequest} */ (request), route);
                             context.bearer = Yon.getBearerContext(stdin.headers?.authorization);
-                            res = await Yon.serveRequest(request, handler, stdin, context, config);
+                            response = await Yon.serveRequest(request, handler, stdin, context, config);
                             if (Router.middleware?.after) {
-                                res = await Router.middleware.after(request, res, context);
+                                response = await Router.middleware.after(request, response, context);
                             }
                         }
                     }
                 }
-                catch (err) {
-                    if (err instanceof Response) {
-                        res = err;
+                catch (error) {
+                    if (error instanceof Response) {
+                        response = error;
                     }
                     else {
                         Yon.processLogger.error('Unhandled request error', {
-                            err,
+                            err: error,
                             requestId,
                             method,
                             path,
                             route,
                         });
-                        res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request) });
+                        response = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request) });
                     }
                 }
-                if (!res) {
-                    res = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request) });
+                if (!response) {
+                    response = Response.json({ error: 'Internal server error' }, { status: 500, headers: Router.getHeaders(request) });
                 }
-                res = Yon.withAdditionalHeaders(res, responseHeaders);
-                res = Yon.withCacheControl(res, request);
-                res = Yon.withRequestId(res, requestId);
-                res = Telemetry.withTraceHeaders(res, requestSpan);
+                response = Yon.withAdditionalHeaders(response, responseHeaders);
+                response = Yon.withCacheControl(response, request);
+                response = Yon.withRequestId(response, requestId);
+                response = Telemetry.withTraceHeaders(response, requestSpan);
                 await Telemetry.endSpan(requestSpan, {
-                    statusCode: res.status,
+                    statusCode: response.status,
                     attributes: {
                         'tachyon.request.kind': requestKind,
-                        'http.response.status_code': res.status,
-                        'http.response.cache_control': res.headers.get('cache-control') ?? undefined,
+                        'http.response.status_code': response.status,
+                        'http.response.cache_control': response.headers.get('cache-control') ?? undefined,
                     },
                 });
                 Yon.requestLogger.info('Request completed', {
@@ -1151,11 +1148,11 @@ export default class Yon {
                     path,
                     route,
                     kind: requestKind,
-                    status: res.status,
+                    status: response.status,
                     durationMs: Date.now() - start,
                     ipAddress: clientInfo.ipAddress,
                 });
-                return res;
+                return response;
             };
             for (const method of methods) {
                 if (!Router.reqRoutes[route] || !Router.reqRoutes[`${route}/*`]) {

@@ -44,7 +44,8 @@ export { default as Tac } from "../../runtime/tac.js";
  * @property {(request: Request, context: RequestContext) => Promise<RateLimitDecision | null | void> | RateLimitDecision | null | void} take
  */
 export default class Router {
-    static pageFileName = 'index.html';
+    static pageFileName = 'tac.html';
+    static routeFileName = 'yon';
     /**
      * @param {string} envName
      * @param {string[]} candidates
@@ -99,7 +100,7 @@ export default class Router {
     }
     static allMethods = process.env.YON_ALLOW_METHODS
         ? process.env.YON_ALLOW_METHODS.split(',')
-        : ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'];
+        : ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
 
     /**
      * @param {string | undefined} value
@@ -288,8 +289,6 @@ export default class Router {
         const type = (contentType || '').toLowerCase();
         if (type.includes('text/html'))
             return 'no-cache, must-revalidate';
-        if (normalizedPath === '/routes.json' || normalizedPath === '/shells.json')
-            return 'no-cache, must-revalidate';
         if (['browser-env.js', 'imports.js', 'imports.css', 'spa-renderer.js', 'hot-reload-client.js'].includes(base)) {
             return 'no-cache, must-revalidate';
         }
@@ -311,15 +310,29 @@ export default class Router {
     /**
      * Validates a route file path, registers slugs, and records allowed methods.
      * Throws if the route is malformed or a duplicate.
-     * @param {string} route - Relative path from the routes directory (e.g. `api/:id/GET`)
+     * @param {string} route - Relative path from the routes directory (e.g. `api/:id/GET/yon.js`)
      * @param {string[]} staticPaths - Accumulator used to detect duplicate static segments
      */
     static async validateRoute(route, staticPaths = []) {
         route = route.replaceAll('\\', '/');
         const routeFilePath = route;
         const routeFile = path.posix.basename(route);
-        const routeMethod = routeFile.split('.', 1)[0]?.toUpperCase();
-        const routeDirectory = path.posix.dirname(route);
+        const routeFileBase = routeFile.split('.', 1)[0];
+        if (routeFileBase !== Router.routeFileName) {
+            throw new Error(
+                `Invalid route handler '${route}' — expected file named '${Router.routeFileName}.<ext>'. ` +
+                `Route handlers live at <method>/${Router.routeFileName}.<ext>.`
+            );
+        }
+        const methodDirectory = path.posix.dirname(route);
+        if (methodDirectory === '.') {
+            throw new Error(
+                `Invalid route handler '${route}' — handler files must live inside an HTTP method directory ` +
+                `(e.g. GET/${Router.routeFileName}.<ext>).`
+            );
+        }
+        const routeMethod = path.posix.basename(methodDirectory).toUpperCase();
+        const routeDirectory = path.posix.dirname(methodDirectory);
         const routeForValidation = routeDirectory === '.'
             ? routeMethod
             : `${routeDirectory}/${routeMethod}`;
@@ -392,7 +405,7 @@ export default class Router {
         }
         return {
             handler: Router.routeHandlers[route]?.[request.method]
-                ?? `${Router.routesPath}${Router.routeToFilesystemPath(route)}/${request.method}`,
+                ?? `${Router.routesPath}${Router.routeToFilesystemPath(route)}/${request.method}/${Router.routeFileName}`,
             stdin,
             config: requestConfig
         };
@@ -517,11 +530,16 @@ export default class Router {
     static async validateRoutes() {
         if (!existsSync(Router.routesPath))
             return;
-        const routeFileNames = Router.allMethods
-            .filter((method) => method !== 'OPTIONS')
-            .flatMap((method) => [method, `${method}.*`]);
-        const routes = Array.from(new Bun.Glob(`**/{${routeFileNames.join(',')}}`).scanSync({ cwd: Router.routesPath }))
-            .filter((route) => !route.replaceAll('\\', '/').split('/').includes('__pycache__'));
+        const allowedMethods = new Set(Router.allMethods.filter((method) => method !== 'OPTIONS'));
+        const routes = Array.from(new Bun.Glob(`**/${Router.routeFileName}.*`).scanSync({ cwd: Router.routesPath }))
+            .filter((route) => {
+                const segments = route.replaceAll('\\', '/').split('/');
+                if (segments.includes('__pycache__'))
+                    return false;
+                if (segments.length < 2)
+                    return false;
+                return allowedMethods.has(segments[segments.length - 2].toUpperCase());
+            });
         for (const route of routes)
             await Router.validateRoute(route);
     }

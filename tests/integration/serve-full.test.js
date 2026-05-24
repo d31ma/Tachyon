@@ -38,11 +38,11 @@ document.documentElement.dataset.boot = bootMessage;
 `);
         await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'import-support.js'), `export const bootMessage = "fixture-boot";\n`);
         await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'imports.css'), `body { background: rgb(12, 34, 56); }\n`);
-        await writeFile(path.join(root, 'browser', 'pages', 'index.html'), `<main><h1>Fixture Home</h1></main>`);
+        await writeFile(path.join(root, 'browser', 'pages', 'tac.html'), `<main><h1>Fixture Home</h1></main>`);
     }
     if (backend) {
-        await mkdir(path.join(root, 'server', 'routes', 'api'), { recursive: true });
-        const getRoutePath = path.join(root, 'server', 'routes', 'api', 'GET.js');
+        await mkdir(path.join(root, 'server', 'routes', 'api', 'GET'), { recursive: true });
+        const getRoutePath = path.join(root, 'server', 'routes', 'api', 'GET', 'yon.js');
         await writeFile(getRoutePath, `export async function handler(request) {
   return { ok: true, fixture: 'api', requestId: request.context.requestId }
 }

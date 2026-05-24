@@ -33,9 +33,9 @@ function getTacGlobal() {
             const registered = modules.get(modulePath);
             if (registered)
                 return registered;
-            const mod = await import(modulePath);
-            if (typeof mod.default === 'function')
-                return /** @type {TacFactory} */ (mod.default);
+            const module = await import(modulePath);
+            if (typeof module.default === 'function')
+                return /** @type {TacFactory} */ (module.default);
             const loaded = modules.get(modulePath);
             if (loaded)
                 return loaded;
@@ -67,6 +67,8 @@ let freshNavigation = false;
 const routes = new Map();
 /** @type {LayoutManifest} */
 const layouts = {};
+const routeManifestJSON = '{"__tachyonPlaceholder":true}';
+const layoutManifestJSON = '{"__tachyonShellPlaceholder":true}';
 /** @type {Record<string, string>} */
 const slugs = {};
 /** @type {unknown[]} */
@@ -102,19 +104,21 @@ function prehydratePersistentText() {
                 const value = JSON.parse(stored);
                 node.textContent = value === null || value === undefined ? '' : String(value);
             }
-            catch { }
+            catch {
+                continue;
+            }
         }
     }
-    catch { }
+    catch {
+        return;
+    }
 }
 
 prehydratePersistentText();
 
 async function loadManifests() {
-    const [routeData, layoutData] = await Promise.all([
-        fetch('/routes.json').then((response) => /** @type {Promise<RouteManifest>} */ (response.json())),
-        fetch('/shells.json').then((response) => /** @type {Promise<LayoutManifest>} */ (response.json())),
-    ]);
+    const routeData = /** @type {RouteManifest} */ (JSON.parse(routeManifestJSON));
+    const layoutData = /** @type {LayoutManifest} */ (JSON.parse(layoutManifestJSON));
 
     routes.clear();
     for (const [routePath, routeConfig] of Object.entries(routeData)) {
@@ -182,6 +186,17 @@ function registerDeclarativeEvents(root = document.body) {
         : Array.from(root.querySelectorAll('*'));
 
     for (const element of elements) {
+        if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
+            const chex = element.getAttribute('@chex');
+            if (chex) {
+                const regex = new RegExp(chex);
+                element.addEventListener('blur', () => {
+                    const valid = regex.test(element.value);
+                    element.classList.toggle('chex-valid', valid);
+                    element.classList.toggle('chex-invalid', !valid);
+                });
+            }
+        }
         for (const attr of Array.from(element.attributes)) {
             if (attr.name.startsWith('@'))
                 ensureDelegatedEvent(attr.name.slice(1));
@@ -322,8 +337,8 @@ async function rerenderLayout(triggerId, eventDetail) {
 function resolveLayout(pathname) {
     if (pathname !== '/') {
         const segments = pathname.split('/');
-        for (let i = segments.length; i >= 1; i -= 1) {
-            const prefix = segments.slice(0, i).join('/') || '/';
+        for (let segmentCount = segments.length; segmentCount >= 1; segmentCount -= 1) {
+            const prefix = segments.slice(0, segmentCount).join('/') || '/';
             const entry = layouts[prefix];
             if (entry && (entry.allowSelf || prefix !== pathname))
                 return entry.path;
@@ -431,7 +446,9 @@ function postPatch() {
             try {
                 element.focus();
             }
-            catch { }
+            catch {
+                // Some elements cannot be focused after a rerender; preserving the patch is enough.
+            }
         }
         focusTarget = null;
     }
@@ -468,7 +485,7 @@ function navigate(pathname) {
     let pageURL = '/pages/404.js';
     try {
         handler = resolvePageHandler(pathname);
-        pageURL = handler === '/' ? '/pages/index.js' : `/pages${handler}/index.js`;
+        pageURL = handler === '/' ? '/pages/tac.js' : `/pages${handler}/tac.js`;
     }
     catch {
         handler = '';

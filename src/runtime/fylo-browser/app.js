@@ -8,136 +8,211 @@ const BROWSER_PATH = "__FYLO_BROWSER_PATH__";
 // framework runtime (fylo-global.js) provides the same client for companion
 // scripts; this inline copy is only used by the standalone /_fylo shell.
 if (!/** @type {any} */ (window).fylo) {
-    /** @type {string | null} */
-    let __fyloAuthHeader = null;
+    class InlineFyloCollectionClient {
+        /**
+         * @param {InlineFyloBrowserClient} browserClient
+         * @param {string} collection
+         */
+        constructor(browserClient, collection) {
+            this.browserClient = browserClient;
+            this.collection = collection;
+        }
 
-    /**
-     * @param {string} user
-     * @param {string} pass
-     */
-    function __fyloBasicAuth(user, pass) {
-        const bytes = new TextEncoder().encode(`${user}:${pass}`);
-        let binary = "";
-        for (const byte of bytes) binary += String.fromCharCode(byte);
-        return `Basic ${btoa(binary)}`;
+        /** @param {Record<string, unknown>} [query] */
+        async find(query = {}) {
+            return this.browserClient.postJson("/api/query", { kind: "find", collection: this.collection, query });
+        }
+
+        /** @param {number} [limit] */
+        async list(limit = 25) {
+            const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/?limit=${limit}`);
+            return response.json();
+        }
+
+        /** @param {string} id */
+        async get(id) {
+            const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`);
+            return response.json();
+        }
+
+        /** @param {number} [since] */
+        async events(since = 0) {
+            const response = await this.browserClient.fetch(`/api/events?collection=${encodeURIComponent(this.collection)}&since=${since}`);
+            return response.json();
+        }
+
+        /** @param {Record<string, unknown>} doc */
+        async create(doc) {
+            return this.browserClient.postJson(`/${encodeURIComponent(this.collection)}/`, doc);
+        }
+
+        /** @param {string} id @param {Record<string, unknown>} doc */
+        async put(id, doc) {
+            const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(doc),
+            });
+            return response.json();
+        }
+
+        /** @param {string} id @param {Record<string, unknown>} doc */
+        async patch(id, doc) {
+            const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(doc),
+            });
+            return response.json();
+        }
+
+        /** @param {string} id */
+        async del(id) {
+            const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`, { method: "DELETE" });
+            if (response.status === 204) return { ok: true };
+            return response.json();
+        }
+
+        async rebuild() {
+            return this.browserClient.postJson("/api/rebuild", { collection: this.collection });
+        }
     }
 
-    /**
-     * @param {string} url
-     * @param {RequestInit} [init]
-     */
-    async function __fyloFetch(url, init = {}) {
-        const headers = new Headers(init.headers || {});
-        if (__fyloAuthHeader) headers.set("Authorization", __fyloAuthHeader);
-        return fetch(url, { ...init, headers });
-    }
+    class InlineFyloBrowserClient {
+        constructor() {
+            /** @type {string | null} */
+            this.authHeader = null;
+            this.state = this.createState();
+            this.proxy = this.createProxy();
+        }
 
-    /**
-     * @param {string} path
-     * @param {Record<string, unknown>} body
-     */
-    async function __fyloPostJson(path, body) {
-        const r = await __fyloFetch(`${BROWSER_PATH}${path}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-        });
-        return r.json();
-    }
+        /**
+         * @param {string} user
+         * @param {string} pass
+         */
+        basicAuth(user, pass) {
+            const bytes = new TextEncoder().encode(`${user}:${pass}`);
+            let binary = "";
+            for (const byte of bytes) binary += String.fromCharCode(byte);
+            return `Basic ${btoa(binary)}`;
+        }
 
-    /** @param {string} collection */
-    function __fyloCollection(collection) {
-        return {
-            /** @param {Record<string, unknown>} [query] */
-            async find(query = {}) {
-                return __fyloPostJson("/api/query", { kind: "find", collection, query });
-            },
-            /** @param {number} [limit] */
-            async list(limit = 25) {
-                const r = await __fyloFetch(`${BROWSER_PATH}/api/docs?collection=${encodeURIComponent(collection)}&limit=${limit}`);
-                return r.json();
-            },
-            /** @param {string} id */
-            async get(id) {
-                const r = await __fyloFetch(`${BROWSER_PATH}/api/doc?collection=${encodeURIComponent(collection)}&id=${encodeURIComponent(id)}`);
-                return r.json();
-            },
-            /** @param {number} [since] */
-            async events(since = 0) {
-                const r = await __fyloFetch(`${BROWSER_PATH}/api/events?collection=${encodeURIComponent(collection)}&since=${since}`);
-                return r.json();
-            },
-            /** @param {string} id @param {Record<string, unknown>} doc */
-            async patch(id, doc) {
-                return __fyloPostJson("/api/patch", { collection, id, doc });
-            },
-            /** @param {string} id */
-            async del(id) {
-                const r = await __fyloFetch(`${BROWSER_PATH}/api/delete?collection=${encodeURIComponent(collection)}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
-                return r.json();
-            },
-            async rebuild() {
-                return __fyloPostJson("/api/rebuild", { collection });
-            },
-        };
-    }
+        /** @returns {Record<string, unknown>} */
+        createState() {
+            return {
+                enabled: false,
+                /** @type {string | undefined} */
+                root: undefined,
+                setCredentials: this.setCredentials.bind(this),
+                clearCredentials: this.clearCredentials.bind(this),
+                sql: this.sql.bind(this),
+                collections: this.collections.bind(this),
+                meta: this.meta.bind(this),
+                request: this.request.bind(this),
+            };
+        }
 
-    const __fyloState = {
-        enabled: false,
-        /** @type {string | undefined} */
-        root: undefined,
+        createProxy() {
+            return /** @type {any} */ (new Proxy(this.state, {
+                get: (target, prop) => {
+                    if (typeof prop !== "string") return Reflect.get(target, prop);
+                    if (prop in target) return Reflect.get(target, prop);
+                    return new InlineFyloCollectionClient(this, prop);
+                },
+                set(target, prop, value) {
+                    return Reflect.set(target, prop, value);
+                },
+                has(target, prop) {
+                    return typeof prop === "string" || prop in target;
+                },
+            }));
+        }
+
+    // Probe meta once — if the browser route is mounted, flip enabled and cache the root.
         /**
          * @param {string} user
          * @param {string} pass
          */
         setCredentials(user, pass) {
-            __fyloAuthHeader = __fyloBasicAuth(user, pass);
-        },
+            this.authHeader = this.basicAuth(user, pass);
+        }
+
         clearCredentials() {
-            __fyloAuthHeader = null;
-        },
+            this.authHeader = null;
+        }
+
+        /**
+         * @param {string} path
+         * @param {RequestInit} [init]
+         */
+        fetch(path, init = {}) {
+            const headers = new Headers(init.headers || {});
+            if (this.authHeader) headers.set("Authorization", this.authHeader);
+            return fetch(`${BROWSER_PATH}${path}`, { ...init, headers });
+        }
+
+        /**
+         * @param {string} path
+         * @param {RequestInit} [init]
+         */
+        request(path, init = {}) {
+            if (/^https?:\/\//i.test(path)) {
+                const headers = new Headers(init.headers || {});
+                if (this.authHeader) headers.set("Authorization", this.authHeader);
+                return fetch(path, { ...init, headers });
+            }
+            const relativePath = path.startsWith(BROWSER_PATH) ? path.slice(BROWSER_PATH.length) || "/" : path;
+            return this.fetch(relativePath, init);
+        }
+
+        /**
+         * @param {string} path
+         * @param {Record<string, unknown>} body
+         */
+        async postJson(path, body) {
+            const response = await this.fetch(path, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+            return response.json();
+        }
+
         /** @param {string} source */
         sql(source) {
-            return __fyloPostJson("/api/query", { kind: "sql", source });
-        },
+            return this.postJson("/api/query", { kind: "sql", source });
+        }
+
         async collections() {
-            const r = await __fyloFetch(`${BROWSER_PATH}/api/collections`, { cache: "reload" });
-            if (!r.ok) return { root: "", collections: [] };
-            const d = await r.json();
-            __fyloState.root = d.root;
-            return d;
-        },
+            const response = await this.fetch("/api/collections", { cache: "reload" });
+            if (!response.ok) return { root: "", collections: [] };
+            const collectionsPayload = await response.json();
+            this.state.root = collectionsPayload.root;
+            return collectionsPayload;
+        }
+
         async meta() {
-            const r = await __fyloFetch(`${BROWSER_PATH}/api/meta`, { cache: "reload" });
-            if (!r.ok) return null;
-            return r.json();
-        },
-    };
+            const response = await this.fetch("/api/meta", { cache: "reload" });
+            if (!response.ok) return null;
+            return response.json();
+        }
 
-    /** @type {any} */ (window).fylo = new Proxy(__fyloState, {
-        get(target, prop) {
-            if (typeof prop !== "string") return Reflect.get(target, prop);
-            if (prop in target) return Reflect.get(target, prop);
-            return __fyloCollection(prop);
-        },
-        set(target, prop, value) {
-            return Reflect.set(target, prop, value);
-        },
-        has(target, prop) {
-            return typeof prop === "string" || prop in target;
-        },
-    });
-
-    // Probe meta once — if the browser route is mounted, flip enabled and cache the root.
-    __fyloFetch(`${BROWSER_PATH}/api/meta`, { cache: "reload" })
-        .then(r => r.ok ? r.json() : null)
-        .then((/** @type {any} */ meta) => {
-            if (meta) {
-                __fyloState.enabled = true;
-                __fyloState.root = meta.root;
+        async probe() {
+            try {
+                const meta = await this.meta();
+                if (meta) {
+                    this.state.enabled = true;
+                    this.state.root = meta.root;
+                }
+            } catch {
+                /* fylo browser not mounted; leave disabled */
             }
-        })
-        .catch(() => { /* fylo browser not mounted — leave disabled */ });
+        }
+    }
+
+    const inlineFyloClient = new InlineFyloBrowserClient();
+    /** @type {any} */ (window).fylo = inlineFyloClient.proxy;
+    void inlineFyloClient.probe();
 }
 
 /** @type {any} */
@@ -163,6 +238,10 @@ const queryModeChip = document.querySelector("#fylo-query-mode");
 const queryToggleBtn = document.querySelector("#fylo-query-toggle");
 /** @type {HTMLElement | null} */
 const queryRunBtn = document.querySelector("#fylo-query-run");
+/** @type {HTMLSelectElement | null} */
+const requestMethodField = document.querySelector("#fylo-request-method");
+/** @type {HTMLInputElement | null} */
+const requestPathField = document.querySelector("#fylo-request-path");
 /** @type {HTMLTextAreaElement | null} */
 const queryField = document.querySelector("#fylo-query-source");
 /** @type {HTMLElement | null} */
@@ -182,8 +261,6 @@ const EVENTS_MAX_ROWS = 200;
 const state = {
     selected: /** @type {string | null} */ (null),
     selectedDocId: /** @type {string | null} */ (null),
-    /** @type {"sql" | "find"} */
-    queryMode: "sql",
     /** @type {ReturnType<typeof setInterval> | null} */
     eventsTimer: null,
     /** @type {string | null} */
@@ -237,8 +314,8 @@ async function loadMeta() {
 async function loadCollections() {
     if (!collectionsRoot) return;
     try {
-        const data = await fylo.collections();
-        if (!data.collections.length) {
+        const collectionsResponse = await fylo.collections();
+        if (!collectionsResponse.collections.length) {
             collectionsRoot.replaceChildren(
                 Object.assign(document.createElement("p"), {
                     className: "muted md-typescale-body-medium",
@@ -248,7 +325,7 @@ async function loadCollections() {
             return;
         }
         collectionsRoot.replaceChildren();
-        for (const collection of data.collections) {
+        for (const collection of collectionsResponse.collections) {
             const item = document.createElement("div");
             item.className = "fylo-collection";
             item.setAttribute("role", "button");
@@ -289,6 +366,7 @@ async function loadCollections() {
 async function selectCollection(name) {
     state.selected = name;
     setChipLabel(collectionLabel, name);
+    setRestRequest("GET", `${BROWSER_PATH}/${encodeURIComponent(name)}/`, "");
     document.querySelectorAll(".fylo-collection").forEach((node) => {
         const element = /** @type {HTMLElement} */ (node);
         element.setAttribute("aria-selected", element.dataset.collection === name ? "true" : "false");
@@ -298,46 +376,46 @@ async function selectCollection(name) {
         Object.assign(document.createElement("p"), { className: "muted md-typescale-body-medium", textContent: "Loading documents…" }),
     );
     try {
-        const data = await fylo[name].list(25);
-        if (data.error) {
-            renderError(documentsRoot, data.error);
+        const documentsResponse = await fylo[name].list(25);
+        if (documentsResponse.error) {
+            renderError(documentsRoot, documentsResponse.error);
             return;
         }
-        if (!data.docs?.length) {
+        if (!documentsResponse.docs?.length) {
             documentsRoot.replaceChildren(
                 Object.assign(document.createElement("p"), { className: "muted md-typescale-body-medium", textContent: "No documents in this collection." }),
             );
             return;
         }
         const fragments = [];
-        const banner = encryptionBanner(data.encryptedFields, data.revealed);
+        const banner = encryptionBanner(documentsResponse.encryptedFields, documentsResponse.revealed);
         if (banner) fragments.push(banner);
         const table = document.createElement("table");
         const thead = document.createElement("thead");
         thead.innerHTML = "<tr><th>id</th><th>preview</th></tr>";
         table.append(thead);
         const tbody = document.createElement("tbody");
-        for (const entry of data.docs) {
-            const tr = document.createElement("tr");
-            tr.className = "fylo-doc-row";
-            tr.setAttribute("role", "button");
-            tr.setAttribute("tabindex", "0");
-            tr.dataset.docId = entry.id;
+        for (const entry of documentsResponse.docs) {
+            const row = document.createElement("tr");
+            row.className = "fylo-doc-row";
+            row.setAttribute("role", "button");
+            row.setAttribute("tabindex", "0");
+            row.dataset.docId = entry.id;
             const idCell = document.createElement("td");
             idCell.className = "id";
             idCell.textContent = entry.id;
             const previewCell = document.createElement("td");
             previewCell.className = "preview";
             previewCell.textContent = previewOf(entry.doc);
-            tr.append(idCell, previewCell);
-            tr.addEventListener("click", () => selectDocument(name, entry.id));
-            tr.addEventListener("keydown", (event) => {
+            row.append(idCell, previewCell);
+            row.addEventListener("click", () => selectDocument(name, entry.id));
+            row.addEventListener("keydown", (event) => {
                 if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     selectDocument(name, entry.id);
                 }
             });
-            tbody.append(tr);
+            tbody.append(row);
         }
         table.append(tbody);
         fragments.push(table);
@@ -391,6 +469,7 @@ function previewOf(doc) {
 async function selectDocument(collection, id) {
     state.selectedDocId = id;
     setChipLabel(detailIdLabel, id);
+    setRestRequest("GET", `${BROWSER_PATH}/${encodeURIComponent(collection)}/${encodeURIComponent(id)}/`, "");
     document.querySelectorAll(".fylo-doc-row").forEach((node) => {
         const element = /** @type {HTMLElement} */ (node);
         element.setAttribute("aria-selected", element.dataset.docId === id ? "true" : "false");
@@ -400,25 +479,25 @@ async function selectDocument(collection, id) {
         Object.assign(document.createElement("p"), { className: "muted md-typescale-body-medium", textContent: "Loading document…" }),
     );
     try {
-        const data = await fylo[collection].get(id);
-        if (data.error) {
-            renderError(detailRoot, data.error);
+        const documentResponse = await fylo[collection].get(id);
+        if (documentResponse.error) {
+            renderError(detailRoot, documentResponse.error);
             return;
         }
-        renderDetail(data);
+        renderDetail(documentResponse);
     } catch (error) {
         renderError(detailRoot, `Failed to load document: ${errorMessage(error)}`);
     }
 }
 
 /**
- * @param {{ doc: Record<string, unknown> | null, history: Array<Record<string, unknown>> | null, docError?: string, historyError?: string, encryptedFields?: string[], revealed?: boolean }} data
+ * @param {{ doc: Record<string, unknown> | null, history: Array<Record<string, unknown>> | null, docError?: string, historyError?: string, encryptedFields?: string[], revealed?: boolean }} documentResponse
  */
-function renderDetail(data) {
+function renderDetail(documentResponse) {
     if (!detailRoot) return;
     const fragments = [];
 
-    const banner = encryptionBanner(data.encryptedFields, data.revealed);
+    const banner = encryptionBanner(documentResponse.encryptedFields, documentResponse.revealed);
     if (banner) fragments.push(banner);
 
     const docHeading = document.createElement("h3");
@@ -426,20 +505,20 @@ function renderDetail(data) {
     docHeading.textContent = "Document";
     fragments.push(docHeading);
 
-    if (data.docError) {
-        const err = document.createElement("div");
-        err.className = "fylo-error";
-        err.textContent = data.docError;
-        fragments.push(err);
-    } else if (!data.doc || Object.keys(data.doc).length === 0) {
+    if (documentResponse.docError) {
+        const errorNode = document.createElement("div");
+        errorNode.className = "fylo-error";
+        errorNode.textContent = documentResponse.docError;
+        fragments.push(errorNode);
+    } else if (!documentResponse.doc || Object.keys(documentResponse.doc).length === 0) {
         const note = document.createElement("p");
         note.className = "muted md-typescale-body-medium";
         note.textContent = "No document body returned (may be tombstoned in WORM mode).";
         fragments.push(note);
     } else {
-        const pre = document.createElement("pre");
-        pre.textContent = JSON.stringify(data.doc, null, 2);
-        fragments.push(pre);
+        const bodyPreview = document.createElement("pre");
+        bodyPreview.textContent = JSON.stringify(documentResponse.doc, null, 2);
+        fragments.push(bodyPreview);
     }
 
     const historyHeading = document.createElement("h3");
@@ -447,12 +526,12 @@ function renderDetail(data) {
     historyHeading.textContent = "Version history";
     fragments.push(historyHeading);
 
-    if (data.historyError) {
+    if (documentResponse.historyError) {
         const note = document.createElement("p");
         note.className = "muted md-typescale-body-medium";
-        note.textContent = `History unavailable: ${data.historyError}`;
+        note.textContent = `History unavailable: ${documentResponse.historyError}`;
         fragments.push(note);
-    } else if (!data.history?.length) {
+    } else if (!documentResponse.history?.length) {
         const note = document.createElement("p");
         note.className = "muted md-typescale-body-medium";
         note.textContent = "No version history (collection is not WORM, or single retained version).";
@@ -460,7 +539,7 @@ function renderDetail(data) {
     } else {
         const list = document.createElement("ol");
         list.className = "fylo-history";
-        for (const entry of data.history) {
+        for (const entry of documentResponse.history) {
             const item = document.createElement("li");
             item.className = "fylo-history-entry";
             const head = document.createElement("div");
@@ -485,103 +564,103 @@ function renderDetail(data) {
     detailRoot.replaceChildren(...fragments);
 }
 
-/** @param {"sql" | "find"} mode */
-function setQueryMode(mode) {
-    state.queryMode = mode;
-    if (queryModeChip) queryModeChip.textContent = mode === "sql" ? "SQL" : "findDocs";
-    if (queryToggleBtn) queryToggleBtn.textContent = mode === "sql" ? "Switch to findDocs" : "Switch to SQL";
-    if (queryField) {
-        const labelAttr = mode === "sql" ? "SQL statement" : "JSON request — { collection, query }";
-        queryField.setAttribute("aria-label", labelAttr);
-        queryField.setAttribute("placeholder", labelAttr);
-        const sample = mode === "sql"
-            ? "SELECT * FROM otel-spans"
-            : JSON.stringify({ collection: "otel-spans", query: { $ops: [] } }, null, 2);
-        queryField.value = sample;
+/**
+ * @param {string} method
+ * @param {string} path
+ * @param {string} body
+ */
+function setRestRequest(method, path, body) {
+    if (requestMethodField) requestMethodField.value = method;
+    if (requestPathField) requestPathField.value = path;
+    if (queryField) queryField.value = body;
+    if (queryModeChip) queryModeChip.textContent = method;
+}
+
+function useSelectedRoute() {
+    if (state.selected && state.selectedDocId) {
+        setRestRequest("GET", `${BROWSER_PATH}/${encodeURIComponent(state.selected)}/${encodeURIComponent(state.selectedDocId)}/`, "");
+        return;
     }
+    if (state.selected) {
+        setRestRequest("GET", `${BROWSER_PATH}/${encodeURIComponent(state.selected)}/`, "");
+        return;
+    }
+    setRestRequest("GET", `${BROWSER_PATH}/`, "");
 }
 
 async function runQuery() {
-    if (!queryField || !queryResultsRoot) return;
-    const source = queryField.value ?? "";
+    if (!requestMethodField || !requestPathField || !queryField || !queryResultsRoot) return;
+    const method = requestMethodField.value || "GET";
+    const requestPath = requestPathField.value || `${BROWSER_PATH}/`;
+    const bodySource = queryField.value.trim();
     queryResultsRoot.replaceChildren(
-        Object.assign(document.createElement("p"), { className: "muted md-typescale-body-medium", textContent: "Running query…" }),
+        Object.assign(document.createElement("p"), { className: "muted md-typescale-body-medium", textContent: "Sending request…" }),
     );
     try {
-        /** @type {Record<string, unknown>} */
-        let data;
-        if (state.queryMode === "sql") {
-            data = await fylo.sql(source);
-        } else {
-            /** @type {{ collection?: string, query?: Record<string, unknown> }} */
-            let parsed;
+        const headers = new Headers();
+        /** @type {BodyInit | undefined} */
+        let body;
+        if (!["GET", "HEAD", "DELETE"].includes(method) && bodySource) {
             try {
-                parsed = JSON.parse(source);
+                JSON.parse(bodySource);
             } catch (error) {
                 renderError(queryResultsRoot, `Invalid JSON: ${errorMessage(error)}`);
                 return;
             }
-            const collection = (parsed.collection ?? "").toString();
-            if (!collection) {
-                renderError(queryResultsRoot, "collection is required for find queries");
-                return;
+            headers.set("Content-Type", "application/json");
+            body = bodySource;
+        }
+        const url = requestPath.startsWith("http")
+            ? requestPath
+            : requestPath.startsWith(BROWSER_PATH)
+                ? requestPath
+                : `${BROWSER_PATH}${requestPath.startsWith("/") ? "" : "/"}${requestPath}`;
+        const response = typeof fylo.request === "function"
+            ? await fylo.request(url, { method, headers, body })
+            : await fetch(url, { method, headers, body });
+        const text = await response.text();
+        /** @type {unknown} */
+        let payload = text;
+        if (text) {
+            try {
+                payload = JSON.parse(text);
+            } catch {
+                payload = text;
             }
-            data = await fylo[collection].find(parsed.query ?? {});
         }
-        if (data.error) {
-            renderError(queryResultsRoot, /** @type {string} */ (data.error));
-            return;
-        }
-        renderQueryResult(data);
+        renderRestResult({ method, url, status: response.status, statusText: response.statusText, body: payload });
     } catch (error) {
         renderError(queryResultsRoot, `Request failed: ${errorMessage(error)}`);
     }
 }
 
-/** @param {Record<string, unknown> & { kind?: string, docs?: Array<{ id: string, doc: unknown }>, result?: unknown }} data */
-function renderQueryResult(data) {
+/**
+ * @param {{ method: string, url: string, status: number, statusText: string, body: unknown }} result
+ */
+function renderRestResult(result) {
     if (!queryResultsRoot) return;
-    if (data.kind === "find" && Array.isArray(data.docs)) {
-        if (!data.docs.length) {
-            queryResultsRoot.replaceChildren(
-                Object.assign(document.createElement("p"), { className: "muted md-typescale-body-medium", textContent: "Query returned no documents." }),
-            );
-            return;
-        }
-        const table = document.createElement("table");
-        const thead = document.createElement("thead");
-        thead.innerHTML = "<tr><th>id</th><th>preview</th></tr>";
-        table.append(thead);
-        const tbody = document.createElement("tbody");
-        for (const entry of data.docs) {
-            const tr = document.createElement("tr");
-            const idCell = document.createElement("td");
-            idCell.className = "id";
-            idCell.textContent = entry.id;
-            const previewCell = document.createElement("td");
-            previewCell.className = "preview";
-            previewCell.textContent = previewOf(entry.doc);
-            tr.append(idCell, previewCell);
-            tbody.append(tr);
-        }
-        table.append(tbody);
-        queryResultsRoot.replaceChildren(table);
-        return;
-    }
-    if (data.kind === "sql") {
-        const pre = document.createElement("pre");
-        pre.textContent = JSON.stringify(data.result, null, 2);
-        queryResultsRoot.replaceChildren(pre);
-        return;
-    }
-    const pre = document.createElement("pre");
-    pre.textContent = JSON.stringify(data, null, 2);
-    queryResultsRoot.replaceChildren(pre);
+    const summary = document.createElement("div");
+    summary.className = "fylo-response-summary";
+    summary.innerHTML = `<span class="pill pill-accent">${result.method}</span><code>${result.url}</code><span class="pill">${result.status} ${result.statusText}</span>`;
+    const resultPreview = document.createElement("pre");
+    resultPreview.textContent = typeof result.body === "string"
+        ? result.body
+        : JSON.stringify(result.body, null, 2);
+    queryResultsRoot.replaceChildren(summary, resultPreview);
 }
 
 if (queryToggleBtn) {
     queryToggleBtn.addEventListener("click", () => {
-        setQueryMode(state.queryMode === "sql" ? "find" : "sql");
+        useSelectedRoute();
+    });
+}
+if (requestMethodField) {
+    requestMethodField.addEventListener("change", () => {
+        const method = requestMethodField.value || "GET";
+        if (queryModeChip) queryModeChip.textContent = method;
+        if (queryField && ["POST", "PUT", "PATCH"].includes(method) && !queryField.value.trim()) {
+            queryField.value = JSON.stringify({ title: "Example" }, null, 2);
+        }
     });
 }
 if (queryRunBtn) {
@@ -607,18 +686,18 @@ function stopEventsTail() {
 async function pollEvents() {
     if (!state.eventsCollection || !eventsRoot) return;
     try {
-        const data = await fylo[state.eventsCollection].events(state.eventsOffset);
-        if (data.error) {
+        const eventsResponse = await fylo[state.eventsCollection].events(state.eventsOffset);
+        if (eventsResponse.error) {
             setEventsStatus("error");
             return;
         }
-        if (!data.exists) {
+        if (!eventsResponse.exists) {
             setEventsStatus("no journal");
             return;
         }
-        state.eventsOffset = data.offset ?? state.eventsOffset;
-        if (Array.isArray(data.events) && data.events.length) {
-            appendEvents(data.events);
+        state.eventsOffset = eventsResponse.offset ?? state.eventsOffset;
+        if (Array.isArray(eventsResponse.events) && eventsResponse.events.length) {
+            appendEvents(eventsResponse.events);
         }
         setEventsStatus(`tailing · ${state.eventsCollection}`);
     } catch (error) {
@@ -635,19 +714,19 @@ function appendEvents(entries) {
         eventsRoot.replaceChildren();
     }
     for (const entry of entries) {
-        const li = document.createElement("li");
-        li.className = "fylo-event-row";
-        const head = document.createElement("div");
-        head.className = "fylo-event-head";
-        const op = typeof entry.op === "string" ? entry.op : (typeof entry.kind === "string" ? entry.kind : "event");
-        const ts = typeof entry.ts === "number"
+        const item = document.createElement("li");
+        item.className = "fylo-event-row";
+        const header = document.createElement("div");
+        header.className = "fylo-event-head";
+        const operation = typeof entry.op === "string" ? entry.op : (typeof entry.kind === "string" ? entry.kind : "event");
+        const timestamp = typeof entry.ts === "number"
             ? new Date(entry.ts).toISOString()
             : (typeof entry.timestamp === "number" ? new Date(entry.timestamp).toISOString() : "");
-        head.innerHTML = `<span class="pill pill-accent">${op}</span> <span class="fylo-event-meta">${ts}</span>`;
+        header.innerHTML = `<span class="pill pill-accent">${operation}</span> <span class="fylo-event-meta">${timestamp}</span>`;
         const body = document.createElement("pre");
         body.textContent = JSON.stringify(entry, null, 2);
-        li.append(head, body);
-        eventsRoot.prepend(li);
+        item.append(header, body);
+        eventsRoot.prepend(item);
     }
     while (eventsRoot.children.length > EVENTS_MAX_ROWS) {
         const last = eventsRoot.lastElementChild;

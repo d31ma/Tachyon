@@ -2,16 +2,24 @@ node_modules
 node_modules*/
 examples/node_modules*/
 .env
+.fylo-data/
 dist
 coverage
 test-results
 .DS_Store
 __pycache__/
 *.pyc
+*conflicted copy*/
 .claude/
 .gemini/
 src/shared/manifests/route-manifest.json
 examples/db/collections.stale-*
+examples/db/.collections/fylo-operation-runs/
+examples/db/.collections/fylo-related-records/
+examples/db/.collections/fylo-demo-items/
+examples/db/.collections/language-route-events/
+examples/db/schemas/fylo-demo-items/
+package-lock.json
 
 # Graphify
 .graphify*

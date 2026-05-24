@@ -38,6 +38,63 @@ class YonJsRunner {
         return JSON.stringify(value);
     }
 
+    /**
+     * @param {unknown} value
+     * @returns {value is ReadableStream<unknown>}
+     */
+    static isReadableStream(value) {
+        return !!value
+            && typeof value === 'object'
+            && typeof /** @type {{ getReader?: unknown }} */ (value).getReader === 'function';
+    }
+
+    /**
+     * @param {unknown} value
+     * @returns {value is AsyncIterable<unknown>}
+     */
+    static isAsyncIterable(value) {
+        return !!value
+            && typeof value === 'object'
+            && Symbol.asyncIterator in /** @type {Record<symbol, unknown>} */ (value);
+    }
+
+    /** @param {unknown} chunk */
+    static writeChunk(chunk) {
+        if (chunk === undefined || chunk === null)
+            return;
+        if (chunk instanceof Uint8Array) {
+            Bun.stdout.write(chunk);
+            return;
+        }
+        Bun.stdout.write(typeof chunk === 'string' ? chunk : YonJsRunner.serialize(chunk));
+    }
+
+    /**
+     * @param {ReadableStream<unknown>} stream
+     */
+    static async writeReadableStream(stream) {
+        const reader = stream.getReader();
+        try {
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done)
+                    break;
+                YonJsRunner.writeChunk(value);
+            }
+        }
+        finally {
+            reader.releaseLock();
+        }
+    }
+
+    /**
+     * @param {AsyncIterable<unknown>} iterable
+     */
+    static async writeAsyncIterable(iterable) {
+        for await (const chunk of iterable)
+            YonJsRunner.writeChunk(chunk);
+    }
+
     static installConsoleSideband() {
         /**
          * @param {string} level
@@ -79,6 +136,16 @@ class YonJsRunner {
             ? YonJsRunner.resolveHandler(module)
             : YonJsRunner.resolveHandler(module.default);
         const result = await handler(request);
+        if (request?.headers?.accept === 'text/event-stream') {
+            if (YonJsRunner.isReadableStream(result)) {
+                await YonJsRunner.writeReadableStream(result);
+                return;
+            }
+            if (YonJsRunner.isAsyncIterable(result)) {
+                await YonJsRunner.writeAsyncIterable(result);
+                return;
+            }
+        }
         YonJsRunner.writeResponseFrame(YonJsRunner.serialize(result));
     }
 }

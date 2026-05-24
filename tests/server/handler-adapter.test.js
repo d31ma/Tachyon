@@ -101,7 +101,7 @@ export async function handler(request) {
 test('resolves extensioned route modules without shebangs', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-extension-adapter-'));
     tempDirs.push(root);
-    const handlerPath = path.join(root, 'GET.js');
+    const handlerPath = path.join(root, 'yon.js');
     await Bun.write(handlerPath, `export async function handler(request) {
   return { message: 'ok', requestId: request.context.requestId }
 }
@@ -125,7 +125,7 @@ test('resolves extensioned route modules without shebangs', async () => {
 test('JavaScript handler console output is sidebanded away from the response frame', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-console-sideband-'));
     tempDirs.push(root);
-    const handlerPath = path.join(root, 'POST.js');
+    const handlerPath = path.join(root, 'yon.js');
     await Bun.write(handlerPath, `export async function handler() {
   console.log('[adapter] doing work')
   return { ok: true }
@@ -146,10 +146,41 @@ test('JavaScript handler console output is sidebanded away from the response fra
     expect(JSON.parse(responseBody(stdout))).toEqual({ ok: true });
 });
 
+test('JavaScript handlers can stream async iterable chunks for SSE requests', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-js-stream-'));
+    tempDirs.push(root);
+    const handlerPath = path.join(root, 'yon.js');
+    await Bun.write(handlerPath, `export async function* handler() {
+  yield ': connected\\n\\n'
+  yield 'data: {"message":"one"}\\n\\n'
+  yield 'data: {"message":"two"}\\n\\n'
+}
+`);
+    const cmd = Pool.resolveHandlerCommand(handlerPath);
+    const proc = Bun.spawn({
+        cmd,
+        stdin: 'pipe',
+        stdout: 'pipe',
+        stderr: 'pipe',
+    });
+    proc.stdin.write(JSON.stringify({
+        headers: { accept: 'text/event-stream' },
+        context: { requestId: 'abc' },
+    }));
+    proc.stdin.end();
+    const [stdout, stderr, exitCode] = await Promise.all([text(proc.stdout), text(proc.stderr), proc.exited]);
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe('');
+    expect(stdout).not.toContain(Yon.RESPONSE_START);
+    expect(stdout).toContain(': connected\n\n');
+    expect(stdout).toContain('data: {"message":"one"}\n\n');
+    expect(stdout).toContain('data: {"message":"two"}\n\n');
+});
+
 test('Yon returns JavaScript handler response before background timers finish', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bg-response-'));
     tempDirs.push(root);
-    const handlerPath = path.join(root, 'POST.js');
+    const handlerPath = path.join(root, 'yon.js');
     await Bun.write(handlerPath, `export async function handler() {
   setTimeout(() => console.log('[bg] finished'), 600)
   return { ok: true }
@@ -225,11 +256,11 @@ test('runs Java handlers with a dependency-free Tachyon request object when java
         return;
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-java-handler-'));
     tempDirs.push(root);
-    const handlerPath = path.join(root, 'POST.java');
+    const handlerPath = path.join(root, 'yon.java');
     await Bun.write(handlerPath, `import java.util.LinkedHashMap;
 import java.util.Map;
 
-public class POST {
+public class Yon {
   public static Object handler(Map<String, Object> request) {
     Map<String, Object> context = (Map<String, Object>) request.get("context");
     Map<String, Object> response = new LinkedHashMap<>();

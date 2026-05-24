@@ -99,8 +99,8 @@ async function loadMiddleware() {
     Router.rateLimiter = null;
     const filePath = path.resolve(process.cwd(), `${Router.middlewarePath}.js`);
     if (await pathExists(filePath)) {
-        const mod = await import(pathToFileURL(filePath).href);
-        const loaded = mod.default ?? mod;
+        const importedMiddlewareModule = await import(pathToFileURL(filePath).href);
+        const loaded = importedMiddlewareModule.default ?? importedMiddlewareModule;
         if (typeof loaded !== 'object'
             || loaded === null
             || (loaded.before !== undefined && typeof loaded.before !== 'function')
@@ -206,8 +206,8 @@ async function startHmrWatchers(server) {
                 for (const client of hmrClients)
                     client.enqueue("event: reload\ndata: reload\n\n");
             }
-            catch (err) {
-                serveLogger.error('HMR reload failed', { err });
+            catch (error) {
+                serveLogger.error('HMR reload failed', { err: error });
             }
         }, HMR_DEBOUNCE_MS);
     };

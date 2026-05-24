@@ -119,8 +119,8 @@ export default class FyloBrowser extends Tac {
     async loadCollections(): Promise<void> {
         this.collectionsError = null;
         try {
-            const data = await fylo.collections();
-            this.collections = data.collections || [];
+            const collectionsResponse = await fylo.collections();
+            this.collections = collectionsResponse.collections || [];
         } catch (error) {
             this.collectionsError = `Failed to load collections: ${error instanceof Error ? error.message : String(error)}`;
         }
@@ -138,14 +138,14 @@ export default class FyloBrowser extends Tac {
         this.encryptedFields = undefined;
 
         try {
-            const data = await fylo[name].list(25);
-            if (data.error) {
-                this.documentsError = data.error;
+            const documentsResponse = await fylo[name].list(25);
+            if (documentsResponse.error) {
+                this.documentsError = documentsResponse.error;
                 return;
             }
-            this.documents = data.docs || [];
-            this.encryptedFields = data.encryptedFields;
-            this.revealed = data.revealed;
+            this.documents = documentsResponse.docs || [];
+            this.encryptedFields = documentsResponse.encryptedFields;
+            this.revealed = documentsResponse.revealed;
         } catch (error) {
             this.documentsError = `Failed to load documents: ${error instanceof Error ? error.message : String(error)}`;
         }
@@ -161,17 +161,17 @@ export default class FyloBrowser extends Tac {
         this.encryptedFields = undefined;
 
         try {
-            const data = await fylo[collection].get(id);
-            if (data.error) {
-                this.detailError = data.error;
+            const documentResponse = await fylo[collection].get(id);
+            if (documentResponse.error) {
+                this.detailError = documentResponse.error;
                 this.detailLoading = false;
                 return;
             }
-            this.detailDoc = data.doc;
-            this.detailHistory = data.history || [];
-            this.historyError = data.historyError || null;
-            this.encryptedFields = data.encryptedFields;
-            this.revealed = data.revealed;
+            this.detailDoc = documentResponse.doc;
+            this.detailHistory = documentResponse.history || [];
+            this.historyError = documentResponse.historyError || null;
+            this.encryptedFields = documentResponse.encryptedFields;
+            this.revealed = documentResponse.revealed;
         } catch (error) {
             this.detailError = `Failed to load document: ${error instanceof Error ? error.message : String(error)}`;
         } finally {
@@ -195,9 +195,9 @@ export default class FyloBrowser extends Tac {
 
         try {
             /** @type {Record<string, unknown>} */
-            let data;
+            let queryResponse;
             if (this.queryMode === "sql") {
-                data = await fylo.sql(this.querySource);
+                queryResponse = await fylo.sql(this.querySource);
             } else {
                 /** @type {{ collection?: string, query?: Record<string, unknown> }} */
                 let parsed;
@@ -214,13 +214,13 @@ export default class FyloBrowser extends Tac {
                     this.queryLoading = false;
                     return;
                 }
-                data = await fylo[collection].find(parsed.query ?? {});
+                queryResponse = await fylo[collection].find(parsed.query ?? {});
             }
-            if (data.error) {
-                this.queryError = data.error;
+            if (queryResponse.error) {
+                this.queryError = queryResponse.error;
                 return;
             }
-            this.queryResult = data;
+            this.queryResult = queryResponse;
         } catch (error) {
             this.queryError = `Request failed: ${error instanceof Error ? error.message : String(error)}`;
         } finally {
@@ -253,18 +253,18 @@ export default class FyloBrowser extends Tac {
         if (!this.eventsCollection) return;
 
         try {
-            const data = await fylo[this.eventsCollection].events(this.eventsOffset);
-            if (data.error) {
+            const eventsResponse = await fylo[this.eventsCollection].events(this.eventsOffset);
+            if (eventsResponse.error) {
                 this.eventsStatus = "error";
                 return;
             }
-            if (!data.exists) {
+            if (!eventsResponse.exists) {
                 this.eventsStatus = "no journal";
                 return;
             }
-            this.eventsOffset = data.offset ?? this.eventsOffset;
-            if (Array.isArray(data.events) && data.events.length) {
-                this.events = [...data.events.reverse(), ...this.events].slice(0, 200);
+            this.eventsOffset = eventsResponse.offset ?? this.eventsOffset;
+            if (Array.isArray(eventsResponse.events) && eventsResponse.events.length) {
+                this.events = [...eventsResponse.events.reverse(), ...this.events].slice(0, 200);
             }
             this.eventsStatus = `tailing · ${this.eventsCollection}`;
         } catch (error) {
@@ -325,8 +325,8 @@ export default class FyloBrowser extends Tac {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ key }),
             });
-            const data = await res.json();
-            if (data.ok && data.revealed) {
+            const revealResponse = await res.json();
+            if (revealResponse.ok && revealResponse.revealed) {
                 this.sessionRevealed = true;
             }
         } catch {
@@ -502,15 +502,15 @@ export default class FyloBrowser extends Tac {
 </div>`;
     }
 
-    renderQueryResult(data: QueryResult): string {
-        if (data.kind === "find" && Array.isArray(data.docs)) {
-            if (!data.docs.length) {
+    renderQueryResult(queryResult: QueryResult): string {
+        if (queryResult.kind === "find" && Array.isArray(queryResult.docs)) {
+            if (!queryResult.docs.length) {
                 return `<p class="muted md-typescale-body-medium">Query returned no documents.</p>`;
             }
             return `<table>
                 <thead><tr><th>id</th><th>preview</th></tr></thead>
                 <tbody>
-                    ${data.docs.map((entry) => `
+                    ${queryResult.docs.map((entry) => `
                     <tr>
                         <td class="id">${entry.id}</td>
                         <td class="preview">${this.previewOf(entry.doc)}</td>
@@ -518,9 +518,9 @@ export default class FyloBrowser extends Tac {
                 </tbody>
             </table>`;
         }
-        if (data.kind === "sql") {
-            return `<pre>${JSON.stringify(data.result, null, 2)}</pre>`;
+        if (queryResult.kind === "sql") {
+            return `<pre>${JSON.stringify(queryResult.result, null, 2)}</pre>`;
         }
-        return `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+        return `<pre>${JSON.stringify(queryResult, null, 2)}</pre>`;
     }
 }

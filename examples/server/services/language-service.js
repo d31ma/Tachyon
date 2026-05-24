@@ -1,13 +1,15 @@
 // @ts-check
 
 import LanguageRepository from '../repositories/language-repository.js';
+import FyloMachineRepository from '../repositories/fylo-machine-repository.js';
 
 export default class LanguageService {
     /**
-     * @param {{ repository?: LanguageRepository }} [options]
+     * @param {{ repository?: LanguageRepository, fyloRepository?: FyloMachineRepository }} [options]
      */
     constructor(options = {}) {
         this.repository = options.repository ?? new LanguageRepository();
+        this.fyloRepository = options.fyloRepository ?? new FyloMachineRepository();
     }
 
     /**
@@ -22,6 +24,18 @@ export default class LanguageService {
             frontend: 'Tac',
             backend: 'Yon',
         };
+    }
+
+    /**
+     * Drives the full FYLO machine interface from a dedicated route. Heavy
+     * (≈25 subprocess spawns) and only meant to be invoked deliberately —
+     * it is intentionally NOT part of the lightweight diagnostics response.
+     *
+     * @param {Record<string, any>} request
+     * @returns {Promise<Record<string, unknown>>}
+     */
+    async fyloDemo(request) {
+        return await this.fyloRepository.demonstrateAll(String(request.context?.requestId ?? 'unknown'));
     }
 
     /**

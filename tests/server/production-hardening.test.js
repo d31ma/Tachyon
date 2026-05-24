@@ -95,6 +95,6 @@ test('incoming request IDs are preserved when within the supported length', asyn
 });
 test('handler log paths are relative to the routes folder', () => {
     Router.routesPath = '/workspace/app/server/routes';
-    expect(Yon.routeRelativeHandler('/workspace/app/server/routes/languages/javascript/GET.js'))
-        .toBe('/languages/javascript/GET.js');
+    expect(Yon.routeRelativeHandler('/workspace/app/server/routes/languages/javascript/GET/yon.js'))
+        .toBe('/languages/javascript/GET/yon.js');
 });

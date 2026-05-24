@@ -11,7 +11,12 @@
                 "^[\\s\\S]+$": "^[\\s\\S]*$"
             },
             "frontend?": "^[\\s\\S]+$",
-            "backend?": "^[\\s\\S]+$"
+            "backend?": "^[\\s\\S]+$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "operations": ["^[A-Za-z]+$"],
+                "resultCount": "^[0-9]+$"
+            }
         },
         "201": {
             "code": "^201$",
