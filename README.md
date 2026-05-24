@@ -237,6 +237,12 @@ Mutating methods require `YON_DATA_BROWSER_READONLY=false`. FYLO is immutable
 under the hood, so successful `PUT` and `PATCH` responses return the new
 document id in `{ "id": "..." }`.
 
+Keep `YON_DATA_BROWSER_ENABLED=false` in production unless the route is also
+protected by `YON_BASIC_AUTH_HASH`, explicit origins (`YON_ALLOW_ORIGINS` or
+`YON_CORS_ORIGIN`), and a shared rate limiter. Event-tail collection names are
+constrained before FYLO event files are read; invalid names return a 200 JSON
+error, matching the existing FYLO browser API style.
+
 `FYLO_INDEX_BACKEND=s3-client` is also passed through to FYLO when you want FYLO
 to store index keys through Bun's S3 client. The old `s3-prefix`/LocalStack
 configuration is intentionally rejected so stale deployment env cannot silently
@@ -1115,6 +1121,8 @@ UPSTASH_RATE_LIMIT_PREFIX=tachyon:rate-limit
 
 - prefer `YON_BASIC_AUTH_HASH`
 - set explicit `YON_ALLOW_ORIGINS`
+- keep `YON_DATA_BROWSER_ENABLED=false` unless the FYLO browser is protected by
+  hashed Basic Auth, explicit origins, and shared rate limiting
 - configure `YON_TRUST_PROXY` when behind nginx, Caddy, or Cloudflare
 - use a shared rate limiter for multi-instance deployments
 - validate the built frontend with `tac.preview` before deploy

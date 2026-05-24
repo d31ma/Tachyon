@@ -44,13 +44,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Internal
 
 - Replaced the in-place `tsc --noEmit` typecheck with
-  `scripts/typecheck.js`, a wrapper that runs `tsc --noEmit -p
-  tsconfig.src.json` against the scoped src-only project with a generous
-  watchdog (`TACHYON_TYPECHECK_TIMEOUT_MS`, default 10 minutes). The
-  scoped src project is the deterministic semantic-type-safety gate
-  required by the release policy. Tests and examples have their own
-  `tsconfig.tests.json` / `tsconfig.examples.json` projects but are not
-  part of the release blocker — pass them to the same runner when needed.
+  `scripts/typecheck.js`, a wrapper that stages the selected project into
+  the OS temp directory on cloud-synced working copies before running the
+  same compiler command. `tsconfig.src.json` remains the default release
+  gate; pass `tsconfig.tests.json` or `tsconfig.examples.json` to run those
+  scoped projects. Controls: `TACHYON_TYPECHECK_TIMEOUT_MS` (default 2
+  minutes), `TACHYON_TYPECHECK_STAGE=1` or `0`, and
+  `TACHYON_TYPECHECK_KEEP_STAGE=1`.
+- Hardened the FYLO browser against traversal-shaped collection names when
+  resolving REST-style collection URLs and event-tail files. Invalid
+  event-tail collection names return a 200 JSON error in the existing FYLO
+  browser API style.
+- Removed remaining FYLO browser DOM `innerHTML` rendering for dynamic
+  collection, document, history, REST result, encrypted-field, and event
+  values; the UI now writes dynamic values with text nodes.
 - Restored `tsconfig.json` to inherit from `tsconfig.base.json` so Bun's
   runtime module resolver picks up the `@/*` → `./examples/server/*`
   path alias used by the example polyglot route handlers.

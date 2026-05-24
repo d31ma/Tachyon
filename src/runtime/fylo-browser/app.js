@@ -343,7 +343,12 @@ async function loadCollections() {
             if (typeof collection.docsStored === "number") parts.push(`${collection.docsStored} docs`);
             if (collection.worm) parts.push("WORM");
             if (collection.error) parts.push("error");
-            meta.innerHTML = parts.map((part) => `<span class="pill">${part}</span>`).join("");
+            meta.replaceChildren(...parts.map((part) => {
+                const pill = document.createElement("span");
+                pill.className = "pill";
+                pill.textContent = part;
+                return pill;
+            }));
 
             item.append(name, meta);
             item.addEventListener("click", () => selectCollection(collection.name));
@@ -392,7 +397,13 @@ async function selectCollection(name) {
         if (banner) fragments.push(banner);
         const table = document.createElement("table");
         const thead = document.createElement("thead");
-        thead.innerHTML = "<tr><th>id</th><th>preview</th></tr>";
+        const headRow = document.createElement("tr");
+        for (const label of ["id", "preview"]) {
+            const cell = document.createElement("th");
+            cell.textContent = label;
+            headRow.append(cell);
+        }
+        thead.append(headRow);
         table.append(thead);
         const tbody = document.createElement("tbody");
         for (const entry of documentsResponse.docs) {
@@ -433,14 +444,27 @@ async function selectCollection(name) {
 function encryptionBanner(fields, revealed) {
     if (!Array.isArray(fields) || !fields.length) return null;
     const banner = document.createElement("div");
-    const fieldList = fields.map((f) => `<code>${f}</code>`).join(", ");
+    const prefix = document.createElement("strong");
+    prefix.textContent = revealed ? "Encrypted fields shown in plaintext:" : "Encrypted fields masked:";
+    const suffix = document.createElement("span");
+    suffix.className = "muted";
+    suffix.textContent = revealed
+        ? "YON_DATA_BROWSER_REVEAL is on — plaintext is sent over the wire."
+        : "Set YON_DATA_BROWSER_REVEAL=true to show plaintext.";
+    const children = [prefix, document.createTextNode(" ")];
+    fields.forEach((field, index) => {
+        if (index > 0) children.push(document.createTextNode(", "));
+        const code = document.createElement("code");
+        code.textContent = field;
+        children.push(code);
+    });
+    children.push(document.createTextNode(". "), suffix);
     if (revealed) {
         banner.className = "fylo-encryption-banner fylo-encryption-banner-revealed";
-        banner.innerHTML = `<strong>Encrypted fields shown in plaintext:</strong> ${fieldList}. <span class="muted">YON_DATA_BROWSER_REVEAL is on — plaintext is sent over the wire.</span>`;
     } else {
         banner.className = "fylo-encryption-banner";
-        banner.innerHTML = `<strong>Encrypted fields masked:</strong> ${fieldList}. <span class="muted">Set YON_DATA_BROWSER_REVEAL=true to show plaintext.</span>`;
     }
+    banner.replaceChildren(...children);
     return banner;
 }
 
@@ -544,10 +568,21 @@ function renderDetail(documentResponse) {
             item.className = "fylo-history-entry";
             const head = document.createElement("div");
             head.className = "fylo-history-head";
-            const tags = [];
-            if (entry.isHead) tags.push('<span class="pill pill-accent">HEAD</span>');
-            if (entry.deleted) tags.push('<span class="pill pill-danger">deleted</span>');
-            head.innerHTML = `<code>${entry.id}</code>${tags.length ? " " + tags.join(" ") : ""}`;
+            const code = document.createElement("code");
+            code.textContent = String(entry.id ?? "");
+            head.append(code);
+            if (entry.isHead) {
+                const tag = document.createElement("span");
+                tag.className = "pill pill-accent";
+                tag.textContent = "HEAD";
+                head.append(document.createTextNode(" "), tag);
+            }
+            if (entry.deleted) {
+                const tag = document.createElement("span");
+                tag.className = "pill pill-danger";
+                tag.textContent = "deleted";
+                head.append(document.createTextNode(" "), tag);
+            }
             const meta = document.createElement("div");
             meta.className = "fylo-history-meta";
             const created = typeof entry.createdAt === "number" ? new Date(entry.createdAt).toISOString() : String(entry.createdAt ?? "");
@@ -641,7 +676,15 @@ function renderRestResult(result) {
     if (!queryResultsRoot) return;
     const summary = document.createElement("div");
     summary.className = "fylo-response-summary";
-    summary.innerHTML = `<span class="pill pill-accent">${result.method}</span><code>${result.url}</code><span class="pill">${result.status} ${result.statusText}</span>`;
+    const method = document.createElement("span");
+    method.className = "pill pill-accent";
+    method.textContent = result.method;
+    const url = document.createElement("code");
+    url.textContent = result.url;
+    const status = document.createElement("span");
+    status.className = "pill";
+    status.textContent = `${result.status} ${result.statusText}`;
+    summary.append(method, url, status);
     const resultPreview = document.createElement("pre");
     resultPreview.textContent = typeof result.body === "string"
         ? result.body
@@ -722,7 +765,13 @@ function appendEvents(entries) {
         const timestamp = typeof entry.ts === "number"
             ? new Date(entry.ts).toISOString()
             : (typeof entry.timestamp === "number" ? new Date(entry.timestamp).toISOString() : "");
-        header.innerHTML = `<span class="pill pill-accent">${operation}</span> <span class="fylo-event-meta">${timestamp}</span>`;
+        const operationNode = document.createElement("span");
+        operationNode.className = "pill pill-accent";
+        operationNode.textContent = operation;
+        const timestampNode = document.createElement("span");
+        timestampNode.className = "fylo-event-meta";
+        timestampNode.textContent = timestamp;
+        header.append(operationNode, timestampNode);
         const body = document.createElement("pre");
         body.textContent = JSON.stringify(entry, null, 2);
         item.append(header, body);

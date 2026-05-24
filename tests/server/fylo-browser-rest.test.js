@@ -55,6 +55,20 @@ async function fyloRequest(method, pathname, body) {
     };
 }
 
+/**
+ * @param {string} pathname
+ */
+async function fyloApiGet(pathname) {
+    const handler = Router.reqRoutes[pathname.split('?')[0]]?.GET;
+    if (!handler) throw new Error(`Missing FYLO API handler for ${pathname}`);
+    const response = await handler(new Request(`http://localhost${pathname}`));
+    const text = await response.text();
+    return {
+        status: response.status,
+        body: text ? JSON.parse(text) : null,
+    };
+}
+
 test('serves FYLO documents through Django-style collection and detail URLs', async () => {
     const create = await fyloRequest('POST', '/_fylo/books/', {
         title: 'Tachyon Patterns',
@@ -97,4 +111,18 @@ test('serves FYLO documents through Django-style collection and detail URLs', as
     const deleted = await fyloRequest('DELETE', `/_fylo/books/${nextId}/`);
     expect(deleted.status).toBe(204);
     expect(deleted.body).toBe(null);
+});
+
+test('rejects traversal-shaped collection names before tailing FYLO event files', async () => {
+    const response = await fyloApiGet('/_fylo/api/events?collection=..%2Fsecrets');
+
+    expect(response.status).toBe(200);
+    expect(response.body.error).toBe('invalid collection query parameter');
+});
+
+test('malformed encoded REST collection paths fall through as not found', async () => {
+    const response = await fyloRequest('GET', '/_fylo/%E0%A4%A/');
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toBe('not found');
 });

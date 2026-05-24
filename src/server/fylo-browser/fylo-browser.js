@@ -27,6 +27,24 @@ function normalizePublicPath(value, fallback) {
 const BROWSER_PATH = normalizePublicPath(process.env.YON_DATA_BROWSER_PATH, '/_fylo');
 const READONLY_DEFAULT = true;
 
+/** @param {string} collection */
+function isSafeCollectionName(collection) {
+    return collection.length > 0
+        && collection !== '.'
+        && collection !== '..'
+        && !collection.includes('/')
+        && !collection.includes('\\');
+}
+
+/** @param {string} value */
+function safeDecodeURIComponent(value) {
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return null;
+    }
+}
+
 /** @returns {string} */
 function fyloRoot() {
     return process.env.FYLO_ROOT || path.join(process.cwd(), '.fylo-data');
@@ -507,10 +525,12 @@ function parseRestDocumentPath(request) {
     if (!pathname.startsWith(`${BROWSER_PATH}/`)) return null;
     const rest = pathname.slice(BROWSER_PATH.length + 1);
     if (!rest || rest.startsWith('api/') || rest === 'app.css' || rest === 'app.js') return null;
-    const segments = rest.split('/').filter(Boolean).map(segment => decodeURIComponent(segment));
+    const segments = rest.split('/').filter(Boolean).map(safeDecodeURIComponent);
     if (segments.length < 1 || segments.length > 2) return null;
-    if (segments.some(segment => !segment || segment.includes('/'))) return null;
-    return { collection: segments[0], id: segments[1] ?? null };
+    if (segments.some(segment => segment === null)) return null;
+    const safeSegments = /** @type {string[]} */ (segments);
+    if (safeSegments.some(segment => !isSafeCollectionName(segment))) return null;
+    return { collection: safeSegments[0], id: safeSegments[1] ?? null };
 }
 
 /** @param {Request} request */
@@ -617,6 +637,8 @@ async function tailEvents(url) {
     const collection = url.searchParams.get('collection') ?? '';
     if (!collection)
         return { error: 'collection query parameter required' };
+    if (!isSafeCollectionName(collection))
+        return { error: 'invalid collection query parameter' };
     const sinceParam = Number(url.searchParams.get('since') ?? 0);
     const since = Number.isFinite(sinceParam) && sinceParam >= 0 ? Math.trunc(sinceParam) : 0;
     const limitParam = Number(url.searchParams.get('limit') ?? 100);
