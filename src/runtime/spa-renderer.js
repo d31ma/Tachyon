@@ -189,12 +189,20 @@ function registerDeclarativeEvents(root = document.body) {
         if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
             const chex = element.getAttribute('@chex');
             if (chex) {
-                const regex = new RegExp(chex);
-                element.addEventListener('blur', () => {
-                    const valid = regex.test(element.value);
-                    element.classList.toggle('chex-valid', valid);
-                    element.classList.toggle('chex-invalid', !valid);
-                });
+                // `new RegExp(chex)` throws SyntaxError on a malformed
+                // user-provided pattern. Catch it locally so one bad input
+                // doesn't break the rest of declarative-event registration.
+                try {
+                    const regex = new RegExp(chex);
+                    element.addEventListener('blur', () => {
+                        const valid = regex.test(element.value);
+                        element.classList.toggle('chex-valid', valid);
+                        element.classList.toggle('chex-invalid', !valid);
+                    });
+                }
+                catch (error) {
+                    console.error(`[tachyon] Invalid @chex regex on element: ${chex}`, error);
+                }
             }
         }
         for (const attr of Array.from(element.attributes)) {
