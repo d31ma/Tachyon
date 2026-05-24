@@ -2,6 +2,7 @@ export type YonRequest = {
   context?: {
     requestId?: string
   }
+  query?: Record<string, unknown>
 }
 
 export default class TypeScriptLanguageService {

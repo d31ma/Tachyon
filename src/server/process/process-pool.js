@@ -108,9 +108,13 @@ export default class Pool {
             for (const method of methods) {
                 if (method === 'OPTIONS')
                     continue;
-                const handler = Router.routeHandlers[route]?.[method]
-                    ?? `${Router.routesPath}${route === '/' ? '' : route}/${method}`;
-                if (existsSync(handler))
+                // Only prewarm handlers that validateRoute resolved to a
+                // concrete `yon.<ext>` path. The previous extensionless
+                // fallback (`<METHOD>/yon`) would ENOENT inside
+                // Bun.spawn on first request when routeHandlers was
+                // temporarily empty during HMR reload.
+                const handler = Router.routeHandlers[route]?.[method];
+                if (handler && existsSync(handler))
                     Pool.prewarmHandler(handler);
             }
         }

@@ -41,13 +41,15 @@ export default class YonCompiledRunner {
     }
 
     /**
-     * Class-based compiled handlers use the HTTP method filename as the route
-     * class name, e.g. `POST.java` -> `POST`.
+     * Class-based compiled handlers use the Pascal-cased handler filename as
+     * the route class name, e.g. `yon.java` -> `Yon`. The HTTP method is
+     * encoded in the parent directory and need not appear in the class name.
      * @param {string} handlerPath
      * @returns {string}
      */
     static routeClassName(handlerPath) {
-        return path.basename(handlerPath).split('.', 1)[0] || 'Handler';
+        const base = path.basename(handlerPath).split('.', 1)[0] || 'Handler';
+        return base.charAt(0).toUpperCase() + base.slice(1);
     }
 
     /**

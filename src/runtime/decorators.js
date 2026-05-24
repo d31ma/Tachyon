@@ -95,9 +95,9 @@ export function render(_value, ctx) {
         let result;
         try {
             result = original.apply(this, args);
-        } catch (err) {
+        } catch (error) {
             tac.rerender();
-            throw err;
+            throw error;
         }
         if (result && typeof (/** @type {Promise<unknown>} */ (result)).then === 'function') {
             return /** @type {Promise<unknown>} */ (result).finally(() => { tac.rerender(); });

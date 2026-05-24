@@ -16,7 +16,7 @@
 ## Features
 
 - Polyglot backend handlers with executable files and shebangs
-- Tac pages and components with `index.html` / `component.html` templates
+- Tac pages and components with `tac.html` templates
 - Companion `*.js`, `*.ts`, `*.wasm`, source-backed Wasm (`*.as.ts`, `*.rs`, `*.c`, `*.go`, `*.zig`, `*.wat`), and `*.css` files beside templates
 - OOP-style companion classes with `export default class extends Tac`
 - Wasm-backed Tac companions through the `tac-wasm-json@1` ABI and generated adapters
@@ -79,13 +79,13 @@ Useful commands:
 ```text
 browser/
   pages/
-    index.html
-    index.js
-    index.css
+    tac.html
+    tac.js
+    tac.css
   components/
     hero/
-      index.html
-      index.css
+      tac.html
+      tac.css
   shared/
     scripts/
     styles/
@@ -94,6 +94,8 @@ browser/
 
 server/
   routes/
+    GET/
+      yon.js
   data/
   deps/
 ```
@@ -106,10 +108,11 @@ The example app in [examples/](examples/) demonstrates Tac and Yon working toget
 - reactive page state
 - persisted `$` (sessionStorage) and `$$` (localStorage) fields
 - local-first fetches
+- frontend-only external SSE streaming with reactive Tac updates
 - prebuilt Tac Wasm companions with source examples in WAT, AssemblyScript, Rust, C, Go, and Zig
 - backend handlers in multiple languages
 - shared data, shared assets, and a browser entry
-- middleware, OpenAPI docs, route manifests, and component companions
+- middleware, OpenAPI docs, embedded route manifests, and component companions
 
 ---
 
@@ -189,7 +192,7 @@ bun -e "console.log(await Bun.password.hash('user:pass'))"
 <details>
 <summary><h2 style="display:inline">FYLO Storage</h2></summary>
 
-Tachyon uses `@d31ma/fylo@26.20.7`, which is filesystem-first and uses the
+Tachyon uses `@d31ma/fylo@26.21.6`, which is filesystem-first and uses the
 FYLO `local-fs` index backend by default. Set `FYLO_ROOT` to the directory that
 should contain FYLO-managed collections:
 
@@ -211,6 +214,34 @@ indexes, event journals, locks, and WORM history. With `local-fs`, each
 collection stores compact index files under
 `<FYLO_ROOT>/.collections/<collection>/index/`, so no external indexing service is
 required.
+
+When `YON_DATA_BROWSER_ENABLED=true`, the FYLO browser mounts at `/_fylo` and
+also exposes Django-style collection URLs with `_fylo` replacing `api`:
+
+```bash
+curl -X POST http://localhost:8000/_fylo/books/ \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Tachyon Patterns"}'
+curl http://localhost:8000/_fylo/books/
+curl http://localhost:8000/_fylo/books/<id>/
+curl -X PUT http://localhost:8000/_fylo/books/<id>/ \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Tachyon Patterns","status":"published"}'
+curl -X PATCH http://localhost:8000/_fylo/books/<id>/ \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"published"}'
+curl -X DELETE http://localhost:8000/_fylo/books/<id>/
+```
+
+Mutating methods require `YON_DATA_BROWSER_READONLY=false`. FYLO is immutable
+under the hood, so successful `PUT` and `PATCH` responses return the new
+document id in `{ "id": "..." }`.
+
+Keep `YON_DATA_BROWSER_ENABLED=false` in production unless the route is also
+protected by `YON_BASIC_AUTH_HASH`, explicit origins (`YON_ALLOW_ORIGINS` or
+`YON_CORS_ORIGIN`), and a shared rate limiter. Event-tail collection names are
+constrained before FYLO event files are read; invalid names return a 200 JSON
+error, matching the existing FYLO browser API style.
 
 `FYLO_INDEX_BACKEND=s3-client` is also passed through to FYLO when you want FYLO
 to store index keys through Bun's S3 client. The old `s3-prefix`/LocalStack
@@ -246,7 +277,7 @@ server/
       typescript/items/POST       -> POST /languages/typescript/items
       typescript/items/DELETE     -> DELETE /languages/typescript/items
       javascript/telemetry/GET    -> GET /languages/javascript/telemetry
-      OPTIONS.json                -> route schema files
+      OPTIONS.schema.json         -> route schema files
   services/                       -> application/business logic
   repositories/                   -> database and persistence access
   data/                           -> local example data
@@ -260,18 +291,42 @@ or runtime data sources. The `/languages/*` example is now the single backend
 showcase: it includes polyglot handlers, CRUD item routes, dynamic routes, and a
 telemetry consumer.
 
+Every language route also demonstrates FYLO access through the `fylo.exec`
+machine interface bundled by `@d31ma/fylo`. The examples extend the existing
+routes instead of adding separate FYLO endpoints: the route calls a service, the
+service calls a repository or language-native process helper, and that layer
+sends JSON operations to the FYLO binary. During development they invoke `bunx
+--bun fylo.exec`; in production, set `FYLO_EXEC_PATH=/path/to/fylo` to point
+those helpers at a compiled FYLO executable instead.
+
+The language examples collectively exercise the FYLO machine interface:
+
+| Language route | Friendly collection | FYLO binary operations shown |
+| -------------- | ------------------- | ---------------------------- |
+| `GET /languages/javascript` | `fylo-operation-runs`, `fylo-related-records`, `fylo-disposable-runs` | full operation suite: `executeSQL`, `createCollection`, `dropCollection`, `inspectCollection`, `rebuildCollection`, `getDoc`, `getLatest`, `getHistory`, `findDocs`, `joinDocs`, `putData`, `batchPutData`, `patchDoc`, `patchDocs`, `delDoc`, `delDocs`, `importBulkData`, `schemaInspect`, `schemaCurrent`, `schemaHistory`, `schemaDoctor`, `schemaValidate`, `schemaMaterialize` |
+| `GET /languages/typescript` | `language-route-events` | `createCollection`, `putData`, `findDocs` |
+| `GET /languages/python` | `language-route-events` | `createCollection`, `putData`, `findDocs` |
+| `GET /languages/ruby` | `language-route-events` | `createCollection`, `putData`, `findDocs` |
+| `GET /languages/php` | `language-route-events` | `createCollection`, `putData`, `findDocs` |
+| `GET /languages/go` | `language-route-events` | `createCollection`, `rebuildCollection` |
+| `GET /languages/csharp` | `items` | `schemaCurrent`, `schemaHistory` |
+| `POST /languages/java` | `items` | `schemaInspect` |
+| `DELETE /languages/dart` | `language-route-events` | `createCollection`, `importBulkData` |
+| `PATCH /languages/rust` | `fylo-disposable-runs` | `createCollection`, `dropCollection` |
+
 Rules:
 
-- handler files should use their language extension, such as `GET.js`, `POST.ts`, or `PATCH.rs`
-- the filename stem must be an uppercase HTTP method such as `GET` or `POST`
+- handler files live at `<METHOD>/yon.<ext>` inside the route directory, e.g. `GET/yon.js`, `POST/yon.ts`, or `PATCH/yon.rs`
+- the parent directory name must be an uppercase HTTP method such as `GET` or `POST`
+- the `OPTIONS.schema.json` schema file sits as a sibling of the method directories
 - dynamic route segments use `_slug` on disk and become `:slug` at runtime
 - the first segment cannot be dynamic
 - adjacent dynamic segments are not allowed
 
 Yon route files expose a `handler(request)` function. The HTTP method comes from
-the filename, so `server/routes/languages/typescript/items/GET.ts` handles
-`GET /languages/typescript/items` and the function name stays consistent across
-every method and language.
+the parent directory, so `server/routes/languages/typescript/items/GET/yon.ts`
+handles `GET /languages/typescript/items` and the function name stays consistent
+across every method and language.
 
 ```ts
 import ItemService from '../../../../services/item-service.ts'
@@ -293,7 +348,7 @@ export default class GET {
 }
 ```
 
-Handlers return plain data, FastAPI-style. `OPTIONS.json` decides which response
+Handlers return plain data, FastAPI-style. `OPTIONS.schema.json` decides which response
 status the returned body matches. Yon serializes the returned value, validates it
 when `YON_VALIDATE` is enabled, applies CORS/security headers, and writes the
 process response internally.
@@ -325,15 +380,15 @@ on the developer or deployment machine.
 
 <table>
 <tr><th align="left">Language</th><th align="left">Supported handler shape</th></tr>
-<tr><td>JavaScript</td><td><code>export function handler(request)</code> / <code>default class GET.handler()</code></td></tr>
-<tr><td>TypeScript</td><td><code>export function handler(request)</code> / <code>default class GET.handler()</code></td></tr>
-<tr><td>Python</td><td><code>def handler(request)</code> / <code>class GET.handler()</code></td></tr>
-<tr><td>Ruby</td><td><code>def handler(request)</code> / <code>class GET#handler</code></td></tr>
-<tr><td>PHP</td><td><code>function handler($request)</code> / <code>class GET::handler</code></td></tr>
+<tr><td>JavaScript</td><td><code>export function handler(request)</code> / <code>default class Yon.handler()</code></td></tr>
+<tr><td>TypeScript</td><td><code>export function handler(request)</code> / <code>default class Yon.handler()</code></td></tr>
+<tr><td>Python</td><td><code>def handler(request)</code> / <code>class Yon.handler()</code></td></tr>
+<tr><td>Ruby</td><td><code>def handler(request)</code> / <code>class Yon#handler</code></td></tr>
+<tr><td>PHP</td><td><code>function handler($request)</code> / <code>class Yon::handler</code></td></tr>
 <tr><td>Dart</td><td><code>handler(Map&lt;String, dynamic&gt; request)</code></td></tr>
 <tr><td>Go</td><td><code>func Handler(request map[string]any) any</code></td></tr>
-<tr><td>Java</td><td><code>POST.handler(Map&lt;String, Object&gt; request)</code></td></tr>
-<tr><td>C#</td><td><code>GET.Handler(JsonElement request)</code></td></tr>
+<tr><td>Java</td><td><code>Yon.handler(Map&lt;String, Object&gt; request)</code></td></tr>
+<tr><td>C#</td><td><code>Yon.Handler(JsonElement request)</code></td></tr>
 <tr><td>Rust</td><td><code>pub fn handler(request: &amp;JsonValue) -&gt; impl Display</code></td></tr>
 </table>
 
@@ -359,24 +414,36 @@ pub fn handler(request: &JsonValue) -> JsonValue {
 }
 ```
 
-`OPTIONS.json` files validate both incoming requests and outgoing responses with
+`OPTIONS.schema.json` files validate both incoming requests and outgoing responses with
 CHEX regex schemas. Yon does not add Tachyon-specific type shorthands:
 every string leaf is passed to CHEX as the regex pattern to validate.
+Because this is strict CHEX validation, nested objects and arrays of objects are
+valid schema shapes for route request/response validation.
 
 ```json
 {
   "POST": {
     "request": {
       "body": {
-        "name": "^[a-z0-9-]+$",
-        "quantity": "^[0-9]+$"
+        "orderId": "^ORD-[0-9]+$",
+        "items": [
+          {
+            "sku": "^[A-Z0-9-]+$",
+            "quantity": "^[1-9][0-9]*$"
+          }
+        ]
       }
     },
     "response": {
       "201": {
         "id": "^[0-9A-Za-z_-]+$",
-        "name": "^.{1,120}$",
-        "quantity": "^[0-9]+$"
+        "orderId": "^ORD-[0-9]+$",
+        "items": [
+          {
+            "sku": "^[A-Z0-9-]+$",
+            "quantity": "^[1-9][0-9]*$"
+          }
+        ]
       },
       "400": {
         "detail": "^.+$"
@@ -397,12 +464,12 @@ Tac page routes live in `browser/pages`.
 
 ```text
 browser/pages/
-  index.html           -> /
+  tac.html             -> /
   docs/
-    index.html         -> /docs
+    tac.html           -> /docs
   blog/
     _slug/
-      index.html       -> /blog/:slug
+      tac.html         -> /blog/:slug
 ```
 
 If an ancestor page contains `<slot />`, it acts as a reusable shell for descendant pages.
@@ -412,27 +479,27 @@ Tac components live in `browser/components`.
 ```text
 browser/components/
   clicker/
-    index.html
-    index.js
-    index.css
+    tac.html
+    tac.js
+    tac.css
 ```
 
 Companion scripts can be JavaScript or TypeScript:
 
-- `index.js`
-- `index.ts`
+- `tac.js`
+- `tac.ts`
 
 Tac uses one component naming convention: each component folder segment is
-lowercase alphanumeric and has an `index.html` template. The component tag is
+lowercase alphanumeric and has a `tac.html` template. The component tag is
 the folder path joined with hyphens:
 
 ```text
-browser/components/clicker/index.html       -> <clicker />
-browser/components/panel/users/index.html   -> <panel-users />
+browser/components/clicker/tac.html       -> <clicker />
+browser/components/panel/users/tac.html   -> <panel-users />
 ```
 
 Flat templates and hyphenated folder names such as
-`browser/components/clicker.html` and `browser/components/panel-users/index.html`
+`browser/components/clicker.html` and `browser/components/panel-users/tac.html`
 are rejected so app structure, generated module paths, CSS scopes, and template
 tags all use the same naming rule.
 
@@ -449,13 +516,14 @@ Templates support:
 - `:value="field"` for two-way input binding
 - `<loop :for="...">`
 - `<logic :if="...">`
+- `<switch :value="...">` with `<case :when="...">` and `<case default>`
 - `<my-component />`
 - `<my-component lazy />`
 
 Example page:
 
 ```html
-<!-- browser/pages/index.html -->
+<!-- browser/pages/tac.html -->
 <section class="hero">
   <h1>{headline}</h1>
   <p>{subtitle}</p>
@@ -463,13 +531,33 @@ Example page:
 </section>
 
 <clicker label="Visits" />
+
+<switch :value="status">
+  <case :when="['loading', 'pending']">
+    <p>Working...</p>
+  </case>
+  <case :when="Status.Ready">
+    <p>Ready.</p>
+  </case>
+  <case default>
+    <p>Unknown state.</p>
+  </case>
+</switch>
 ```
 
 ```js
-// browser/pages/index.js
+// browser/pages/tac.js
+const Status = {
+  Loading: 'loading',
+  Pending: 'pending',
+  Ready: 'ready'
+}
+
 export default class extends Tac {
   /** @type {number} */
   $visits = 0
+  Status = Status
+  status = Status.Loading
   /** @type {string} */
   headline = 'Tac + Yon'
   /** @type {string} */
@@ -521,7 +609,7 @@ Available helpers through `Tac`:
 Tac can also load prebuilt WebAssembly companions. The browser still receives a generated JavaScript adapter that extends `Tac`, so templates keep the same shape:
 
 ```html
-<!-- browser/components/clicker/index.html -->
+<!-- browser/components/clicker/tac.html -->
 <button @click="increment()">{label}: {clicks}</button>
 ```
 
@@ -529,23 +617,23 @@ Place the Wasm module and manifest beside the template:
 
 ```text
 browser/components/clicker/
-  index.html
-  index.wasm
-  index.tac.json
+  tac.html
+  tac.wasm
+  tac.tac.json
 ```
 
 Or give Tachyon source and let `bun serve` / `bun run bundle` compile it before generating the Tac adapter:
 
 ```text
 browser/components/clicker/
-  index.html
-  index.rs
-  index.tac.json
+  tac.html
+  tac.rs
+  tac.tac.json
 ```
 
-Source-backed companions are selected before a sibling `index.wasm`, so app authors can keep a checked-in fallback while local development still compiles from source when the compiler is available. If source compilation fails and a sibling `.wasm` exists, Tachyon logs a warning and uses the prebuilt fallback; without a fallback, the bundle fails with the compiler error.
+Source-backed companions are selected before a sibling `tac.wasm`, so app authors can keep a checked-in fallback while local development still compiles from source when the compiler is available. If source compilation fails and a sibling `.wasm` exists, Tachyon logs a warning and uses the prebuilt fallback; without a fallback, the bundle fails with the compiler error.
 
-`index.tac.json` declares the stable Tac ABI:
+`tac.tac.json` declares the stable Tac ABI:
 
 ```json
 {
@@ -585,12 +673,12 @@ Tachyon currently knows how to compile these source companions when the matching
 
 <table>
 <tr><th align="left">Extension</th><th align="left">Compiler</th><th align="left">Install</th></tr>
-<tr><td><code>index.as.ts</code></td><td><code>asc</code></td><td><code>bun add -d assemblyscript</code></td></tr>
-<tr><td><code>index.rs</code></td><td><code>rustc</code></td><td>Install Rust + <code>rustup target add wasm32-unknown-unknown</code></td></tr>
-<tr><td><code>index.c</code></td><td><code>clang</code></td><td>Install LLVM/Clang with WebAssembly target support</td></tr>
-<tr><td><code>index.go</code></td><td><code>tinygo</code></td><td>Standard Go browser Wasm target uses a Go runtime shim, not the Tac ABI shape</td></tr>
-<tr><td><code>index.zig</code></td><td><code>zig</code></td><td></td></tr>
-<tr><td><code>index.wat</code></td><td><code>wat2wasm</code></td><td>Install WABT</td></tr>
+<tr><td><code>tac.as.ts</code></td><td><code>asc</code></td><td><code>bun add -d assemblyscript</code></td></tr>
+<tr><td><code>tac.rs</code></td><td><code>rustc</code></td><td>Install Rust + <code>rustup target add wasm32-unknown-unknown</code></td></tr>
+<tr><td><code>tac.c</code></td><td><code>clang</code></td><td>Install LLVM/Clang with WebAssembly target support</td></tr>
+<tr><td><code>tac.go</code></td><td><code>tinygo</code></td><td>Standard Go browser Wasm target uses a Go runtime shim, not the Tac ABI shape</td></tr>
+<tr><td><code>tac.zig</code></td><td><code>zig</code></td><td></td></tr>
+<tr><td><code>tac.wat</code></td><td><code>wat2wasm</code></td><td>Install WABT</td></tr>
 </table>
 
 Compiler path overrides are available for CI or non-standard installs:
@@ -609,12 +697,12 @@ Compiler path overrides are available for CI or non-standard installs:
 
 The checked-in examples under `examples/browser/components/wasm/` use real source-backed companion filenames plus sibling `.wasm` fallbacks, so the example app runs without requiring every language compiler to be installed:
 
-- `clicker/index.wat` for raw WebAssembly text
-- `assemblyscript/index.as.ts`
-- `rust/index.rs`
-- `c/index.c`
-- `go/index.go`
-- `zig/index.zig`
+- `clicker/tac.wat` for raw WebAssembly text
+- `assemblyscript/tac.as.ts`
+- `rust/tac.rs`
+- `c/tac.c`
+- `go/tac.go`
+- `zig/tac.zig`
 
 Tachyon intentionally treats language compilers as optional; plain `.wasm` works without adding a framework dependency. For strict CSP deployments, keep `script-src 'wasm-unsafe-eval'` in `YON_CONTENT_SECURITY_POLICY` so browsers can instantiate Wasm modules.
 
@@ -758,7 +846,7 @@ There is no secure way to give a browser script a secret and also keep that secr
 
 Yon exposes an OpenAPI 3.1 document at `/openapi.json` and a self-hosted Tachyon docs UI at `/api-docs`.
 
-- route response schemas are derived from each route's `OPTIONS.json` file
+- route response schemas are derived from each route's `OPTIONS.schema.json` file
 - request schemas can also flow into the OpenAPI document when you define `request`
 - the docs page is rendered by Tachyon-owned HTML, CSS, and JavaScript instead of a third-party docs bundle
 - the docs UI supports request authorization, operation filtering, deep links, cURL generation, and live "try it out" execution with response inspection
@@ -830,7 +918,7 @@ The example app includes a Yon telemetry consumer at `/languages/javascript/tele
 - parses the stored `otlpJson` payload back into OTLP JSON `TracesData`
 - returns a monitoring-friendly summary plus recent spans
 
-That route is implemented in [examples/server/routes/languages/javascript/telemetry/GET.js](examples/server/routes/languages/javascript/telemetry/GET.js), and the example dashboard uses it to render a live telemetry panel.
+That route is implemented in [examples/server/routes/languages/javascript/telemetry/GET/yon.js](examples/server/routes/languages/javascript/telemetry/GET/yon.js), and the example dashboard uses it to render a live telemetry panel.
 
 The examples also include a tiny alerting worker at [examples/server/workers/telemetry-alert-worker.js](examples/server/workers/telemetry-alert-worker.js).
 
@@ -897,7 +985,7 @@ On the Yon side, handler responses are also given an inferred content type now:
 
 ### Scoped Component CSS
 
-`index.css` is automatically wrapped with a component scope:
+`tac.css` is automatically wrapped with a component scope:
 
 ```css
 @scope ([data-tac-scope="clicker"]) { ... }
@@ -944,14 +1032,12 @@ Typical output:
 dist/
   index.html
   docs/index.html
-  pages/index.js
-  pages/docs/index.js
-  components/clicker/index.js
+  pages/tac.js
+  pages/docs/tac.js
+  components/clicker/tac.js
   modules/*.js
   shared/assets/*
   shared/data/*
-  shells.json
-  routes.json
   spa-renderer.js
   imports.js
   imports.css
@@ -960,7 +1046,7 @@ dist/
 > **Notes:**
 >
 > - there is no `dist/layouts/` output
-> - page shells are represented through `shells.json`
+> - page shells are embedded into `spa-renderer.js`
 > - static assets are emitted under `dist/shared/assets/`
 > - the runtime now uses one app shell template and injects the HMR client only in development
 
@@ -1027,7 +1113,7 @@ UPSTASH_RATE_LIMIT_PREFIX=tachyon:rate-limit
 - request body and parameter limits
 - handler timeout enforcement
 - JWT expiry rejection when decodable
-- route request/response validation through `OPTIONS.json`
+- route request/response validation through `OPTIONS.schema.json`
 
 ---
 
@@ -1035,6 +1121,8 @@ UPSTASH_RATE_LIMIT_PREFIX=tachyon:rate-limit
 
 - prefer `YON_BASIC_AUTH_HASH`
 - set explicit `YON_ALLOW_ORIGINS`
+- keep `YON_DATA_BROWSER_ENABLED=false` unless the FYLO browser is protected by
+  hashed Basic Auth, explicit origins, and shared rate limiting
 - configure `YON_TRUST_PROXY` when behind nginx, Caddy, or Cloudflare
 - use a shared rate limiter for multi-instance deployments
 - validate the built frontend with `tac.preview` before deploy

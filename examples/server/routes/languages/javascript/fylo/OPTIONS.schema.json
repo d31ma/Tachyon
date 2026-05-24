@@ -1,0 +1,13 @@
+{
+    "POST": {
+        "200": {
+            "collection": "^[\\s\\S]+$",
+            "operations": ["^[A-Za-z]+$"],
+            "resultCount": "^[0-9]+$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        },
+        "request": {}
+    }
+}

@@ -43,7 +43,7 @@ async function createExampleApp() {
         private: true
     }, null, 2));
     await writeFile(path.join(root, 'imports.js'), 'console.log("fixture boot")\n');
-    await writeFile(path.join(root, 'routes', 'index.html'), `<main><h1>Alpha</h1></main>`);
+    await writeFile(path.join(root, 'routes', 'tac.html'), `<main><h1>Alpha</h1></main>`);
     return root;
 }
 /** @param {() => boolean | Promise<boolean>} check */
@@ -96,7 +96,7 @@ timedTest('tac.preview --watch serves initial bundle and rebuilds on HTML route 
             return false;
         }
     });
-    await writeFile(path.join(root, 'routes', 'index.html'), `<main><h1>Beta</h1></main>`);
+    await writeFile(path.join(root, 'routes', 'tac.html'), `<main><h1>Beta</h1></main>`);
     await waitFor(async () => {
         const res = await fetch(`http://127.0.0.1:${port}/`);
         return res.ok && (await res.text()).includes('Beta');

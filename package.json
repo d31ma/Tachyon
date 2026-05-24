@@ -1,6 +1,6 @@
 {
     "name": "@d31ma/tachyon",
-    "version": "26.21.05",
+    "version": "26.21.7",
     "description": "A polyglot, file-system-routed full-stack framework for Bun",
     "author": "Chidelma",
     "license": "MIT",
@@ -32,16 +32,17 @@
         "preview": "bun src/cli/preview.js --watch",
         "bundle:watch": "bun src/cli/bundle.js --watch",
         "start": "bun run serve",
-        "typecheck": "tsc --noEmit",
-        "test": "bun --env-file=.env.test test tests",
-        "test:blackbox": "bun run scripts/verify-package-contract.js && bun test package-contract --timeout 120000",
-        "test:coverage": "bun --env-file=.env.test test tests --coverage"
+        "typecheck": "bun scripts/typecheck.js",
+        "test": "bun --env-file=tests/.env.test test tests",
+        "test:blackbox": "bun run scripts/verify-package-contract.js && bun test tests/package-contract --timeout 120000",
+        "test:coverage": "bun --env-file=tests/.env.test test tests --coverage",
+        "stress:tac": "bun tests/stress/tac-dom-stress.js"
     },
     "files": [
         "bin/",
         "src/",
         "README.md",
-        ".env.test"
+        "tests/.env.test"
     ],
     "keywords": [
         "tachyon",
@@ -66,7 +67,7 @@
         "url": "https://github.com/d31ma/Tachyon/issues"
     },
     "dependencies": {
-        "@d31ma/fylo": "^26.21.2"
+        "@d31ma/fylo": "^26.21.6"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "^20.8.9",
@@ -75,6 +76,6 @@
         "@types/node": "^20.4.2",
         "happy-dom": "^20.8.9",
         "playwright": "^1.59.1",
-        "typescript": "^6.0.2"
+        "typescript": "^5.6.3"
     }
 }

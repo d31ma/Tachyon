@@ -1,0 +1,79 @@
+.live-panel {
+    position: relative;
+    overflow: hidden;
+}
+
+.live-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at top right, color-mix(in srgb, var(--md-sys-color-tertiary) 16%, transparent), transparent 36%),
+        linear-gradient(135deg, color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent), transparent 48%);
+}
+
+.live-panel > * {
+    position: relative;
+}
+
+.live-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.live-error {
+    padding: 12px 16px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-error-container);
+    color: var(--md-sys-color-on-error-container);
+}
+
+.live-counter {
+    display: grid;
+    gap: 8px;
+    padding: clamp(24px, 6vw, 48px);
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    background:
+        linear-gradient(135deg, color-mix(in srgb, var(--md-sys-color-primary-container) 82%, transparent), color-mix(in srgb, var(--md-sys-color-tertiary-container) 68%, transparent)),
+        var(--md-sys-color-surface-container-highest);
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 70%, transparent);
+    box-shadow: var(--md-sys-elevation-level1);
+}
+
+.live-counter-label,
+.live-counter-caption {
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.live-counter-value {
+    color: var(--md-sys-color-on-primary-container);
+    font-size: clamp(4rem, 15vw, 9rem);
+    font-weight: 800;
+    letter-spacing: -0.08em;
+    line-height: 0.9;
+}
+
+.live-empty {
+    padding: 20px;
+    border-radius: var(--md-sys-shape-corner-large);
+    border: 1px dashed var(--md-sys-color-outline-variant);
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 70%, transparent);
+}
+
+.live-empty p {
+    margin: 6px 0 0;
+}
+
+@media (max-width: 640px) {
+    .live-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .live-counter {
+        padding: 24px;
+    }
+}

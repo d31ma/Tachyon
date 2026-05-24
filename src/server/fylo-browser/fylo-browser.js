@@ -27,6 +27,24 @@ function normalizePublicPath(value, fallback) {
 const BROWSER_PATH = normalizePublicPath(process.env.YON_DATA_BROWSER_PATH, '/_fylo');
 const READONLY_DEFAULT = true;
 
+/** @param {string} collection */
+function isSafeCollectionName(collection) {
+    return collection.length > 0
+        && collection !== '.'
+        && collection !== '..'
+        && !collection.includes('/')
+        && !collection.includes('\\');
+}
+
+/** @param {string} value */
+function safeDecodeURIComponent(value) {
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return null;
+    }
+}
+
 /** @returns {string} */
 function fyloRoot() {
     return process.env.FYLO_ROOT || path.join(process.cwd(), '.fylo-data');
@@ -50,7 +68,7 @@ const schemaCache = new Map();
 
 /** @returns {string | undefined} */
 function schemaRoot() {
-    return process.env.FYLO_SCHEMA_DIR || process.env.YON_SCHEMA_DIR;
+    return process.env.FYLO_SCHEMA || process.env.FYLO_SCHEMA_DIR || process.env.YON_SCHEMA_DIR;
 }
 
 /**
@@ -68,7 +86,7 @@ async function loadCollectionSchema(collection) {
         const current = typeof manifest.current === 'string' ? manifest.current : '';
         if (current) {
             return /** @type {Record<string, unknown>} */ (
-                await Bun.file(path.join(schemaDir, collection, 'history', `${current}.json`)).json()
+                await Bun.file(path.join(schemaDir, collection, 'history', `${current}.schema.json`)).json()
             );
         }
     } catch {
@@ -241,25 +259,37 @@ function shellHtml() {
         </section>
         <section class="fylo-panel">
             <div class="fylo-panel-header">
-                <h2 class="md-typescale-title-large">Query</h2>
-                <span id="fylo-query-mode" class="chip">SQL</span>
+                <h2 class="md-typescale-title-large">Browsable API</h2>
+                <span id="fylo-query-mode" class="chip">GET</span>
             </div>
-            <p class="muted md-typescale-body-medium">Run a SQL statement against the FYLO root, or a <code>findDocs</code> query against a single collection. Read-only by default.</p>
+            <p class="muted md-typescale-body-medium">Send Django-style collection requests. Use <code>/_fylo/&lt;collection&gt;/</code> for lists and creates, or <code>/_fylo/&lt;collection&gt;/&lt;id&gt;/</code> for retrieve, update, patch, and delete.</p>
             <div class="fylo-query">
+                <div class="fylo-rest-bar">
+                    <label class="sr-only" for="fylo-request-method">HTTP method</label>
+                    <select id="fylo-request-method" class="field-control fylo-method">
+                        <option>GET</option>
+                        <option>POST</option>
+                        <option>PUT</option>
+                        <option>PATCH</option>
+                        <option>DELETE</option>
+                    </select>
+                    <label class="sr-only" for="fylo-request-path">Request URL</label>
+                    <input id="fylo-request-path" class="field-control fylo-path" value="${BROWSER_PATH}/" aria-label="Request URL">
+                </div>
                 <textarea
                     id="fylo-query-source"
                     class="field-control"
-                    rows="5"
-                    aria-label="SQL statement"
-                    placeholder="SQL statement"
-                >SELECT * FROM otel-spans</textarea>
+                    rows="7"
+                    aria-label="JSON request body"
+                    placeholder='{"title":"Example"}'
+                ></textarea>
                 <div class="fylo-query-actions">
-                    <button type="button" class="button button-text" id="fylo-query-toggle">Switch to findDocs</button>
-                    <button type="button" class="button button-primary" id="fylo-query-run">Run query</button>
+                    <button type="button" class="button button-text" id="fylo-query-toggle">Use selected route</button>
+                    <button type="button" class="button button-primary" id="fylo-query-run">Send request</button>
                 </div>
             </div>
             <div id="fylo-query-results" class="fylo-query-results">
-                <p class="muted md-typescale-body-medium">Submit a query to see results here.</p>
+                <p class="muted md-typescale-body-medium">Send a request to inspect the response here.</p>
             </div>
         </section>
         <section class="fylo-panel">
@@ -425,6 +455,158 @@ async function deleteDocument(url) {
 
 /**
  * @param {Request} request
+ * @returns {Promise<Record<string, unknown>>}
+ */
+async function readJsonObject(request) {
+    /** @type {unknown} */
+    let body;
+    try {
+        body = await request.json();
+    } catch {
+        throw Response.json({ error: 'invalid JSON body' }, { status: 400, headers: Router.getHeaders(request) });
+    }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        throw Response.json({ error: 'request body must be a JSON object' }, { status: 400, headers: Router.getHeaders(request) });
+    }
+    return /** @type {Record<string, unknown>} */ (body);
+}
+
+/**
+ * @param {Request} request
+ * @param {unknown} body
+ * @param {number} [status]
+ * @returns {Response}
+ */
+function jsonResponse(request, body, status = 200) {
+    return new Response(JSON.stringify(body), {
+        status,
+        headers: {
+            ...Router.getHeaders(request),
+            'Content-Type': 'application/json; charset=utf-8',
+        },
+    });
+}
+
+/**
+ * @param {Request} request
+ * @returns {Response | null}
+ */
+function readOnlyResponse(request) {
+    if (!readOnly()) return null;
+    return jsonResponse(request, {
+        error: 'browser is read-only; set YON_DATA_BROWSER_READONLY=false to enable mutations',
+    }, 403);
+}
+
+/**
+ * @param {string} collection
+ * @param {Record<string, unknown>} doc
+ */
+async function assertEditableDocument(collection, doc) {
+    const encryptedFields = await getEncryptedFields(collection);
+    if (!reveal() && encryptedFields.length) {
+        for (const field of encryptedFields) {
+            if (field in doc && doc[field] === '<encrypted>') {
+                throw Response.json(
+                    { error: `cannot save: encrypted field "${field}" is masked. Set YON_DATA_BROWSER_REVEAL=true to edit` },
+                    { status: 400 },
+                );
+            }
+        }
+    }
+}
+
+/**
+ * @param {Request} request
+ * @returns {{ collection: string, id: string | null } | null}
+ */
+function parseRestDocumentPath(request) {
+    const pathname = new URL(request.url).pathname;
+    if (!pathname.startsWith(`${BROWSER_PATH}/`)) return null;
+    const rest = pathname.slice(BROWSER_PATH.length + 1);
+    if (!rest || rest.startsWith('api/') || rest === 'app.css' || rest === 'app.js') return null;
+    const segments = rest.split('/').filter(Boolean).map(safeDecodeURIComponent);
+    if (segments.length < 1 || segments.length > 2) return null;
+    if (segments.some(segment => segment === null)) return null;
+    const safeSegments = /** @type {string[]} */ (segments);
+    if (safeSegments.some(segment => !isSafeCollectionName(segment))) return null;
+    return { collection: safeSegments[0], id: safeSegments[1] ?? null };
+}
+
+/** @param {Request} request */
+async function listRestDocuments(request) {
+    const route = parseRestDocumentPath(request);
+    if (!route || route.id) return jsonResponse(request, { error: 'not found' }, 404);
+    const url = new URL(request.url);
+    url.searchParams.set('collection', route.collection);
+    return jsonResponse(request, await listDocuments(url));
+}
+
+/** @param {Request} request */
+async function getRestDocument(request) {
+    const route = parseRestDocumentPath(request);
+    if (!route || !route.id) return jsonResponse(request, { error: 'not found' }, 404);
+    const url = new URL(request.url);
+    url.searchParams.set('collection', route.collection);
+    url.searchParams.set('id', route.id);
+    const result = await getDocument(url);
+    if (!result.doc && !result.docError) return jsonResponse(request, { error: 'document not found' }, 404);
+    return jsonResponse(request, result);
+}
+
+/** @param {Request} request */
+async function createRestDocument(request) {
+    const readonly = readOnlyResponse(request);
+    if (readonly) return readonly;
+    const route = parseRestDocumentPath(request);
+    if (!route || route.id) return jsonResponse(request, { error: 'not found' }, 404);
+    const doc = await readJsonObject(request);
+    await assertEditableDocument(route.collection, doc);
+    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    try {
+        const id = await fylo.putData(route.collection, /** @type {Record<string, any>} */ (doc));
+        return jsonResponse(request, { ok: true, id }, 201);
+    } catch (error) {
+        return jsonResponse(request, { error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+}
+
+/** @param {Request} request */
+async function updateRestDocument(request) {
+    const readonly = readOnlyResponse(request);
+    if (readonly) return readonly;
+    const route = parseRestDocumentPath(request);
+    if (!route || !route.id) return jsonResponse(request, { error: 'not found' }, 404);
+    const doc = await readJsonObject(request);
+    await assertEditableDocument(route.collection, doc);
+    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    try {
+        const id = request.method === 'PUT'
+            ? await fylo.putData(route.collection, { [route.id]: /** @type {Record<string, any>} */ (doc) })
+            : await fylo.patchDoc(route.collection, { [route.id]: /** @type {Record<string, any>} */ (doc) });
+        return jsonResponse(request, { ok: true, id });
+    } catch (error) {
+        return jsonResponse(request, { error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+}
+
+/** @param {Request} request */
+async function deleteRestDocument(request) {
+    const readonly = readOnlyResponse(request);
+    if (readonly) return readonly;
+    const route = parseRestDocumentPath(request);
+    if (!route || !route.id) return jsonResponse(request, { error: 'not found' }, 404);
+    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    try {
+        await fylo.delDoc(route.collection, route.id);
+        return new Response(null, { status: 204, headers: Router.getHeaders(request) });
+    } catch (error) {
+        return jsonResponse(request, { error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+}
+
+/**
+ * @param {Request} request
  */
 async function rebuildCollectionAction(request) {
     if (readOnly())
@@ -455,6 +637,8 @@ async function tailEvents(url) {
     const collection = url.searchParams.get('collection') ?? '';
     if (!collection)
         return { error: 'collection query parameter required' };
+    if (!isSafeCollectionName(collection))
+        return { error: 'invalid collection query parameter' };
     const sinceParam = Number(url.searchParams.get('since') ?? 0);
     const since = Number.isFinite(sinceParam) && sinceParam >= 0 ? Math.trunc(sinceParam) : 0;
     const limitParam = Number(url.searchParams.get('limit') ?? 100);
@@ -510,7 +694,10 @@ async function getDocument(url) {
     let historyError;
     try {
         const result = await fylo.getDoc(collection, id).once();
-        const raw = result && typeof result === 'object' ? /** @type {Record<string, unknown>} */ (result) : null;
+        const resultObject = result && typeof result === 'object' ? /** @type {Record<string, unknown>} */ (result) : null;
+        const raw = resultObject && id in resultObject && resultObject[id] && typeof resultObject[id] === 'object'
+            ? /** @type {Record<string, unknown>} */ (resultObject[id])
+            : resultObject;
         doc = raw ? /** @type {Record<string, unknown>} */ (redactDoc(raw, encryptedFields)) : null;
     } catch (error) {
         docError = error instanceof Error ? error.message : String(error);
@@ -702,6 +889,26 @@ export default class FyloBrowser {
             }, `${BROWSER_PATH}/api/meta`),
         };
 
+        Router.reqRoutes[`${BROWSER_PATH}/*`] = {
+            GET: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/items/`)) => {
+                const route = parseRestDocumentPath(request);
+                if (!route) return jsonResponse(request, { error: 'not found' }, 404);
+                return route.id ? getRestDocument(request) : listRestDocuments(request);
+            }, `${BROWSER_PATH}/*`),
+            POST: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/items/`, { method: 'POST' })) => {
+                return createRestDocument(request);
+            }, `${BROWSER_PATH}/*`),
+            PUT: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/items/id`, { method: 'PUT' })) => {
+                return updateRestDocument(request);
+            }, `${BROWSER_PATH}/*`),
+            PATCH: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/items/id`, { method: 'PATCH' })) => {
+                return updateRestDocument(request);
+            }, `${BROWSER_PATH}/*`),
+            DELETE: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/items/id`, { method: 'DELETE' })) => {
+                return deleteRestDocument(request);
+            }, `${BROWSER_PATH}/*`),
+        };
+
         // Reveal is controlled exclusively by the YON_DATA_BROWSER_REVEAL env var.
         // No per-session reveal endpoint — that route was half-baked because
         // each handler reads `reveal()` from the env at call time, so a
@@ -710,3 +917,6 @@ export default class FyloBrowser {
         // response and have `reveal(request)` read it.
     }
 }
+
+/** Exported for integration testing — verifies schema loading from FYLO_SCHEMA. */
+export { loadCollectionSchema };

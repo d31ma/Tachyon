@@ -3,7 +3,8 @@ require "json"
 
 class YonRubyRunner
   def self.route_class_name(handler_path)
-    File.basename(handler_path).split(".", 2).first
+    base = File.basename(handler_path).split(".", 2).first
+    base.nil? || base.empty? ? "Yon" : base[0].upcase + base[1..]
   end
 
   def self.resolve_handler(handler_path)

@@ -1,20 +1,31 @@
 // @ts-check
 import { validateData as chexValidateData } from '@d31ma/chex';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
 import Router from "./route-handler.js";
 
 /** @typedef {Record<string, any>} SchemaRecord */
 /** @typedef {Record<string, SchemaRecord>} MethodSchema */
 
 export default class Validate {
+    /** @type {string | null} */
+    static chexSchemaDir = null;
+
     /** @type {Map<string, SchemaRecord>} */
     static chexSchemas = new Map();
 
     /**
-     * @param {string | undefined} filename
+     * Derives the HTTP method from the parent directory of a handler file path.
+     * Route handlers live at `<route>/<METHOD>/yon.<ext>`, so the method
+     * directory is the last segment after dropping the `yon.<ext>` filename.
+     * @param {string[]} parts - The filesystem path split on `/`. Mutated:
+     *   the trailing `yon.<ext>` and the method directory are popped off.
      * @returns {string | undefined}
      */
-    static methodFromHandlerFilename(filename) {
-        return filename?.split('.', 1)[0];
+    static methodFromHandlerPath(parts) {
+        parts.pop();
+        return parts.pop()?.toUpperCase();
     }
 
     /**
@@ -93,7 +104,7 @@ export default class Validate {
         const normalizedHandler = handler.replaceAll('\\', '/');
         const normalizedRoutesPath = Router.routesPath.replaceAll('\\', '/');
         const parts = normalizedHandler.split('/');
-        const method = Validate.methodFromHandlerFilename(parts.pop());
+        const method = Validate.methodFromHandlerPath(parts);
         const absoluteDir = parts.join('/');
         const relativeRoute = Router.filesystemPathToRoute(absoluteDir.replace(normalizedRoutesPath, '') || '/');
         const schema = Router.routeConfigs[relativeRoute];
@@ -108,12 +119,12 @@ export default class Validate {
             .sort((a, b) => a - b);
         if (statusCodes.length === 0)
             return null;
-        let parsed;
+        let parsedBody;
         try {
-            const p = JSON.parse(body);
-            if (typeof p !== 'object' || p === null || Array.isArray(p))
+            const candidateBody = JSON.parse(body);
+            if (typeof candidateBody !== 'object' || candidateBody === null || Array.isArray(candidateBody))
                 return null;
-            parsed = p;
+            parsedBody = candidateBody;
         }
         catch {
             return null;
@@ -123,23 +134,26 @@ export default class Validate {
                 const statusSchema = methodSchema[String(code)];
                 if (!statusSchema)
                     continue;
-                await Validate.validateWithChex({ ...parsed }, statusSchema, relativeRoute, relativeRoute, method, String(code));
+                await Validate.validateWithChex({ ...parsedBody }, statusSchema, relativeRoute, relativeRoute, method, String(code));
                 return code;
             }
-            catch { }
+            catch {
+                continue;
+            }
         }
         return null;
     }
+
     /**
      * @param {string} route
      * @param {string} io
-     * @param {unknown} data
+     * @param {unknown} payload
      */
-    static async validateData(route, io, data) {
+    static async validateData(route, io, payload) {
         const normalizedRoute = route.replaceAll('\\', '/');
         const normalizedRoutesPath = Router.routesPath.replaceAll('\\', '/');
         const parts = normalizedRoute.split('/');
-        const method = Validate.methodFromHandlerFilename(parts.pop());
+        const method = Validate.methodFromHandlerPath(parts);
         const absoluteDir = parts.join('/');
         const relativeRoute = Router.filesystemPathToRoute(absoluteDir.replace(normalizedRoutesPath, '') || '/');
         const schema = Router.routeConfigs[relativeRoute];
@@ -155,22 +169,26 @@ export default class Validate {
                     ? Validate.declaredRequestSections(target, ioSchema)
                     : target;
                 await Validate.validateWithChex(validationTarget, ioSchema, route, relativeRoute, method, io);
+            } else if (io === 'req' && (target.body !== undefined || target.query !== undefined)) {
+                throw new Error(
+                    `Request data present but no 'request' schema defined for '${method} ${relativeRoute}'`
+                );
             }
         };
-        if (typeof data === "string") {
+        if (typeof payload === "string") {
             let parsed;
             try {
-                parsed = JSON.parse(data);
+                parsed = JSON.parse(payload);
             }
             catch {
-                parsed = data;
+                parsed = payload;
             }
             if (typeof parsed === "object" && parsed !== null) {
                 await applyValidation(parsed);
             }
         }
         else {
-            await applyValidation(/** @type {SchemaRecord} */ (data));
+            await applyValidation(/** @type {SchemaRecord} */ (payload));
         }
     }
 }

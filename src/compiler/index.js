@@ -24,8 +24,9 @@ import { pathToFileURL } from "url";
  * @typedef {{ version: string, modules: Map<string, Function>, register: (id: string, factory: Function) => Function, load: (id: string) => Promise<Function> }} TacRegistry
  */
 const TEMPLATE_PATH = `${import.meta.dir}/render-template.js`;
-const ROUTES_JSON_PATH = `${import.meta.dir}/../shared/manifests/route-manifest.json`;
-const SHELLS_JSON_PATH = `${import.meta.dir}/../shared/manifests/shell-manifest.json`;
+const SPA_RENDERER_PATH = `${import.meta.dir}/../runtime/spa-renderer.js`;
+const ROUTE_MANIFEST_PLACEHOLDER = '{"__tachyonPlaceholder":true}';
+const LAYOUT_MANIFEST_PLACEHOLDER = '{"__tachyonShellPlaceholder":true}';
 const NOT_FOUND_PATH = `${import.meta.dir}/../runtime/shells/not-found.html`;
 const APP_SHELL_PATH = `${import.meta.dir}/../runtime/shells/app.html`;
 const PRERENDER_WORKER_PATH = `${import.meta.dir}/../runtime/prerender-worker.js`;
@@ -46,8 +47,6 @@ const staticRouteResponse = (routePath, body, contentType) => {
 const jsResponse = (routePath, body) => staticRouteResponse(routePath, body, 'application/javascript');
 /** @param {string} routePath @param {BodyInit} body @param {string} [contentType] */
 const typedResponse = (routePath, body, contentType) => staticRouteResponse(routePath, body, contentType);
-/** @param {string} routePath @param {string} filePath */
-const jsonResponse = (routePath, filePath) => async () => staticRouteResponse(routePath, await Bun.file(filePath).bytes(), 'application/json');
 /** @param {string} filePath */
 const pathExists = async (filePath) => {
     try {
@@ -112,7 +111,7 @@ export default class Compiler {
         'feimage', 'femerge', 'femergenode', 'femorphology', 'feoffset', 'fepointlight',
         'fespecularlighting', 'fespotlight', 'fetile', 'feturbulence'
     ]);
-    static controlTags = new Set(['loop', 'logic']);
+    static controlTags = new Set(['loop', 'logic', 'switch', 'case']);
     static reservedCustomElementNames = new Set([
         'annotation-xml',
         'color-profile',
@@ -163,7 +162,7 @@ export default class Compiler {
     /** @param {string} route */
     static normalizeComponentName(route) {
         const segments = route.replace('.html', '').split('/').filter(Boolean);
-        if (segments[segments.length - 1] === 'index')
+        if (segments[segments.length - 1] === 'tac')
             segments.pop();
         return segments.join('-').toLowerCase();
     }
@@ -172,16 +171,16 @@ export default class Compiler {
     static validateComponentRoute(route) {
         const normalized = route.replaceAll('\\', '/');
         const segments = normalized.split('/');
-        const isIndexTemplate = segments.at(-1) === 'index.html';
+        const isTacTemplate = segments.at(-1) === Router.pageFileName;
         const validSegment = /^[a-z][a-z0-9]*$/;
         const hasValidName = segments.length >= 2
             && segments.slice(0, -1).every((segment) => validSegment.test(segment));
-        if (isIndexTemplate && hasValidName)
+        if (isTacTemplate && hasValidName)
             return;
         throw new Error([
             `Invalid Tac component path '${route}'.`,
-            'Components must use lowercase alphanumeric folders with an index.html template.',
-            "Example: browser/components/user/card/index.html is used as <user-card />.",
+            `Components must use lowercase alphanumeric folders with a ${Router.pageFileName} template.`,
+            `Example: browser/components/user/card/${Router.pageFileName} is used as <user-card />.`,
         ].join(' '));
     }
 
@@ -218,6 +217,94 @@ export default class Compiler {
             return `for(let ${forInMatch[1]} in ${forInMatch[2]}) {`;
         return `for(${trimmed}) {`;
     }
+    /** @param {string} source */
+    static isControlElementSource(source) {
+        return /<\/?(?:loop|logic|switch|case)(?:\s|>|`)/.test(source);
+    }
+    /**
+     * @param {unknown} switchValue
+     * @param {unknown} caseValue
+     */
+    static matchSwitchCase(switchValue, caseValue) {
+        return Array.isArray(caseValue)
+            ? caseValue.some((value) => Object.is(value, switchValue))
+            : Object.is(caseValue, switchValue);
+    }
+    /**
+     * @param {string} expression
+     * @returns {string | null}
+     */
+    static getStaticCaseKey(expression) {
+        const trimmed = expression.trim();
+        if (/^(['"]).*\1$/.test(trimmed))
+            return `string:${trimmed.slice(1, -1)}`;
+        if (/^-?\d+(?:\.\d+)?$/.test(trimmed))
+            return `number:${trimmed}`;
+        if (trimmed === 'true' || trimmed === 'false')
+            return `boolean:${trimmed}`;
+        if (trimmed === 'null')
+            return 'null:null';
+        return null;
+    }
+    /**
+     * @param {string} renderSource
+     * @param {string} sourceName
+     */
+    static compileSwitchExpressions(renderSource, sourceName) {
+        /** @type {{ valueVar: string, matchedVar: string, defaultSeen: boolean, staticCases: Set<string>, caseClosers: string[] }[]} */
+        const stack = [];
+        let index = 0;
+        const pattern = /`<switch\s+:value="([\s\S]*?)">`|`<\/switch>`|`<case\s+:when="([\s\S]*?)">`|`<case\s+default="">`|`<\/case>`/g;
+        const output = renderSource.replaceAll(pattern, (match, switchExpr, caseExpr) => {
+            if (switchExpr !== undefined) {
+                const id = index++;
+                const frame = {
+                    valueVar: `__ty_switch_value_${id}`,
+                    matchedVar: `__ty_switch_matched_${id}`,
+                    defaultSeen: false,
+                    staticCases: new Set(),
+                    caseClosers: [],
+                };
+                stack.push(frame);
+                return `{ const ${frame.valueVar}=(${switchExpr}); let ${frame.matchedVar}=false;`;
+            }
+            if (match === '`</switch>`') {
+                if (stack.length === 0)
+                    throw new Error(`Invalid Tac switch in '${sourceName}': </switch> has no matching <switch>.`);
+                stack.pop();
+                return '}';
+            }
+            const frame = stack.at(-1);
+            if (!frame)
+                throw new Error(`Invalid Tac switch in '${sourceName}': <case> must be inside <switch>.`);
+            if (caseExpr !== undefined) {
+                const staticKey = Compiler.getStaticCaseKey(caseExpr);
+                if (staticKey) {
+                    if (frame.staticCases.has(staticKey))
+                        throw new Error(`Invalid Tac switch in '${sourceName}': duplicate literal case value '${caseExpr}'.`);
+                    frame.staticCases.add(staticKey);
+                }
+                frame.caseClosers.push('}}');
+                return `{ const __ty_case_value=(${caseExpr}); if(!${frame.matchedVar} && __ty_helpers__.matchSwitchCase(${frame.valueVar}, __ty_case_value)) { ${frame.matchedVar}=true;`;
+            }
+            if (match === '`<case default="">`') {
+                if (frame.defaultSeen)
+                    throw new Error(`Invalid Tac switch in '${sourceName}': only one default case is allowed per <switch>.`);
+                frame.defaultSeen = true;
+                frame.caseClosers.push('}');
+                return `if(!${frame.matchedVar}) { ${frame.matchedVar}=true;`;
+            }
+            const closer = frame.caseClosers.pop();
+            if (!closer)
+                throw new Error(`Invalid Tac switch in '${sourceName}': </case> has no matching <case>.`);
+            return closer;
+        });
+        if (stack.length > 0)
+            throw new Error(`Invalid Tac switch in '${sourceName}': <switch> is missing </switch>.`);
+        if (output.includes('`<switch') || output.includes('`<case'))
+            throw new Error(`Invalid Tac switch in '${sourceName}': use <switch :value="..."> and <case :when="..."> or <case default>.`);
+        return output;
+    }
 
     /**
      * @param {string} tagName
@@ -238,23 +325,15 @@ export default class Compiler {
         Compiler.layoutMapping = {};
         Compiler.warnedUnknownTags.clear();
         await Router.validatePageRoutes();
-        await Compiler.bundleBrowserRuntimeAssets();
-        // JSON manifests
-        Router.reqRoutes["/routes.json"] = { GET: jsonResponse('/routes.json', ROUTES_JSON_PATH) };
-        Router.reqRoutes["/shells.json"] = { GET: jsonResponse('/shells.json', SHELLS_JSON_PATH) };
         // Components must be registered before pages/layouts compile so that
         // compMapping is fully populated when import statements are generated.
         await Compiler.bundleComponents();
         await Compiler.bundlePages();
+        await Compiler.bundleBrowserRuntimeAssets();
         await Promise.all([
             Compiler.bundleDependencies(),
             Compiler.bundleAssets(),
             Compiler.bundleSharedData()
-        ]);
-        // Write manifests after all routes are registered
-        await Promise.all([
-            Bun.write(Bun.file(ROUTES_JSON_PATH), JSON.stringify(Router.routeSlugs)),
-            Bun.write(Bun.file(SHELLS_JSON_PATH), JSON.stringify(Compiler.layoutMapping))
         ]);
     }
 
@@ -369,8 +448,8 @@ export default class Compiler {
      */
     static pageModulePublicPath(pathname) {
         return pathname === '/'
-            ? '/pages/index.js'
-            : `/pages${Router.routeToFilesystemPath(pathname)}/index.js`;
+            ? '/pages/tac.js'
+            : `/pages${Router.routeToFilesystemPath(pathname)}/tac.js`;
     }
 
     /**
@@ -380,8 +459,8 @@ export default class Compiler {
      */
     static pageModuleFilePath(distPath, pathname) {
         return pathname === '/'
-            ? path.join(distPath, 'pages', 'index.js')
-            : path.join(distPath, 'pages', Router.routeToFilesystemPath(pathname).slice(1), 'index.js');
+            ? path.join(distPath, 'pages', 'tac.js')
+            : path.join(distPath, 'pages', Router.routeToFilesystemPath(pathname).slice(1), 'tac.js');
     }
 
     /** @param {string | undefined} scriptLang */
@@ -580,9 +659,39 @@ export default class Compiler {
             .replace('__FYLO_BROWSER_PATH__', fyloBrowserPath);
         return withPublicBrowserEnv(Compiler.withMainStylesheet(shellHTML));
     }
+    static createSpaRendererManifestPlugin() {
+        const routeManifestJSON = JSON.stringify(Router.routeSlugs);
+        const layoutManifestJSON = JSON.stringify(Compiler.layoutMapping);
+        const escapedRouteManifestJSON = routeManifestJSON
+            .replaceAll('\\', '\\\\')
+            .replaceAll("'", "\\'");
+        const escapedLayoutManifestJSON = layoutManifestJSON
+            .replaceAll('\\', '\\\\')
+            .replaceAll("'", "\\'");
+        return /** @type {BunPlugin} */ ({
+            name: 'tachyon-manifest-inline',
+            setup(build) {
+                build.onLoad({ filter: /spa-renderer\.js$/ }, async ({ path: filePath }) => {
+                    if (path.resolve(filePath) !== path.resolve(SPA_RENDERER_PATH))
+                        return undefined;
+                    const source = await Bun.file(filePath).text();
+                    if (!source.includes(ROUTE_MANIFEST_PLACEHOLDER))
+                        throw new Error('Tac SPA renderer route manifest placeholder is missing');
+                    if (!source.includes(LAYOUT_MANIFEST_PLACEHOLDER))
+                        throw new Error('Tac SPA renderer layout manifest placeholder is missing');
+                    return {
+                        contents: source
+                            .replace(ROUTE_MANIFEST_PLACEHOLDER, escapedRouteManifestJSON)
+                            .replace(LAYOUT_MANIFEST_PLACEHOLDER, escapedLayoutManifestJSON),
+                        loader: 'js',
+                    };
+                });
+            },
+        });
+    }
     static async bundleBrowserRuntimeAssets() {
         const entrypoints = [
-            `${import.meta.dir}/../runtime/spa-renderer.js`,
+            SPA_RENDERER_PATH,
             `${import.meta.dir}/../runtime/hot-reload-client.js`,
         ];
         const mainEntrypoint = await Compiler.getMainEntrypointPath();
@@ -595,6 +704,7 @@ export default class Compiler {
             minify: true,
             splitting: true,
             target: 'browser',
+            plugins: [Compiler.createSpaRendererManifestPlugin()],
         });
         const registeredRoutes = new Set();
         for (const output of result.outputs) {
@@ -686,12 +796,12 @@ export default class Compiler {
                         return registered;
                     const relative = id.startsWith('/') ? id.slice(1) : id;
                     const modulePath = pathToFileURL(path.join(distPath, relative)).href;
-                    const mod = await import(modulePath);
+                    const module = await import(modulePath);
                     const loaded = modules.get(id);
                     if (loaded)
                         return loaded;
-                    if (typeof mod.default === 'function')
-                        return mod.default;
+                    if (typeof module.default === 'function')
+                        return module.default;
                     throw new Error(`Tac module '${id}' did not export or register a renderer`);
                 }
             })
@@ -719,9 +829,9 @@ export default class Compiler {
     }
     /** @param {string} filePath @param {string} publicPath */
     static async loadRenderFactoryForPrerender(filePath, publicPath) {
-        const mod = await import(pathToFileURL(filePath).href);
-        if (typeof mod.default === 'function')
-            return mod.default;
+        const module = await import(pathToFileURL(filePath).href);
+        if (typeof module.default === 'function')
+            return module.default;
         const yon = /** @type {{ Tac?: TacRegistry }} */ (globalThis).Tac;
         const registered = yon?.modules?.get(publicPath);
         if (registered)
@@ -840,12 +950,12 @@ export default class Compiler {
     static async bundlePageFile(route) {
         route = route.replaceAll('\\', '/');
         const sourcePath = `${Router.pagesPath}/${route}`;
-        const data = await Compiler.extractComponents(await Bun.file(sourcePath).text(), sourcePath, 'pages', route);
+        const templateData = await Compiler.extractComponents(await Bun.file(sourcePath).text(), sourcePath, 'pages', route);
         const moduleRoute = Compiler.toModuleOutputRoute(route);
         const routePath = Compiler.routePathFromPageSource(route);
         const publicPath = `/pages/${moduleRoute}`;
-        await Compiler.registerModule(data, moduleRoute, 'pages', sourcePath);
-        if (data.hasSlot && !Compiler.layoutMapping[routePath]?.allowSelf) {
+        await Compiler.registerModule(templateData, moduleRoute, 'pages', sourcePath);
+        if (templateData.hasSlot && !Compiler.layoutMapping[routePath]?.allowSelf) {
             Compiler.layoutMapping[routePath] = {
                 path: publicPath,
                 allowSelf: false,
@@ -863,8 +973,8 @@ export default class Compiler {
             throw new Error(`Duplicate component name '${componentName}' for '${comp}' and '${Compiler.compMapping.get(componentName)}'`);
         }
         Compiler.compMapping.set(componentName, modulePath);
-        const data = await Compiler.extractComponents(await Bun.file(sourcePath).text(), sourcePath, 'components', comp);
-        await Compiler.registerModule(data, comp, 'components', sourcePath);
+        const templateData = await Compiler.extractComponents(await Bun.file(sourcePath).text(), sourcePath, 'components', comp);
+        await Compiler.registerModule(templateData, comp, 'components', sourcePath);
     }
     /** @param {string} route */
     static async bundleAssetFile(route) {
@@ -877,13 +987,13 @@ export default class Compiler {
     }
     // ── Template extraction ────────────────────────────────────────────────────
     /**
-     * @param {string} data
+     * @param {string} sourceText
      * @param {string} sourcePath
      * @param {string} dir
      * @param {string} route
      * @returns {Promise<TemplateData>}
      */
-    static async extractComponents(data, sourcePath, dir, route) {
+    static async extractComponents(sourceText, sourcePath, dir, route) {
         let scriptContent = '';
         let scriptLang = 'js';
         let hasSlot = false;
@@ -901,7 +1011,7 @@ export default class Compiler {
                 hasSlot = true;
             }
         });
-        let htmlContent = await rewriter.transform(new Response(data)).text();
+        let htmlContent = await rewriter.transform(new Response(sourceText)).text();
         const companion = await Compiler.getCompanionScript(sourcePath);
         const companionStylePath = await Compiler.getCompanionStylePath(sourcePath);
         if (companionStylePath) {
@@ -939,13 +1049,13 @@ export default class Compiler {
                 .replaceAll('\\', '\\\\')
                 .replaceAll('`', '\\`')
                 .replaceAll('${', '\\${');
-            /** @param {string} name @param {string} value @param {string} hash */
-            const formatAttr = (name, value, hash) => {
+            /** @param {string} name @param {string} value @param {string} hash @param {string} tagName */
+            const formatAttr = (name, value, hash, tagName) => {
                 if (name.startsWith('@')) {
                     const eventHash = genHash();
                     return `${name}="\${await ty_invokeEvent('${eventHash}', async ($event) => { const __event__ = $event; return ${value} }, '${hash}')}"`;
                 }
-                if (name === ':value')
+                if (name === ':value' && tagName !== 'switch')
                     return `value="\${ty_escapeAttr(ty_assignValue('${hash}', '${value}', ${value}))}"`;
                 return `${name}="${escapeTemplateLiteral(value)}"`;
             };
@@ -1028,10 +1138,10 @@ export default class Compiler {
                         }
                     }
                     // Auto-generate id for non-control, non-component elements
-                    if (!attrs.id && !resolvedComponent && tag !== 'LOOP' && tag !== 'LOGIC') {
+                    if (!attrs.id && !resolvedComponent && !Compiler.controlTags.has(tagLower)) {
                         attrs[':id'] = `ty_generateId('${hash}', 'id')`;
                     }
-                    const attrStr = Object.entries(attrs).map(([n, v]) => formatAttr(n, v, hash)).join(' ');
+                    const attrStr = Object.entries(attrs).map(([n, v]) => formatAttr(n, v, hash, tagLower)).join(' ');
                     tagStack.push(tagLower);
                     if (element.selfClosing) {
                         const tagName = resolvedComponent ? `${resolvedComponent}_` : tagLower;
@@ -1067,28 +1177,27 @@ export default class Compiler {
     }
     // ── JS code generation ─────────────────────────────────────────────────────
     /**
-     * @param {TemplateData} data
+     * @param {TemplateData} templateData
      * @param {TemplateNode[]} elements
      * @returns {Promise<string>}
      */
-    /** @param {TemplateData} data @param {TemplateNode[]} elements @param {string} publicPath */
-    static async createJSData(data, elements, publicPath) {
+    /** @param {TemplateData} templateData @param {TemplateNode[]} elements @param {string} publicPath */
+    static async createJSData(templateData, elements, publicPath) {
         /** @type {string[]} */
         const statics = [];
         /** @type {string[]} */
         const body = [];
-        for (const el of elements) {
-            if (el.static)
-                statics.push(el.static);
-            if (el.element) {
+        for (const templateNode of elements) {
+            if (templateNode.static)
+                statics.push(templateNode.static);
+            if (templateNode.element) {
                 // Control flow and component tags are raw JS, not concatenated
-                if (el.element.includes('<loop') || el.element.includes('</loop') ||
-                    el.element.includes('<logic') || el.element.includes('</logic') ||
-                    /<([A-Za-z0-9-]+)_\s*([\s\S]*?)\/>/.test(el.element)) {
-                    body.push(el.element);
+                if (Compiler.isControlElementSource(templateNode.element) ||
+                    /<([A-Za-z0-9-]+)_\s*([\s\S]*?)\/>/.test(templateNode.element)) {
+                    body.push(templateNode.element);
                 }
                 else {
-                    body.push(`elements+=${el.element}`);
+                    body.push(`elements+=${templateNode.element}`);
                 }
             }
         }
@@ -1097,6 +1206,7 @@ export default class Compiler {
             .replaceAll(/`<logic :if="(.*?)">`/g, (_, expr) => `if(${expr}) {`)
             .replaceAll(/`<logic :else-if="(.*?)">`/g, (_, expr) => `else if(${expr}) {`)
             .replaceAll(/(`<logic else="">`)|(`<\/logic>`)/g, (_, expr) => expr ? `else {` : '}');
+        renderSource = Compiler.compileSwitchExpressions(renderSource, publicPath);
         // Bind dynamic attributes :attr="expr" → attr="${escaped expr}"
         renderSource = renderSource.replaceAll(/:(\w[\w-]*)="([^"]*)"/g, '$1="${ty_escapeAttr($2)}"');
         // Transform component invocations
@@ -1147,7 +1257,7 @@ export default class Compiler {
                 elements += '</div>'
             `;
         });
-        const rawScriptContent = await Compiler.transpileInlineScript(data.script ?? '', data.scriptLang);
+        const rawScriptContent = await Compiler.transpileInlineScript(templateData.script ?? '', templateData.scriptLang);
         const { bindingNames: dynamicImportBindings, moduleImports: dynamicModuleImports, scriptContent, } = Compiler.liftDynamicImports(rawScriptContent);
         const moduleImports = [...dynamicModuleImports];
         const factoryBindings = [...dynamicImportBindings];
@@ -1163,7 +1273,7 @@ export default class Compiler {
                 factoryBindings.push(bindingName);
             }
         }
-        const companionImportPath = data.companion?.importPath ?? data.companionImportPath;
+        const companionImportPath = templateData.companion?.importPath ?? templateData.companionImportPath;
         const companionLoader = companionImportPath
             ? `
 const __ty_companion__ = await (async () => {
@@ -1327,11 +1437,11 @@ ${transformed}
 `;
     }
     /**
-     * @param {{ data: TemplateData, dir: string, route: string, sourcePath: string, publicPath: string }} options
+     * @param {{ templateData: TemplateData, dir: string, route: string, sourcePath: string, publicPath: string }} options
      * @returns {BunPlugin}
      */
     static createTemplatePlugin(options) {
-        const { data, dir, route, sourcePath, publicPath } = options;
+        const { templateData, dir, route, sourcePath, publicPath } = options;
         const filter = Compiler.createFilePathFilter(sourcePath);
         const sourceLabel = Compiler.toSourceLabel(sourcePath);
         return /** @type {BunPlugin} */ ({
@@ -1339,8 +1449,8 @@ ${transformed}
             target: /** @type {import("bun").Target} */ ('browser'),
             setup(build) {
                 build.onLoad({ filter }, async () => {
-                    const parsed = await Compiler.parseHTML(data.html, `${dir}/${route} (${sourceLabel})`);
-                    const baseCode = await Compiler.createJSData(data, parsed, publicPath);
+                    const parsed = await Compiler.parseHTML(templateData.html, `${dir}/${route} (${sourceLabel})`);
+                    const baseCode = await Compiler.createJSData(templateData, parsed, publicPath);
                     const jsCode = Compiler.isGlobalOutput()
                         ? Compiler.wrapGlobalModule(baseCode, publicPath)
                         : baseCode;
@@ -1642,7 +1752,7 @@ const __tac_wasm_default_state__ = Object.freeze(${defaultState});
 const __tac_wasm_bytes__ = (() => {
     const bin = atob(${JSON.stringify(bytesBase64)});
     const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    for (let byteIndex = 0; byteIndex < bin.length; byteIndex++) bytes[byteIndex] = bin.charCodeAt(byteIndex);
     return bytes;
 })();
 const __tac_text_encoder__ = new TextEncoder();
@@ -1842,36 +1952,36 @@ export default class extends Tac {
         });
     }
     /**
-     * @param {TemplateData} data
+     * @param {TemplateData} templateData
      * @param {string} sourcePath
      * @returns {BunPlugin[]}
      */
-    static createCompanionPlugins(data, sourcePath) {
-        if (data.companion) {
-            if (data.companion.provider.target === 'ecmascript')
-                return [Compiler.createCompanionScriptPlugin(data.companion.sourcePath)];
-            if (data.companion.provider.target === 'wasm-json' || data.companion.provider.target === 'wasm-source')
-                return [Compiler.createWasmCompanionPlugin(data.companion)];
-            throw new Error(`Unsupported Tac companion target '${data.companion.provider.target}' for '${Compiler.toSourceLabel(data.companion.sourcePath)}'`);
+    static createCompanionPlugins(templateData, sourcePath) {
+        if (templateData.companion) {
+            if (templateData.companion.provider.target === 'ecmascript')
+                return [Compiler.createCompanionScriptPlugin(templateData.companion.sourcePath)];
+            if (templateData.companion.provider.target === 'wasm-json' || templateData.companion.provider.target === 'wasm-source')
+                return [Compiler.createWasmCompanionPlugin(templateData.companion)];
+            throw new Error(`Unsupported Tac companion target '${templateData.companion.provider.target}' for '${Compiler.toSourceLabel(templateData.companion.sourcePath)}'`);
         }
-        if (data.companionImportPath) {
-            const companionPath = path.resolve(path.dirname(sourcePath), data.companionImportPath);
+        if (templateData.companionImportPath) {
+            const companionPath = path.resolve(path.dirname(sourcePath), templateData.companionImportPath);
             return [Compiler.createCompanionScriptPlugin(companionPath)];
         }
         return [];
     }
     // ── Build & register a single template module ──────────────────────────────
     /**
-     * @param {TemplateData} data
+     * @param {TemplateData} templateData
      * @param {string} route
      * @param {string} dir
      * @param {string} sourcePath
      */
-    static async registerModule(data, route, dir, sourcePath) {
+    static async registerModule(templateData, route, dir, sourcePath) {
         const publicPath = `/${dir}/${Compiler.toModuleOutputRoute(route)}`;
         if (Compiler.isGlobalOutput()) {
-            const parsed = await Compiler.parseHTML(data.html, `${dir}/${route} (${Compiler.toSourceLabel(sourcePath)})`);
-            const baseCode = await Compiler.createJSData(data, parsed, publicPath);
+            const parsed = await Compiler.parseHTML(templateData.html, `${dir}/${route} (${Compiler.toSourceLabel(sourcePath)})`);
+            const baseCode = await Compiler.createJSData(templateData, parsed, publicPath);
             const output = new Bun.Transpiler({ loader: 'js' })
                 .transformSync(Compiler.wrapGlobalModule(baseCode, publicPath));
             Router.reqRoutes[publicPath] = {
@@ -1885,9 +1995,9 @@ export default class extends Tac {
             minify: { whitespace: true, syntax: true },
             splitting: false,
             plugins: [
-                ...Compiler.createCompanionPlugins(data, sourcePath),
+                ...Compiler.createCompanionPlugins(templateData, sourcePath),
                 Compiler.createTemplatePlugin({
-                    data,
+                    templateData,
                     dir,
                     route,
                     sourcePath,
@@ -1943,7 +2053,7 @@ export default class extends Tac {
     static async bundleComponents() {
         if (!await pathExists(Router.componentsPath))
             return;
-        for (const comp of new Bun.Glob('**/*.html').scanSync({ cwd: Router.componentsPath })) {
+        for (const comp of new Bun.Glob(`**/${Router.pageFileName}`).scanSync({ cwd: Router.componentsPath })) {
             await Compiler.bundleComponentFile(comp);
         }
     }
@@ -1953,16 +2063,16 @@ export default class extends Tac {
             return;
         const packages = await packageFile.json();
         const modules = Object.keys(packages.dependencies ?? {});
-        for (const mod of modules) {
+        for (const moduleName of modules) {
             // Scoped packages use a + separator in route paths so the /
             // in @scope/name is not treated as a path segment delimiter.
-            const routeKey = mod.replace('/', '+');
+            const routeKey = moduleName.replace('/', '+');
             // Resolve to a file path so Bun.build handles scoped packages
             // without trying to open @scope as a root directory.
-            let entry = mod;
+            let entry = moduleName;
             try {
-                const resolved = Bun.resolveSync(mod, process.cwd());
-                if (resolved && resolved !== mod)
+                const resolved = Bun.resolveSync(moduleName, process.cwd());
+                if (resolved && resolved !== moduleName)
                     entry = resolved;
             }
             catch {
@@ -1979,8 +2089,8 @@ export default class extends Tac {
                     };
                 }
             }
-            catch (e) {
-                Compiler.compilerLogger.warn('Failed to bundle dependency module', { module: mod, err: e });
+            catch (error) {
+                Compiler.compilerLogger.warn('Failed to bundle dependency module', { module: moduleName, err: error });
             }
         }
     }

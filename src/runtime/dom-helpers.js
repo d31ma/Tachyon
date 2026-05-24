@@ -1,19 +1,20 @@
 // @ts-check
 /**
  * @typedef {string | number | boolean | null | undefined} ParamValue
- * @typedef {{ preserveElement?: (el: Element) => boolean }} MorphOptions
+ * @typedef {{ preserveElement?: (element: Element) => boolean }} MorphOptions
  */
 
 /**
- * @param {Element | null} el
+ * @param {Element | null} element
  * @param {string} eventName
  * @returns {Element | null}
  */
-export function findEventTarget(el, eventName) {
-    while (el && el !== document.body) {
-        if (el.hasAttribute(`@${eventName}`))
-            return el;
-        el = el.parentElement;
+export function findEventTarget(element, eventName) {
+    let candidate = element;
+    while (candidate && candidate !== document.body) {
+        if (candidate.hasAttribute(`@${eventName}`))
+            return candidate;
+        candidate = candidate.parentElement;
     }
     return null;
 }
@@ -23,88 +24,88 @@ export function findEventTarget(el, eventName) {
  * @returns {DocumentFragment}
  */
 export function parseFragment(html) {
-    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-    const frag = document.createDocumentFragment();
-    while (doc.body.firstChild)
-        frag.appendChild(doc.body.firstChild);
-    return frag;
+    const parsedDocument = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+    const fragment = document.createDocumentFragment();
+    while (parsedDocument.body.firstChild)
+        fragment.appendChild(parsedDocument.body.firstChild);
+    return fragment;
 }
 
-    /**
-     * @param {ParentNode} [root]
-     */
+/**
+ * @param {ParentNode} [root]
+ */
 export function cleanBooleanAttrs(root = document.body) {
-    const all = root.querySelectorAll('*');
-    for (const el of all) {
-        for (const attr of Array.from(el.attributes)) {
-            if (attr.name.endsWith('ed') && attr.value === 'false')
-                el.removeAttribute(attr.name);
+    const elements = root.querySelectorAll('*');
+    for (const element of elements) {
+        for (const attribute of Array.from(element.attributes)) {
+            if (attribute.name.endsWith('ed') && attribute.value === 'false')
+                element.removeAttribute(attribute.name);
         }
     }
 }
 
 /**
- * @param {Node} a
- * @param {Node} b
+ * @param {Node} currentNode
+ * @param {Node} desiredNode
  * @returns {boolean}
  */
-export function isSameNode(a, b) {
-    if (a.nodeType !== b.nodeType)
+export function isSameNode(currentNode, desiredNode) {
+    if (currentNode.nodeType !== desiredNode.nodeType)
         return false;
-    if (a.nodeType === Node.ELEMENT_NODE) {
-        const ae = /** @type {Element} */ (a);
-        const be = /** @type {Element} */ (b);
-        if (ae.tagName !== be.tagName)
+    if (currentNode.nodeType === Node.ELEMENT_NODE) {
+        const currentElement = /** @type {Element} */ (currentNode);
+        const desiredElement = /** @type {Element} */ (desiredNode);
+        if (currentElement.tagName !== desiredElement.tagName)
             return false;
-        if (ae.id && be.id)
-            return ae.id === be.id;
+        if (currentElement.id && desiredElement.id)
+            return currentElement.id === desiredElement.id;
     }
     return true;
 }
 
 /**
  * Keeps live form-control state in sync with updated attributes.
- * @param {Element} oldEl
- * @param {Element} newEl
+ * @param {Element} currentElement
+ * @param {Element} desiredElement
  */
-function syncFormControlState(oldEl, newEl) {
-    if (oldEl instanceof HTMLInputElement && newEl instanceof HTMLInputElement) {
-        const nextValue = newEl.getAttribute('value') ?? newEl.value;
-        if (oldEl.value !== nextValue)
-            oldEl.value = nextValue;
-        if (oldEl.checked !== newEl.checked)
-            oldEl.checked = newEl.checked;
+function syncFormControlState(currentElement, desiredElement) {
+    if (currentElement instanceof HTMLInputElement && desiredElement instanceof HTMLInputElement) {
+        const nextValue = desiredElement.getAttribute('value') ?? desiredElement.value;
+        if (currentElement.value !== nextValue)
+            currentElement.value = nextValue;
+        if (currentElement.checked !== desiredElement.checked)
+            currentElement.checked = desiredElement.checked;
         return;
     }
-    if (oldEl instanceof HTMLTextAreaElement && newEl instanceof HTMLTextAreaElement) {
-        const nextValue = newEl.getAttribute('value') ?? newEl.value;
-        if (oldEl.value !== nextValue)
-            oldEl.value = nextValue;
-        if (oldEl.textContent !== nextValue)
-            oldEl.textContent = nextValue;
+    if (currentElement instanceof HTMLTextAreaElement && desiredElement instanceof HTMLTextAreaElement) {
+        const nextValue = desiredElement.getAttribute('value') ?? desiredElement.value;
+        if (currentElement.value !== nextValue)
+            currentElement.value = nextValue;
+        if (currentElement.textContent !== nextValue)
+            currentElement.textContent = nextValue;
         return;
     }
-    if (oldEl instanceof HTMLSelectElement && newEl instanceof HTMLSelectElement) {
-        const nextValue = newEl.getAttribute('value') ?? newEl.value;
-        if (oldEl.value !== nextValue)
-            oldEl.value = nextValue;
+    if (currentElement instanceof HTMLSelectElement && desiredElement instanceof HTMLSelectElement) {
+        const nextValue = desiredElement.getAttribute('value') ?? desiredElement.value;
+        if (currentElement.value !== nextValue)
+            currentElement.value = nextValue;
     }
 }
 
 /**
- * @param {Element} oldEl
- * @param {Element} newEl
+ * @param {Element} currentElement
+ * @param {Element} desiredElement
  */
-export function syncAttributes(oldEl, newEl) {
-    for (const attr of Array.from(oldEl.attributes)) {
-        if (!attr.name.startsWith('@') && !newEl.hasAttribute(attr.name))
-            oldEl.removeAttribute(attr.name);
+export function syncAttributes(currentElement, desiredElement) {
+    for (const attribute of Array.from(currentElement.attributes)) {
+        if (!attribute.name.startsWith('@') && !desiredElement.hasAttribute(attribute.name))
+            currentElement.removeAttribute(attribute.name);
     }
-    for (const attr of Array.from(newEl.attributes)) {
-        if (!attr.name.startsWith('@') && oldEl.getAttribute(attr.name) !== attr.value)
-            oldEl.setAttribute(attr.name, attr.value);
+    for (const attribute of Array.from(desiredElement.attributes)) {
+        if (!attribute.name.startsWith('@') && currentElement.getAttribute(attribute.name) !== attribute.value)
+            currentElement.setAttribute(attribute.name, attribute.value);
     }
-    syncFormControlState(oldEl, newEl);
+    syncFormControlState(currentElement, desiredElement);
 }
 
 /**
@@ -113,43 +114,43 @@ export function syncAttributes(oldEl, newEl) {
  * @param {MorphOptions} [options]
  */
 export function morphChildren(parent, desired, options = {}) {
-    const oldNodes = Array.from(parent.childNodes);
-    const newNodes = Array.from(desired.childNodes);
-    const maxLen = Math.max(oldNodes.length, newNodes.length);
-    for (let i = 0; i < maxLen; i++) {
-        const oldChild = oldNodes[i];
-        const newChild = newNodes[i];
-        if (!oldChild && newChild) {
-            parent.appendChild(newChild.cloneNode(true));
+    const currentChildren = Array.from(parent.childNodes);
+    const desiredChildren = Array.from(desired.childNodes);
+    const longestChildList = Math.max(currentChildren.length, desiredChildren.length);
+    for (let index = 0; index < longestChildList; index++) {
+        const currentChild = currentChildren[index];
+        const desiredChild = desiredChildren[index];
+        if (!currentChild && desiredChild) {
+            parent.appendChild(desiredChild.cloneNode(true));
             continue;
         }
-        if (oldChild && !newChild) {
-            parent.removeChild(oldChild);
+        if (currentChild && !desiredChild) {
+            parent.removeChild(currentChild);
             continue;
         }
-        if (!oldChild || !newChild)
+        if (!currentChild || !desiredChild)
             continue;
-        if (!isSameNode(oldChild, newChild)) {
-            parent.replaceChild(newChild.cloneNode(true), oldChild);
-            continue;
-        }
-        if (oldChild.nodeType === Node.TEXT_NODE) {
-            if (oldChild.textContent !== newChild.textContent)
-                oldChild.textContent = newChild.textContent;
+        if (!isSameNode(currentChild, desiredChild)) {
+            parent.replaceChild(desiredChild.cloneNode(true), currentChild);
             continue;
         }
-        if (oldChild.nodeType === Node.ELEMENT_NODE) {
-            const oldElement = /** @type {Element} */ (oldChild);
-            if (options.preserveElement?.(oldElement))
+        if (currentChild.nodeType === Node.TEXT_NODE) {
+            if (currentChild.textContent !== desiredChild.textContent)
+                currentChild.textContent = desiredChild.textContent;
+            continue;
+        }
+        if (currentChild.nodeType === Node.ELEMENT_NODE) {
+            const currentElement = /** @type {Element} */ (currentChild);
+            if (options.preserveElement?.(currentElement))
                 continue;
-            syncAttributes(oldElement, /** @type {Element} */ (newChild));
-            const childFrag = document.createDocumentFragment();
-            while (newChild.firstChild)
-                childFrag.appendChild(newChild.firstChild);
-            morphChildren(oldElement, childFrag, options);
+            syncAttributes(currentElement, /** @type {Element} */ (desiredChild));
+            const desiredChildFragment = document.createDocumentFragment();
+            while (desiredChild.firstChild)
+                desiredChildFragment.appendChild(desiredChild.firstChild);
+            morphChildren(currentElement, desiredChildFragment, options);
         }
     }
-    while (parent.childNodes.length > newNodes.length) {
+    while (parent.childNodes.length > desiredChildren.length) {
         parent.removeChild(/** @type {ChildNode} */ (parent.lastChild));
     }
 }
@@ -159,19 +160,19 @@ export function morphChildren(parent, desired, options = {}) {
  * @returns {ParamValue[]}
  */
 export function parseParams(input) {
-    return input.map(p => {
-        const n = Number(p);
-        if (!Number.isNaN(n))
-            return n;
-        if (p === 'true')
+    return input.map(value => {
+        const numberValue = Number(value);
+        if (!Number.isNaN(numberValue))
+            return numberValue;
+        if (value === 'true')
             return true;
-        if (p === 'false')
+        if (value === 'false')
             return false;
-        if (p === 'null')
+        if (value === 'null')
             return null;
-        if (p === 'undefined')
+        if (value === 'undefined')
             return undefined;
-        return p;
+        return value;
     });
 }
 
@@ -185,30 +186,30 @@ export function resolveHandler(pathname, routes, slugs) {
     if (pathname === '/')
         return pathname;
     const segments = pathname.split('/').slice(1);
-    let bestKey = '';
-    let bestLen = -1;
+    let bestRoute = '';
+    let bestRouteLength = -1;
     for (const [routeKey] of routes) {
-        const routeSegs = routeKey.split('/').slice(1);
-        if (routeSegs.length > segments.length)
+        const routeSegments = routeKey.split('/').slice(1);
+        if (routeSegments.length > segments.length)
             continue;
         const slugMap = routes.get(routeKey) ?? {};
-        let match = true;
-        for (let i = 0; i < routeSegs.length; i++) {
-            if (!slugMap[routeSegs[i]] && routeSegs[i] !== segments[i]) {
-                match = false;
+        let matchesRoute = true;
+        for (let index = 0; index < routeSegments.length; index++) {
+            if (!slugMap[routeSegments[index]] && routeSegments[index] !== segments[index]) {
+                matchesRoute = false;
                 break;
             }
         }
-        if (match && routeSegs.length > bestLen) {
-            bestKey = routeKey;
-            bestLen = routeSegs.length;
+        if (matchesRoute && routeSegments.length > bestRouteLength) {
+            bestRoute = routeKey;
+            bestRouteLength = routeSegments.length;
         }
     }
-    if (!bestKey)
+    if (!bestRoute)
         throw new Error(`Route ${pathname} not found`);
-    const slugMap = routes.get(bestKey) ?? {};
-    for (const [key, idx] of Object.entries(slugMap)) {
-        slugs[key.replace(':', '')] = segments[idx];
+    const slugMap = routes.get(bestRoute) ?? {};
+    for (const [key, segmentIndex] of Object.entries(slugMap)) {
+        slugs[key.replace(':', '')] = segments[segmentIndex];
     }
-    return bestKey;
+    return bestRoute;
 }

@@ -305,6 +305,18 @@ pre {
     color: var(--md-sys-color-on-surface-variant);
 }
 
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .fylo-collections {
     min-width: 0;
     display: flex;
@@ -562,6 +574,39 @@ pre {
     gap: 12px;
 }
 
+.fylo-rest-bar {
+    display: grid;
+    grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+    gap: 10px;
+}
+
+.fylo-method {
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.fylo-path {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.fylo-response-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    overflow-wrap: anywhere;
+}
+
+.fylo-response-summary code {
+    padding: 4px 8px;
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface);
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 12.5px;
+}
+
 .fylo-query-actions {
     display: flex;
     gap: 8px;
@@ -648,6 +693,10 @@ pre {
     }
 
     .fylo-reveal-ui {
+        grid-template-columns: 1fr;
+    }
+
+    .fylo-rest-bar {
         grid-template-columns: 1fr;
     }
 

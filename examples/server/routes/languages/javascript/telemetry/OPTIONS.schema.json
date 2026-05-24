@@ -14,7 +14,21 @@
         "errorCount": "^[0-9]+$"
       },
       "recent": [
-        "^\\[object Object\\]$"
+        {
+          "traceId": "^[\\s\\S]{0,128}$",
+          "spanId": "^[\\s\\S]{0,128}$",
+          "parentSpanId?": "^[\\s\\S]*$",
+          "kind": "^[\\s\\S]{0,64}$",
+          "name": "^[\\s\\S]{0,256}$",
+          "requestId?": "^[\\s\\S]*$",
+          "route?": "^[\\s\\S]*$",
+          "method?": "^[\\s\\S]*$",
+          "statusCode?": "^[\\s\\S]*$",
+          "traceState?": "^[\\s\\S]*$",
+          "startTimeUnixNano": "^\\d*$",
+          "endTimeUnixNano": "^\\d*$",
+          "durationMs": "^\\d+(\\.\\d+)?$"
+        }
       ]
     },
     "500": {

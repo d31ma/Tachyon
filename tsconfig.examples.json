@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "examples/**/*.d.ts",
+    "examples/**/*.js",
+    "examples/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "node_modules*",
+    "dist",
+    "examples/dist",
+    "examples/dist-debug",
+    "examples/node_modules",
+    "examples/node_modules*",
+    "**/*.as.ts"
+  ]
+}

@@ -1,25 +1,5 @@
 {
-  "compilerOptions": {
-    "strict": true,
-    "target": "ESNext",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "pretty": true,
-    "noFallthroughCasesInSwitch": true,
-    "noImplicitReturns": true,
-    "forceConsistentCasingInFileNames": true,
-    "types": ["bun-types", "@types/node"],
-    "isolatedModules": true,
-    "allowJs": true,
-    "checkJs": true,
-    "allowImportingTsExtensions": true,
-    "maxNodeModuleJsDepth": 0,
-    "skipLibCheck": true,
-    "noUncheckedSideEffectImports": false,
-    "paths": {
-      "@/*": ["./examples/server/*"]
-    }
-  },
+  "extends": "./tsconfig.base.json",
   "include": [
     "src/**/*.d.ts",
     "src/**/*.js",

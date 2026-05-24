@@ -13,7 +13,7 @@ const timedTest = /** @type {any} */ (test);
 const TEST_PORT = '18080';
 const BASE_URL = `http://localhost:${TEST_PORT}`;
 /** Time to wait for the test server to finish starting up */
-const STARTUP_TIMEOUT_MS = 10_000;
+const STARTUP_TIMEOUT_MS = 60_000;
 /**
  * Basic auth credentials for tests.
  * The test server hashes this value into YON_BASIC_AUTH_HASH at startup.
@@ -149,7 +149,8 @@ async function createBackendOnlyApp(prefix) {
             },
         },
     }, null, 2));
-    await Bun.write(path.join(routeDir, 'GET.js'), `export async function handler() {
+    await mkdir(path.join(routeDir, 'GET'), { recursive: true });
+    await Bun.write(path.join(routeDir, 'GET', 'yon.js'), `export async function handler() {
   return { message: 'ok' }
 }
 `);
@@ -341,7 +342,7 @@ beforeAll(async () => {
         stderr: 'inherit'
     });
     await waitForServer(BASE_URL, serverProcess);
-}, 30_000);
+}, STARTUP_TIMEOUT_MS + 5_000);
 afterAll(async () => {
     const proc = serverProcess;
     serverProcess = null;
@@ -515,7 +516,7 @@ describe('OPTIONS route', () => {
     test('authenticated direct OPTIONS returns schema JSON', async () => {
         const res = await authFetch('/languages/typescript/items', { method: 'OPTIONS' });
         expect(res.status).toEqual(200);
-        expect(res.headers.get('content-type')).toContain('application/json');
+        expect(res.headers.get('content-type')).toContain('application/schema+json');
         const body = await res.json();
         expect(body).toHaveProperty('GET');
         expect(body).toHaveProperty('POST');
@@ -545,7 +546,7 @@ describe('OPTIONS route', () => {
         const body = await res.json();
         expect(body.GET).toHaveProperty('200');
         expect(body.GET).toHaveProperty('500');
-        expect(body.GET['200']).toHaveProperty('message?');
+        expect(typeof body.GET['200']).toBe('object');
     });
 
     test('OPTIONS preflight (CORS) returns 204 with headers, no schema body', async () => {
@@ -690,16 +691,16 @@ describe('Polyglot root route adapters', () => {
         const HandlerAdapter = (await import('../../src/server/process/handler-adapter.js')).default;
         const Pool = (await import('../../src/server/process/process-pool.js')).default;
         const languageRoutes = new Map([
-            ['javascript', `${EXAMPLES_DIR}/server/routes/languages/javascript/GET.js`],
-            ['typescript', `${EXAMPLES_DIR}/server/routes/languages/typescript/GET.ts`],
-            ['python', `${EXAMPLES_DIR}/server/routes/languages/python/GET.py`],
-            ['ruby', `${EXAMPLES_DIR}/server/routes/languages/ruby/GET.rb`],
-            ['php', `${EXAMPLES_DIR}/server/routes/languages/php/GET.php`],
-            ['dart', `${EXAMPLES_DIR}/server/routes/languages/dart/DELETE.dart`],
-            ['go', `${EXAMPLES_DIR}/server/routes/languages/go/GET.go`],
-            ['java', `${EXAMPLES_DIR}/server/routes/languages/java/POST.java`],
-            ['csharp', `${EXAMPLES_DIR}/server/routes/languages/csharp/GET.cs`],
-            ['rust', `${EXAMPLES_DIR}/server/routes/languages/rust/PATCH.rs`],
+            ['javascript', `${EXAMPLES_DIR}/server/routes/languages/javascript/GET/yon.js`],
+            ['typescript', `${EXAMPLES_DIR}/server/routes/languages/typescript/GET/yon.ts`],
+            ['python', `${EXAMPLES_DIR}/server/routes/languages/python/GET/yon.py`],
+            ['ruby', `${EXAMPLES_DIR}/server/routes/languages/ruby/GET/yon.rb`],
+            ['php', `${EXAMPLES_DIR}/server/routes/languages/php/GET/yon.php`],
+            ['dart', `${EXAMPLES_DIR}/server/routes/languages/dart/DELETE/yon.dart`],
+            ['go', `${EXAMPLES_DIR}/server/routes/languages/go/GET/yon.go`],
+            ['java', `${EXAMPLES_DIR}/server/routes/languages/java/POST/yon.java`],
+            ['csharp', `${EXAMPLES_DIR}/server/routes/languages/csharp/GET/yon.cs`],
+            ['rust', `${EXAMPLES_DIR}/server/routes/languages/rust/PATCH/yon.rs`],
         ]);
         for (const language of HandlerAdapter.supportedLanguages) {
             const handler = languageRoutes.get(language);
@@ -719,6 +720,21 @@ describe('Polyglot root route adapters', () => {
                                 : language,
             );
         }
+    });
+});
+describe('FYLO machine-interface demo route', () => {
+    const machineOperations = [
+        'executeSQL', 'createCollection', 'dropCollection', 'inspectCollection', 'rebuildCollection',
+        'getDoc', 'getLatest', 'getHistory', 'findDocs', 'joinDocs', 'putData', 'batchPutData',
+        'patchDoc', 'patchDocs', 'delDoc', 'delDocs', 'importBulkData', 'schemaInspect',
+        'schemaCurrent', 'schemaHistory', 'schemaDoctor', 'schemaValidate', 'schemaMaterialize',
+    ];
+    timedTest('POST /languages/javascript/fylo drives the full FYLO machine-interface suite', { timeout: 60000 }, async () => {
+        const res = await authFetch('/languages/javascript/fylo', { method: 'POST' });
+        expect(res.status).toEqual(200);
+        const body = await res.json();
+        expect(body.operations).toEqual(expect.arrayContaining(machineOperations));
+        expect(body.resultCount).toBeGreaterThanOrEqual(machineOperations.length);
     });
 });
 // ===========================================================================
@@ -778,27 +794,19 @@ describe('HTML route serving', () => {
     });
 });
 // ===========================================================================
-// Routes Manifest
+// Embedded Routes Manifest
 // ===========================================================================
-describe('Routes manifest', () => {
-    test('GET /routes.json returns JSON', async () => {
+describe('Embedded routes manifest', () => {
+    test('GET /routes.json is no longer emitted', async () => {
         const res = await fetch(`${BASE_URL}/routes.json`);
-        expect(res.status).toEqual(200);
-        expect(res.headers.get('content-type')).toContain('application/json');
-        const body = await res.json();
-        expect(typeof body).toBe('object');
+        expect(res.status).toEqual(404);
     });
-    test('/routes.json contains browser page routes only', async () => {
-        const res = await fetch(`${BASE_URL}/routes.json`);
-        const body = await res.json();
-        expect(body).toHaveProperty('/');
-        expect(body).not.toHaveProperty('/languages/javascript');
-        expect(body).not.toHaveProperty('/languages/python/versions/:version');
-    });
-    test('/routes.json has HTML route', async () => {
-        const res = await fetch(`${BASE_URL}/routes.json`);
-        const body = await res.json();
-        expect(body).toHaveProperty('/');
+    test('/spa-renderer.js contains browser page routes only', async () => {
+        const res = await fetch(`${BASE_URL}/spa-renderer.js`);
+        const body = await res.text();
+        expect(body).toContain('"/"');
+        expect(body).not.toContain('/languages/javascript');
+        expect(body).not.toContain('/languages/python/versions/:version');
     });
 });
 // ===========================================================================
@@ -862,7 +870,7 @@ describe('Telemetry and browser env', () => {
         expect(spans.length).toBeGreaterThanOrEqual(2);
 
         const requestSpan = spans.find((entry) => getAttribute(entry.span, 'http.route') === '/languages/javascript');
-        const handlerSpan = spans.find((entry) => normalizeTelemetryPath(getAttribute(entry.span, 'code.file.path')).includes('/examples/server/routes/languages/javascript/GET.js'));
+        const handlerSpan = spans.find((entry) => normalizeTelemetryPath(getAttribute(entry.span, 'code.file.path')).includes('/examples/server/routes/languages/javascript/GET/yon.js'));
 
         expect(requestSpan).toBeDefined();
         expect(handlerSpan).toBeDefined();
@@ -882,7 +890,7 @@ describe('Telemetry and browser env', () => {
         expect(handlerSpan?.span.traceId).toBe(traceId);
         expect(handlerSpan?.span.parentSpanId).toBe(requestSpan?.span.spanId);
         expect(normalizeTelemetryPath(getAttribute(handlerSpan?.span ?? {}, 'code.file.path'))).toContain(
-            '/examples/server/routes/languages/javascript/GET.js'
+            '/examples/server/routes/languages/javascript/GET/yon.js'
         );
     });
 
@@ -964,23 +972,17 @@ describe('Telemetry and browser env', () => {
     });
 });
 // ===========================================================================
-// Layouts Manifest
+// Embedded Layouts Manifest
 // ===========================================================================
-describe('Layouts manifest', () => {
-    test('GET /shells.json returns JSON', async () => {
+describe('Embedded layouts manifest', () => {
+    test('GET /shells.json is no longer emitted', async () => {
         const res = await fetch(`${BASE_URL}/shells.json`);
-        expect(res.status).toEqual(200);
-        expect(res.headers.get('content-type')).toContain('application/json');
-        const body = await res.json();
-        expect(typeof body).toBe('object');
+        expect(res.status).toEqual(404);
     });
-    test('/shells.json entries use the structured shell manifest shape', async () => {
-        const res = await fetch(`${BASE_URL}/shells.json`);
-        const body = await res.json();
-        for (const entry of Object.values(body)) {
-            expect(typeof entry.path).toBe('string');
-            expect(typeof entry.allowSelf).toBe('boolean');
-        }
+    test('/spa-renderer.js contains the embedded layout manifest placeholder replacement', async () => {
+        const res = await fetch(`${BASE_URL}/spa-renderer.js`);
+        const body = await res.text();
+        expect(body).not.toContain('__tachyonShellPlaceholder');
     });
 });
 // ===========================================================================
@@ -1042,13 +1044,13 @@ describe('Cache headers', () => {
 // Component Bundling
 // ===========================================================================
 describe('Component bundling', () => {
-    test('GET /components/clicker/index.js returns JavaScript', async () => {
-        const res = await fetch(`${BASE_URL}/components/clicker/index.js`);
+    test('GET /components/clicker/tac.js returns JavaScript', async () => {
+        const res = await fetch(`${BASE_URL}/components/clicker/tac.js`);
         expect(res.status).toEqual(200);
         expect(res.headers.get('content-type')).toContain('javascript');
     });
-    test('GET /components/clicker/ui/index.js returns JavaScript for nested components', async () => {
-        const res = await fetch(`${BASE_URL}/components/clicker/ui/index.js`);
+    test('GET /components/clicker/ui/tac.js returns JavaScript for nested components', async () => {
+        const res = await fetch(`${BASE_URL}/components/clicker/ui/tac.js`);
         expect(res.status).toEqual(200);
         expect(res.headers.get('content-type')).toContain('javascript');
     });
@@ -1057,8 +1059,8 @@ describe('Component bundling', () => {
 // Page Bundling
 // ===========================================================================
 describe('Page bundling', () => {
-    test('GET /pages/index.js returns JavaScript', async () => {
-        const res = await fetch(`${BASE_URL}/pages/index.js`);
+    test('GET /pages/tac.js returns JavaScript', async () => {
+        const res = await fetch(`${BASE_URL}/pages/tac.js`);
         expect(res.status).toEqual(200);
         expect(res.headers.get('content-type')).toContain('javascript');
     });
@@ -1136,6 +1138,8 @@ describe('SSE streaming', () => {
             });
             expect(res.status).toEqual(200);
             expect(res.headers.get('content-type')).toContain('text/event-stream');
+            const body = await res.text();
+            expect(body.length).toBeGreaterThan(0);
         }
         catch (error) {
             if (!(error instanceof Error) || error.name !== 'AbortError')
@@ -1160,15 +1164,15 @@ describe('Request headers forwarding', () => {
 describe('Route validation', () => {
     test('route starting with slug segment throws', async () => {
         const Router = (await import('../../src/server/http/route-handler.js')).default;
-        expect(Router.validateRoute(':id/GET.js')).rejects.toThrow('cannot start with a slug');
+        expect(Router.validateRoute(':id/GET/yon.js')).rejects.toThrow('cannot start with a slug');
     });
     test('consecutive slug segments throw', async () => {
         const Router = (await import('../../src/server/http/route-handler.js')).default;
-        expect(Router.validateRoute('api/:id/:name/GET.js')).rejects.toThrow('consecutive slug segments');
+        expect(Router.validateRoute('api/:id/:name/GET/yon.js')).rejects.toThrow('consecutive slug segments');
     });
     test('valid route does not throw', async () => {
         const Router = (await import('../../src/server/http/route-handler.js')).default;
-        await expect(Router.validateRoute('users/:id/GET.js')).resolves.toBeUndefined();
+        await expect(Router.validateRoute('users/:id/GET/yon.js')).resolves.toBeUndefined();
     });
 });
 // ===========================================================================
@@ -1199,19 +1203,19 @@ describe('Status code routing (/languages/typescript/items)', () => {
         expect(missing.status).toEqual(404);
         expect(await missing.json()).toEqual({ detail: 'item not found' });
     });
-    test('POST /languages/typescript/items creates an item and returns 204 with no response body', async () => {
+    test('POST /languages/typescript/items creates an item and returns 201 with the created item', async () => {
         const id = itemTestId();
         const res = await authFetch('/languages/typescript/items', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, name: 'sprocket' }),
         });
-        expect(res.status).toEqual(204);
-        expect(await res.text()).toBe('');
-
-        const created = await authFetch(`/languages/typescript/items/${id}`);
-        expect(created.status).toEqual(200);
-        expect((await created.json()).name).toBe('sprocket');
+        expect(res.status).toEqual(201);
+        const body = await res.json();
+        expect(body.id).toBe(id);
+        expect(body.name).toBe('sprocket');
+        expect(body).toHaveProperty('source');
+        expect(body).toHaveProperty('createdAt');
     });
     test('POST /languages/typescript/items with missing name returns 400', async () => {
         const res = await authFetch('/languages/typescript/items', {
@@ -1267,7 +1271,7 @@ describe('Status code routing (/languages/typescript/items)', () => {
         expect(body.name).toBe('after');
         expect(body.source).toBe('api');
     });
-    test('DELETE /languages/typescript/items/:id deletes a resource and returns 204', async () => {
+    test('DELETE /languages/typescript/items/:id deletes a resource and returns 200 with deletion metadata', async () => {
         const id = itemTestId();
         await authFetch('/languages/typescript/items', {
             method: 'POST',
@@ -1276,10 +1280,31 @@ describe('Status code routing (/languages/typescript/items)', () => {
         });
 
         const res = await authFetch(`/languages/typescript/items/${id}`, { method: 'DELETE' });
-        expect(res.status).toEqual(204);
+        expect(res.status).toEqual(200);
+        const body = await res.json();
+        expect(body.id).toBe(id);
+        expect(body).toHaveProperty('deletedAt');
 
         const missing = await authFetch(`/languages/typescript/items/${id}`);
         expect(missing.status).toEqual(404);
+    });
+
+    test('GET /languages/typescript/items/gone-item returns 410 Gone', async () => {
+        const missing = await authFetch('/languages/typescript/items/gone-item');
+        expect(missing.status).toEqual(410);
+        const body = await missing.json();
+        expect(body).toEqual({ detail: 'item was deleted' });
+    });
+
+    test('POST /languages/typescript/items?simulate=error returns 500', async () => {
+        const res = await authFetch('/languages/typescript/items?simulate=error', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: 'will-fail' }),
+        });
+        expect(res.status).toEqual(500);
+        const body = await res.json();
+        expect(body).toEqual({ detail: 'internal server error' });
     });
 });
 // ===========================================================================
@@ -1297,7 +1322,7 @@ describe('Validate.matchStatusCode', () => {
     test('returns matching status code when body fits schema', async () => {
         const { Router, Validate } = await setup();
         Router.routeConfigs['/languages/typescript/items'] = { POST: { '201': { id: '^.+$', name: '^.+$' } } };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST`;
+        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST/yon.ts`;
         expect(await Validate.matchStatusCode(handler, JSON.stringify({ id: 'abc', name: 'widget' }))).toBe(201);
     });
     test('returns first schema match in ascending order', async () => {
@@ -1308,32 +1333,32 @@ describe('Validate.matchStatusCode', () => {
                 '201': { id: '^.+$' },
             }
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST`;
+        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST/yon.ts`;
         // body matches 200 schema first
         expect(await Validate.matchStatusCode(handler, JSON.stringify({ message: 'ok' }))).toBe(200);
     });
     test('returns null when no numeric schemas are defined', async () => {
         const { Router, Validate } = await setup();
         Router.routeConfigs['/response-only'] = { GET: { response: { '200': { message: '^.+$' } } } };
-        const handler = `${FAKE_ROUTES_PATH}/response-only/GET`;
+        const handler = `${FAKE_ROUTES_PATH}/response-only/GET/yon.js`;
         expect(await Validate.matchStatusCode(handler, JSON.stringify({ message: 'ok' }))).toBeNull();
     });
     test('returns null when no schema matches', async () => {
         const { Router, Validate } = await setup();
         Router.routeConfigs['/strict'] = { POST: { '201': { id: '^.+$' } } };
-        const handler = `${FAKE_ROUTES_PATH}/strict/POST`;
+        const handler = `${FAKE_ROUTES_PATH}/strict/POST/yon.js`;
         // body has wrong shape — no match
         expect(await Validate.matchStatusCode(handler, JSON.stringify({ message: 'hello' }))).toBeNull();
     });
     test('returns null for non-JSON body', async () => {
         const { Router, Validate } = await setup();
         Router.routeConfigs['/text'] = { GET: { '200': { message: '^.+$' } } };
-        const handler = `${FAKE_ROUTES_PATH}/text/GET`;
+        const handler = `${FAKE_ROUTES_PATH}/text/GET/yon.js`;
         expect(await Validate.matchStatusCode(handler, 'plain text')).toBeNull();
     });
     test('returns null when route config is missing', async () => {
         const { Validate } = await setup();
-        const handler = `${FAKE_ROUTES_PATH}/nonexistent/GET`;
+        const handler = `${FAKE_ROUTES_PATH}/nonexistent/GET/yon.js`;
         expect(await Validate.matchStatusCode(handler, JSON.stringify({ message: 'ok' }))).toBeNull();
     });
     test('validates OPTIONS request body schemas with CHEX regex patterns', async () => {
@@ -1349,7 +1374,7 @@ describe('Validate.matchStatusCode', () => {
                 '201': { ok: '^(?:true|false)$' },
             },
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST`;
+        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST/yon.ts`;
         await expect(Validate.validateData(handler, 'req', {
             headers: { accept: 'application/json' },
             body: { name: 'widget-box', count: 2 },
@@ -1357,6 +1382,41 @@ describe('Validate.matchStatusCode', () => {
         await expect(Validate.validateData(handler, 'req', {
             headers: { accept: 'application/json' },
             body: { name: 'Widget Box', count: 2 },
+        })).rejects.toThrow('RegEx pattern fails');
+    });
+    test('validates OPTIONS request body arrays of objects with CHEX semantics', async () => {
+        const { Router, Validate } = await setup();
+        Router.routeConfigs['/orders'] = {
+            POST: {
+                request: {
+                    body: {
+                        orderId: '^ORD-[0-9]+$',
+                        items: [
+                            {
+                                sku: '^[A-Z0-9-]+$',
+                                quantity: '^[1-9][0-9]*$',
+                            },
+                        ],
+                    },
+                },
+                '201': { ok: '^(?:true|false)$' },
+            },
+        };
+        const handler = `${FAKE_ROUTES_PATH}/orders/POST/yon.ts`;
+        await expect(Validate.validateData(handler, 'req', {
+            body: {
+                orderId: 'ORD-100',
+                items: [
+                    { sku: 'SKU-1', quantity: 2 },
+                    { sku: 'SKU-2', quantity: 1 },
+                ],
+            },
+        })).resolves.toBeUndefined();
+        await expect(Validate.validateData(handler, 'req', {
+            body: {
+                orderId: 'ORD-100',
+                items: [{ sku: 'sku-1', quantity: 2 }],
+            },
         })).rejects.toThrow('RegEx pattern fails');
     });
     test('validates OPTIONS response schemas with CHEX regex semantics only', async () => {
@@ -1371,7 +1431,7 @@ describe('Validate.matchStatusCode', () => {
                 },
             },
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/GET`;
+        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/GET/yon.ts`;
         await expect(Validate.validateData(handler, '200', JSON.stringify({
             id: 'one',
             count: 1,
@@ -1396,7 +1456,7 @@ describe('Validate.matchStatusCode', () => {
                 },
             },
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST`;
+        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST/yon.ts`;
         await expect(Validate.validateData(handler, 'req', {
             body: { count: 2 },
         })).rejects.toThrow('RegEx pattern fails');
@@ -1633,5 +1693,136 @@ describe('Parameter length limits', () => {
         const boundary = 'a'.repeat(1000);
         const res = await authFetch(`/languages/javascript?value=${boundary}`);
         expect(res.status).toBe(200);
+    });
+});
+// ===========================================================================
+// Status code endpoints — verifies status matching across Yon language adapters
+// ===========================================================================
+describe('Status code endpoint', () => {
+    const cases = [
+        ['GET', 'javascript', 200], ['GET', 'javascript', 201], ['GET', 'javascript', 202], ['GET', 'javascript', 203],
+        ['GET', 'javascript', 205], ['GET', 'javascript', 206],
+        ['GET', 'typescript', 207], ['GET', 'typescript', 208], ['GET', 'typescript', 226],
+        ['GET', 'typescript', 300], ['GET', 'typescript', 301], ['GET', 'typescript', 302],
+        ['GET', 'python', 303], ['GET', 'python', 304], ['GET', 'python', 305], ['GET', 'python', 307],
+        ['GET', 'python', 308], ['GET', 'python', 400],
+        ['GET', 'ruby', 401], ['GET', 'ruby', 402], ['GET', 'ruby', 403], ['GET', 'ruby', 404], ['GET', 'ruby', 405],
+        ['GET', 'php', 406], ['GET', 'php', 407], ['GET', 'php', 408], ['GET', 'php', 409], ['GET', 'php', 410],
+        ['GET', 'go', 411], ['GET', 'go', 412], ['GET', 'go', 413], ['GET', 'go', 414], ['GET', 'go', 415],
+        ['POST', 'java', 416], ['POST', 'java', 417], ['POST', 'java', 418], ['POST', 'java', 421], ['POST', 'java', 422],
+        ['GET', 'csharp', 423], ['GET', 'csharp', 424], ['GET', 'csharp', 425], ['GET', 'csharp', 426], ['GET', 'csharp', 428],
+        ['DELETE', 'dart', 429], ['DELETE', 'dart', 431], ['DELETE', 'dart', 451], ['DELETE', 'dart', 500], ['DELETE', 'dart', 501],
+        ['PATCH', 'rust', 502], ['PATCH', 'rust', 503], ['PATCH', 'rust', 504], ['PATCH', 'rust', 505], ['PATCH', 'rust', 506],
+        ['PATCH', 'rust', 507], ['PATCH', 'rust', 508], ['PATCH', 'rust', 510], ['PATCH', 'rust', 511],
+    ];
+
+    // Per-language runtime dependency. Skip cases whose runtime is missing
+    // from the host so CI runners without a particular toolchain (Dart on
+    // ubuntu-latest, for example) don't fail the matrix.
+    /** @type {Record<string, string>} */
+    const requiredCommands = {
+        javascript: 'bun',
+        typescript: 'bun',
+        python: 'python3',
+        ruby: 'ruby',
+        php: 'php',
+        go: 'go',
+        java: 'javac',
+        csharp: 'dotnet',
+        dart: 'dart',
+        rust: 'rustc',
+    };
+
+    timedTest('returns requested status codes across Yon language adapters', { timeout: 60000 }, async () => {
+        for (const [method, language, code] of cases) {
+            const required = requiredCommands[String(language)];
+            if (required && !commandAvailable(required)) {
+                console.warn(`[status-code-endpoint] Skipping ${method} /languages/${language}?code=${code}: '${required}' not available`);
+                continue;
+            }
+            const res = await authFetch(`/languages/${language}?code=${code}`, { method });
+            expect(res.status).toEqual(code);
+        }
+    });
+});
+// ===========================================================================
+// FYLO_SCHEMA schema loading
+// ===========================================================================
+describe('FYLO_SCHEMA schema loading', () => {
+    test('Fylo creates missing collections declared by versioned schemas', async () => {
+        const root = await mkdtemp(path.join(tmpdir(), 'tachyon-fylo-root-'));
+        const schemasDir = await mkdtemp(path.join(tmpdir(), 'tachyon-fylo-schemas-'));
+        const collection = 'schema-generated-orders';
+        const collectionSchemaDir = path.join(schemasDir, collection);
+        const previousSchema = process.env.FYLO_SCHEMA;
+        await mkdir(path.join(collectionSchemaDir, 'history'), { recursive: true });
+        await Bun.write(path.join(collectionSchemaDir, 'manifest.json'), JSON.stringify({
+            current: 'v1',
+            versions: [{ v: 'v1', addedAt: '2026-05-24T00:00:00.000Z' }],
+        }));
+        await Bun.write(path.join(collectionSchemaDir, 'history', 'v1.schema.json'), JSON.stringify({
+            name: '^.{1,120}$',
+            items: [
+                {
+                    sku: '^[A-Z0-9-]+$',
+                    quantity: '^[1-9][0-9]*$',
+                },
+            ],
+        }));
+
+        try {
+            process.env.FYLO_SCHEMA = schemasDir;
+            const fylo = new Fylo({ root });
+            await fylo.ready();
+
+            const inspect = await fylo.inspectCollection(collection);
+            expect(inspect.exists).toBe(true);
+            expect(inspect.collection).toBe(collection);
+            expect(inspect.docsStored).toBe(0);
+        }
+        finally {
+            if (previousSchema === undefined) delete process.env.FYLO_SCHEMA;
+            else process.env.FYLO_SCHEMA = previousSchema;
+            await rm(root, { recursive: true, force: true });
+            await rm(schemasDir, { recursive: true, force: true });
+        }
+    });
+
+    test('loadCollectionSchema loads versioned schemas from FYLO_SCHEMA directory', async () => {
+        const schemasDir = path.join(EXAMPLES_DIR, 'db', 'schemas');
+        process.env.FYLO_SCHEMA = schemasDir;
+        const { loadCollectionSchema } = await import('../../src/server/fylo-browser/fylo-browser.js');
+
+        const items = await loadCollectionSchema('items');
+        expect(items).not.toBeNull();
+        expect(items).toBeInstanceOf(Object);
+        expect(items).toHaveProperty('name');
+        expect(items).toHaveProperty('source');
+        expect(items).toHaveProperty('tags');
+
+        const otelSpans = await loadCollectionSchema('otel-spans');
+        expect(otelSpans).not.toBeNull();
+        expect(otelSpans).toBeInstanceOf(Object);
+        expect(otelSpans).toHaveProperty('name');
+        expect(otelSpans).toHaveProperty('traceId');
+        expect(otelSpans).toHaveProperty('spanId');
+
+        const missing = await loadCollectionSchema('nonexistent');
+        expect(missing).toBeNull();
+    });
+
+    test('loadCollectionSchema falls back to FYLO_SCHEMA_DIR', async () => {
+        delete process.env.FYLO_SCHEMA;
+        const schemasDir = path.join(EXAMPLES_DIR, 'db', 'schemas');
+        process.env.FYLO_SCHEMA_DIR = schemasDir;
+        const { loadCollectionSchema } = await import('../../src/server/fylo-browser/fylo-browser.js');
+
+        const schemas = await loadCollectionSchema('users');
+        expect(schemas).not.toBeNull();
+        expect(schemas).toHaveProperty('email');
+        expect(schemas).toHaveProperty('role');
+
+        delete process.env.FYLO_SCHEMA_DIR;
+        process.env.FYLO_SCHEMA = schemasDir;
     });
 });

@@ -4,7 +4,8 @@ final class YonPhpRunner
 {
     public static function routeClassName(string $handlerPath): string
     {
-        return explode('.', basename($handlerPath), 2)[0];
+        $base = explode('.', basename($handlerPath), 2)[0];
+        return $base === '' ? 'Yon' : ucfirst($base);
     }
 
     public static function resolveHandler(string $handlerPath): callable

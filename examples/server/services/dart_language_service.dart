@@ -1,9 +1,10 @@
 class DartLanguageService {
-  Map<String, Object?> delete(Map<String, dynamic> request) {
+  Future<Map<String, Object?>> delete(Map<String, dynamic> request) async {
     final context = request['context'];
+    final requestId = context is Map ? context['requestId']?.toString() ?? 'unknown' : 'unknown';
     return {
       'message': 'Hello from Dart!',
-      'requestId': context is Map ? context['requestId'] : 'unknown',
+      'requestId': requestId,
     };
   }
 }

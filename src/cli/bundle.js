@@ -3,7 +3,7 @@
 import Router from "../server/http/route-handler.js";
 import Compiler from "../compiler/index.js";
 import logger from "../server/observability/logger.js";
-import { access, mkdir, readdir, rm, stat } from "fs/promises";
+import { access, mkdir, mkdtemp, readdir, rename, rm, stat } from "fs/promises";
 import { watch } from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
@@ -16,6 +16,7 @@ import { pathToFileURL } from "url";
  */
 
 const distPath = path.resolve(process.env.YON_DIST_PATH ?? path.join(process.cwd(), 'dist'));
+let activeDistPath = distPath;
 const watchMode = process.argv.includes('--watch');
 const skipInitialBuild = process.argv.includes('--skip-initial-build');
 const WATCH_DEBOUNCE_MS = 200;
@@ -37,7 +38,7 @@ async function runPostBundleHook() {
     const hook = await loadPostBundleHook();
     if (!hook)
         return;
-    await hook({ distRoot: distPath });
+    await hook({ distRoot: activeDistPath });
 }
 /**
  * @template T
@@ -66,27 +67,51 @@ async function buildRouteOutput(route) {
     if (!handler)
         return;
     try {
-        const res = await handler();
-        await Bun.write(Bun.file(`${distPath}${route}`), await res.blob());
+        const response = await handler();
+        await Bun.write(Bun.file(`${activeDistPath}${route}`), await response.blob());
     }
-    catch (err) {
-        bundleLogger.error('Failed to build route', { route, err });
+    catch (error) {
+        bundleLogger.error('Failed to build route', { route, err: error });
     }
 }
 export async function runBuild() {
     const start = Date.now();
+    const stagingPath = await mkdtemp(path.join(path.dirname(distPath), `${path.basename(distPath)}-staging-`));
+    const backupPath = path.join(path.dirname(distPath), `${path.basename(distPath)}-backup-${Date.now()}`);
+    let hasBackup = false;
     Router.resetStaticState();
-    await rm(distPath, { recursive: true, force: true });
-    await mkdir(distPath, { recursive: true });
-    await Compiler.createStaticRoutes();
-    await runWithConcurrency(Object.keys(Router.reqRoutes), BUILD_CONCURRENCY, buildRouteOutput);
-    await Compiler.prerenderStaticPages(distPath);
-    await runPostBundleHook();
-    bundleLogger.info('Bundle completed', {
-        durationMs: Date.now() - start,
-        routeCount: Object.keys(Router.reqRoutes).length,
-        distPath,
-    });
+    activeDistPath = stagingPath;
+    try {
+        await Compiler.createStaticRoutes();
+        await runWithConcurrency(Object.keys(Router.reqRoutes), BUILD_CONCURRENCY, buildRouteOutput);
+        await Compiler.prerenderStaticPages(activeDistPath);
+        await runPostBundleHook();
+        if (await pathExists(distPath)) {
+            await rename(distPath, backupPath);
+            hasBackup = true;
+        }
+        await rename(stagingPath, distPath);
+        if (hasBackup)
+            await rm(backupPath, { recursive: true, force: true });
+        bundleLogger.info('Bundle completed', {
+            durationMs: Date.now() - start,
+            routeCount: Object.keys(Router.reqRoutes).length,
+            distPath,
+        });
+    }
+    catch (error) {
+        await rm(stagingPath, { recursive: true, force: true });
+        if (hasBackup && !(await pathExists(distPath))) {
+            await rename(backupPath, distPath);
+            hasBackup = false;
+        }
+        throw error;
+    }
+    finally {
+        activeDistPath = distPath;
+        if (hasBackup)
+            await rm(backupPath, { recursive: true, force: true });
+    }
 }
 /** @param {string} route */
 async function writeRouteOutput(route) {
@@ -124,13 +149,13 @@ function classifyChange(targetPath) {
     const sharedStylesPrefix = normalizeRelative(path.relative(process.cwd(), Router.sharedStylesPath)) + '/';
     if (relative.startsWith(pagesPrefix)) {
         const routeFile = relative.slice(pagesPrefix.length);
-        if (routeFile.endsWith('/index.html') || routeFile === 'index.html')
+        if (routeFile.endsWith(`/${Router.pageFileName}`) || routeFile === Router.pageFileName)
             return { type: 'page', relative: routeFile };
         return { type: 'full', relative };
     }
     if (relative.startsWith(componentsPrefix)) {
         const componentFile = relative.slice(componentsPrefix.length);
-        if (componentFile.endsWith('.html'))
+        if (componentFile.endsWith(`/${Router.pageFileName}`) || componentFile === Router.pageFileName)
             return { type: 'component', relative: componentFile };
         return { type: 'full', relative };
     }
@@ -211,6 +236,10 @@ async function runSelectiveBuild(change) {
             await runBuild();
             return;
         }
+        await Router.validatePageRoutes();
+        const outputRoutes = await Compiler.bundleBrowserRuntimeAssets();
+        for (const route of outputRoutes)
+            await writeRouteOutput(route);
         await Compiler.bundlePageFile(change.relative);
         await writeRouteOutput(outputRoute);
         await Compiler.prerenderRoutes(distPath, Compiler.getHtmlRoutes());
@@ -363,11 +392,11 @@ export async function startBundleWatcher(options = {}) {
                     await runBuild();
                 }
             }
-            catch (err) {
+            catch (error) {
                 bundleLogger.error('Watch rebuild failed', {
                     changedPath: targetPath,
                     eventType,
-                    err,
+                    err: error,
                 });
             }
             finally {

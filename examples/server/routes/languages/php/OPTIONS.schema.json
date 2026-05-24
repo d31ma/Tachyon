@@ -3,7 +3,19 @@
         "200": {
             "language": "^php$",
             "message": "^Hello from PHP!$",
-            "requestId": "^.{1,200}$"
+            "requestId": "^.{1,200}$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "id?": "^[0-9A-Z]+$",
+                "document?": {
+                    "language": "^php$",
+                    "source": "^fylo\\.exec$",
+                    "requestId": "^.{1,200}$"
+                },
+                "matched?": "^[0-9]+$",
+                "operations?": ["^[A-Za-z]+$"],
+                "resultCount?": "^[0-9]+$"
+            }
         },
         "406": {
             "code": "^406$",
@@ -29,7 +41,7 @@
             "detail": "^[\\s\\S]+$"
         },
         "request": {
-            "query": {
+            "query?": {
                 "code?": "^[0-9]+$"
             }
         }

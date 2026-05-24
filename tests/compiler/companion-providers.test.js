@@ -17,9 +17,9 @@ describe('Compiler companion providers', () => {
         const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
         tempDirs.push(root);
         await mkdir(path.join(root, 'components', 'card'), { recursive: true });
-        const templatePath = path.join(root, 'components', 'card', 'index.html');
-        const jsCompanionPath = path.join(root, 'components', 'card', 'index.js');
-        const tsCompanionPath = path.join(root, 'components', 'card', 'index.ts');
+        const templatePath = path.join(root, 'components', 'card', 'tac.html');
+        const jsCompanionPath = path.join(root, 'components', 'card', 'tac.js');
+        const tsCompanionPath = path.join(root, 'components', 'card', 'tac.ts');
         await writeFile(templatePath, '<article>{title}</article>');
         await writeFile(jsCompanionPath, 'export default class {}');
         await writeFile(tsCompanionPath, 'export default class {}');
@@ -27,13 +27,13 @@ describe('Compiler companion providers', () => {
         const companion = await Compiler.getCompanionScript(templatePath);
 
         expect(companion?.sourcePath).toBe(jsCompanionPath);
-        expect(companion?.importPath).toBe('./index.js');
+        expect(companion?.importPath).toBe('./tac.js');
         expect(companion?.provider).toEqual({ extension: '.js', target: 'ecmascript' });
         expect(await Compiler.getCompanionScriptPath(templatePath)).toBe(jsCompanionPath);
 
         await rm(jsCompanionPath, { force: true });
         await rm(tsCompanionPath, { force: true });
-        const wasmCompanionPath = path.join(root, 'components', 'card', 'index.wasm');
+        const wasmCompanionPath = path.join(root, 'components', 'card', 'tac.wasm');
         await writeFile(wasmCompanionPath, new Uint8Array());
         const wasmCompanion = await Compiler.getCompanionScript(templatePath);
         expect(wasmCompanion?.sourcePath).toBe(wasmCompanionPath);
@@ -44,9 +44,9 @@ describe('Compiler companion providers', () => {
         const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
         tempDirs.push(root);
         await mkdir(path.join(root, 'components', 'meter'), { recursive: true });
-        const templatePath = path.join(root, 'components', 'meter', 'index.html');
-        const rustCompanionPath = path.join(root, 'components', 'meter', 'index.rs');
-        const wasmCompanionPath = path.join(root, 'components', 'meter', 'index.wasm');
+        const templatePath = path.join(root, 'components', 'meter', 'tac.html');
+        const rustCompanionPath = path.join(root, 'components', 'meter', 'tac.rs');
+        const wasmCompanionPath = path.join(root, 'components', 'meter', 'tac.wasm');
         await writeFile(templatePath, '<article>{label}</article>');
         await writeFile(rustCompanionPath, '/* rust source */');
         await writeFile(wasmCompanionPath, new Uint8Array());
@@ -54,7 +54,7 @@ describe('Compiler companion providers', () => {
         const companion = await Compiler.getCompanionScript(templatePath);
 
         expect(companion?.sourcePath).toBe(rustCompanionPath);
-        expect(companion?.importPath).toBe('./index.rs');
+        expect(companion?.importPath).toBe('./tac.rs');
         expect(companion?.provider).toEqual({ extension: '.rs', target: 'wasm-source', language: 'rust' });
     });
 
@@ -62,8 +62,8 @@ describe('Compiler companion providers', () => {
         const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
         tempDirs.push(root);
         await mkdir(path.join(root, 'components', 'chip'), { recursive: true });
-        const templatePath = path.join(root, 'components', 'chip', 'index.html');
-        const watCompanionPath = path.join(root, 'components', 'chip', 'index.wat');
+        const templatePath = path.join(root, 'components', 'chip', 'tac.html');
+        const watCompanionPath = path.join(root, 'components', 'chip', 'tac.wat');
         const compilerScriptPath = path.join(root, process.platform === 'win32' ? 'fake-wat2wasm.js' : 'fake-wat2wasm');
         await writeFile(templatePath, '<span>{label}</span>');
         await writeFile(watCompanionPath, '(module)');
@@ -115,9 +115,9 @@ printf 'compiled-wasm' > "$out"
         const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
         tempDirs.push(root);
         await mkdir(path.join(root, 'components', 'fallback'), { recursive: true });
-        const templatePath = path.join(root, 'components', 'fallback', 'index.html');
-        const watCompanionPath = path.join(root, 'components', 'fallback', 'index.wat');
-        const wasmFallbackPath = path.join(root, 'components', 'fallback', 'index.wasm');
+        const templatePath = path.join(root, 'components', 'fallback', 'tac.html');
+        const watCompanionPath = path.join(root, 'components', 'fallback', 'tac.wat');
+        const wasmFallbackPath = path.join(root, 'components', 'fallback', 'tac.wasm');
         await writeFile(templatePath, '<span>{label}</span>');
         await writeFile(watCompanionPath, '(module)');
         await writeFile(wasmFallbackPath, 'prebuilt-fallback');
@@ -142,7 +142,7 @@ printf 'compiled-wasm' > "$out"
         const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
         tempDirs.push(root);
         await mkdir(path.join(root, 'components', 'panel'), { recursive: true });
-        const templatePath = path.join(root, 'components', 'panel', 'index.html');
+        const templatePath = path.join(root, 'components', 'panel', 'tac.html');
         await writeFile(templatePath, '<section>Panel</section>');
 
         expect(await Compiler.getCompanionScript(templatePath)).toBeNull();

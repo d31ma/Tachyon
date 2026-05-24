@@ -2,7 +2,12 @@
     "POST": {
         "200": {
             "message": "^Hello from Java!$",
-            "requestId": "^.{1,200}$"
+            "requestId": "^.{1,200}$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "operations": ["^[A-Za-z]+$"],
+                "resultCount": "^[0-9]+$"
+            }
         },
         "416": {
             "code": "^416$",
