@@ -1,5 +1,5 @@
 // @ts-check
-import { cleanBooleanAttrs, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';
+import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';
 
 /**
  * @typedef {{ path: string, allowSelf: boolean }} LayoutEntry
@@ -219,8 +219,7 @@ for (const eventName of ['input', 'change', 'sl-input', 'sl-change']) {
         const element = event.target instanceof Element ? event.target : null;
         if (!element || !element.id || !element.hasAttribute('value'))
             return;
-        const value = 'value' in element ? element.value : undefined;
-        rerender(element.id, { value });
+        rerender(element.id, createValueEventDetail(/** @type {Element & { value?: unknown }} */ (element), event));
     });
 }
 

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Tac `:value` bindings now render loop-local expressions without evaluating
+  their identifier outside the loop scope, preventing `ReferenceError` during
+  builds such as `<loop :for="option of options"><input :value="option" />`.
+- Synthetic value-binding updates preserve `$event.target`,
+  `$event.currentTarget`, and `$event.type`, so DOM-style `@input` and
+  `@change` handlers continue to work when combined with `:value`.
+- `@onMount` registration is deferred until after renderer companion binding,
+  preserving mounted callbacks even when an app constructor calls
+  `super(props)` without forwarding the injected Tac helper argument.
+
 ## [26.21.7] — 2026-05-24
 
 ### Added

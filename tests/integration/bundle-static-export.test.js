@@ -5,6 +5,7 @@ import path from 'path';
 import { tmpdir } from 'os';
 import { pathToFileURL } from 'url';
 import { Window } from 'happy-dom';
+import { createValueEventDetail } from '../../src/runtime/dom-helpers.js';
 const timedTest = /** @type {any} */ (test);
 /** @type {string[]} */
 const tempDirs = [];
@@ -17,9 +18,17 @@ const wasmClickerFixture = 'AGFzbQEAAAABFgRgAX8Bf2ACf38AYAR/f39/AGAAAX8DBwYAAQEC
 function readEmbeddedRoutes(source) {
     const match = source.match(/routeManifestJSON\s*=\s*(['"])(.*?)\1/)
         ?? source.match(/\bi\s*=\s*(['"])(.*?)\1/);
-    if (!match)
-        throw new Error('Embedded route manifest not found');
-    return JSON.parse(match[2]);
+    if (match)
+        return JSON.parse(match[2]);
+    for (const candidate of source.matchAll(/(['"])(\{.*?\})\1/g)) {
+        try {
+            const parsed = JSON.parse(candidate[2]);
+            if (Object.keys(parsed).some((key) => key.startsWith('/')))
+                return parsed;
+        }
+        catch {}
+    }
+    throw new Error('Embedded route manifest not found');
 }
 async function createFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bundle-'));
@@ -163,6 +172,38 @@ function currentFolder() {
 </loop>
 <p>Selected {selected}</p>
 <p>Prop {currentFolder()}</p>`);
+    return root;
+}
+async function createLoopValueBindingFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-loop-value-binding-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-loop-value-binding-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+let options = ['alpha', 'beta'];
+</script>
+<loop :for="option of options">
+  <input :value="option" />
+</loop>`);
+    return root;
+}
+async function createValueEventFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-value-event-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-value-event-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+let selected = 'alpha';
+function choose(next) { selected = next; }
+</script>
+<input :value="selected" @input="choose($event.target.value)" />
+<p>Selected {selected}</p>`);
     return root;
 }
 async function createMultiEventLoopFixture() {
@@ -763,6 +804,36 @@ timedTest('bare loop variables are block scoped and do not overwrite template sc
     expect(updated).toContain('Selected sent');
     expect(updated).toContain('Prop inbox');
 });
+timedTest('loop values can be used by value bindings without escaping their lexical scope', { timeout: 20000 }, async () => {
+    const cwd = await createLoopValueBindingFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?loop-value=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    expect(initial).toContain('value="alpha"');
+    expect(initial).toContain('value="beta"');
+});
+timedTest('value-bound handlers retain DOM-style target access on synthetic updates', { timeout: 20000 }, async () => {
+    const cwd = await createValueEventFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?value-event=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    const inputId = initial.match(/<input[^>]* id="([^"]+)"/)?.[1];
+    expect(inputId).toBeDefined();
+    const windowInstance = new Window();
+    const input = windowInstance.document.createElement('input');
+    input.value = 'beta';
+    await render(inputId, createValueEventDetail(input, new windowInstance.Event('input')));
+    expect(await render()).toContain('Selected beta');
+    await windowInstance.happyDOM.close();
+});
 timedTest('multiple event handlers on one loop element keep handler counters aligned', { timeout: 20000 }, async () => {
     const cwd = await createMultiEventLoopFixture();
     const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
@@ -1152,7 +1223,7 @@ timedTest('spa prehydration skips malformed persisted fields without blocking va
     const prehydrateModulePath = path.join(root, 'prehydrate.js');
     await writeFile(prehydrateModulePath, runtimeSource
         .slice(0, prehydrateEnd)
-        .replace("import { cleanBooleanAttrs, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';\n", ''));
+        .replace("import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';\n", ''));
     const windowInstance = new Window();
     /** @type {Record<string, unknown>} */
     const previousGlobals = {

@@ -1,7 +1,7 @@
 // @ts-check
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
-import { cleanBooleanAttrs, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler, } from '../../src/runtime/dom-helpers.js';
+import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler, } from '../../src/runtime/dom-helpers.js';
 /** @type {Record<string, unknown>} */
 let previousGlobals;
 /** @type {Window} */
@@ -49,6 +49,15 @@ describe('findEventTarget', () => {
         `;
         const target = findEventTarget(/** @type {Element} */ (document.getElementById('inner')), 'click');
         expect(target?.getAttribute('@click')).toBe('outer()');
+    });
+    test('creates DOM-compatible context for synthetic value rerenders', () => {
+        const input = document.createElement('input');
+        input.value = 'selected';
+        const detail = createValueEventDetail(input, new windowInstance.Event('input'));
+        expect(detail.value).toBe('selected');
+        expect(detail.target).toBe(input);
+        expect(detail.currentTarget).toBe(input);
+        expect(detail.type).toBe('input');
     });
 });
 describe('cleanBooleanAttrs', () => {

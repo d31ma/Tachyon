@@ -1360,12 +1360,12 @@ with (__ty_scope__) {
             return '';
         };
 
-        const ty_assignValue = (hash, variable) => {
-            let nextValue = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(variable) ? eval(variable) : '';
+        const ty_assignValue = (hash, variable, currentValue) => {
+            let nextValue = currentValue;
             if (elemId === ty_generateId(hash, 'bind') && event) {
                 if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(variable)) {
                     const __val__ = event.value;
-                    eval(\`\${variable} = __val__\`);
+                    try { eval(\`\${variable} = __val__\`) } catch {}
                     nextValue = __val__;
                 }
             }
