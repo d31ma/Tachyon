@@ -239,6 +239,119 @@
     flex-wrap: wrap;
 }
 
+.atlas-hero {
+    align-items: stretch;
+    gap: 32px;
+    padding: clamp(24px, 4vw, 42px);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 24px;
+    background:
+        radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--md-sys-color-secondary) 18%, transparent), transparent 33%),
+        linear-gradient(135deg, var(--md-sys-color-surface) 0%, var(--md-sys-color-primary-container) 100%);
+    overflow: hidden;
+}
+
+.atlas-hero .page-header-title {
+    max-width: 18ch;
+    font-weight: 620;
+}
+
+.atlas-hero .page-header-lede {
+    max-width: 56ch;
+}
+
+.hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+}
+
+.hero-architecture {
+    width: min(100%, 310px);
+    align-self: center;
+    display: grid;
+    gap: 10px;
+}
+
+.architecture-step {
+    display: grid;
+    gap: 2px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-primary) 16%, transparent);
+    background: color-mix(in srgb, var(--md-sys-color-surface) 84%, transparent);
+    box-shadow: 0 12px 30px rgba(26, 35, 126, 0.06);
+}
+
+.architecture-step strong {
+    font-size: 1.35rem;
+    color: var(--md-sys-color-on-surface);
+}
+
+.architecture-step > span:last-child {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.84rem;
+}
+
+.architecture-kicker {
+    color: var(--md-sys-color-primary);
+    font-size: 0.67rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.11em;
+}
+
+.architecture-arrow {
+    justify-self: center;
+    color: var(--md-sys-color-secondary);
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.journey-map {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.journey-card {
+    display: grid;
+    gap: 6px;
+    padding: 14px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 14px;
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface);
+    transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+
+.journey-card:hover,
+.journey-card:focus-visible {
+    border-color: color-mix(in srgb, var(--md-sys-color-primary) 42%, var(--md-sys-color-outline-variant));
+    box-shadow: 0 8px 24px rgba(18, 26, 63, 0.08);
+    transform: translateY(-2px);
+    text-decoration: none;
+}
+
+.journey-card span {
+    color: var(--md-sys-color-primary);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+}
+
+.journey-card strong {
+    font-size: 1.03rem;
+}
+
+.journey-card small {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
 /* ── Dashboard sections ──────────────────────────────────────────────────── */
 .dashboard-section {
     display: flex;
@@ -273,6 +386,39 @@
 
 .section-head-meta {
     margin-left: 8px;
+}
+
+.chapter {
+    gap: 16px;
+    padding-block: 8px 14px;
+    scroll-margin-top: 76px;
+}
+
+.chapter .section-head {
+    gap: 16px;
+}
+
+.chapter .section-head > div {
+    display: grid;
+    gap: 4px;
+}
+
+.chapter .section-head-meta {
+    margin: 0;
+}
+
+.chapter-number {
+    height: 42px;
+    width: 42px;
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    border-radius: 13px;
+    color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
 }
 
 /* ── Layout grids — surfaces are styled in /shared/assets/brand.css ──────── */
@@ -324,6 +470,20 @@
     .page-header {
         grid-template-columns: 1fr;
     }
+
+    .hero-architecture {
+        width: 100%;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        align-items: center;
+    }
+
+    .architecture-arrow {
+        display: none;
+    }
+
+    .journey-map {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 640px) {
@@ -367,6 +527,21 @@
     .surface-actions {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .atlas-hero {
+        padding: 22px 16px;
+        border-radius: 18px;
+    }
+
+    .hero-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .hero-architecture,
+    .journey-map {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .md-typescale-headline-medium {

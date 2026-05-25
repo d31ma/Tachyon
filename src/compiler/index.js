@@ -861,11 +861,11 @@ export default class Compiler {
             const pageFactory = await pageModule();
             const pageHTML = await pageFactory();
             const bodyHTML = layoutHTML
-                ? layoutHTML.replace('<div id="ty-layout-slot"></div>', `<div id="ty-layout-slot">${pageHTML}</div>`)
+                ? layoutHTML.replace('<div id="ty-layout-slot"></div>', () => `<div id="ty-layout-slot">${pageHTML}</div>`)
                 : pageHTML;
             const title = Compiler.escapeHTML(prerender.title || Compiler.routeTitleFallback);
-            const withTitle = shellHTML.replace(/<title>.*?<\/title>/, `<title>${title}</title>`);
-            const withBody = withTitle.replace('<body></body>', `<body>${bodyHTML}</body>`);
+            const withTitle = shellHTML.replace(/<title>.*?<\/title>/, () => `<title>${title}</title>`);
+            const withBody = withTitle.replace('<body></body>', () => `<body>${bodyHTML}</body>`);
             return `${Compiler.normalizeScopedStyles(withBody)}\n`;
         }
         finally {

@@ -8,14 +8,14 @@
     </div>
 
     <div class="inventory-form">
-        <md-outlined-text-field
+        <input
             class="field-control"
             type="text"
             aria-label="Create a backend item"
             placeholder="Create a backend item"
             :value="newItem"
             @input="newItem = $event.target.value"
-        ></md-outlined-text-field>
+        />
         <md-filled-button @click="addItem()">Save</md-filled-button>
     </div>
 

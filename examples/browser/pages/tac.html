@@ -13,33 +13,29 @@
           <span class="nav-rail-glyph" aria-hidden="true"></span>
           <span>Overview</span>
         </a>
-        <a href="#runtime" class="nav-rail-item">
+        <a href="#compose" class="nav-rail-item">
           <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Runtime</span>
+          <span>Compose</span>
         </a>
-        <a href="#data" class="nav-rail-item">
+        <a href="#react" class="nav-rail-item">
           <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Data</span>
+          <span>React</span>
         </a>
-        <a href="#telemetry" class="nav-rail-item">
+        <a href="#connect" class="nav-rail-item">
           <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Telemetry</span>
+          <span>Connect</span>
         </a>
-        <a href="#live" class="nav-rail-item">
+        <a href="#store" class="nav-rail-item">
           <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Live stream</span>
+          <span>Store</span>
         </a>
-        <a href="#operations" class="nav-rail-item">
+        <a href="#observe" class="nav-rail-item">
           <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Operations</span>
+          <span>Observe</span>
         </a>
-        <a href="#inputs" class="nav-rail-item">
+        <a href="#extend" class="nav-rail-item">
           <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Inputs</span>
-        </a>
-        <a href="#components" class="nav-rail-item">
-          <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Components</span>
+          <span>Extend</span>
         </a>
       </nav>
       <div class="nav-rail-footer">
@@ -56,8 +52,8 @@
     <header class="app-bar topbar">
       <div class="app-bar-left">
         <md-text-button @click="toggleSidebar()" :aria-expanded="$sidebarOpen">{sidebarLabel}</md-text-button>
-        <div class="app-bar-title md-typescale-title-medium">Dashboard</div>
-        <md-assist-chip label="release"></md-assist-chip>
+        <div class="app-bar-title md-typescale-title-medium">Possibility atlas</div>
+        <md-assist-chip label="live application"></md-assist-chip>
       </div>
       <div class="app-bar-right">
         <md-text-button href="/_fylo">Fylo</md-text-button>
@@ -68,97 +64,153 @@
     </header>
 
     <main class="content">
-      <section class="page-header hero" id="overview">
+      <section class="page-header hero atlas-hero" id="overview">
         <div class="page-header-text">
-          <div class="page-header-eyebrow md-typescale-label-large">Tac + Yon</div>
+          <div class="page-header-eyebrow md-typescale-label-large">Tachyon capability atlas</div>
           <h1 class="page-header-title md-typescale-headline-medium">{headline}</h1>
           <p class="page-header-lede md-typescale-body-medium">{subtitle}</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#compose">Explore browser craft</a>
+            <a class="button button-outline" href="#store">Follow persisted data</a>
+            <md-text-button @click="refreshAll()">Reload live data</md-text-button>
+          </div>
         </div>
-        <div class="page-header-actions">
-          <md-filled-button @click="refreshAll()">Reload live data</md-filled-button>
+        <div class="hero-architecture" aria-label="Tachyon full stack flow">
+          <div class="architecture-step">
+            <span class="architecture-kicker">Craft</span>
+            <strong>Tac</strong>
+            <span>Reactive browser companions</span>
+          </div>
+          <span class="architecture-arrow" aria-hidden="true">+</span>
+          <div class="architecture-step">
+            <span class="architecture-kicker">Serve</span>
+            <strong>Yon</strong>
+            <span>Polyglot routed handlers</span>
+          </div>
+          <span class="architecture-arrow" aria-hidden="true">+</span>
+          <div class="architecture-step">
+            <span class="architecture-kicker">Persist</span>
+            <strong>FYLO</strong>
+            <span>Documents and telemetry</span>
+          </div>
         </div>
       </section>
 
+      <nav class="journey-map" aria-label="Ways to explore Tachyon">
+        <a href="#compose" class="journey-card">
+          <span>01</span>
+          <strong>Compose</strong>
+          <small>HTML, CSS, canvas and Tac events</small>
+        </a>
+        <a href="#react" class="journey-card">
+          <span>02</span>
+          <strong>React</strong>
+          <small>Persistence, streaming and state</small>
+        </a>
+        <a href="#connect" class="journey-card">
+          <span>03</span>
+          <strong>Connect</strong>
+          <small>Yon routes in many languages</small>
+        </a>
+        <a href="#store" class="journey-card">
+          <span>04</span>
+          <strong>Store</strong>
+          <small>CRUD and FYLO collections</small>
+        </a>
+        <a href="#observe" class="journey-card">
+          <span>05</span>
+          <strong>Observe</strong>
+          <small>Trace the running system</small>
+        </a>
+      </nav>
+
       <stats-grid :visits="$visits" :total-visits="$$totalVisits" />
 
-      <section class="dashboard-section" id="runtime">
+      <section class="dashboard-section chapter" id="compose">
         <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Runtime</h2>
-          <span class="section-head-meta md-typescale-body-small muted">Live diagnostics from Yon route handlers</span>
+          <span class="chapter-number">01</span>
+          <div>
+            <h2 class="md-typescale-title-large">Compose the browser experience</h2>
+            <p class="section-head-meta md-typescale-body-small muted">Native HTML semantics, expressive CSS and reactive Tac state working together.</p>
+          </div>
+        </div>
+        <div class="panel-grid">
+          <panel-inputs />
+        </div>
+        <div class="panel-grid">
+          <panel-native />
+        </div>
+      </section>
+
+      <section class="dashboard-section chapter" id="react">
+        <div class="section-head">
+          <span class="chapter-number">02</span>
+          <div>
+            <h2 class="md-typescale-title-large">React to people and live signals</h2>
+            <p class="section-head-meta md-typescale-body-small muted">Automatic rerenders, browser persistence and a frontend-only event stream.</p>
+          </div>
+        </div>
+        <div class="panel-grid">
+          <panel-helpers />
+          <panel-live />
+        </div>
+      </section>
+
+      <section class="dashboard-section chapter" id="connect">
+        <div class="section-head">
+          <span class="chapter-number">03</span>
+          <div>
+            <h2 class="md-typescale-title-large">Connect browser and backend</h2>
+            <p class="section-head-meta md-typescale-body-small muted">Yon receives file-routed requests while Tac presents their live responses.</p>
+          </div>
         </div>
         <div class="panel-grid">
           <panel-diagnostics />
           <panel-polyglot />
         </div>
-      </section>
-
-      <section class="dashboard-section" id="data">
-        <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Data</h2>
-          <span class="section-head-meta md-typescale-body-small muted">FYLO-backed collections + browser-side data</span>
-        </div>
         <div class="panel-grid">
-          <panel-fylo />
-          <panel-users />
-        </div>
-        <div class="panel-grid">
-          <panel-showcase />
           <panel-platform />
         </div>
       </section>
 
-      <section class="dashboard-section" id="live">
+      <section class="dashboard-section chapter" id="store">
         <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Live stream</h2>
-          <span class="section-head-meta md-typescale-body-small muted">External SSE through Yon, rendered reactively by Tac</span>
+          <span class="chapter-number">04</span>
+          <div>
+            <h2 class="md-typescale-title-large">Store and query application data</h2>
+            <p class="section-head-meta md-typescale-body-small muted">FYLO-backed documents, CRUD requests and compiler-injected browser queries.</p>
+          </div>
         </div>
         <div class="panel-grid">
-          <panel-live />
+          <panel-inventory />
+          <panel-users />
+        </div>
+        <div class="panel-grid">
+          <panel-fylo />
+          <panel-showcase />
         </div>
       </section>
 
-      <section class="dashboard-section" id="telemetry">
+      <section class="dashboard-section chapter" id="observe">
         <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Telemetry</h2>
-          <span class="section-head-meta md-typescale-body-small muted">OTLP spans from FYLO</span>
+          <span class="chapter-number">05</span>
+          <div>
+            <h2 class="md-typescale-title-large">Observe and operate confidently</h2>
+            <p class="section-head-meta md-typescale-body-small muted">FYLO-stored OpenTelemetry spans make application traffic inspectable.</p>
+          </div>
         </div>
         <div class="panel-grid">
           <panel-telemetry />
         </div>
       </section>
 
-      <section class="dashboard-section" id="operations">
+      <section class="dashboard-section chapter" id="extend">
         <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Operations</h2>
-          <span class="section-head-meta md-typescale-body-small muted">Inventory CRUD + frontend helpers</span>
-        </div>
-        <div class="panel-grid">
-          <panel-inventory />
-          <panel-helpers />
-        </div>
-      </section>
-
-      <section class="dashboard-section" id="inputs">
-        <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Input controls</h2>
-          <span class="section-head-meta md-typescale-body-small muted">Native browser inputs with Tac events and reactive values</span>
-        </div>
-        <div class="panel-grid">
-          <panel-inputs />
-        </div>
-      </section>
-
-      <section class="dashboard-section" id="components">
-        <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Scoped components</h2>
-          <md-assist-chip label="companions"></md-assist-chip>
+          <span class="chapter-number">06</span>
+          <div>
+            <h2 class="md-typescale-title-large">Extend beyond JavaScript</h2>
+            <p class="section-head-meta md-typescale-body-small muted">Scoped companions and WebAssembly components keep one consistent Tac template model.</p>
+          </div>
         </div>
         <div class="component-grid">
           <clicker :clicks="0" label="Persistent clicks" />

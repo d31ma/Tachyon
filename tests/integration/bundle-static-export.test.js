@@ -94,6 +94,20 @@ async function createDynamicRouteFixture() {
     await writeFile(path.join(root, 'browser', 'pages', 'folder', '_name', 'tac.html'), '<script>document.title = "Folder"</script><article>Folder route</article>');
     return root;
 }
+async function createLiteralReplacementTokenFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-literal-token-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'browser', 'pages'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-literal-token-fixture',
+        private: true,
+    }, null, 2));
+    await writeFile(
+        path.join(root, 'browser', 'pages', 'tac.html'),
+        '<main><p>Session field `$` and local field `$$` remain literal.</p></main>',
+    );
+    return root;
+}
 async function createFailingBundleWithExistingDistFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bundle-fail-'));
     tempDirs.push(root);
@@ -670,6 +684,16 @@ timedTest('tac.bundle prerenders dynamic routes into Windows-safe dist paths', {
     expect(folder).toContain('Folder route');
     expect(emailEntries).toEqual(['_id']);
     expect(folderEntries).toEqual(['_name']);
+});
+timedTest('static prerender preserves literal dollar replacement tokens in template text', { timeout: 20000 }, async () => {
+    const cwd = await createLiteralReplacementTokenFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const document = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
+    expect(document).toContain('Session field `$` and local field `$$` remain literal.');
+    expect(document.match(/<!DOCTYPE html>/g)).toHaveLength(1);
 });
 timedTest('tac.bundle leaves the previous dist intact when a full build fails', { timeout: 20000 }, async () => {
     const cwd = await createFailingBundleWithExistingDistFixture();

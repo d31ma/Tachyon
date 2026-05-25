@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The browser example dashboard now includes a Tac input gallery covering
   native input types, `select`, `datalist`, and `textarea`, with live event
   feedback and reactive persisted value bindings.
+- The example browser app is now a guided capability atlas linking Tac
+  composition, reactive browser state, Yon routes, FYLO storage, telemetry,
+  and WebAssembly companions into one navigable application tour.
+- A Browser studio panel demonstrates Tac-driven canvas drawing together with
+  native semantic `progress`, `meter`, `output`, `time`, and `details`
+  surfaces under scoped responsive CSS.
 - Tac templates support `:checked="field"` so checkbox and radio state remains
   reactive across component rerenders.
 - The checked-in example app now participates in standalone strict type
@@ -19,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Static prerendering now preserves literal replacement-token text such as
+  Tac's `$` and `$$` persistence sigils instead of expanding it while
+  inserting rendered pages into the HTML shell.
+- Browser acceptance tests accept `TACHYON_EXAMPLES_E2E_PORT`, avoiding false
+  failures when the default example port is already in use.
+- The example inventory form now binds CRUD draft state directly to its
+  visible native input, so a successful Yon save reliably clears the field.
 - Tac `:value` bindings now render loop-local expressions without evaluating
   their identifier outside the loop scope, preventing `ReferenceError` during
   builds such as `<loop :for="option of options"><input :value="option" />`.

@@ -105,7 +105,11 @@ The runtime still supports TypeScript companion scripts when you want them.
 
 The example app in [examples/](examples/) demonstrates Tac and Yon working together:
 
+- a guided capability atlas joining native HTML/CSS/JavaScript surfaces with
+  working Tac, Yon, and FYLO flows rather than isolated code snippets
 - reactive page state
+- accessible native controls and a reactive canvas studio with semantic
+  `progress`, `meter`, `output`, `time`, and `details` elements
 - persisted `$` (sessionStorage) and `$$` (localStorage) fields
 - local-first fetches
 - frontend-only external SSE streaming with reactive Tac updates
