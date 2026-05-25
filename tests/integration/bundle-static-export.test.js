@@ -447,7 +447,11 @@ async function createCompanionScriptFixture() {
     }
 }
 `);
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.css'), `.clicker { border: 2px solid tomato; font-weight: 700; }`);
+    await writeFile(path.join(root, 'components', 'clicker', 'tac.css'), `.clicker {
+    /* \`display: grid\` and \${theme} are author text, not JavaScript. */
+    border: 2px solid tomato;
+    font-weight: 700;
+}`);
     await writeFile(path.join(root, 'routes', 'tac.html'), `<clicker label="Companion" />`);
     return root;
 }
@@ -1149,7 +1153,9 @@ timedTest('component companion scripts in JavaScript or TypeScript and scoped cs
     expect(initial).toContain('Companion: 0');
     expect(initial).toContain('data-tac-scope="clicker"');
     expect(initial).toContain('@scope ([data-tac-scope="clicker"])');
-    expect(initial).toContain('.clicker { border: 2px solid tomato; font-weight: 700; }');
+    expect(initial).toContain('`display: grid` and ${theme} are author text, not JavaScript.');
+    expect(initial).toContain('border: 2px solid tomato;');
+    expect(initial).toContain('font-weight: 700;');
     expect(buttonId).toBeDefined();
     const updated = await render(buttonId);
     expect(updated).toContain('Clicked: 1');

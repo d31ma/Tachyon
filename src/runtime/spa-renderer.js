@@ -131,7 +131,7 @@ async function loadManifests() {
 }
 
 Promise.all([loadManifests()]).then(() => {
-    navigate(location.pathname);
+    navigate(location.pathname + location.search + location.hash);
 });
 
 /** @param {string} eventName */
@@ -164,7 +164,7 @@ function handleDelegatedEvent(eventName, event) {
                 && canHandleClientNavigation(url);
             if (allowSpaNavigation) {
                 event.preventDefault();
-                navigate(url.pathname);
+                navigate(url.pathname + url.search + url.hash);
                 return;
             }
         }
@@ -223,7 +223,7 @@ for (const eventName of ['input', 'change', 'sl-input', 'sl-change']) {
     });
 }
 
-window.addEventListener('popstate', () => navigate(location.pathname));
+window.addEventListener('popstate', () => navigate(location.pathname + location.search + location.hash));
 
 /**
  * @param {Element} element
@@ -481,12 +481,19 @@ function postPatch() {
     freshNavigation = false;
 }
 
-/** @param {string} pathname */
-function navigate(pathname) {
+/** @param {string} target */
+function navigate(target) {
+    const fullTarget = String(target || '/');
+    const suffixStart = fullTarget.search(/[?#]/);
+    let pathname = suffixStart >= 0 ? fullTarget.slice(0, suffixStart) : fullTarget;
+    const suffix = suffixStart >= 0 ? fullTarget.slice(suffixStart) : '';
+    if (!pathname)
+        pathname = '/';
     if (pathname !== '/' && pathname.endsWith('/')) {
         pathname = pathname.slice(0, -1);
-        history.replaceState({}, '', pathname);
+        history.replaceState({}, '', pathname + suffix);
     }
+    const fullURL = pathname + suffix;
 
     let handler = '';
     let pageURL = '/pages/404.js';
@@ -503,10 +510,10 @@ function navigate(pathname) {
 
     const loadPage = async () => {
         const pageFactory = await tac.load(pageURL);
-        if (location.pathname !== pathname)
-            history.pushState({}, '', pathname);
+        if (location.pathname + location.search + location.hash !== fullURL)
+            history.pushState({}, '', fullURL);
         else
-            history.replaceState({}, '', pathname);
+            history.replaceState({}, '', fullURL);
         pageRender = await pageFactory();
         freshNavigation = true;
         previousHTML = '';
@@ -532,10 +539,10 @@ function navigate(pathname) {
         ]).then(async ([layoutFactory, pageFactory]) => {
             currentLayoutPath = layoutPath;
             layoutRender = await layoutFactory();
-            if (location.pathname !== pathname)
-                history.pushState({}, '', pathname);
+            if (location.pathname + location.search + location.hash !== fullURL)
+                history.pushState({}, '', fullURL);
             else
-                history.replaceState({}, '', pathname);
+                history.replaceState({}, '', fullURL);
             pageRender = await pageFactory();
             freshNavigation = true;
             previousHTML = '';

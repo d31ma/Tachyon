@@ -185,6 +185,31 @@ test('fylo browser uses responsive M2 controls without browser console errors', 
   expectNoBrowserErrors(browserErrors);
 });
 
+test('Tac navigation preserves query parameters and fragments', async ({ page }) => {
+  const browserErrors = trackBrowserErrors(page);
+
+  await page.goto('/?tour=direct#compose', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.hero');
+  await expect(page).toHaveURL(/\?tour=direct#compose$/);
+  await expect(page.getByText('Hello from Yon on Bun!')).toBeVisible();
+
+  await page.evaluate(() => {
+    const link = document.createElement('a');
+    link.id = 'navigation-query-fixture';
+    link.href = '/?tour=click#react';
+    link.textContent = 'Query navigation fixture';
+    document.body.append(link);
+  });
+  await page.evaluate(() => /** @type {HTMLAnchorElement} */ (document.querySelector('#navigation-query-fixture')).click());
+  await expect(page).toHaveURL(/\?tour=click#react$/);
+
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(/\?tour=direct#compose$/);
+  await page.evaluate(() => history.forward());
+  await expect(page).toHaveURL(/\?tour=click#react$/);
+  expectNoBrowserErrors(browserErrors);
+});
+
 test('every example button and input responds correctly', async ({ page }) => {
   const browserErrors = trackBrowserErrors(page);
   await waitForDashboardReady(page);

@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failures when the default example port is already in use.
 - The example inventory form now binds CRUD draft state directly to its
   visible native input, so a successful Yon save reliably clears the field.
+- Tac client-side navigation preserves query parameters and URL fragments on
+  first hydration, intercepted link clicks, and browser history traversal.
+- Component stylesheet regression coverage now ensures template-literal
+  characters in author CSS comments remain intact in emitted Tac modules.
 - Tac `:value` bindings now render loop-local expressions without evaluating
   their identifier outside the loop scope, preventing `ReferenceError` during
   builds such as `<loop :for="option of options"><input :value="option" />`.
