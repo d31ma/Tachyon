@@ -1,0 +1,146 @@
+<div class="surface panel-wide input-showcase">
+    <div class="surface-head">
+        <div>
+            <h2 class="md-typescale-title-large">Every input, one Tac companion</h2>
+            <p class="md-typescale-body-medium muted">Native HTML controls pass through Tac templates while events and value bindings update component state.</p>
+        </div>
+        <md-assist-chip label="all input types"></md-assist-chip>
+    </div>
+
+    <div class="event-receipt" role="status" aria-live="polite">
+        <span class="md-typescale-label-medium">Latest signal</span>
+        <strong class="md-typescale-title-medium">{lastControl}</strong>
+        <span class="receipt-value">{lastValue}</span>
+        <span class="receipt-count">{$interactionCount} interactions this session</span>
+    </div>
+
+    <form class="input-gallery" @submit="preventAction('submit', $event)">
+        <fieldset class="input-group">
+            <legend>Writing and discovery</legend>
+            <label class="field">
+                <span>Text</span>
+                <input type="text" aria-label="Input text" placeholder="Name" :value="$sampleText" @input="updateText($event.target.value)" />
+            </label>
+            <label class="field">
+                <span>Search</span>
+                <input type="search" aria-label="Input search" placeholder="Search packages" :value="fields.search" @input="updateField('search', $event.target.value)" />
+            </label>
+            <label class="field">
+                <span>Email</span>
+                <input type="email" aria-label="Input email" placeholder="team@example.dev" :value="fields.email" @input="updateField('email', $event.target.value)" />
+            </label>
+            <label class="field">
+                <span>Password</span>
+                <input type="password" aria-label="Input password" placeholder="Secret" :value="fields.password" @input="recordSecret($event.target.value)" />
+            </label>
+            <label class="field">
+                <span>Telephone</span>
+                <input type="tel" aria-label="Input telephone" placeholder="+1 416 555 0100" :value="fields.telephone" @input="updateField('telephone', $event.target.value)" />
+            </label>
+            <label class="field">
+                <span>URL</span>
+                <input type="url" aria-label="Input URL" placeholder="https://tachyon.dev" :value="fields.link" @input="updateField('link', $event.target.value)" />
+            </label>
+        </fieldset>
+
+        <fieldset class="input-group">
+            <legend>Numbers and colour</legend>
+            <label class="field">
+                <span>Number</span>
+                <input type="number" aria-label="Input number" min="0" max="100" :value="fields.number" @input="updateField('number', $event.target.value)" />
+            </label>
+            <label class="field range-field">
+                <span>Range <strong>{$range}</strong></span>
+                <input type="range" aria-label="Input range" min="0" max="100" :value="$range" @input="updateRange($event.target.value)" />
+            </label>
+            <label class="field colour-field">
+                <span>Color</span>
+                <input type="color" aria-label="Input color" :value="$accent" @input="updateColour($event.target.value)" />
+            </label>
+        </fieldset>
+
+        <fieldset class="input-group">
+            <legend>Dates and schedules</legend>
+            <label class="field">
+                <span>Date</span>
+                <input type="date" aria-label="Input date" :value="fields.date" @change="updateField('date', $event.target.value)" />
+            </label>
+            <label class="field">
+                <span>Date and time</span>
+                <input type="datetime-local" aria-label="Input datetime local" :value="fields.dateTime" @change="updateField('dateTime', $event.target.value)" />
+            </label>
+            <label class="field">
+                <span>Month</span>
+                <input type="month" aria-label="Input month" :value="fields.month" @change="updateField('month', $event.target.value)" />
+            </label>
+            <label class="field">
+                <span>Week</span>
+                <input type="week" aria-label="Input week" :value="fields.week" @change="updateField('week', $event.target.value)" />
+            </label>
+            <label class="field">
+                <span>Time</span>
+                <input type="time" aria-label="Input time" :value="fields.time" @change="updateField('time', $event.target.value)" />
+            </label>
+        </fieldset>
+
+        <fieldset class="input-group">
+            <legend>Selections and files</legend>
+            <label class="toggle-field">
+                <input type="checkbox" aria-label="Input checkbox" :checked="$subscribed" @change="updateSubscription($event.target.checked)" />
+                <span>Checkbox</span>
+            </label>
+            <div class="radio-fields" role="group" aria-label="Input radio group">
+                <label class="toggle-field">
+                    <input type="radio" name="tac-plan" value="starter" :checked="$plan === 'starter'" @change="updatePlan($event.target.value)" />
+                    <span>Starter</span>
+                </label>
+                <label class="toggle-field">
+                    <input type="radio" name="tac-plan" value="production" :checked="$plan === 'production'" @change="updatePlan($event.target.value)" />
+                    <span>Production</span>
+                </label>
+            </div>
+            <label class="field file-field">
+                <span>File</span>
+                <input type="file" aria-label="Input file" @change="recordFiles($event.target.files)" />
+            </label>
+        </fieldset>
+
+        <fieldset class="input-group spanning">
+            <legend>Form controls beyond input</legend>
+            <label class="field">
+                <span>Select</span>
+                <select aria-label="Input select" :value="fields.stack" @change="updateField('stack', $event.target.value)">
+                    <option value="frontend">Tac frontend</option>
+                    <option value="backend">Yon backend</option>
+                    <option value="fullstack">Full stack</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Datalist</span>
+                <input type="text" aria-label="Input datalist" list="tac-runtime-options" placeholder="Choose a runtime" :value="fields.runtime" @input="updateField('runtime', $event.target.value)" />
+                <datalist id="tac-runtime-options">
+                    <option value="Bun"></option>
+                    <option value="Browser WebAssembly"></option>
+                    <option value="FYLO"></option>
+                </datalist>
+            </label>
+            <label class="field notes-field">
+                <span>Textarea</span>
+                <textarea aria-label="Input textarea" rows="3" :value="fields.notes" @input="updateField('notes', $event.target.value)">Reactive components feel natural in Tac.</textarea>
+            </label>
+        </fieldset>
+
+        <fieldset class="input-group spanning actions-group">
+            <legend>Actions and hidden values</legend>
+            <input type="hidden" name="framework" value="tac" />
+            <input class="action-control" type="button" value="Button" @click="record('button', 'clicked')" />
+            <input class="action-control primary" type="submit" value="Submit" />
+            <input class="action-control" type="reset" value="Reset" @click="resetValues()" />
+            <label class="image-control">
+                <span>Image submit</span>
+                <input type="image" alt="Tachyon image input" src="/shared/assets/wordmark.svg" @click="preventAction('image submit', $event)" />
+            </label>
+            <p class="md-typescale-body-small muted">A hidden <code>framework=tac</code> value is also present in this form.</p>
+        </fieldset>
+    </form>
+</div>

@@ -112,8 +112,36 @@ async function waitForDashboardReady(page) {
  */
 async function expectInteractiveSurface(page) {
   await expect(page.locator('button')).toHaveCount(EXPECTED_BUTTONS.length);
-  await expect(page.locator('input')).toHaveCount(1);
-  await expect(page.locator('textarea')).toHaveCount(1);
+  await expect(page.locator('.input-showcase')).toBeVisible();
+  const showcasedInputTypes = await page.locator('.input-showcase input').evaluateAll((inputs) =>
+    [...new Set(inputs.map((input) => /** @type {HTMLInputElement} */ (input).type))].sort(),
+  );
+  expect(showcasedInputTypes).toEqual([
+    'button',
+    'checkbox',
+    'color',
+    'date',
+    'datetime-local',
+    'email',
+    'file',
+    'hidden',
+    'image',
+    'month',
+    'number',
+    'password',
+    'radio',
+    'range',
+    'reset',
+    'search',
+    'submit',
+    'tel',
+    'text',
+    'time',
+    'url',
+    'week',
+  ]);
+  await expect(page.locator('.input-showcase textarea')).toHaveCount(1);
+  await expect(page.locator('.input-showcase select')).toHaveCount(1);
 
   const buttonLabels = (await page.locator('button').allInnerTexts()).map((label) =>
     label.replace(/\s+/g, ' ').trim(),
@@ -228,7 +256,19 @@ test('every example button and input responds correctly', async ({ page }) => {
   await page.getByRole('button', { name: 'Refresh' }).nth(1).click();
   await expect(page.locator('.inventory-list')).toContainText('Playwright Widget');
 
-  const draft = page.locator('textarea');
+  const draft = page.locator('#frontend textarea');
+  const exampleName = page.getByLabel('Input text');
+  await exampleName.fill('Reactive Tac input');
+  await expect(page.locator('.input-showcase .event-receipt')).toContainText('Reactive Tac input');
+  await expect(exampleName).toHaveValue('Reactive Tac input');
+  const subscribed = page.getByLabel('Input checkbox');
+  await subscribed.check();
+  await expect(subscribed).toBeChecked();
+  const stack = page.getByLabel('Input select');
+  await stack.selectOption('fullstack');
+  await expect(stack).toHaveValue('fullstack');
+  await expect(page.locator('.input-showcase .event-receipt')).toContainText('fullstack');
+
   await draft.fill('Playwright draft note');
   await expect(draft).toHaveValue('Playwright draft note');
   await page.reload({ waitUntil: 'domcontentloaded' });

@@ -514,6 +514,7 @@ Templates support:
 - `@event="handler()"` for event binding
 - `:prop="expr"` for dynamic attributes
 - `:value="field"` for two-way input binding
+- `:checked="field"` for reactive checkbox and radio state
 - `<loop :for="...">`
 - `<logic :if="...">`
 - `<switch :value="...">` with `<case :when="...">` and `<case default>`

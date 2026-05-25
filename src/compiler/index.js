@@ -1057,6 +1057,8 @@ export default class Compiler {
                 }
                 if (name === ':value' && tagName !== 'switch')
                     return `value="\${ty_escapeAttr(ty_assignValue('${hash}', '${value}', ${value}))}"`;
+                if (name === ':checked')
+                    return `\${${value} ? 'checked' : ''}`;
                 return `${name}="${escapeTemplateLiteral(value)}"`;
             };
             /** @param {string} text */

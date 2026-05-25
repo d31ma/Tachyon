@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The browser example dashboard now includes a Tac input gallery covering
+  native input types, `select`, `datalist`, and `textarea`, with live event
+  feedback and reactive persisted value bindings.
+- Tac templates support `:checked="field"` so checkbox and radio state remains
+  reactive across component rerenders.
+- The checked-in example app now participates in standalone strict type
+  checking with its Tac globals and browser dependencies resolved.
+
 ### Fixed
 
 - Tac `:value` bindings now render loop-local expressions without evaluating

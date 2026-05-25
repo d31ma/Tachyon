@@ -24,6 +24,7 @@ const TIMEOUT_MS = Number(process.env.TACHYON_TYPECHECK_TIMEOUT_MS) || 120_000;
 const projectRoot = path.resolve(import.meta.dir, '..');
 const requestedConfigs = process.argv.slice(2);
 const configs = requestedConfigs.length > 0 ? requestedConfigs : ['tsconfig.src.json'];
+const includesExamples = configs.some(config => path.basename(config) === 'tsconfig.examples.json');
 
 /** @type {Record<string, string[]>} */
 const CONFIG_ROOTS = {
@@ -181,6 +182,14 @@ try {
             '--frozen-lockfile',
             '--ignore-scripts',
         ]);
+        if (includesExamples && await exists(path.join(typecheckRoot, 'examples', 'package.json'))) {
+            await runCommand('Typecheck example dependency install', path.join(typecheckRoot, 'examples'), [
+                'bun',
+                'install',
+                '--frozen-lockfile',
+                '--ignore-scripts',
+            ]);
+        }
     }
 
     const tscPath = path.join(typecheckRoot, 'node_modules', 'typescript', 'bin', 'tsc');

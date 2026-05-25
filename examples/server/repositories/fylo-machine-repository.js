@@ -76,7 +76,12 @@ export default class FyloMachineRepository {
         // Use a demo-only collection name so ensureDemoSchema() can't clobber
         // the real `items` schema other routes rely on.
         const schemaCollection = 'fylo-demo-items';
+        /** @type {string[]} */
         const operations = [];
+        /**
+         * @param {Record<string, unknown> & { op: string }} request
+         * @returns {Promise<unknown>}
+         */
         const run = async (request) => {
             const result = await this.exec({ requestId, ...request });
             operations.push(String(request.op));

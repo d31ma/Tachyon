@@ -206,6 +206,22 @@ function choose(next) { selected = next; }
 <p>Selected {selected}</p>`);
     return root;
 }
+async function createCheckedBindingFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-checked-binding-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-checked-binding-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+let accepted = false;
+function accept() { accepted = true; }
+</script>
+<input type="checkbox" :checked="accepted" @change="accept()" />
+<p>Accepted {accepted}</p>`);
+    return root;
+}
 async function createMultiEventLoopFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-multi-event-loop-'));
     tempDirs.push(root);
@@ -833,6 +849,23 @@ timedTest('value-bound handlers retain DOM-style target access on synthetic upda
     await render(inputId, createValueEventDetail(input, new windowInstance.Event('input')));
     expect(await render()).toContain('Selected beta');
     await windowInstance.happyDOM.close();
+});
+timedTest('checked bindings retain checkbox state across reactive rerenders', { timeout: 20000 }, async () => {
+    const cwd = await createCheckedBindingFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?checked=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    const inputId = initial.match(/<input[^>]* id="([^"]+)"/)?.[1];
+    expect(inputId).toBeDefined();
+    expect(initial).not.toMatch(/<input[^>]* checked/);
+    await render(inputId, new Event('change'));
+    const updated = await render();
+    expect(updated).toMatch(/<input[^>]* checked/);
+    expect(updated).toContain('Accepted true');
 });
 timedTest('multiple event handlers on one loop element keep handler counters aligned', { timeout: 20000 }, async () => {
     const cwd = await createMultiEventLoopFixture();
