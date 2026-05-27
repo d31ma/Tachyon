@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.22.03] — 2026-05-27
+
 ### Added
 
 - PostgREST-style query filtering on Fylo browser collection endpoints.
@@ -299,7 +301,8 @@ should expect to touch imports, bin names, and any code that assumed the old
 
 See the Git history and GitHub release notes for pre-2.0 changes.
 
-[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.21.7...HEAD
+[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.22.03...HEAD
+[26.22.03]: https://github.com/d31ma/Tachyon/compare/v26.21.7...v26.22.03
 [26.21.7]: https://github.com/d31ma/Tachyon/compare/v26.21.05...v26.21.7
 [26.21.05]: https://github.com/d31ma/Tachyon/compare/v2.0.0...v26.21.05
 [2.0.0]: https://github.com/d31ma/Tachyon/compare/v1.11.1...v2.0.0
