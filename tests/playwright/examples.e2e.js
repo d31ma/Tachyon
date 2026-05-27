@@ -22,22 +22,6 @@ const FIXTURE_ITEMS = [
   },
 ];
 
-const EXPECTED_BUTTONS = [
-  'Menu',
-  'Refresh',
-  'Theme',
-  'Reload live data',
-  'Refresh',
-  'Clear',
-  'Save',
-  'Toggle theme',
-  'Clear draft',
-  'Reset',
-  'Click',
-  'Reset',
-  'Click',
-];
-
 /** @type {WeakMap<import('playwright/test').Page, string[]>} */
 const browserErrorMap = new WeakMap();
 
@@ -111,15 +95,41 @@ async function waitForDashboardReady(page) {
  * @returns {Promise<void>}
  */
 async function expectInteractiveSurface(page) {
-  await expect(page.locator('button')).toHaveCount(EXPECTED_BUTTONS.length);
-  await expect(page.locator('input')).toHaveCount(1);
-  await expect(page.locator('textarea')).toHaveCount(1);
-
-  const buttonLabels = (await page.locator('button').allInnerTexts()).map((label) =>
-    label.replace(/\s+/g, ' ').trim(),
+  await expect(page.locator('.input-showcase')).toBeVisible();
+  const showcasedInputTypes = await page.locator('.input-showcase input').evaluateAll((inputs) =>
+    [...new Set(inputs.map((input) => /** @type {HTMLInputElement} */ (input).type))].sort(),
   );
-
-  expect(buttonLabels).toEqual(EXPECTED_BUTTONS);
+  expect(showcasedInputTypes).toEqual([
+    'button',
+    'checkbox',
+    'color',
+    'date',
+    'datetime-local',
+    'email',
+    'file',
+    'hidden',
+    'image',
+    'month',
+    'number',
+    'password',
+    'radio',
+    'range',
+    'reset',
+    'search',
+    'submit',
+    'tel',
+    'text',
+    'time',
+    'url',
+    'week',
+  ]);
+  await expect(page.locator('.input-showcase textarea')).toHaveCount(1);
+  await expect(page.locator('.input-showcase select')).toHaveCount(1);
+  await expect(page.locator('#browser-studio canvas')).toBeVisible();
+  await expect(page.locator('#browser-studio progress')).toHaveAttribute('value', '62');
+  await expect(page.locator('#browser-studio meter')).toHaveAttribute('value', '62');
+  await expect(page.locator('#browser-studio').getByRole('button', { name: 'Surge' })).toBeVisible();
+  await expect(page.locator('#inventory').getByRole('button', { name: 'Save' })).toBeVisible();
 }
 
 /**
@@ -148,7 +158,8 @@ test('examples homepage looks polished and loads live dashboard data', async ({ 
   await expectInteractiveSurface(page);
   await expect(page.locator('.shell')).toBeVisible();
   await expect(page.locator('.sidebar-brand')).toContainText('Tac + Yon');
-  await expect(page.locator('.hero')).toContainText('One app, two layers, every route talking live');
+  await expect(page.locator('.hero')).toContainText('Build what the browser can imagine, backed by Yon and FYLO');
+  await expect(page.locator('.journey-map')).toContainText('Compose');
   await expect(page.locator('.stats')).toContainText('Session visits');
   await page.screenshot({ path: SCREENSHOT_PATH, fullPage: true });
   expectNoBrowserErrors(browserErrorMap.get(page) ?? []);
@@ -171,6 +182,31 @@ test('fylo browser uses responsive M2 controls without browser console errors', 
     .poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
     .toBe(true);
 
+  expectNoBrowserErrors(browserErrors);
+});
+
+test('Tac navigation preserves query parameters and fragments', async ({ page }) => {
+  const browserErrors = trackBrowserErrors(page);
+
+  await page.goto('/?tour=direct#compose', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.hero');
+  await expect(page).toHaveURL(/\?tour=direct#compose$/);
+  await expect(page.getByText('Hello from Yon on Bun!')).toBeVisible();
+
+  await page.evaluate(() => {
+    const link = document.createElement('a');
+    link.id = 'navigation-query-fixture';
+    link.href = '/?tour=click#react';
+    link.textContent = 'Query navigation fixture';
+    document.body.append(link);
+  });
+  await page.evaluate(() => /** @type {HTMLAnchorElement} */ (document.querySelector('#navigation-query-fixture')).click());
+  await expect(page).toHaveURL(/\?tour=click#react$/);
+
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(/\?tour=direct#compose$/);
+  await page.evaluate(() => history.forward());
+  await expect(page).toHaveURL(/\?tour=click#react$/);
   expectNoBrowserErrors(browserErrors);
 });
 
@@ -203,7 +239,8 @@ test('every example button and input responds correctly', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Operations' })).toBeVisible();
   await expect(page.getByLabel('Search operations')).toBeVisible();
   await page.getByLabel('Search operations').fill('/languages/javascript');
-  const docsOperation = page.locator('.operation-card').first();
+  const docsOperation = page.locator('#operation-get-languages-javascript');
+  await expect(docsOperation).toBeVisible();
   await docsOperation.locator('.operation-toggle').click();
   await docsOperation.getByRole('button', { name: 'Try it out' }).click();
   await docsOperation.getByRole('button', { name: 'Execute' }).click();
@@ -217,7 +254,7 @@ test('every example button and input responds correctly', async ({ page }) => {
   await page.getByRole('button', { name: 'Refresh' }).first().click();
   await expect.poll(async () => await requestIdCell.textContent()).not.toBe(firstRequestId);
 
-  const itemInput = page.getByPlaceholder('Create a backend item');
+  const itemInput = page.locator('#inventory input[placeholder="Create a backend item"]');
   await itemInput.fill('Playwright Widget');
   await expect(itemInput).toHaveValue('Playwright Widget');
   await page.getByRole('button', { name: 'Save' }).click();
@@ -228,7 +265,28 @@ test('every example button and input responds correctly', async ({ page }) => {
   await page.getByRole('button', { name: 'Refresh' }).nth(1).click();
   await expect(page.locator('.inventory-list')).toContainText('Playwright Widget');
 
-  const draft = page.locator('textarea');
+  const draft = page.locator('#frontend textarea');
+  const studio = page.locator('#browser-studio');
+  await studio.getByRole('button', { name: 'Surge' }).click();
+  await expect(studio.locator('progress')).toHaveAttribute('value', '88');
+  await expect(studio.locator('output')).toContainText('Surge palette selected');
+  await studio.getByLabel('Studio intensity').fill('45');
+  await expect(studio.locator('meter')).toHaveAttribute('value', '45');
+  await expect(studio.locator('output')).toContainText('45% energy');
+  await studio.getByRole('button', { name: 'Redraw' }).click();
+  await expect(studio.locator('time')).toContainText('Frame');
+  const exampleName = page.getByLabel('Input text', { exact: true });
+  await exampleName.fill('Reactive Tac input');
+  await expect(page.locator('.input-showcase .event-receipt')).toContainText('Reactive Tac input');
+  await expect(exampleName).toHaveValue('Reactive Tac input');
+  const subscribed = page.getByLabel('Input checkbox');
+  await subscribed.check();
+  await expect(subscribed).toBeChecked();
+  const stack = page.getByLabel('Input select');
+  await stack.selectOption('fullstack');
+  await expect(stack).toHaveValue('fullstack');
+  await expect(page.locator('.input-showcase .event-receipt')).toContainText('fullstack');
+
   await draft.fill('Playwright draft note');
   await expect(draft).toHaveValue('Playwright draft note');
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -240,20 +298,20 @@ test('every example button and input responds correctly', async ({ page }) => {
   const persistentPanel = componentPanel(page, 'Persistent clicks');
   const persistentValue = persistentPanel.locator('.value');
   const persistentStart = Number((await persistentValue.textContent())?.trim() ?? '0');
-  await persistentPanel.getByRole('button', { name: 'Click' }).click();
+  await persistentPanel.getByRole('button', { name: 'Click', exact: true }).click();
   await expect(persistentValue).toHaveText(String(persistentStart + 1));
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.hero');
   await expect(componentPanel(page, 'Persistent clicks').locator('.value')).toHaveText(String(persistentStart + 1));
-  await persistentPanel.getByRole('button', { name: 'Reset' }).click();
+  await persistentPanel.getByRole('button', { name: 'Reset', exact: true }).click();
   await expect(persistentValue).toHaveText('0');
 
   const sessionPanel = componentPanel(page, 'Session clicks');
   const sessionValue = sessionPanel.locator('.value');
   const sessionStart = Number((await sessionValue.textContent())?.trim() ?? '0');
-  await sessionPanel.getByRole('button', { name: 'Click' }).click();
+  await sessionPanel.getByRole('button', { name: 'Click', exact: true }).click();
   await expect(sessionValue).toHaveText(String(sessionStart + 1));
-  await sessionPanel.getByRole('button', { name: 'Reset' }).click();
+  await sessionPanel.getByRole('button', { name: 'Reset', exact: true }).click();
   await expect(sessionValue).toHaveText('0');
 
   await page.getByRole('button', { name: 'Clear', exact: true }).click();

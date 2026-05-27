@@ -19,7 +19,7 @@ test('createAppScaffold writes a deployable starter app', async () => {
     const homePage = await readFile(path.join(appDir, 'browser', 'pages', 'tac.html'), 'utf8');
     const mainScript = await readFile(path.join(appDir, 'browser', 'shared', 'scripts', 'imports.js'), 'utf8');
     const sharedStyle = await readFile(path.join(appDir, 'browser', 'shared', 'styles', 'app.css'), 'utf8');
-    const handler = await readFile(path.join(appDir, 'server', 'routes', 'GET', 'yon.js'), 'utf8');
+    const handler = await readFile(path.join(appDir, 'server', 'routes', 'yon.js'), 'utf8');
     const jsconfig = await readFile(path.join(appDir, 'jsconfig.json'), 'utf8');
     const tachyonEnv = await readFile(path.join(appDir, 'tachyon-env.d.ts'), 'utf8');
     expect(packageJson).toContain('"serve": "yon.serve"');

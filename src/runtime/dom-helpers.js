@@ -20,6 +20,22 @@ export function findEventTarget(element, eventName) {
 }
 
 /**
+ * Builds the event context used by the value-binding rerender path while
+ * preserving DOM-style `$event.target.value` handler access.
+ * @param {Element & { value?: unknown }} element
+ * @param {Event} event
+ * @returns {{ value: unknown, target: Element, currentTarget: Element, type: string }}
+ */
+export function createValueEventDetail(element, event) {
+    return {
+        value: 'value' in element ? element.value : undefined,
+        target: element,
+        currentTarget: element,
+        type: event.type,
+    };
+}
+
+/**
  * @param {string} html
  * @returns {DocumentFragment}
  */

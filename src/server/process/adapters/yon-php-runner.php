@@ -2,27 +2,19 @@
 
 final class YonPhpRunner
 {
-    public static function routeClassName(string $handlerPath): string
+    public static function resolveHandlerClass(string $handlerPath): string
     {
-        $base = explode('.', basename($handlerPath), 2)[0];
-        return $base === '' ? 'Yon' : ucfirst($base);
+        if (!class_exists('Handler')) {
+            throw new RuntimeException('PHP route must define a class named Handler');
+        }
+        return 'Handler';
     }
 
-    public static function resolveHandler(string $handlerPath): callable
+    public static function resolveMethod(string $className, string $method): void
     {
-        if (function_exists('handler')) {
-            return 'handler';
+        if (!method_exists($className, $method)) {
+            throw new RuntimeException("Handler class does not implement static {$method}()");
         }
-
-        $className = self::routeClassName($handlerPath);
-        if (class_exists($className)) {
-            $instance = new $className();
-            if (method_exists($instance, 'handler')) {
-                return [$instance, 'handler'];
-            }
-        }
-
-        throw new RuntimeException('PHP route must define handler($request) or a method-named class with handler($request)');
     }
 
     public static function write(mixed $value): void
@@ -47,6 +39,11 @@ final class YonPhpRunner
 
         $input = stream_get_contents(STDIN);
         $request = json_decode($input === '' ? '{}' : $input, true);
+        $method = $request['method'] ?? null;
+        if ($method === null || $method === '') {
+            throw new RuntimeException('Missing HTTP method in request payload');
+        }
+
         $source = file_get_contents($argv[1]);
         if ($source === false) {
             throw new RuntimeException('Unable to read handler file');
@@ -64,7 +61,10 @@ final class YonPhpRunner
         } finally {
             @unlink($tempPath);
         }
-        self::write(call_user_func(self::resolveHandler($argv[1]), $request));
+
+        $className = self::resolveHandlerClass($argv[1]);
+        self::resolveMethod($className, $method);
+        self::write(call_user_func([$className, $method], $request));
     }
 }
 

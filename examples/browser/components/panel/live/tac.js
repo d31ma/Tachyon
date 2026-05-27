@@ -151,5 +151,6 @@ export default class extends Tac {
     @onMount
     prepare() {
         this.status = 'idle'
+        this.start()
     }
 }

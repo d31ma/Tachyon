@@ -766,12 +766,13 @@ export default class Yon {
     /**
      * @param {Request} request
      * @param {string} handler
+     * @param {string} method - HTTP method to dispatch (GET, POST, etc.)
      * @param {RequestPayload} stdin
      * @param {RequestContext} context
      * @param {RouteOptions | undefined} config
      * @returns {Promise<Response>}
      */
-    static async serveRequest(request, handler, stdin, context, config) {
+    static async serveRequest(request, handler, method, stdin, context, config) {
         const responseHeaders = Router.getHeaders(request);
         if ((process.env.YON_BASIC_AUTH || process.env.YON_BASIC_AUTH_HASH)
             && !await Yon.isAuthorizedClient(stdin.headers?.authorization, process.env.YON_BASIC_AUTH, process.env.YON_BASIC_AUTH_HASH)) {
@@ -779,20 +780,23 @@ export default class Yon {
         }
         if (process.env.YON_VALIDATE !== undefined) {
             try {
-                await Validate.validateData(handler, "req", stdin);
+                await Validate.validateData(handler, method, "req", stdin);
             }
             catch (validationError) {
                 const detail = validationError instanceof Error ? validationError.message : String(validationError);
                 return Response.json({ detail }, { status: 400, headers: responseHeaders });
             }
         }
+        // Include the HTTP method in the payload sent to runner processes
+        // so they can dispatch to the correct static method on the Handler class.
+        const processStdin = { ...stdin, method };
         if (stdin.headers?.accept === Yon.STREAM_MIME_TYPE) {
             const stream = new ReadableStream({
                 async start(controller) {
-                    for await (const { body, status } of Yon.getStreamResponse([handler], stdin, context, config)) {
+                    for await (const { body, status } of Yon.getStreamResponse([handler], processStdin, context, config)) {
                         if (process.env.YON_VALIDATE !== undefined) {
                             try {
-                                await Validate.validateData(handler, status === 200 ? "res" : "err", body);
+                                await Validate.validateData(handler, method, status === 200 ? "res" : "err", body);
                                 controller.enqueue(body);
                             }
                             catch (validationError) {
@@ -809,8 +813,8 @@ export default class Yon {
             });
             return new Response(stream, { headers: { ...responseHeaders, "Content-Type": Yon.STREAM_MIME_TYPE } });
         }
-        const { body, status } = await Yon.getResponse([handler], stdin, context, config);
-        const matchedStatus = body ? await Validate.matchStatusCode(handler, body) : null;
+        const { body, status } = await Yon.getResponse([handler], processStdin, context, config);
+        const matchedStatus = body ? await Validate.matchStatusCode(handler, method, body) : null;
         const finalStatus = matchedStatus ?? status;
         if (process.env.YON_VALIDATE !== undefined) {
             if (body && matchedStatus === null) {
@@ -822,7 +826,7 @@ export default class Yon {
             }
             const ioKey = matchedStatus ? String(matchedStatus) : (status === 200 ? "res" : "err");
             try {
-                await Validate.validateData(handler, ioKey, body);
+                await Validate.validateData(handler, method, ioKey, body);
             }
             catch (validationError) {
                 const detail = validationError instanceof Error ? validationError.message : String(validationError);
@@ -1102,9 +1106,9 @@ export default class Yon {
                             }
                         }
                         if (!response) {
-                            const { handler, stdin, config } = await Router.processRequest(/** @type {BunRequest} */ (request), route);
+                            const { handler, method: routeMethod, stdin, config } = await Router.processRequest(/** @type {BunRequest} */ (request), route);
                             context.bearer = Yon.getBearerContext(stdin.headers?.authorization);
-                            response = await Yon.serveRequest(request, handler, stdin, context, config);
+                            response = await Yon.serveRequest(request, handler, routeMethod, stdin, context, config);
                             if (Router.middleware?.after) {
                                 response = await Router.middleware.after(request, response, context);
                             }

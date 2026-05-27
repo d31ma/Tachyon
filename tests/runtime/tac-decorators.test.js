@@ -84,7 +84,7 @@ describe('Tac decorators', () => {
         expect(ctrl.missing).toBe('default');
     });
 
-    test('@onMount registers method as mount handler', () => {
+    test('@onMount registers method as mount handler', async () => {
         let called = 0;
         class Fixture extends Tac {
             @onMount
@@ -92,6 +92,26 @@ describe('Tac decorators', () => {
         }
         const helpers = createHelpers();
         new Fixture({}, helpers);
+        await Promise.resolve();
+        expect(helpers.mountFns).toHaveLength(1);
+        helpers.mountFns[0]();
+        expect(called).toBe(1);
+    });
+
+    test('@onMount registers after renderer helper binding replaces constructor defaults', async () => {
+        let called = 0;
+        class Fixture extends Tac {
+            constructor(props = {}) {
+                super(props);
+            }
+
+            @onMount
+            boot() { called += 1; }
+        }
+        const helpers = createHelpers();
+        const controller = new Fixture();
+        controller.tac = helpers;
+        await Promise.resolve();
         expect(helpers.mountFns).toHaveLength(1);
         helpers.mountFns[0]();
         expect(called).toBe(1);

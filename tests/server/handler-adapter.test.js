@@ -69,17 +69,17 @@ test('documents the top-10 Yon handler language targets', () => {
         'ruby',
         'php',
         'dart',
-        'go',
         'java',
         'csharp',
-        'rust',
     ]);
 });
 
-test('runs JavaScript pure-function handlers without user stdin/stdout code', async () => {
+test('runs JavaScript class-per-route handlers without user stdin/stdout code', async () => {
     const handlerPath = await writeExecutableHandler(`#!/usr/bin/env bun
-export async function handler(request) {
-  return { message: 'ok', requestId: request.context.requestId }
+export class Handler {
+  static async GET(request) {
+    return { message: 'ok', requestId: request.context.requestId }
+  }
 }
 `);
     const cmd = Pool.resolveHandlerCommand(handlerPath);
@@ -90,7 +90,7 @@ export async function handler(request) {
         stdout: 'pipe',
         stderr: 'pipe',
     });
-    proc.stdin.write(JSON.stringify({ context: { requestId: 'abc' } }));
+    proc.stdin.write(JSON.stringify({ method: 'GET', context: { requestId: 'abc' } }));
     proc.stdin.end();
     const [stdout, stderr, exitCode] = await Promise.all([text(proc.stdout), text(proc.stderr), proc.exited]);
     expect(exitCode).toBe(0);
@@ -102,8 +102,10 @@ test('resolves extensioned route modules without shebangs', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-extension-adapter-'));
     tempDirs.push(root);
     const handlerPath = path.join(root, 'yon.js');
-    await Bun.write(handlerPath, `export async function handler(request) {
-  return { message: 'ok', requestId: request.context.requestId }
+    await Bun.write(handlerPath, `export class Handler {
+  static async GET(request) {
+    return { message: 'ok', requestId: request.context.requestId }
+  }
 }
 `);
     const cmd = Pool.resolveHandlerCommand(handlerPath);
@@ -114,7 +116,7 @@ test('resolves extensioned route modules without shebangs', async () => {
         stdout: 'pipe',
         stderr: 'pipe',
     });
-    proc.stdin.write(JSON.stringify({ context: { requestId: 'abc' } }));
+    proc.stdin.write(JSON.stringify({ method: 'GET', context: { requestId: 'abc' } }));
     proc.stdin.end();
     const [stdout, stderr, exitCode] = await Promise.all([text(proc.stdout), text(proc.stderr), proc.exited]);
     expect(exitCode).toBe(0);
@@ -126,9 +128,11 @@ test('JavaScript handler console output is sidebanded away from the response fra
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-console-sideband-'));
     tempDirs.push(root);
     const handlerPath = path.join(root, 'yon.js');
-    await Bun.write(handlerPath, `export async function handler() {
-  console.log('[adapter] doing work')
-  return { ok: true }
+    await Bun.write(handlerPath, `export class Handler {
+  static async GET() {
+    console.log('[adapter] doing work')
+    return { ok: true }
+  }
 }
 `);
     const cmd = Pool.resolveHandlerCommand(handlerPath);
@@ -138,7 +142,7 @@ test('JavaScript handler console output is sidebanded away from the response fra
         stdout: 'pipe',
         stderr: 'pipe',
     });
-    proc.stdin.write(JSON.stringify({ context: { requestId: 'abc' } }));
+    proc.stdin.write(JSON.stringify({ method: 'GET', context: { requestId: 'abc' } }));
     proc.stdin.end();
     const [stdout, stderr, exitCode] = await Promise.all([text(proc.stdout), text(proc.stderr), proc.exited]);
     expect(exitCode).toBe(0);
@@ -150,10 +154,12 @@ test('JavaScript handlers can stream async iterable chunks for SSE requests', as
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-js-stream-'));
     tempDirs.push(root);
     const handlerPath = path.join(root, 'yon.js');
-    await Bun.write(handlerPath, `export async function* handler() {
-  yield ': connected\\n\\n'
-  yield 'data: {"message":"one"}\\n\\n'
-  yield 'data: {"message":"two"}\\n\\n'
+    await Bun.write(handlerPath, `export class Handler {
+  static async *GET() {
+    yield ': connected\\n\\n'
+    yield 'data: {"message":"one"}\\n\\n'
+    yield 'data: {"message":"two"}\\n\\n'
+  }
 }
 `);
     const cmd = Pool.resolveHandlerCommand(handlerPath);
@@ -164,6 +170,7 @@ test('JavaScript handlers can stream async iterable chunks for SSE requests', as
         stderr: 'pipe',
     });
     proc.stdin.write(JSON.stringify({
+        method: 'GET',
         headers: { accept: 'text/event-stream' },
         context: { requestId: 'abc' },
     }));
@@ -181,13 +188,15 @@ test('Yon returns JavaScript handler response before background timers finish', 
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bg-response-'));
     tempDirs.push(root);
     const handlerPath = path.join(root, 'yon.js');
-    await Bun.write(handlerPath, `export async function handler() {
-  setTimeout(() => console.log('[bg] finished'), 600)
-  return { ok: true }
+    await Bun.write(handlerPath, `export class Handler {
+  static async GET() {
+    setTimeout(() => console.log('[bg] finished'), 600)
+    return { ok: true }
+  }
 }
 `);
     const startedAt = performance.now();
-    const response = await Yon.getResponse([handlerPath], {}, {
+    const response = await Yon.getResponse([handlerPath], { method: 'GET' }, {
         requestId: 'abc',
         ipAddress: '127.0.0.1',
         protocol: 'http',
@@ -199,12 +208,13 @@ test('Yon returns JavaScript handler response before background timers finish', 
     expect(elapsedMs).toBeLessThan(500);
 });
 
-test('runs Python class handlers without user stdin/stdout code', async () => {
+test('runs Python class-per-route handlers without user stdin/stdout code', async () => {
     if (!commandAvailable('python3'))
         return;
     const handlerPath = await writeExecutableHandler(`#!/usr/bin/env python3
-class GET:
-    def handler(self, request):
+class Handler:
+    @staticmethod
+    def GET(request):
         return { "message": "ok", "requestId": request["context"]["requestId"] }
 `);
     const cmd = Pool.resolveHandlerCommand(handlerPath);
@@ -215,7 +225,7 @@ class GET:
         stdout: 'pipe',
         stderr: 'pipe',
     });
-    proc.stdin.write(JSON.stringify({ context: { requestId: 'abc' } }));
+    proc.stdin.write(JSON.stringify({ method: 'GET', context: { requestId: 'abc' } }));
     proc.stdin.end();
     const [stdout, stderr, exitCode] = await Promise.all([text(proc.stdout), text(proc.stderr), proc.exited]);
     expect(exitCode).toBe(0);
@@ -223,16 +233,18 @@ class GET:
     expect(JSON.parse(stdout)).toEqual({ message: 'ok', requestId: 'abc' });
 });
 
-test('runs PHP handlers with extensionless shebang route files', async () => {
+test('runs PHP class-per-route handlers with extensionless shebang route files', async () => {
     if (!commandAvailable('php'))
         return;
     const handlerPath = await writeExecutableHandler(`#!/usr/bin/env php
 <?php
-function handler($request) {
-    return [
-        "message" => "ok",
-        "requestId" => $request["context"]["requestId"],
-    ];
+class Handler {
+    public static function GET($request) {
+        return [
+            "message" => "ok",
+            "requestId" => $request["context"]["requestId"],
+        ];
+    }
 }
 `);
     const cmd = Pool.resolveHandlerCommand(handlerPath);
@@ -243,7 +255,7 @@ function handler($request) {
         stdout: 'pipe',
         stderr: 'pipe',
     });
-    proc.stdin.write(JSON.stringify({ context: { requestId: 'abc' } }));
+    proc.stdin.write(JSON.stringify({ method: 'GET', context: { requestId: 'abc' } }));
     proc.stdin.end();
     const [stdout, stderr, exitCode] = await Promise.all([text(proc.stdout), text(proc.stderr), proc.exited]);
     expect(exitCode).toBe(0);
@@ -251,7 +263,7 @@ function handler($request) {
     expect(JSON.parse(stdout)).toEqual({ message: 'ok', requestId: 'abc' });
 });
 
-test('runs Java handlers with a dependency-free Tachyon request object when javac is available', async () => {
+test('runs Java class-per-route handlers when javac is available', async () => {
     if (!commandAvailable('javac') || !commandAvailable('java'))
         return;
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-java-handler-'));
@@ -260,8 +272,8 @@ test('runs Java handlers with a dependency-free Tachyon request object when java
     await Bun.write(handlerPath, `import java.util.LinkedHashMap;
 import java.util.Map;
 
-public class Yon {
-  public static Object handler(Map<String, Object> request) {
+public class Handler {
+  public static Object GET(Map<String, Object> request) {
     Map<String, Object> context = (Map<String, Object>) request.get("context");
     Map<String, Object> response = new LinkedHashMap<>();
     response.put("message", "ok");
@@ -270,16 +282,15 @@ public class Yon {
   }
 }
 `);
-    const output = await YonCompiledRunner.runJava(handlerPath, JSON.stringify({ context: { requestId: 'abc' } }));
+    const output = await YonCompiledRunner.runJava(handlerPath, JSON.stringify({ method: 'GET', context: { requestId: 'abc' } }));
     expect(JSON.parse(output)).toEqual({ message: 'ok', requestId: 'abc' });
 });
 
-test('generates Rust JSON support for dependency-free compiled handlers', () => {
-    const support = YonCompiledRunner.rustJsonSupportSource();
-    const main = YonCompiledRunner.rustMainSource();
-    expect(support).toContain('pub enum JsonValue');
-    expect(support).toContain('pub fn parse(input: &str)');
-    expect(support).toContain('pub fn stringify(value: &JsonValue)');
-    expect(main).toContain('let request = yon_json::parse(&request_json)');
-    expect(main).toContain('user::handler(&request)');
+test('generates Java JSON support for dependency-free compiled handlers', () => {
+    const support = YonCompiledRunner.javaJsonSupportSource();
+    const main = YonCompiledRunner.javaMainSource();
+    expect(support).toContain('public static Object parse(');
+    expect(support).toContain('public static String stringify(');
+    expect(main).toContain('request.get("method")');
+    expect(main).toContain('Handler.class.getDeclaredMethods()');
 });

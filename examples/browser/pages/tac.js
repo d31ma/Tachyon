@@ -13,9 +13,9 @@ export default class extends Tac {
   @provide('demo-release')
   release = 'TACHYON'
   /** @type {string} */
-  headline = 'One app, two layers, every route talking live'
+  headline = 'Build what the browser can imagine, backed by Yon and FYLO'
   /** @type {string} */
-  subtitle = 'Tac drives the browser experience while Yon executes file-routed backend handlers in multiple languages.'
+  subtitle = 'A living application tour of reactive interfaces, native web capabilities, polyglot endpoints, durable data and observable production flows.'
 
   get sidebarLabel() {
     return this.$sidebarOpen ? 'Hide menu' : 'Show menu'
@@ -46,6 +46,12 @@ export default class extends Tac {
     document.title = 'TACHYON Showcase'
     this.applyTheme()
     window.dispatchEvent(new CustomEvent('tachyon:refresh'))
+  }
+
+  /** @param {string} id */
+  scrollToSection(id) {
+    const el = document.getElementById(id)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   @onMount

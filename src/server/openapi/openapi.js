@@ -177,9 +177,13 @@ function buildFyloBrowserPaths(fp) {
         get: {
             operationId: 'get_fylo_documents',
             tags: ['fylo'],
-            description: 'List documents in a collection',
+            description: 'List documents in a collection. Supports PostgREST-style filtering: ?field=op.value (e.g. ?role=eq.admin&age=gt.18). Operators: eq, neq, gt, gte, lt, lte, like, ilike, in, is, not.',
             parameters: [
                 { name: 'collection', in: 'query', required: true, schema: { type: 'string' } },
+                { name: 'limit', in: 'query', required: false, schema: { type: 'integer', default: 25, maximum: 200 } },
+                { name: 'offset', in: 'query', required: false, schema: { type: 'integer', default: 0 } },
+                { name: 'select', in: 'query', required: false, schema: { type: 'string' }, description: 'Comma-separated field names for vertical filtering' },
+                { name: 'order', in: 'query', required: false, schema: { type: 'string' }, description: 'Sort order: field.asc or field.desc (comma-separated)' },
             ],
             responses: {
                 '200': { description: 'Document list for the collection' },
@@ -197,33 +201,6 @@ function buildFyloBrowserPaths(fp) {
             ],
             responses: {
                 '200': { description: 'Document content' },
-            },
-        },
-    };
-    paths[`${fp}/api/query`] = {
-        post: {
-            operationId: 'post_fylo_query',
-            tags: ['fylo'],
-            description: 'Execute a SQL or find query. Set YON_DATA_BROWSER_READONLY=false to enable mutation.',
-            requestBody: {
-                required: true,
-                content: {
-                    'application/json': {
-                        schema: {
-                            type: 'object',
-                            properties: {
-                                kind: { type: 'string', enum: ['sql', 'find'] },
-                                source: { type: 'string' },
-                                collection: { type: 'string' },
-                                query: { type: 'object' },
-                            },
-                            required: ['kind'],
-                        },
-                    },
-                },
-            },
-            responses: {
-                '200': { description: 'Query result' },
             },
         },
     };
@@ -628,7 +605,7 @@ async function buildSpec(request) {
 }
 
 function docsContentSecurityPolicy() {
-    // Roboto + Material Symbols served from Google Fonts.
+    // IBM Plex Sans served from Google Fonts.
     return "default-src 'self'; "
         + "script-src 'self'; "
         + "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
@@ -646,7 +623,7 @@ function docsHtml() {
     <title>Tachyon API Docs</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Material+Symbols+Outlined&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap">
     <link rel="stylesheet" href="${OPENAPI_DOCS_PATH}/app.css">
 </head>
 <body>

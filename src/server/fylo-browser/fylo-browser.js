@@ -181,7 +181,7 @@ async function getAssets() {
 }
 
 function browserContentSecurityPolicy() {
-    // The FYLO shell is self-contained except for Roboto from Google Fonts.
+    // The FYLO shell is self-contained except for IBM Plex Sans from Google Fonts.
     return "default-src 'self'; "
         + "script-src 'self'; "
         + "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
@@ -215,7 +215,7 @@ function shellHtml() {
     <title>Fylo Browser</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap">
     <link rel="stylesheet" href="${BROWSER_PATH}/app.css">
 </head>
 <body>
@@ -223,7 +223,7 @@ function shellHtml() {
         <header class="fylo-hero">
             <p class="eyebrow md-typescale-label-large">Tachyon &middot; Fylo Browser</p>
             <h1 class="md-typescale-headline-medium">Inspect and query collections stored by <code>@d31ma/fylo</code>.</h1>
-            <p class="lede md-typescale-body-large">Read-only by default. Pass <code>YON_DATA_BROWSER_READONLY=false</code> to enable mutation endpoints.</p>
+            <p class="lede md-typescale-body-large">Read-only by default. Pass <code>YON_DATA_BROWSER_READONLY=false</code> to enable mutation endpoints. Query with <a href="https://docs.postgrest.org/en/stable/references/api/tables_views.html#horizontal-filtering" rel="noopener">PostgREST syntax</a>: <code>?field=op.value</code></p>
         </header>
         <section class="fylo-panel">
             <div class="fylo-panel-header">
@@ -298,7 +298,7 @@ function shellHtml() {
                 <span id="fylo-detail-id" class="chip">no document selected</span>
             </div>
             <div id="fylo-detail" class="fylo-detail">
-                <p class="muted md-typescale-body-medium">Click a row above to inspect a document and (if WORM) walk its version history.</p>
+                <p class="muted md-typescale-body-medium">Click a row above to inspect a document.</p>
             </div>
         </section>
     </main>
@@ -338,64 +338,6 @@ async function listCollections() {
         }
     }
     return { root, collections };
-}
-
-/**
- * @param {string} source
- * @returns {boolean}
- */
-function isReadOnlyQuery(source) {
-    const trimmed = source.trim().toLowerCase();
-    return trimmed.startsWith('select') || trimmed.startsWith('show') || trimmed.startsWith('describe');
-}
-
-/**
- * @param {Request} request
- */
-async function executeQuery(request) {
-    /** @type {{ kind?: string, source?: string, collection?: string, query?: Record<string, unknown> }} */
-    let body;
-    try {
-        body = await request.json();
-    } catch {
-        return { error: 'invalid JSON body' };
-    }
-    const fylo = new Fylo(fyloOptions(fyloRoot()));
-    if (body.kind === 'sql') {
-        const source = (body.source ?? '').toString();
-        if (!source.trim())
-            return { error: 'source is required for sql queries' };
-        if (readOnly() && !isReadOnlyQuery(source))
-            return { error: 'browser is read-only; only SELECT/SHOW/DESCRIBE permitted. Set YON_DATA_BROWSER_READONLY=false to enable mutations.' };
-        try {
-            const result = await fylo.executeSQL(source);
-            return { kind: 'sql', source, result };
-        } catch (error) {
-            return { error: error instanceof Error ? error.message : String(error) };
-        }
-    }
-    if (body.kind === 'find') {
-        const collection = (body.collection ?? '').toString();
-        if (!collection)
-            return { error: 'collection is required for find queries' };
-        const query = body.query && typeof body.query === 'object' ? /** @type {Record<string, unknown>} */ (body.query) : {};
-        const encryptedFields = await getEncryptedFields(collection);
-        /** @type {Array<{ id: string, doc: unknown }>} */
-        const docs = [];
-        try {
-            for await (const entry of fylo.findDocs(collection, /** @type {any} */ (query)).collect()) {
-                for (const [id, doc] of Object.entries(/** @type {Record<string, unknown>} */ (entry))) {
-                    docs.push({ id, doc: redactDoc(doc, encryptedFields) });
-                    if (docs.length >= 200) break;
-                }
-                if (docs.length >= 200) break;
-            }
-        } catch (error) {
-            return { error: error instanceof Error ? error.message : String(error) };
-        }
-        return { kind: 'find', collection, docs, encryptedFields, revealed: reveal() };
-    }
-    return { error: 'kind must be "sql" or "find"' };
 }
 
 /**
@@ -686,12 +628,8 @@ async function getDocument(url) {
     const encryptedFields = await getEncryptedFields(collection);
     /** @type {Record<string, unknown> | null} */
     let doc = null;
-    /** @type {Array<Record<string, unknown>> | null} */
-    let history = null;
     /** @type {string | undefined} */
     let docError;
-    /** @type {string | undefined} */
-    let historyError;
     try {
         const result = await fylo.getDoc(collection, id).once();
         const resultObject = result && typeof result === 'object' ? /** @type {Record<string, unknown>} */ (result) : null;
@@ -702,16 +640,186 @@ async function getDocument(url) {
     } catch (error) {
         docError = error instanceof Error ? error.message : String(error);
     }
-    try {
-        const raw = await fylo.getHistory(collection, id);
-        history = raw.map((entry) => ({
-            ...entry,
-            data: redactDoc(entry.data, encryptedFields),
-        }));
-    } catch (error) {
-        historyError = error instanceof Error ? error.message : String(error);
+    return { collection, id, doc, docError, encryptedFields, revealed: reveal() };
+}
+
+// ── PostgREST-style query parameter parsing ──────────────────────────────
+// Horizontal filtering follows the PostgREST convention:
+//   ?field=operator.value    e.g.  ?age=gt.18  ?role=eq.admin
+//
+// Supported operators:
+//   eq, neq, gt, gte, lt, lte     — comparison
+//   like, ilike                    — pattern match (* is alias for %)
+//   in                             — set membership: ?status=in.(active,pending)
+//   is                             — null / boolean: ?deleted=is.null
+//   not                            — negation prefix: ?age=not.eq.5
+//
+// Reserved query params (not treated as filters):
+//   select   — vertical filter: ?select=name,role
+//   order    — sort: ?order=name.asc,age.desc
+//   limit    — max rows (default 25, cap 200)
+//   offset   — skip N rows
+//   collection — internal; set by REST route handler
+
+/** @type {Set<string>} */
+const POSTGREST_OPS = new Set(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'in', 'is']);
+
+/** @type {Set<string>} */
+const RESERVED_PARAMS = new Set(['collection', 'limit', 'offset', 'select', 'order']);
+
+/**
+ * Parse a PostgREST-style filter value into a Fylo `{ $op: value }` entry.
+ *
+ * Examples:
+ *   "eq.admin"          → { $eq: "admin" }
+ *   "gt.18"             → { $gt: "18" }
+ *   "in.(a,b,c)"        → { $in: ["a", "b", "c"] }
+ *   "is.null"           → { $is: null }
+ *   "like.John*"        → { $like: "John%" }
+ *   "not.eq.5"          → { $neq: "5" }
+ *   "not.like.test*"    → { $not: { $like: "test%" } }
+ *
+ * @param {string} raw
+ * @returns {{ [op: string]: unknown } | null}
+ */
+function parsePostgrestValue(raw) {
+    const dotIndex = raw.indexOf('.');
+    if (dotIndex === -1) return null;
+
+    const head = raw.slice(0, dotIndex);
+    const tail = raw.slice(dotIndex + 1);
+
+    // ── not prefix ───────────────────────────────────────────────────
+    if (head === 'not') {
+        const inner = parsePostgrestValue(tail);
+        if (!inner) return null;
+        // Collapse not.eq → $neq, not.lt → $gte, etc.
+        /** @type {Record<string, string>} */
+        const inverses = { $eq: '$neq', $neq: '$eq', $lt: '$gte', $lte: '$gt', $gt: '$lte', $gte: '$lt' };
+        const [[op, val]] = Object.entries(inner);
+        const inverse = inverses[op];
+        return inverse ? { [inverse]: val } : { $not: inner };
     }
-    return { collection, id, doc, history, docError, historyError, encryptedFields, revealed: reveal() };
+
+    if (!POSTGREST_OPS.has(head)) return null;
+
+    // ── in.(val1,val2,...) ───────────────────────────────────────────
+    if (head === 'in') {
+        const match = tail.match(/^\((.+)\)$/);
+        if (!match) return null;
+        // Respect quoted strings: in.("hi,there","yes") keeps commas inside quotes
+        const values = /** @type {string[]} */ ([]);
+        let current = '';
+        let inQuote = false;
+        for (const ch of match[1]) {
+            if (ch === '"') { inQuote = !inQuote; continue; }
+            if (ch === ',' && !inQuote) { values.push(current.trim()); current = ''; continue; }
+            current += ch;
+        }
+        if (current.trim()) values.push(current.trim());
+        return { $in: values };
+    }
+
+    // ── is.null / is.true / is.false ─────────────────────────────────
+    if (head === 'is') {
+        if (tail === 'null') return { $is: null };
+        if (tail === 'true') return { $is: true };
+        if (tail === 'false') return { $is: false };
+        return null;
+    }
+
+    // ── like / ilike — replace PostgREST * alias with SQL % ─────────
+    if (head === 'like' || head === 'ilike') {
+        return { [`$${head}`]: tail.replace(/\*/g, '%') };
+    }
+
+    // ── standard comparison ──────────────────────────────────────────
+    return { [`$${head}`]: tail };
+}
+
+/**
+ * Parse the PostgREST `order` param into a sort descriptor array.
+ * Format: "field.direction,field2.direction2"
+ * Direction is `asc` (default) or `desc`.
+ *
+ * @param {string} raw
+ * @returns {Array<{ field: string, desc: boolean }>}
+ */
+function parseOrder(raw) {
+    return raw.split(',').map((segment) => {
+        const trimmed = segment.trim();
+        if (!trimmed) return null;
+        const parts = trimmed.split('.');
+        const field = parts[0];
+        const desc = parts.includes('desc');
+        return field ? { field, desc } : null;
+    }).filter(/** @returns {entry is { field: string, desc: boolean }} */ (entry) => entry !== null);
+}
+
+/**
+ * Apply select (vertical filtering) to a document, keeping only named fields.
+ * @param {unknown} doc
+ * @param {string[] | null} fields
+ * @returns {unknown}
+ */
+function selectFields(doc, fields) {
+    if (!fields || !doc || typeof doc !== 'object' || Array.isArray(doc)) return doc;
+    /** @type {Record<string, unknown>} */
+    const out = {};
+    for (const field of fields) {
+        if (field in /** @type {Record<string, unknown>} */ (doc)) {
+            out[field] = /** @type {Record<string, unknown>} */ (doc)[field];
+        }
+    }
+    return out;
+}
+
+/**
+ * Test whether a document matches all PostgREST filter conditions.
+ * Used as a post-filter after the index-backed first condition.
+ *
+ * @param {unknown} doc
+ * @param {Array<{ field: string, filter: Record<string, unknown> }>} filters
+ * @returns {boolean}
+ */
+function matchesAllFilters(doc, filters) {
+    if (!doc || typeof doc !== 'object') return false;
+    const record = /** @type {Record<string, unknown>} */ (doc);
+    for (const { field, filter } of filters) {
+        const value = record[field];
+        for (const [op, expected] of Object.entries(filter)) {
+            switch (op) {
+                case '$eq': if (String(value) !== String(expected)) return false; break;
+                case '$neq': if (String(value) === String(expected)) return false; break;
+                case '$gt': if (!(String(value) > String(expected))) return false; break;
+                case '$gte': if (!(String(value) >= String(expected))) return false; break;
+                case '$lt': if (!(String(value) < String(expected))) return false; break;
+                case '$lte': if (!(String(value) <= String(expected))) return false; break;
+                case '$in': if (!Array.isArray(expected) || !expected.some((v) => String(value) === String(v))) return false; break;
+                case '$is': {
+                    if (expected === null && value != null) return false;
+                    if (expected === true && value !== true) return false;
+                    if (expected === false && value !== false) return false;
+                    break;
+                }
+                case '$like': {
+                    // Escape regex metacharacters first, then replace % wildcards.
+                    const escaped = String(expected).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const pattern = escaped.replace(/%/g, '.*');
+                    if (!new RegExp(`^${pattern}$`).test(String(value ?? ''))) return false;
+                    break;
+                }
+                case '$ilike': {
+                    const escaped = String(expected).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const pattern = escaped.replace(/%/g, '.*');
+                    if (!new RegExp(`^${pattern}$`, 'i').test(String(value ?? ''))) return false;
+                    break;
+                }
+                default: break;
+            }
+        }
+    }
+    return true;
 }
 
 /**
@@ -723,14 +831,52 @@ async function listDocuments(url) {
         return { error: 'collection query parameter required' };
     const limitParam = Number(url.searchParams.get('limit') ?? 25);
     const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.trunc(limitParam), 200) : 25;
+    const offsetParam = Number(url.searchParams.get('offset') ?? 0);
+    const offset = Number.isFinite(offsetParam) && offsetParam >= 0 ? Math.trunc(offsetParam) : 0;
+
+    // Vertical filtering: ?select=name,role
+    const selectParam = url.searchParams.get('select');
+    /** @type {string[] | null} */
+    const select = selectParam ? selectParam.split(',').map((s) => s.trim()).filter(Boolean) : null;
+
+    // Ordering: ?order=name.asc,age.desc
+    const orderParam = url.searchParams.get('order');
+    const order = orderParam ? parseOrder(orderParam) : null;
+
+    // Build PostgREST-style filter conditions from non-reserved query params.
+    // e.g. /_fylo/users?role=eq.admin&age=gt.18
+    /** @type {Array<{ field: string, filter: Record<string, unknown> }>} */
+    const filters = [];
+    for (const [key, value] of url.searchParams.entries()) {
+        if (RESERVED_PARAMS.has(key)) continue;
+        const filter = parsePostgrestValue(value);
+        if (filter) {
+            filters.push({ field: key, filter });
+        }
+    }
+
+    // Use the first filter condition in $ops for index-backed narrowing.
+    // Fylo's $ops uses OR semantics when given multiple entries, so we
+    // send at most one condition to the index and apply the rest as a
+    // post-filter to achieve correct AND behaviour.
+    /** @type {Record<string, unknown>} */
+    const query = filters.length
+        ? { $ops: [{ [filters[0].field]: filters[0].filter }], $limit: (limit + offset) * (filters.length > 1 ? 4 : 1) }
+        : {};
+
     const fylo = new Fylo(fyloOptions(fyloRoot()));
     const encryptedFields = await getEncryptedFields(collection);
     /** @type {Array<{ id: string, doc: unknown }>} */
     const docs = [];
+    let skipped = 0;
     try {
-        for await (const entry of fylo.findDocs(collection, {}).collect()) {
+        for await (const entry of fylo.findDocs(collection, /** @type {any} */ (query)).collect()) {
             for (const [id, doc] of Object.entries(/** @type {Record<string, unknown>} */ (entry))) {
-                docs.push({ id, doc: redactDoc(doc, encryptedFields) });
+                // Post-filter: every condition beyond the first must also match.
+                if (filters.length > 1 && !matchesAllFilters(doc, filters)) continue;
+                if (skipped < offset) { skipped++; continue; }
+                const redacted = redactDoc(doc, encryptedFields);
+                docs.push({ id, doc: selectFields(redacted, select) });
                 if (docs.length >= limit)
                     break;
             }
@@ -740,6 +886,25 @@ async function listDocuments(url) {
     } catch (error) {
         return { error: error instanceof Error ? error.message : String(error) };
     }
+
+    // Post-query ordering
+    if (order && order.length) {
+        docs.sort((a, b) => {
+            for (const { field, desc } of order) {
+                const aDoc = /** @type {Record<string, unknown>} */ (a.doc);
+                const bDoc = /** @type {Record<string, unknown>} */ (b.doc);
+                const aVal = aDoc?.[field];
+                const bVal = bDoc?.[field];
+                if (aVal === bVal) continue;
+                if (aVal == null) return desc ? -1 : 1;
+                if (bVal == null) return desc ? 1 : -1;
+                const cmp = aVal < bVal ? -1 : 1;
+                return desc ? -cmp : cmp;
+            }
+            return 0;
+        });
+    }
+
     return { collection, docs, encryptedFields, revealed: reveal() };
 }
 
@@ -844,12 +1009,6 @@ export default class FyloBrowser {
                 const url = new URL(request.url);
                 return jsonOk(request, await getDocument(url));
             }, `${BROWSER_PATH}/api/doc`),
-        };
-
-        Router.reqRoutes[`${BROWSER_PATH}/api/query`] = {
-            POST: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/api/query`, { method: 'POST' })) => {
-                return jsonOk(request, await executeQuery(request));
-            }, `${BROWSER_PATH}/api/query`),
         };
 
         Router.reqRoutes[`${BROWSER_PATH}/api/events`] = {

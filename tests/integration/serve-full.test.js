@@ -41,13 +41,14 @@ document.documentElement.dataset.boot = bootMessage;
         await writeFile(path.join(root, 'browser', 'pages', 'tac.html'), `<main><h1>Fixture Home</h1></main>`);
     }
     if (backend) {
-        await mkdir(path.join(root, 'server', 'routes', 'api', 'GET'), { recursive: true });
-        const getRoutePath = path.join(root, 'server', 'routes', 'api', 'GET', 'yon.js');
-        await writeFile(getRoutePath, `export async function handler(request) {
-  return { ok: true, fixture: 'api', requestId: request.context.requestId }
+        await mkdir(path.join(root, 'server', 'routes', 'api'), { recursive: true });
+        const routePath = path.join(root, 'server', 'routes', 'api', 'yon.js');
+        await writeFile(routePath, `export class Handler {
+  static async GET(request) {
+    return { ok: true, fixture: 'api', requestId: request.context.requestId }
+  }
 }
 `);
-        await chmod(getRoutePath, 0o755);
     }
     return root;
 }

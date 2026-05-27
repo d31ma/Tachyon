@@ -75,7 +75,9 @@ export function onMount(_value, ctx) {
     if (ctx.kind !== 'method') throw new TypeError('@onMount only decorates methods');
     ctx.addInitializer(function () {
         const self = /** @type {Tac & Record<string | symbol, Function>} */ (this);
-        self.tac.onMount(() => self[ctx.name].call(self));
+        // Renderer binding occurs after class initializers, including when an
+        // app constructor omits the injected Tac helper argument.
+        queueMicrotask(() => self.tac.onMount(() => self[ctx.name].call(self)));
     });
 }
 

@@ -74,7 +74,7 @@ declare global {
     /**
      * Global FYLO client. Same as the global `fylo` — populated by
      * src/runtime/fylo-global.js. Property access returns a
-     * per-collection proxy; sql/collections live as own properties.
+     * per-collection proxy; collections/meta live as own properties.
      */
     fylo?: FyloApi;
   }
@@ -84,6 +84,11 @@ declare global {
    * All methods are async and return JSON envelopes from the /_fylo/api/* server.
    */
   interface FyloCollectionProxy {
+    /**
+     * Query the collection using PostgREST-style filters.
+     * Values follow `operator.value` syntax: `{ role: 'eq.admin', age: 'gt.18' }`.
+     * Reserved keys: `select` (vertical filter), `order` (sort), `limit`, `offset`.
+     */
     find(query?: Record<string, unknown>): Promise<FyloQueryResult>;
     list(limit?: number): Promise<{ docs: Array<{ id: string; doc: unknown }>; error?: string; encryptedFields?: string[]; revealed?: boolean }>;
     get(id: string): Promise<FyloDocResponse>;
@@ -102,14 +107,13 @@ declare global {
     root?: string;
     setCredentials(user: string, pass: string): void;
     clearCredentials(): void;
-    sql(source: string): Promise<FyloQueryResult>;
     collections(): Promise<FyloCollectionsResponse>;
     meta(): Promise<{ root: string; readOnly: boolean; revealed: boolean; path: string } | null>;
   }
 
   /**
    * Property-access global. `fylo.users` returns a per-collection proxy;
-   * reserved keys (`sql`, `collections`, `enabled`, `root`) keep their
+   * reserved keys (`collections`, `enabled`, `root`) keep their
    * specific types.
    */
   type FyloApi = FyloApiCommands & { readonly [collection: string]: FyloCollectionProxy };
@@ -117,9 +121,7 @@ declare global {
 /**
  * @typedef {Object} FyloQueryResult
  * @property {string} [error]
- * @property {string} kind - "sql" or "find"
- * @property {Array<{ id: string, doc: unknown }>} [docs] - For find results
- * @property {unknown} [result] - For SQL results
+ * @property {Array<{ id: string, doc: unknown }>} [docs]
  * @property {string} [collection]
  * @property {string[]} [encryptedFields]
  * @property {boolean} [revealed]
@@ -132,9 +134,7 @@ declare global {
 /**
  * @typedef {Object} FyloDocResponse
  * @property {Record<string, unknown>} [doc]
- * @property {Array<{ id: string, data: Record<string, unknown>, createdAt: string | number, updatedAt: string | number, isHead?: boolean, deleted?: boolean }>} [history]
  * @property {string} [docError]
- * @property {string} [historyError]
  * @property {string[]} [encryptedFields]
  * @property {boolean} [revealed]
  */

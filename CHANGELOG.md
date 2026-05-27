@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.22.03] — 2026-05-27
+
+### Added
+
+- PostgREST-style query filtering on Fylo browser collection endpoints.
+  `GET /_fylo/<collection>/?field=operator.value` supports `eq`, `neq`,
+  `gt`, `gte`, `lt`, `lte`, `like`, `ilike`, `in`, `is`, and `not` prefix.
+  Reserved params: `select` (vertical filtering), `order` (sorting),
+  `limit`, `offset` (pagination).
+- The browser example dashboard now includes a Tac input gallery covering
+  native input types, `select`, `datalist`, and `textarea`, with live event
+  feedback and reactive persisted value bindings.
+- The example browser app is now a guided capability atlas linking Tac
+  composition, reactive browser state, Yon routes, FYLO storage, telemetry,
+  and WebAssembly companions into one navigable application tour.
+- A Browser studio panel demonstrates Tac-driven canvas drawing together with
+  native semantic `progress`, `meter`, `output`, `time`, and `details`
+  surfaces under scoped responsive CSS.
+- Tac templates support `:checked="field"` so checkbox and radio state remains
+  reactive across component rerenders.
+- The checked-in example app now participates in standalone strict type
+  checking with its Tac globals and browser dependencies resolved.
+
+### Changed
+
+- **BREAKING**: Yon route handlers use a class-per-route model.
+  `export class Handler` with static methods named after HTTP verbs
+  (`static async GET(request)`) replaces the prior method-per-directory
+  convention (`routes/<path>/GET/yon.<ext>`). All polyglot adapters (JS,
+  TS, Python, Ruby, PHP, Java, C#, Dart) support the new pattern.
+- Upgraded `@d31ma/fylo` to `^26.22.3`. Removed `getHistory()` calls;
+  added `findDeletedDocs()` and `restoreDoc()` to the machine-interface
+  demo.
+- The Fylo browser query panel now accepts PostgREST-style filter input
+  instead of SQL/findDocs modes. The `<fylo-browser>` Tac component and
+  the vanilla JS shell both use the new interface.
+
+### Removed
+
+- Removed the `POST /_fylo/api/query` endpoint (SQL and find queries).
+  Index-backed filtering now uses PostgREST-style query params on the
+  collection URL. The `fylo.sql()` client method is removed.
+- Removed Go and Rust language support from example routes and handler
+  adapters.
+- Removed version history rendering from the Fylo browser (the upstream
+  `getHistory()` API was removed in Fylo 26.22.3).
+
+### Fixed
+
+- `HandlerAdapter.hasMethod` regex now matches async generator handlers
+  (`static async *GET()`) inside class-per-route definitions.
+- `Router.validateSegmentPath` no longer produces false-positive duplicate
+  route errors for nested slug routes (e.g. `/items/_id/detail` vs
+  `/items/detail`). Slug segments are mapped to a `:` placeholder instead
+  of being stripped, preserving path depth in comparisons.
+- Static prerendering now preserves literal replacement-token text such as
+  Tac's `$` and `$$` persistence sigils instead of expanding it while
+  inserting rendered pages into the HTML shell.
+- Browser acceptance tests accept `TACHYON_EXAMPLES_E2E_PORT`, avoiding false
+  failures when the default example port is already in use.
+- The example inventory form now binds CRUD draft state directly to its
+  visible native input, so a successful Yon save reliably clears the field.
+- Tac client-side navigation preserves query parameters and URL fragments on
+  first hydration, intercepted link clicks, and browser history traversal.
+- Component stylesheet regression coverage now ensures template-literal
+  characters in author CSS comments remain intact in emitted Tac modules.
+- Tac `:value` bindings now render loop-local expressions without evaluating
+  their identifier outside the loop scope, preventing `ReferenceError` during
+  builds such as `<loop :for="option of options"><input :value="option" />`.
+- Synthetic value-binding updates preserve `$event.target`,
+  `$event.currentTarget`, and `$event.type`, so DOM-style `@input` and
+  `@change` handlers continue to work when combined with `:value`.
+- `@onMount` registration is deferred until after renderer companion binding,
+  preserving mounted callbacks even when an app constructor calls
+  `super(props)` without forwarding the injected Tac helper argument.
+
 ## [26.21.7] — 2026-05-24
 
 ### Added
@@ -225,7 +301,8 @@ should expect to touch imports, bin names, and any code that assumed the old
 
 See the Git history and GitHub release notes for pre-2.0 changes.
 
-[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.21.7...HEAD
+[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.22.03...HEAD
+[26.22.03]: https://github.com/d31ma/Tachyon/compare/v26.21.7...v26.22.03
 [26.21.7]: https://github.com/d31ma/Tachyon/compare/v26.21.05...v26.21.7
 [26.21.05]: https://github.com/d31ma/Tachyon/compare/v2.0.0...v26.21.05
 [2.0.0]: https://github.com/d31ma/Tachyon/compare/v1.11.1...v2.0.0

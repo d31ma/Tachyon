@@ -4,6 +4,8 @@ import { defineConfig } from 'playwright/test';
 
 const ROOT_DIR = path.resolve(import.meta.dirname, '..', '..');
 const EXAMPLES_DIR = path.join(ROOT_DIR, 'examples');
+const port = process.env.TACHYON_EXAMPLES_E2E_PORT ?? '8080';
+const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: import.meta.dirname,
@@ -17,7 +19,7 @@ export default defineConfig({
   reporter: [['list']],
   outputDir: path.join(ROOT_DIR, 'test-results', 'playwright'),
   use: {
-    baseURL: 'http://127.0.0.1:8080',
+    baseURL,
     headless: true,
     viewport: { width: 1440, height: 2200 },
     ignoreHTTPSErrors: true,
@@ -28,7 +30,8 @@ export default defineConfig({
   webServer: {
     command: 'bun run serve',
     cwd: EXAMPLES_DIR,
-    url: 'http://127.0.0.1:8080',
+    env: { YON_PORT: port },
+    url: baseURL,
     timeout: 120_000,
     reuseExistingServer: false,
   },

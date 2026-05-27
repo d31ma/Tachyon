@@ -1,78 +1,75 @@
-/* Material Design 2 inspired tokens and primitives for the standalone FYLO shell.
-   The page avoids runtime custom elements so /_fylo stays quiet in the console. */
+/* Material Design 3 tokens aligned with the Tachyon showcase palette.
+   IBM Plex Sans, sharp corners, teal/green primary. */
 
 :root,
 [data-theme="light"] {
     color-scheme: light;
-    --md-sys-color-primary: #3f51b5;
+    --md-ref-typeface-plain: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --md-sys-color-primary: #1f6f8b;
     --md-sys-color-on-primary: #ffffff;
-    --md-sys-color-primary-container: #e8eaf6;
-    --md-sys-color-on-primary-container: #1a237e;
-    --md-sys-color-secondary: #00796b;
+    --md-sys-color-primary-container: #d7edf4;
+    --md-sys-color-on-primary-container: #073544;
+    --md-sys-color-secondary: #2f8a5b;
     --md-sys-color-on-secondary: #ffffff;
-    --md-sys-color-secondary-container: #e0f2f1;
-    --md-sys-color-on-secondary-container: #004d40;
-    --md-sys-color-tertiary: #455a64;
+    --md-sys-color-secondary-container: #e6ece9;
+    --md-sys-color-on-secondary-container: #273733;
+    --md-sys-color-tertiary: #6f5b3e;
     --md-sys-color-on-tertiary: #ffffff;
-    --md-sys-color-tertiary-container: #eceff1;
-    --md-sys-color-on-tertiary-container: #263238;
-    --md-sys-color-error: #c62828;
+    --md-sys-color-tertiary-container: #f4e4c7;
+    --md-sys-color-on-tertiary-container: #493116;
+    --md-sys-color-error: #b3261e;
     --md-sys-color-on-error: #ffffff;
-    --md-sys-color-error-container: #ffebee;
-    --md-sys-color-on-error-container: #b71c1c;
-    --md-sys-color-background: #fafafa;
-    --md-sys-color-on-background: #212121;
+    --md-sys-color-error-container: #f9dedc;
+    --md-sys-color-on-error-container: #410e0b;
+    --md-sys-color-background: #f8faf9;
+    --md-sys-color-on-background: #182125;
     --md-sys-color-surface: #ffffff;
-    --md-sys-color-on-surface: #212121;
-    --md-sys-color-surface-variant: #eeeeee;
-    --md-sys-color-on-surface-variant: #616161;
-    --md-sys-color-outline: #9e9e9e;
-    --md-sys-color-outline-variant: #e0e0e0;
+    --md-sys-color-on-surface: #182125;
+    --md-sys-color-surface-variant: #edf3f1;
+    --md-sys-color-on-surface-variant: #526066;
+    --md-sys-color-outline: #7b878c;
+    --md-sys-color-outline-variant: #d8e0de;
     --md-sys-color-surface-container-lowest: #ffffff;
-    --md-sys-color-surface-container-low: #ffffff;
-    --md-sys-color-surface-container: #ffffff;
-    --md-sys-color-surface-container-high: #f5f5f5;
-    --md-sys-color-surface-container-highest: #eeeeee;
+    --md-sys-color-surface-container-low: #f3f7f5;
+    --md-sys-color-surface-container: #edf3f1;
+    --md-sys-color-surface-container-high: #e5ece9;
+    --md-sys-color-surface-container-highest: #d8e0de;
 
-    --md-sys-shape-corner-small: 4px;
-    --md-sys-shape-corner-medium: 4px;
-    --md-sys-shape-corner-large: 6px;
-
-    --md-sys-elevation-level1: 0 2px 1px -1px rgba(0, 0, 0, 0.20), 0 1px 1px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.12);
-    --md-sys-elevation-level2: 0 3px 3px -2px rgba(0, 0, 0, 0.20), 0 3px 4px rgba(0, 0, 0, 0.14), 0 1px 8px rgba(0, 0, 0, 0.12);
+    --md-sys-elevation-level1: 0 1px 2px rgba(0, 0, 0, 0.06);
+    --md-sys-elevation-level2: 0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
 [data-theme="dark"] {
     color-scheme: dark;
-    --md-sys-color-primary: #9fa8da;
-    --md-sys-color-on-primary: #111111;
-    --md-sys-color-primary-container: #303f9f;
-    --md-sys-color-on-primary-container: #e8eaf6;
-    --md-sys-color-secondary: #80cbc4;
-    --md-sys-color-on-secondary: #003d35;
-    --md-sys-color-secondary-container: #004d40;
-    --md-sys-color-on-secondary-container: #e0f2f1;
-    --md-sys-color-tertiary: #b0bec5;
-    --md-sys-color-on-tertiary: #263238;
-    --md-sys-color-tertiary-container: #37474f;
-    --md-sys-color-on-tertiary-container: #eceff1;
-    --md-sys-color-error: #ef9a9a;
+    --md-sys-color-primary: #83cde3;
+    --md-sys-color-on-primary: #073544;
+    --md-sys-color-primary-container: rgba(131, 205, 227, 0.18);
+    --md-sys-color-on-primary-container: #e8f8fc;
+    --md-sys-color-secondary: #9bc7b1;
+    --md-sys-color-on-secondary: #102b1f;
+    --md-sys-color-secondary-container: #2f3b3a;
+    --md-sys-color-on-secondary-container: #dce7e4;
+    --md-sys-color-tertiary: #d8c08a;
+    --md-sys-color-on-tertiary: #2a2010;
+    --md-sys-color-tertiary-container: #5a4630;
+    --md-sys-color-on-tertiary-container: #ffe2b8;
+    --md-sys-color-error: #f2b8b5;
     --md-sys-color-on-error: #3b0707;
-    --md-sys-color-error-container: #5f1717;
-    --md-sys-color-on-error-container: #ffebee;
-    --md-sys-color-background: #121212;
+    --md-sys-color-error-container: #8c1d18;
+    --md-sys-color-on-error-container: #f9dedc;
+    --md-sys-color-background: #1c2224;
     --md-sys-color-on-background: #eeeeee;
-    --md-sys-color-surface: #1e1e1e;
+    --md-sys-color-surface: #1c2224;
     --md-sys-color-on-surface: #eeeeee;
-    --md-sys-color-surface-variant: #2b2b2b;
-    --md-sys-color-on-surface-variant: #c7c7c7;
-    --md-sys-color-outline: #8d8d8d;
-    --md-sys-color-outline-variant: #3a3a3a;
-    --md-sys-color-surface-container-lowest: #0f0f0f;
-    --md-sys-color-surface-container-low: #181818;
-    --md-sys-color-surface-container: #1e1e1e;
-    --md-sys-color-surface-container-high: #242424;
-    --md-sys-color-surface-container-highest: #303030;
+    --md-sys-color-surface-variant: #222a2d;
+    --md-sys-color-on-surface-variant: rgba(255, 255, 255, 0.7);
+    --md-sys-color-outline: #66747a;
+    --md-sys-color-outline-variant: #313b3e;
+    --md-sys-color-surface-container-lowest: #161c1e;
+    --md-sys-color-surface-container-low: #161c1e;
+    --md-sys-color-surface-container: #222a2d;
+    --md-sys-color-surface-container-high: #2a3437;
+    --md-sys-color-surface-container-highest: #313b3e;
 }
 
 * {
@@ -87,8 +84,9 @@ body {
     overflow-x: clip;
     background: var(--md-sys-color-background);
     color: var(--md-sys-color-on-background);
-    font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-family: var(--md-ref-typeface-plain);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 button,
@@ -110,44 +108,43 @@ pre {
 }
 
 .md-typescale-headline-medium {
-    font: 400 28px/36px "Roboto", sans-serif;
+    font: 400 28px/36px var(--md-ref-typeface-plain);
     letter-spacing: 0;
 }
 
 .md-typescale-title-large {
-    font: 500 22px/28px "Roboto", sans-serif;
+    font: 500 22px/28px var(--md-ref-typeface-plain);
     letter-spacing: 0;
 }
 
 .md-typescale-title-medium {
-    font: 500 16px/24px "Roboto", sans-serif;
+    font: 500 16px/24px var(--md-ref-typeface-plain);
     letter-spacing: 0;
 }
 
 .md-typescale-body-large {
-    font: 400 16px/24px "Roboto", sans-serif;
+    font: 400 16px/24px var(--md-ref-typeface-plain);
     letter-spacing: 0;
 }
 
 .md-typescale-body-medium {
-    font: 400 14px/20px "Roboto", sans-serif;
+    font: 400 14px/20px var(--md-ref-typeface-plain);
     letter-spacing: 0;
 }
 
 .md-typescale-body-small {
-    font: 400 12px/16px "Roboto", sans-serif;
+    font: 400 12px/16px var(--md-ref-typeface-plain);
     letter-spacing: 0;
 }
 
 .md-typescale-label-large {
-    font: 500 14px/20px "Roboto", sans-serif;
+    font: 500 14px/20px var(--md-ref-typeface-plain);
     letter-spacing: 0;
 }
 
 .button {
     min-height: 36px;
     border: 1px solid transparent;
-    border-radius: var(--md-sys-shape-corner-medium);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -189,7 +186,6 @@ pre {
     align-items: center;
     min-height: 28px;
     max-width: 100%;
-    border-radius: 16px;
     border: 1px solid var(--md-sys-color-outline-variant);
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface-variant);
@@ -207,7 +203,6 @@ pre {
     width: 100%;
     min-width: 0;
     border: 1px solid var(--md-sys-color-outline);
-    border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface);
     color: var(--md-sys-color-on-surface);
     padding: 12px;
@@ -228,7 +223,7 @@ pre {
     padding: clamp(16px, 3vw, 32px) clamp(12px, 3vw, 24px) 56px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 24px;
     overflow-x: clip;
 }
 
@@ -236,22 +231,23 @@ pre {
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    padding: clamp(18px, 3vw, 28px);
-    border-left: 4px solid var(--md-sys-color-primary);
-    border-radius: var(--md-sys-shape-corner-large);
+    padding: clamp(20px, 3vw, 32px);
+    border-top: 4px solid var(--md-sys-color-primary);
     background: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
     box-shadow: var(--md-sys-elevation-level1);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
 }
 
 .fylo-hero .eyebrow {
     margin: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0;
-    opacity: 0.82;
+    letter-spacing: 0.06em;
+    opacity: 0.78;
 }
 
 .fylo-hero h1 {
@@ -263,7 +259,6 @@ pre {
 .fylo-hero .lede code {
     background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 10%, transparent);
     padding: 2px 6px;
-    border-radius: var(--md-sys-shape-corner-small);
 }
 
 .fylo-hero .lede {
@@ -276,10 +271,9 @@ pre {
     width: 100%;
     max-width: 100%;
     min-width: 0;
-    background: var(--md-sys-color-surface-container);
+    background: var(--md-sys-color-surface);
     color: var(--md-sys-color-on-surface);
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-large);
     padding: clamp(16px, 2.5vw, 24px);
     display: flex;
     flex-direction: column;
@@ -294,6 +288,8 @@ pre {
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .fylo-panel-header h2 {
@@ -334,7 +330,6 @@ pre {
     max-width: 100%;
     padding: 12px 14px;
     border: 1px solid transparent;
-    border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface);
     cursor: pointer;
@@ -442,7 +437,7 @@ pre {
 
 .fylo-detail .fylo-detail-heading {
     margin: 16px 0 8px;
-    font: 500 14px/20px "Roboto", sans-serif;
+    font: 500 14px/20px var(--md-ref-typeface-plain);
     letter-spacing: 0;
     color: var(--md-sys-color-on-surface-variant);
     text-transform: uppercase;
@@ -454,12 +449,10 @@ pre {
 
 .fylo-detail pre,
 .fylo-query-results pre,
-.fylo-event-row pre,
-.fylo-history-entry pre {
+.fylo-event-row pre {
     margin: 0;
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface);
-    border-radius: var(--md-sys-shape-corner-medium);
     overflow-x: clip;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -469,50 +462,6 @@ pre {
 .fylo-query-results pre {
     padding: 16px;
     max-height: 480px;
-    overflow-y: auto;
-}
-
-.fylo-history {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.fylo-history-entry {
-    min-width: 0;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: var(--md-sys-shape-corner-medium);
-    padding: 16px;
-    background: var(--md-sys-color-surface-container-low);
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.fylo-history-head {
-    min-width: 0;
-    font-family: ui-monospace, SFMono-Regular, monospace;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    overflow-wrap: anywhere;
-}
-
-.fylo-history-meta {
-    color: var(--md-sys-color-on-surface-variant);
-    font-size: 12px;
-    font-family: ui-monospace, SFMono-Regular, monospace;
-    overflow-wrap: anywhere;
-}
-
-.fylo-history-entry pre {
-    padding: 12px;
-    max-height: 240px;
     overflow-y: auto;
 }
 
@@ -537,7 +486,6 @@ pre {
 .fylo-event-row {
     min-width: 0;
     padding: 12px 14px;
-    border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface);
     display: flex;
@@ -600,7 +548,6 @@ pre {
 
 .fylo-response-summary code {
     padding: 4px 8px;
-    border-radius: var(--md-sys-shape-corner-small);
     background: var(--md-sys-color-surface-container-high);
     color: var(--md-sys-color-on-surface);
     font-family: ui-monospace, SFMono-Regular, monospace;
@@ -616,7 +563,6 @@ pre {
 
 .fylo-encryption-banner {
     padding: 12px 14px;
-    border-radius: var(--md-sys-shape-corner-medium);
     background: var(--md-sys-color-tertiary-container);
     color: var(--md-sys-color-on-tertiary-container);
     font-size: 13px;
@@ -632,7 +578,6 @@ pre {
 .fylo-encryption-banner code {
     background: color-mix(in srgb, currentColor 12%, transparent);
     padding: 1px 6px;
-    border-radius: var(--md-sys-shape-corner-small);
 }
 
 .fylo-encryption-banner .muted {
@@ -651,7 +596,6 @@ pre {
 .fylo-error {
     color: var(--md-sys-color-on-error-container);
     background: var(--md-sys-color-error-container);
-    border-radius: var(--md-sys-shape-corner-medium);
     padding: 12px 14px;
     font-family: ui-monospace, SFMono-Regular, monospace;
     font-size: 13px;
@@ -729,7 +673,6 @@ pre {
     .fylo-documents tr,
     .fylo-query-results tr {
         border: 1px solid var(--md-sys-color-outline-variant);
-        border-radius: var(--md-sys-shape-corner-medium);
         margin-bottom: 10px;
         background: var(--md-sys-color-surface-container-low);
         overflow: hidden;

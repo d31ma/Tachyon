@@ -1,32 +1,32 @@
-<div class="surface panel-wide live-panel">
-    <div class="surface-head">
-        <div>
-            <h2 class="md-typescale-title-large">Wikimedia live edits</h2>
-            <p class="md-typescale-body-small muted">Tac connects straight to Wikimedia's public RecentChange SSE stream and keeps a rolling count for the last hour.</p>
+<div class="col-span-full min-w-0 max-w-full h-full bg-surface-container text-on-surface border border-outline-variant p-6 flex flex-col gap-5 shadow-sm">
+    <div class="flex items-center justify-between gap-4 min-w-0 flex-wrap">
+        <div class="grid gap-1.5">
+            <h2 class="m-0 text-xl font-bold">Wikimedia live edits</h2>
+            <p class="text-on-surface-variant text-sm m-0">Tac connects directly to Wikimedia's public RecentChange SSE stream and keeps a rolling count for the last hour.</p>
         </div>
         <md-assist-chip :label="statusLabel()"></md-assist-chip>
     </div>
 
-    <div class="live-toolbar">
+    <div class="flex items-center gap-3 flex-wrap">
         <md-filled-button @click="start()" :disabled="isStreaming">Listen live</md-filled-button>
         <md-text-button @click="stop()" :disabled="!isStreaming">Stop</md-text-button>
-        <span class="md-typescale-body-small muted">Streaming with `fetch()` and `for await...of response.body`.</span>
+        <span class="text-on-surface-variant text-sm">Streaming with `fetch()` and `for await...of response.body`.</span>
     </div>
 
     <logic :if="lastError">
-        <div class="live-error md-typescale-body-medium">{lastError}</div>
+        <div class="text-error text-sm p-4 bg-error-container border border-error/20">{lastError}</div>
     </logic>
 
-    <section class="live-counter" aria-live="polite">
-        <span class="live-counter-label md-typescale-label-large">Edits in the last hour</span>
-        <strong class="live-counter-value">{editsLastHour}</strong>
-        <span class="live-counter-caption md-typescale-body-small muted">Rolling client-side window from public Wikimedia events.</span>
+    <section class="grid gap-2 p-6 bg-primary-container border border-outline-variant" aria-live="polite">
+        <span class="text-on-primary-container text-[0.72rem] font-semibold uppercase tracking-widest">Edits in the last hour</span>
+        <strong class="text-on-primary-container font-mono text-5xl leading-none">{editsLastHour}</strong>
+        <span class="text-on-surface-variant text-sm mt-1">Rolling client-side window from public Wikimedia events.</span>
     </section>
 
     <logic :if="editsLastHour === 0 && !lastError">
-        <div class="live-empty">
-            <strong class="md-typescale-title-medium">Waiting for the next public edit...</strong>
-            <p class="md-typescale-body-medium muted">The first event usually arrives quickly. If the browser or network blocks Wikimedia, the panel will show an offline state.</p>
+        <div class="grid gap-2 p-5 bg-surface-container-high border border-outline-variant">
+            <strong class="text-base font-bold">Waiting for the next public edit...</strong>
+            <p class="text-on-surface-variant text-sm m-0">The first event usually arrives quickly. If the browser or network blocks Wikimedia, the panel will show an offline state.</p>
         </div>
     </logic>
 </div>

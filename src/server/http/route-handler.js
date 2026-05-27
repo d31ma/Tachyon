@@ -1,6 +1,7 @@
 // @ts-check
 import { existsSync } from "fs";
 import path from "path";
+import HandlerAdapter from "../process/handler-adapter.js";
 export { default as Tac } from "../../runtime/tac.js";
 
 /**
@@ -206,7 +207,7 @@ export default class Router {
             if (slugPattern.test(segment))
                 slugs[segment] = idx;
         });
-        const staticPath = normalizedPaths.filter((segment) => !slugPattern.test(segment)).join(',');
+        const staticPath = normalizedPaths.map((segment) => slugPattern.test(segment) ? ':' : segment).join(',');
         if (staticPaths.includes(staticPath))
             throw new Error(`Duplicate route: '${route}'`);
         staticPaths.push(staticPath);
@@ -309,8 +310,10 @@ export default class Router {
     static MAX_BODY_BYTES = Number(process.env.YON_MAX_BODY_BYTES) || 1_048_576;
     /**
      * Validates a route file path, registers slugs, and records allowed methods.
-     * Throws if the route is malformed or a duplicate.
-     * @param {string} route - Relative path from the routes directory (e.g. `api/:id/GET/yon.js`)
+     * The handler file must define a `class Handler` with at least one static
+     * HTTP method (GET, POST, etc.). Throws if the route is malformed,
+     * missing a valid Handler class, or a duplicate.
+     * @param {string} route - Relative path from the routes directory (e.g. `api/:id/yon.js`)
      * @param {string[]} staticPaths - Accumulator used to detect duplicate static segments
      */
     static async validateRoute(route, staticPaths = []) {
@@ -321,39 +324,47 @@ export default class Router {
         if (routeFileBase !== Router.routeFileName) {
             throw new Error(
                 `Invalid route handler '${route}' — expected file named '${Router.routeFileName}.<ext>'. ` +
-                `Route handlers live at <method>/${Router.routeFileName}.<ext>.`
+                `Route handlers live at <route>/${Router.routeFileName}.<ext>.`
             );
         }
-        const methodDirectory = path.posix.dirname(route);
-        if (methodDirectory === '.') {
-            throw new Error(
-                `Invalid route handler '${route}' — handler files must live inside an HTTP method directory ` +
-                `(e.g. GET/${Router.routeFileName}.<ext>).`
-            );
-        }
-        const routeMethod = path.posix.basename(methodDirectory).toUpperCase();
-        const routeDirectory = path.posix.dirname(methodDirectory);
-        const routeForValidation = routeDirectory === '.'
-            ? routeMethod
-            : `${routeDirectory}/${routeMethod}`;
-        const { pathname: routePathname } = Router.validateSegmentPath(routeForValidation, routeMethod, staticPaths);
+        const routeDirectory = path.posix.dirname(route);
+        const terminalSegment = 'route-terminal';
+        const virtualRoute = routeDirectory === '.'
+            ? terminalSegment
+            : `${routeDirectory}/${terminalSegment}`;
+        const { pathname: routePathname } = Router.validateSegmentPath(virtualRoute, terminalSegment, staticPaths);
         route = routePathname;
-        const routeOptionsFile = Bun.file(`${Router.routesPath}${Router.routeToFilesystemPath(route)}/${Router.optionsFileName}`);
-        if (!Router.allRoutes.has(route))
-            Router.allRoutes.set(route, new Set());
-        if (routeMethod) {
-            Router.allRoutes.get(route)?.add(routeMethod);
-            Router.routeHandlers[route] ??= {};
-            if (Router.routeHandlers[route][routeMethod]) {
-                const existing = path.basename(Router.routeHandlers[route][routeMethod]);
-                const incoming = path.basename(routeFilePath);
+
+        const fullHandlerPath = path.join(Router.routesPath, routeFilePath);
+        const adapter = HandlerAdapter.resolve(fullHandlerPath, []);
+        if (!adapter) {
+            throw new Error(
+                `Invalid route handler '${routeFilePath}' — handler must define a class named 'Handler' ` +
+                `with at least one static HTTP method (GET, POST, PUT, DELETE, etc.).`
+            );
+        }
+
+        // Only one handler file per route — reject a second file for the same path
+        const existingHandlers = Router.routeHandlers[route];
+        if (existingHandlers) {
+            const existingFile = Object.values(existingHandlers)[0];
+            if (existingFile && path.resolve(existingFile) !== path.resolve(fullHandlerPath)) {
                 throw new Error(
-                    `Duplicate ${routeMethod} handler for '${route}' — both '${existing}' and '${incoming}' exist. ` +
-                    `Remove one so only a single handler file remains per route and method.`
+                    `Duplicate handler for route '${route}' — both '${path.basename(existingFile)}' and '${routeFile}' exist. ` +
+                    `Only one handler file is allowed per route.`
                 );
             }
-            Router.routeHandlers[route][routeMethod] = path.join(Router.routesPath, routeFilePath);
         }
+
+        if (!Router.allRoutes.has(route))
+            Router.allRoutes.set(route, new Set());
+        Router.routeHandlers[route] ??= {};
+        for (const method of adapter.methods) {
+            Router.allRoutes.get(route)?.add(method);
+            Router.routeHandlers[route][method] = fullHandlerPath;
+        }
+
+        const routeOptionsFile = Bun.file(`${Router.routesPath}${Router.routeToFilesystemPath(route)}/${Router.optionsFileName}`);
         if (await routeOptionsFile.exists() && !Router.routeConfigs[route]) {
             Router.routeConfigs[route] = await routeOptionsFile.json();
             Router.allRoutes.get(route)?.add('OPTIONS');
@@ -380,7 +391,7 @@ export default class Router {
      * the filesystem handler path for the matched route.
      * @param {BunRequest} request - The incoming Bun request
      * @param {string} route - The matched route pattern
-     * @returns {Promise<{ handler: string, stdin: RequestPayload, config: RouteOptions | undefined }>} Handler path, parsed stdin payload, and optional route config
+     * @returns {Promise<{ handler: string, method: string, stdin: RequestPayload, config: RouteOptions | undefined }>} Handler path, HTTP method, parsed stdin payload, and optional route config
      */
     static async processRequest(request, route) {
         /** @type {RequestPayload} */
@@ -406,16 +417,16 @@ export default class Router {
         // Handler path is recorded by validateRoute with the full
         // `yon.<ext>` filename. If routeHandlers is missing the entry —
         // for example, during the brief window of an HMR
-        // resetStaticState/validate cycle — scan the method directory
-        // for a `yon.*` sibling so we never return an extensionless
+        // resetStaticState/validate cycle — scan the route directory
+        // for a `yon.*` file so we never return an extensionless
         // path that posix_spawn would ENOENT on.
         let handlerPath = Router.routeHandlers[route]?.[request.method];
         if (!handlerPath) {
-            const methodDir = `${Router.routesPath}${Router.routeToFilesystemPath(route)}/${request.method}`;
-            if (existsSync(methodDir)) {
-                const match = Array.from(new Bun.Glob(`${Router.routeFileName}.*`).scanSync({ cwd: methodDir }))[0];
+            const routeDir = `${Router.routesPath}${Router.routeToFilesystemPath(route)}`;
+            if (existsSync(routeDir)) {
+                const match = Array.from(new Bun.Glob(`${Router.routeFileName}.*`).scanSync({ cwd: routeDir }))[0];
                 if (match)
-                    handlerPath = `${methodDir}/${match}`;
+                    handlerPath = `${routeDir}/${match}`;
             }
             if (!handlerPath) {
                 throw Response.json(
@@ -426,6 +437,7 @@ export default class Router {
         }
         return {
             handler: handlerPath,
+            method: request.method,
             stdin,
             config: requestConfig
         };
@@ -550,18 +562,15 @@ export default class Router {
     static async validateRoutes() {
         if (!existsSync(Router.routesPath))
             return;
-        const allowedMethods = new Set(Router.allMethods.filter((method) => method !== 'OPTIONS'));
         const routes = Array.from(new Bun.Glob(`**/${Router.routeFileName}.*`).scanSync({ cwd: Router.routesPath }))
             .filter((route) => {
                 const segments = route.replaceAll('\\', '/').split('/');
-                if (segments.includes('__pycache__'))
-                    return false;
-                if (segments.length < 2)
-                    return false;
-                return allowedMethods.has(segments[segments.length - 2].toUpperCase());
+                return !segments.includes('__pycache__');
             });
+        /** @type {string[]} */
+        const staticPaths = [];
         for (const route of routes)
-            await Router.validateRoute(route);
+            await Router.validateRoute(route, staticPaths);
     }
     static async validatePageRoutes() {
         if (!existsSync(Router.pagesPath))

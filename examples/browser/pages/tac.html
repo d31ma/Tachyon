@@ -1,61 +1,61 @@
-<div class="shell">
+<div class="flex min-h-screen min-w-0 overflow-x-clip bg-background text-on-background transition-colors duration-200">
   <logic :if="$sidebarOpen">
-    <aside class="nav-rail sidebar">
-      <div class="nav-rail-brand sidebar-brand">
-        <span class="nav-rail-mark">TX</span>
-        <div class="nav-rail-brand-text">
-          <span class="nav-rail-eyebrow">Tachyon</span>
-          <span class="nav-rail-title">Tac + Yon</span>
+    <aside class="w-[240px] flex flex-col bg-surface-container-low border-r border-outline-variant text-on-surface sticky top-0 h-screen overflow-y-auto">
+      <div class="px-5 py-4 flex items-center gap-3 border-b border-outline-variant">
+        <span class="inline-flex w-8 h-8 items-center justify-center bg-primary text-on-primary font-bold text-[11px]">TX</span>
+        <div class="flex flex-col leading-tight">
+          <span class="text-on-surface-variant text-[10px] font-semibold uppercase tracking-wider">Tachyon</span>
+          <span class="text-on-surface text-sm font-bold">Tac + Yon</span>
         </div>
       </div>
-      <nav class="nav-rail-items">
-        <a href="#overview" class="nav-rail-item">
-          <span class="nav-rail-glyph" aria-hidden="true"></span>
+      <nav class="flex flex-col flex-1 p-3 gap-1 min-w-0">
+        <div @click="scrollToSection('overview')" role="link" class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant font-medium text-[13px] min-w-0 hover:bg-surface-container-high hover:text-on-surface transition-colors duration-150 cursor-pointer select-none">
+          <span class="w-2 h-2 bg-current opacity-55 shrink-0" aria-hidden="true"></span>
           <span>Overview</span>
-        </a>
-        <a href="#runtime" class="nav-rail-item">
-          <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Runtime</span>
-        </a>
-        <a href="#data" class="nav-rail-item">
-          <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Data</span>
-        </a>
-        <a href="#telemetry" class="nav-rail-item">
-          <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Telemetry</span>
-        </a>
-        <a href="#live" class="nav-rail-item">
-          <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Live stream</span>
-        </a>
-        <a href="#operations" class="nav-rail-item">
-          <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Operations</span>
-        </a>
-        <a href="#components" class="nav-rail-item">
-          <span class="nav-rail-glyph" aria-hidden="true"></span>
-          <span>Components</span>
-        </a>
+        </div>
+        <div @click="scrollToSection('compose')" role="link" class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant font-medium text-[13px] min-w-0 hover:bg-surface-container-high hover:text-on-surface transition-colors duration-150 cursor-pointer select-none">
+          <span class="w-2 h-2 bg-current opacity-55 shrink-0" aria-hidden="true"></span>
+          <span>Compose</span>
+        </div>
+        <div @click="scrollToSection('react')" role="link" class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant font-medium text-[13px] min-w-0 hover:bg-surface-container-high hover:text-on-surface transition-colors duration-150 cursor-pointer select-none">
+          <span class="w-2 h-2 bg-current opacity-55 shrink-0" aria-hidden="true"></span>
+          <span>React</span>
+        </div>
+        <div @click="scrollToSection('connect')" role="link" class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant font-medium text-[13px] min-w-0 hover:bg-surface-container-high hover:text-on-surface transition-colors duration-150 cursor-pointer select-none">
+          <span class="w-2 h-2 bg-current opacity-55 shrink-0" aria-hidden="true"></span>
+          <span>Connect</span>
+        </div>
+        <div @click="scrollToSection('store')" role="link" class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant font-medium text-[13px] min-w-0 hover:bg-surface-container-high hover:text-on-surface transition-colors duration-150 cursor-pointer select-none">
+          <span class="w-2 h-2 bg-current opacity-55 shrink-0" aria-hidden="true"></span>
+          <span>Store</span>
+        </div>
+        <div @click="scrollToSection('observe')" role="link" class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant font-medium text-[13px] min-w-0 hover:bg-surface-container-high hover:text-on-surface transition-colors duration-150 cursor-pointer select-none">
+          <span class="w-2 h-2 bg-current opacity-55 shrink-0" aria-hidden="true"></span>
+          <span>Observe</span>
+        </div>
+        <div @click="scrollToSection('extend')" role="link" class="flex items-center gap-3 px-3 py-2.5 text-on-surface-variant font-medium text-[13px] min-w-0 hover:bg-surface-container-high hover:text-on-surface transition-colors duration-150 cursor-pointer select-none">
+          <span class="w-2 h-2 bg-current opacity-55 shrink-0" aria-hidden="true"></span>
+          <span>Extend</span>
+        </div>
       </nav>
-      <div class="nav-rail-footer">
-        <div class="nav-rail-release md-typescale-label-medium">{release}</div>
-        <div class="nav-rail-status md-typescale-label-small">
-          <span class="nav-rail-status-dot"></span>
+      <div class="px-5 py-4 border-t border-outline-variant flex flex-col gap-1.5">
+        <div class="text-on-surface font-semibold uppercase text-[0.72rem] tracking-wide">{release}</div>
+        <div class="flex items-center gap-2 text-on-surface-variant text-[0.72rem]">
+          <span class="w-1.5 h-1.5 bg-green-600 shadow-[0_0_0_2px_rgba(46,125,50,0.18)]"></span>
           All systems operational
         </div>
       </div>
     </aside>
   </logic>
 
-  <div class="main-area">
-    <header class="app-bar topbar">
-      <div class="app-bar-left">
+  <div class="flex-1 min-w-0 flex flex-col">
+    <header class="flex items-center justify-between gap-4 px-5 py-2.5 bg-surface/95 backdrop-blur-sm border-b border-outline-variant sticky top-0 z-10 min-h-[48px] min-w-0 flex-wrap">
+      <div class="flex items-center gap-2 min-w-0 flex-wrap">
         <md-text-button @click="toggleSidebar()" :aria-expanded="$sidebarOpen">{sidebarLabel}</md-text-button>
-        <div class="app-bar-title md-typescale-title-medium">Dashboard</div>
-        <md-assist-chip label="release"></md-assist-chip>
+        <div class="text-on-surface font-medium text-base">Possibility atlas</div>
+        <md-assist-chip label="live application"></md-assist-chip>
       </div>
-      <div class="app-bar-right">
+      <div class="flex items-center gap-2 min-w-0 flex-wrap">
         <md-text-button href="/_fylo">Fylo</md-text-button>
         <md-text-button href="/api-docs">Open API docs</md-text-button>
         <md-outlined-button @click="refreshAll()">Refresh</md-outlined-button>
@@ -63,89 +63,156 @@
       </div>
     </header>
 
-    <main class="content">
-      <section class="page-header hero" id="overview">
-        <div class="page-header-text">
-          <div class="page-header-eyebrow md-typescale-label-large">Tac + Yon</div>
-          <h1 class="page-header-title md-typescale-headline-medium">{headline}</h1>
-          <p class="page-header-lede md-typescale-body-medium">{subtitle}</p>
+    <main class="grid gap-8 p-8 mx-auto w-[min(100%,1480px)] max-w-full min-w-0">
+      <section class="grid grid-cols-[minmax(0,1fr)_auto] gap-8 items-stretch p-10 border border-outline-variant bg-gradient-to-br from-surface to-primary-container overflow-hidden" id="overview">
+        <div class="flex flex-col gap-3 min-w-0">
+          <div class="text-primary uppercase text-[0.72rem] font-semibold tracking-widest">Tachyon capability atlas</div>
+          <h1 class="m-0 text-on-background leading-tight font-semibold text-[2.75rem] max-w-[18ch]">{headline}</h1>
+          <p class="m-0 text-on-surface-variant text-base leading-relaxed max-w-[56ch]">{subtitle}</p>
+          <div class="flex items-center gap-3 mt-4 flex-wrap">
+            <div @click="scrollToSection('compose')" class="inline-flex items-center justify-center h-10 px-5 bg-primary text-on-primary text-sm font-medium tracking-wide cursor-pointer select-none">Explore browser craft</div>
+            <div @click="scrollToSection('store')" class="inline-flex items-center justify-center h-10 px-5 border border-outline text-primary text-sm font-medium tracking-wide cursor-pointer select-none">Follow persisted data</div>
+            <md-text-button @click="refreshAll()">Reload live data</md-text-button>
+          </div>
         </div>
-        <div class="page-header-actions">
-          <md-filled-button @click="refreshAll()">Reload live data</md-filled-button>
+        <div class="w-[min(100%,280px)] self-center grid gap-3" aria-label="Tachyon full stack flow">
+          <div class="grid gap-px p-4 border border-primary/15 bg-surface/85 shadow-lg">
+            <span class="text-primary text-[0.62rem] font-bold uppercase tracking-widest">Craft</span>
+            <strong class="text-xl text-on-surface">Tac</strong>
+            <span class="text-on-surface-variant text-sm">Reactive browser companions</span>
+          </div>
+          <span class="justify-self-center text-secondary text-sm font-bold" aria-hidden="true">+</span>
+          <div class="grid gap-px p-4 border border-primary/15 bg-surface/85 shadow-lg">
+            <span class="text-primary text-[0.62rem] font-bold uppercase tracking-widest">Serve</span>
+            <strong class="text-xl text-on-surface">Yon</strong>
+            <span class="text-on-surface-variant text-sm">Polyglot routed handlers</span>
+          </div>
+          <span class="justify-self-center text-secondary text-sm font-bold" aria-hidden="true">+</span>
+          <div class="grid gap-px p-4 border border-primary/15 bg-surface/85 shadow-lg">
+            <span class="text-primary text-[0.62rem] font-bold uppercase tracking-widest">Persist</span>
+            <strong class="text-xl text-on-surface">FYLO</strong>
+            <span class="text-on-surface-variant text-sm">Documents and telemetry</span>
+          </div>
         </div>
       </section>
+
+      <nav class="grid grid-cols-5 gap-4" aria-label="Ways to explore Tachyon">
+        <div @click="scrollToSection('compose')" role="link" class="grid gap-1.5 p-5 border border-outline-variant bg-surface text-on-surface hover:border-primary/40 hover:shadow-lg hover:-translate-y-px transition-all duration-150 cursor-pointer select-none">
+          <span class="text-primary text-[0.65rem] font-bold tracking-[0.14em]">01</span>
+          <strong class="text-base">Compose</strong>
+          <small class="text-on-surface-variant text-xs leading-snug">HTML, CSS, canvas and Tac events</small>
+        </div>
+        <div @click="scrollToSection('react')" role="link" class="grid gap-1.5 p-5 border border-outline-variant bg-surface text-on-surface hover:border-primary/40 hover:shadow-lg hover:-translate-y-px transition-all duration-150 cursor-pointer select-none">
+          <span class="text-primary text-[0.65rem] font-bold tracking-[0.14em]">02</span>
+          <strong class="text-base">React</strong>
+          <small class="text-on-surface-variant text-xs leading-snug">Persistence, streaming and state</small>
+        </div>
+        <div @click="scrollToSection('connect')" role="link" class="grid gap-1.5 p-5 border border-outline-variant bg-surface text-on-surface hover:border-primary/40 hover:shadow-lg hover:-translate-y-px transition-all duration-150 cursor-pointer select-none">
+          <span class="text-primary text-[0.65rem] font-bold tracking-[0.14em]">03</span>
+          <strong class="text-base">Connect</strong>
+          <small class="text-on-surface-variant text-xs leading-snug">Yon routes in many languages</small>
+        </div>
+        <div @click="scrollToSection('store')" role="link" class="grid gap-1.5 p-5 border border-outline-variant bg-surface text-on-surface hover:border-primary/40 hover:shadow-lg hover:-translate-y-px transition-all duration-150 cursor-pointer select-none">
+          <span class="text-primary text-[0.65rem] font-bold tracking-[0.14em]">04</span>
+          <strong class="text-base">Store</strong>
+          <small class="text-on-surface-variant text-xs leading-snug">CRUD and FYLO collections</small>
+        </div>
+        <div @click="scrollToSection('observe')" role="link" class="grid gap-1.5 p-5 border border-outline-variant bg-surface text-on-surface hover:border-primary/40 hover:shadow-lg hover:-translate-y-px transition-all duration-150 cursor-pointer select-none">
+          <span class="text-primary text-[0.65rem] font-bold tracking-[0.14em]">05</span>
+          <strong class="text-base">Observe</strong>
+          <small class="text-on-surface-variant text-xs leading-snug">Trace the running system</small>
+        </div>
+      </nav>
 
       <stats-grid :visits="$visits" :total-visits="$$totalVisits" />
 
-      <section class="dashboard-section" id="runtime">
-        <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Runtime</h2>
-          <span class="section-head-meta md-typescale-body-small muted">Live diagnostics from Yon route handlers</span>
+      <section class="flex flex-col gap-6 min-w-0" id="compose">
+        <div class="flex items-center gap-4 flex-wrap min-w-0 pb-2 border-b border-outline-variant">
+          <span class="h-10 w-10 inline-grid place-items-center bg-primary-container text-primary text-xs font-bold tracking-wide">01</span>
+          <div class="grid gap-1">
+            <h2 class="m-0 text-on-background font-bold text-xl">Compose the browser experience</h2>
+            <p class="m-0 text-on-surface-variant text-sm">Native HTML semantics, expressive CSS and reactive Tac state working together.</p>
+          </div>
         </div>
-        <div class="panel-grid">
-          <panel-diagnostics />
-          <panel-polyglot />
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5 items-stretch min-w-0">
+          <panel-inputs />
         </div>
-      </section>
-
-      <section class="dashboard-section" id="data">
-        <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Data</h2>
-          <span class="section-head-meta md-typescale-body-small muted">FYLO-backed collections + browser-side data</span>
-        </div>
-        <div class="panel-grid">
-          <panel-fylo />
-          <panel-users />
-        </div>
-        <div class="panel-grid">
-          <panel-showcase />
-          <panel-platform />
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5 items-stretch min-w-0">
+          <panel-native />
         </div>
       </section>
 
-      <section class="dashboard-section" id="live">
-        <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Live stream</h2>
-          <span class="section-head-meta md-typescale-body-small muted">External SSE through Yon, rendered reactively by Tac</span>
+      <section class="flex flex-col gap-6 min-w-0" id="react">
+        <div class="flex items-center gap-4 flex-wrap min-w-0 pb-2 border-b border-outline-variant">
+          <span class="h-10 w-10 inline-grid place-items-center bg-primary-container text-primary text-xs font-bold tracking-wide">02</span>
+          <div class="grid gap-1">
+            <h2 class="m-0 text-on-background font-bold text-xl">React to people and live signals</h2>
+            <p class="m-0 text-on-surface-variant text-sm">Automatic rerenders, browser persistence and a frontend-only event stream.</p>
+          </div>
         </div>
-        <div class="panel-grid">
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5 items-stretch min-w-0">
+          <panel-helpers />
           <panel-live />
         </div>
       </section>
 
-      <section class="dashboard-section" id="telemetry">
-        <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Telemetry</h2>
-          <span class="section-head-meta md-typescale-body-small muted">OTLP spans from FYLO</span>
+      <section class="flex flex-col gap-6 min-w-0" id="connect">
+        <div class="flex items-center gap-4 flex-wrap min-w-0 pb-2 border-b border-outline-variant">
+          <span class="h-10 w-10 inline-grid place-items-center bg-primary-container text-primary text-xs font-bold tracking-wide">03</span>
+          <div class="grid gap-1">
+            <h2 class="m-0 text-on-background font-bold text-xl">Connect browser and backend</h2>
+            <p class="m-0 text-on-surface-variant text-sm">Yon receives file-routed requests while Tac presents their live responses.</p>
+          </div>
         </div>
-        <div class="panel-grid">
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5 items-stretch min-w-0">
+          <panel-diagnostics />
+          <panel-polyglot />
+        </div>
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5 items-stretch min-w-0">
+          <panel-platform />
+        </div>
+      </section>
+
+      <section class="flex flex-col gap-6 min-w-0" id="store">
+        <div class="flex items-center gap-4 flex-wrap min-w-0 pb-2 border-b border-outline-variant">
+          <span class="h-10 w-10 inline-grid place-items-center bg-primary-container text-primary text-xs font-bold tracking-wide">04</span>
+          <div class="grid gap-1">
+            <h2 class="m-0 text-on-background font-bold text-xl">Store and query application data</h2>
+            <p class="m-0 text-on-surface-variant text-sm">FYLO-backed documents, CRUD requests and compiler-injected browser queries.</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5 items-stretch min-w-0">
+          <panel-inventory />
+          <panel-users />
+        </div>
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5 items-stretch min-w-0">
+          <panel-fylo />
+          <panel-showcase />
+        </div>
+      </section>
+
+      <section class="flex flex-col gap-6 min-w-0" id="observe">
+        <div class="flex items-center gap-4 flex-wrap min-w-0 pb-2 border-b border-outline-variant">
+          <span class="h-10 w-10 inline-grid place-items-center bg-primary-container text-primary text-xs font-bold tracking-wide">05</span>
+          <div class="grid gap-1">
+            <h2 class="m-0 text-on-background font-bold text-xl">Observe and operate confidently</h2>
+            <p class="m-0 text-on-surface-variant text-sm">FYLO-stored OpenTelemetry spans make application traffic inspectable.</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5 items-stretch min-w-0">
           <panel-telemetry />
         </div>
       </section>
 
-      <section class="dashboard-section" id="operations">
-        <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Operations</h2>
-          <span class="section-head-meta md-typescale-body-small muted">Inventory CRUD + frontend helpers</span>
+      <section class="flex flex-col gap-6 min-w-0" id="extend">
+        <div class="flex items-center gap-4 flex-wrap min-w-0 pb-2 border-b border-outline-variant">
+          <span class="h-10 w-10 inline-grid place-items-center bg-primary-container text-primary text-xs font-bold tracking-wide">06</span>
+          <div class="grid gap-1">
+            <h2 class="m-0 text-on-background font-bold text-xl">Extend beyond JavaScript</h2>
+            <p class="m-0 text-on-surface-variant text-sm">Scoped companions and WebAssembly components keep one consistent Tac template model.</p>
+          </div>
         </div>
-        <div class="panel-grid">
-          <panel-inventory />
-          <panel-helpers />
-        </div>
-      </section>
-
-      <section class="dashboard-section" id="components">
-        <div class="section-head">
-          <span class="section-head-icon" aria-hidden="true"></span>
-          <h2 class="md-typescale-title-large">Scoped components</h2>
-          <md-assist-chip label="companions"></md-assist-chip>
-        </div>
-        <div class="component-grid">
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-5 items-stretch min-w-0">
           <clicker :clicks="0" label="Persistent clicks" />
           <clicker-ui :clicks="$visits" label="Session clicks" />
           <wasm-clicker />

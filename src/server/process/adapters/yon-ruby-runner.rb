@@ -2,23 +2,18 @@
 require "json"
 
 class YonRubyRunner
-  def self.route_class_name(handler_path)
-    base = File.basename(handler_path).split(".", 2).first
-    base.nil? || base.empty? ? "Yon" : base[0].upcase + base[1..]
+  def self.resolve_handler_class
+    unless Object.const_defined?(:Handler)
+      raise "Ruby route must define a class named Handler"
+    end
+    Object.const_get(:Handler)
   end
 
-  def self.resolve_handler(handler_path)
-    if Object.private_method_defined?(:handler)
-      return proc { |request| Object.new.send(:handler, request) }
+  def self.resolve_method(handler_class, method)
+    unless handler_class.respond_to?(method)
+      raise "Handler class does not implement self.#{method}()"
     end
-
-    route_class = route_class_name(handler_path)
-    if Object.const_defined?(route_class)
-      instance = Object.const_get(route_class).new
-      return proc { |request| instance.handler(request) } if instance.respond_to?(:handler)
-    end
-
-    raise "Ruby route must define handler(request) or a method-named class with handler(request)"
+    handler_class.method(method)
   end
 
   def self.write(value)
@@ -30,8 +25,12 @@ class YonRubyRunner
     handler_path = ARGV.fetch(0)
     input = $stdin.read
     request = JSON.parse(input.empty? ? "{}" : input)
+    method = request["method"]
+    raise "Missing HTTP method in request payload" if method.nil? || method.empty?
     load handler_path
-    write(resolve_handler(handler_path).call(request))
+    handler_class = resolve_handler_class
+    dispatch = resolve_method(handler_class, method)
+    write(dispatch.call(request))
   end
 end
 

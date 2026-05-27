@@ -861,11 +861,11 @@ export default class Compiler {
             const pageFactory = await pageModule();
             const pageHTML = await pageFactory();
             const bodyHTML = layoutHTML
-                ? layoutHTML.replace('<div id="ty-layout-slot"></div>', `<div id="ty-layout-slot">${pageHTML}</div>`)
+                ? layoutHTML.replace('<div id="ty-layout-slot"></div>', () => `<div id="ty-layout-slot">${pageHTML}</div>`)
                 : pageHTML;
             const title = Compiler.escapeHTML(prerender.title || Compiler.routeTitleFallback);
-            const withTitle = shellHTML.replace(/<title>.*?<\/title>/, `<title>${title}</title>`);
-            const withBody = withTitle.replace('<body></body>', `<body>${bodyHTML}</body>`);
+            const withTitle = shellHTML.replace(/<title>.*?<\/title>/, () => `<title>${title}</title>`);
+            const withBody = withTitle.replace('<body></body>', () => `<body>${bodyHTML}</body>`);
             return `${Compiler.normalizeScopedStyles(withBody)}\n`;
         }
         finally {
@@ -1057,6 +1057,8 @@ export default class Compiler {
                 }
                 if (name === ':value' && tagName !== 'switch')
                     return `value="\${ty_escapeAttr(ty_assignValue('${hash}', '${value}', ${value}))}"`;
+                if (name === ':checked')
+                    return `\${${value} ? 'checked' : ''}`;
                 return `${name}="${escapeTemplateLiteral(value)}"`;
             };
             /** @param {string} text */
@@ -1360,12 +1362,12 @@ with (__ty_scope__) {
             return '';
         };
 
-        const ty_assignValue = (hash, variable) => {
-            let nextValue = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(variable) ? eval(variable) : '';
+        const ty_assignValue = (hash, variable, currentValue) => {
+            let nextValue = currentValue;
             if (elemId === ty_generateId(hash, 'bind') && event) {
                 if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(variable)) {
                     const __val__ = event.value;
-                    eval(\`\${variable} = __val__\`);
+                    try { eval(\`\${variable} = __val__\`) } catch {}
                     nextValue = __val__;
                 }
             }

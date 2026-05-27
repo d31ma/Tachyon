@@ -18,9 +18,20 @@ if (!/** @type {any} */ (window).fylo) {
             this.collection = collection;
         }
 
-        /** @param {Record<string, unknown>} [query] */
+        /**
+         * Query the collection using PostgREST-style filters.
+         * e.g. find({ role: "eq.admin", age: "gt.18", select: "name,role", order: "name.asc", limit: 10 })
+         * @param {Record<string, unknown>} [query]
+         */
         async find(query = {}) {
-            return this.browserClient.postJson("/api/query", { kind: "find", collection: this.collection, query });
+            const params = new URLSearchParams();
+            for (const [key, value] of Object.entries(query)) {
+                params.set(key, String(value));
+            }
+            const qs = params.toString();
+            const url = `/${encodeURIComponent(this.collection)}/${qs ? `?${qs}` : ""}`;
+            const response = await this.browserClient.fetch(url);
+            return response.json();
         }
 
         /** @param {number} [limit] */
@@ -105,7 +116,6 @@ if (!/** @type {any} */ (window).fylo) {
                 root: undefined,
                 setCredentials: this.setCredentials.bind(this),
                 clearCredentials: this.clearCredentials.bind(this),
-                sql: this.sql.bind(this),
                 collections: this.collections.bind(this),
                 meta: this.meta.bind(this),
                 request: this.request.bind(this),
@@ -176,11 +186,6 @@ if (!/** @type {any} */ (window).fylo) {
                 body: JSON.stringify(body),
             });
             return response.json();
-        }
-
-        /** @param {string} source */
-        sql(source) {
-            return this.postJson("/api/query", { kind: "sql", source });
         }
 
         async collections() {
@@ -515,7 +520,7 @@ async function selectDocument(collection, id) {
 }
 
 /**
- * @param {{ doc: Record<string, unknown> | null, history: Array<Record<string, unknown>> | null, docError?: string, historyError?: string, encryptedFields?: string[], revealed?: boolean }} documentResponse
+ * @param {{ doc: Record<string, unknown> | null, docError?: string, encryptedFields?: string[], revealed?: boolean }} documentResponse
  */
 function renderDetail(documentResponse) {
     if (!detailRoot) return;
@@ -543,57 +548,6 @@ function renderDetail(documentResponse) {
         const bodyPreview = document.createElement("pre");
         bodyPreview.textContent = JSON.stringify(documentResponse.doc, null, 2);
         fragments.push(bodyPreview);
-    }
-
-    const historyHeading = document.createElement("h3");
-    historyHeading.className = "fylo-detail-heading";
-    historyHeading.textContent = "Version history";
-    fragments.push(historyHeading);
-
-    if (documentResponse.historyError) {
-        const note = document.createElement("p");
-        note.className = "muted md-typescale-body-medium";
-        note.textContent = `History unavailable: ${documentResponse.historyError}`;
-        fragments.push(note);
-    } else if (!documentResponse.history?.length) {
-        const note = document.createElement("p");
-        note.className = "muted md-typescale-body-medium";
-        note.textContent = "No version history (collection is not WORM, or single retained version).";
-        fragments.push(note);
-    } else {
-        const list = document.createElement("ol");
-        list.className = "fylo-history";
-        for (const entry of documentResponse.history) {
-            const item = document.createElement("li");
-            item.className = "fylo-history-entry";
-            const head = document.createElement("div");
-            head.className = "fylo-history-head";
-            const code = document.createElement("code");
-            code.textContent = String(entry.id ?? "");
-            head.append(code);
-            if (entry.isHead) {
-                const tag = document.createElement("span");
-                tag.className = "pill pill-accent";
-                tag.textContent = "HEAD";
-                head.append(document.createTextNode(" "), tag);
-            }
-            if (entry.deleted) {
-                const tag = document.createElement("span");
-                tag.className = "pill pill-danger";
-                tag.textContent = "deleted";
-                head.append(document.createTextNode(" "), tag);
-            }
-            const meta = document.createElement("div");
-            meta.className = "fylo-history-meta";
-            const created = typeof entry.createdAt === "number" ? new Date(entry.createdAt).toISOString() : String(entry.createdAt ?? "");
-            const updated = typeof entry.updatedAt === "number" ? new Date(entry.updatedAt).toISOString() : String(entry.updatedAt ?? "");
-            meta.textContent = `created ${created} · updated ${updated}`;
-            const body = document.createElement("pre");
-            body.textContent = JSON.stringify(entry.data, null, 2);
-            item.append(head, meta, body);
-            list.append(item);
-        }
-        fragments.push(list);
     }
 
     detailRoot.replaceChildren(...fragments);

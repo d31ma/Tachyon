@@ -41,9 +41,20 @@ class FyloCollectionClient {
         this.collection = collection;
     }
 
-    /** @param {Record<string, unknown>} [query] */
+    /**
+     * Query the collection using PostgREST-style filters.
+     * e.g. find({ role: 'eq.admin', age: 'gt.18', select: 'name,role', order: 'name.asc', limit: 10 })
+     * @param {Record<string, unknown>} [query]
+     */
     async find(query = {}) {
-        return this.browserClient.postJson('/api/query', { kind: 'find', collection: this.collection, query });
+        const params = new URLSearchParams();
+        for (const [key, value] of Object.entries(query)) {
+            params.set(key, String(value));
+        }
+        const qs = params.toString();
+        const url = `/${encodeURIComponent(this.collection)}/${qs ? `?${qs}` : ''}`;
+        const response = await this.browserClient.fetch(url);
+        return response.json();
     }
 
     /** @param {number} [limit] */
@@ -132,7 +143,6 @@ class FyloBrowserClient {
             root: undefined,
             setCredentials: this.setCredentials.bind(this),
             clearCredentials: this.clearCredentials.bind(this),
-            sql: this.sql.bind(this),
             collections: this.collections.bind(this),
             meta: this.meta.bind(this),
             request: this.request.bind(this),
@@ -207,11 +217,6 @@ class FyloBrowserClient {
         return response.json();
     }
 
-    /** @param {string} source */
-    sql(source) {
-        return this.postJson('/api/query', { kind: 'sql', source });
-    }
-
     async collections() {
         const response = await this.fetch('/api/collections', { cache: 'reload' });
         if (!response.ok) return { root: '', collections: [] };
@@ -276,8 +281,6 @@ const noopBase = {
      */
     setCredentials(user, pass) {},
     clearCredentials() {},
-    /** @returns {Promise<{ error: string }>} */
-    async sql() { return { error: 'Fylo browser not enabled' }; },
     /** @returns {Promise<{ root: string, collections: unknown[] }>} */
     async collections() { return { root: '', collections: [] }; },
     /** @returns {Promise<null>} */

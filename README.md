@@ -105,7 +105,11 @@ The runtime still supports TypeScript companion scripts when you want them.
 
 The example app in [examples/](examples/) demonstrates Tac and Yon working together:
 
+- a guided capability atlas joining native HTML/CSS/JavaScript surfaces with
+  working Tac, Yon, and FYLO flows rather than isolated code snippets
 - reactive page state
+- accessible native controls and a reactive canvas studio with semantic
+  `progress`, `meter`, `output`, `time`, and `details` elements
 - persisted `$` (sessionStorage) and `$$` (localStorage) fields
 - local-first fetches
 - frontend-only external SSE streaming with reactive Tac updates
@@ -514,6 +518,7 @@ Templates support:
 - `@event="handler()"` for event binding
 - `:prop="expr"` for dynamic attributes
 - `:value="field"` for two-way input binding
+- `:checked="field"` for reactive checkbox and radio state
 - `<loop :for="...">`
 - `<logic :if="...">`
 - `<switch :value="...">` with `<case :when="...">` and `<case default>`

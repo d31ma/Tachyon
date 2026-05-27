@@ -5,6 +5,7 @@ import path from 'path';
 import { tmpdir } from 'os';
 import { pathToFileURL } from 'url';
 import { Window } from 'happy-dom';
+import { createValueEventDetail } from '../../src/runtime/dom-helpers.js';
 const timedTest = /** @type {any} */ (test);
 /** @type {string[]} */
 const tempDirs = [];
@@ -17,9 +18,17 @@ const wasmClickerFixture = 'AGFzbQEAAAABFgRgAX8Bf2ACf38AYAR/f39/AGAAAX8DBwYAAQEC
 function readEmbeddedRoutes(source) {
     const match = source.match(/routeManifestJSON\s*=\s*(['"])(.*?)\1/)
         ?? source.match(/\bi\s*=\s*(['"])(.*?)\1/);
-    if (!match)
-        throw new Error('Embedded route manifest not found');
-    return JSON.parse(match[2]);
+    if (match)
+        return JSON.parse(match[2]);
+    for (const candidate of source.matchAll(/(['"])(\{.*?\})\1/g)) {
+        try {
+            const parsed = JSON.parse(candidate[2]);
+            if (Object.keys(parsed).some((key) => key.startsWith('/')))
+                return parsed;
+        }
+        catch {}
+    }
+    throw new Error('Embedded route manifest not found');
 }
 async function createFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bundle-'));
@@ -83,6 +92,20 @@ async function createDynamicRouteFixture() {
     await writeFile(path.join(root, 'browser', 'pages', 'tac.html'), '<main>Inbox shell</main>');
     await writeFile(path.join(root, 'browser', 'pages', 'email', '_id', 'tac.html'), '<script>document.title = "Email"</script><article>Email route</article>');
     await writeFile(path.join(root, 'browser', 'pages', 'folder', '_name', 'tac.html'), '<script>document.title = "Folder"</script><article>Folder route</article>');
+    return root;
+}
+async function createLiteralReplacementTokenFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-literal-token-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'browser', 'pages'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-literal-token-fixture',
+        private: true,
+    }, null, 2));
+    await writeFile(
+        path.join(root, 'browser', 'pages', 'tac.html'),
+        '<main><p>Session field `$` and local field `$$` remain literal.</p></main>',
+    );
     return root;
 }
 async function createFailingBundleWithExistingDistFixture() {
@@ -163,6 +186,54 @@ function currentFolder() {
 </loop>
 <p>Selected {selected}</p>
 <p>Prop {currentFolder()}</p>`);
+    return root;
+}
+async function createLoopValueBindingFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-loop-value-binding-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-loop-value-binding-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+let options = ['alpha', 'beta'];
+</script>
+<loop :for="option of options">
+  <input :value="option" />
+</loop>`);
+    return root;
+}
+async function createValueEventFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-value-event-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-value-event-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+let selected = 'alpha';
+function choose(next) { selected = next; }
+</script>
+<input :value="selected" @input="choose($event.target.value)" />
+<p>Selected {selected}</p>`);
+    return root;
+}
+async function createCheckedBindingFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-checked-binding-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-checked-binding-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+let accepted = false;
+function accept() { accepted = true; }
+</script>
+<input type="checkbox" :checked="accepted" @change="accept()" />
+<p>Accepted {accepted}</p>`);
     return root;
 }
 async function createMultiEventLoopFixture() {
@@ -376,7 +447,11 @@ async function createCompanionScriptFixture() {
     }
 }
 `);
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.css'), `.clicker { border: 2px solid tomato; font-weight: 700; }`);
+    await writeFile(path.join(root, 'components', 'clicker', 'tac.css'), `.clicker {
+    /* \`display: grid\` and \${theme} are author text, not JavaScript. */
+    border: 2px solid tomato;
+    font-weight: 700;
+}`);
     await writeFile(path.join(root, 'routes', 'tac.html'), `<clicker label="Companion" />`);
     return root;
 }
@@ -614,6 +689,16 @@ timedTest('tac.bundle prerenders dynamic routes into Windows-safe dist paths', {
     expect(emailEntries).toEqual(['_id']);
     expect(folderEntries).toEqual(['_name']);
 });
+timedTest('static prerender preserves literal dollar replacement tokens in template text', { timeout: 20000 }, async () => {
+    const cwd = await createLiteralReplacementTokenFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const document = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
+    expect(document).toContain('Session field `$` and local field `$$` remain literal.');
+    expect(document.match(/<!DOCTYPE html>/g)).toHaveLength(1);
+});
 timedTest('tac.bundle leaves the previous dist intact when a full build fails', { timeout: 20000 }, async () => {
     const cwd = await createFailingBundleWithExistingDistFixture();
     const proc = Bun.spawn(['bun', bundleEntrypoint], {
@@ -762,6 +847,53 @@ timedTest('bare loop variables are block scoped and do not overwrite template sc
     const updated = await render();
     expect(updated).toContain('Selected sent');
     expect(updated).toContain('Prop inbox');
+});
+timedTest('loop values can be used by value bindings without escaping their lexical scope', { timeout: 20000 }, async () => {
+    const cwd = await createLoopValueBindingFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?loop-value=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    expect(initial).toContain('value="alpha"');
+    expect(initial).toContain('value="beta"');
+});
+timedTest('value-bound handlers retain DOM-style target access on synthetic updates', { timeout: 20000 }, async () => {
+    const cwd = await createValueEventFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?value-event=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    const inputId = initial.match(/<input[^>]* id="([^"]+)"/)?.[1];
+    expect(inputId).toBeDefined();
+    const windowInstance = new Window();
+    const input = windowInstance.document.createElement('input');
+    input.value = 'beta';
+    await render(inputId, createValueEventDetail(input, new windowInstance.Event('input')));
+    expect(await render()).toContain('Selected beta');
+    await windowInstance.happyDOM.close();
+});
+timedTest('checked bindings retain checkbox state across reactive rerenders', { timeout: 20000 }, async () => {
+    const cwd = await createCheckedBindingFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?checked=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    const inputId = initial.match(/<input[^>]* id="([^"]+)"/)?.[1];
+    expect(inputId).toBeDefined();
+    expect(initial).not.toMatch(/<input[^>]* checked/);
+    await render(inputId, new Event('change'));
+    const updated = await render();
+    expect(updated).toMatch(/<input[^>]* checked/);
+    expect(updated).toContain('Accepted true');
 });
 timedTest('multiple event handlers on one loop element keep handler counters aligned', { timeout: 20000 }, async () => {
     const cwd = await createMultiEventLoopFixture();
@@ -1021,7 +1153,9 @@ timedTest('component companion scripts in JavaScript or TypeScript and scoped cs
     expect(initial).toContain('Companion: 0');
     expect(initial).toContain('data-tac-scope="clicker"');
     expect(initial).toContain('@scope ([data-tac-scope="clicker"])');
-    expect(initial).toContain('.clicker { border: 2px solid tomato; font-weight: 700; }');
+    expect(initial).toContain('`display: grid` and ${theme} are author text, not JavaScript.');
+    expect(initial).toContain('border: 2px solid tomato;');
+    expect(initial).toContain('font-weight: 700;');
     expect(buttonId).toBeDefined();
     const updated = await render(buttonId);
     expect(updated).toContain('Clicked: 1');
@@ -1152,7 +1286,7 @@ timedTest('spa prehydration skips malformed persisted fields without blocking va
     const prehydrateModulePath = path.join(root, 'prehydrate.js');
     await writeFile(prehydrateModulePath, runtimeSource
         .slice(0, prehydrateEnd)
-        .replace("import { cleanBooleanAttrs, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';\n", ''));
+        .replace("import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';\n", ''));
     const windowInstance = new Window();
     /** @type {Record<string, unknown>} */
     const previousGlobals = {
