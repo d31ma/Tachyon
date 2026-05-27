@@ -11,10 +11,12 @@ const statusResponses: Record<string, Record<string, unknown>> = {
   '302': { code: '302', location: '/redirect' },
 }
 
-export async function handler(request: YonRequest) {
-  const raw = request.query?.code
-  const code = typeof raw === 'number' ? String(Math.floor(raw)) : typeof raw === 'string' ? raw : ''
-  if (code && statusResponses[code])
-    return statusResponses[code]
-  return service.describe(request)
+export class Handler {
+  static async GET(request: YonRequest) {
+    const raw = request.query?.code
+    const code = typeof raw === 'number' ? String(Math.floor(raw)) : typeof raw === 'string' ? raw : ''
+    if (code && statusResponses[code])
+      return statusResponses[code]
+    return service.describe(request)
+  }
 }

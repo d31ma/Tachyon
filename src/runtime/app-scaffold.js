@@ -101,8 +101,10 @@ document.documentElement.setAttribute('data-theme', 'light')
 `,
     'browser/shared/assets/.gitkeep': ``,
     'browser/shared/data/.gitkeep': ``,
-    'server/routes/GET/yon.js': `export async function handler() {
-  return { ok: true, framework: 'Tachyon' }
+    'server/routes/yon.js': `export class Handler {
+  static async GET() {
+    return { ok: true, framework: 'Tachyon' }
+  }
 }
 `,
     'db/schemas/.gitkeep': ``,

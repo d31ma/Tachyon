@@ -120,6 +120,89 @@ test('rejects traversal-shaped collection names before tailing FYLO event files'
     expect(response.body.error).toBe('invalid collection query parameter');
 });
 
+test('filters collection documents using PostgREST eq operator', async () => {
+    await fyloRequest('POST', '/_fylo/people/', { name: 'Alice', role: 'admin' });
+    await fyloRequest('POST', '/_fylo/people/', { name: 'Bob', role: 'viewer' });
+    await fyloRequest('POST', '/_fylo/people/', { name: 'Carol', role: 'admin' });
+
+    const result = await fyloRequest('GET', '/_fylo/people/?role=eq.admin');
+    expect(result.status).toBe(200);
+    expect(result.body.docs.length).toBe(2);
+    const names = result.body.docs.map(/** @param {{ doc: { name: string } }} d */ (d) => d.doc.name).sort();
+    expect(names).toEqual(['Alice', 'Carol']);
+});
+
+test('filters with multiple PostgREST eq conditions (implicit AND)', async () => {
+    await fyloRequest('POST', '/_fylo/staff/', { name: 'Alice', dept: 'eng', level: 'senior' });
+    await fyloRequest('POST', '/_fylo/staff/', { name: 'Bob', dept: 'eng', level: 'junior' });
+    await fyloRequest('POST', '/_fylo/staff/', { name: 'Carol', dept: 'sales', level: 'senior' });
+
+    const result = await fyloRequest('GET', '/_fylo/staff/?dept=eq.eng&level=eq.senior');
+    expect(result.status).toBe(200);
+    expect(result.body.docs.length).toBe(1);
+    expect(/** @type {{ name: string }} */ (result.body.docs[0].doc).name).toBe('Alice');
+});
+
+test('select parameter returns only requested fields', async () => {
+    await fyloRequest('POST', '/_fylo/profiles/', { name: 'Alice', email: 'a@b.com', role: 'admin', age: '30' });
+
+    const result = await fyloRequest('GET', '/_fylo/profiles/?select=name,role');
+    expect(result.status).toBe(200);
+    expect(result.body.docs.length).toBeGreaterThan(0);
+    const doc = /** @type {Record<string, unknown>} */ (result.body.docs[0].doc);
+    expect(doc.name).toBe('Alice');
+    expect(doc.role).toBe('admin');
+    expect(doc.email).toBeUndefined();
+    expect(doc.age).toBeUndefined();
+});
+
+test('order parameter sorts results', async () => {
+    await fyloRequest('POST', '/_fylo/scores/', { player: 'Alice', score: '30' });
+    await fyloRequest('POST', '/_fylo/scores/', { player: 'Bob', score: '10' });
+    await fyloRequest('POST', '/_fylo/scores/', { player: 'Carol', score: '20' });
+
+    const asc = await fyloRequest('GET', '/_fylo/scores/?order=score.asc');
+    expect(asc.status).toBe(200);
+    const ascScores = asc.body.docs.map(/** @param {{ doc: { score: string } }} d */ (d) => d.doc.score);
+    expect(ascScores).toEqual(['10', '20', '30']);
+
+    const desc = await fyloRequest('GET', '/_fylo/scores/?order=score.desc');
+    expect(desc.status).toBe(200);
+    const descScores = desc.body.docs.map(/** @param {{ doc: { score: string } }} d */ (d) => d.doc.score);
+    expect(descScores).toEqual(['30', '20', '10']);
+});
+
+test('offset and limit paginate results', async () => {
+    for (let i = 1; i <= 5; i++) {
+        await fyloRequest('POST', '/_fylo/pages/', { seq: String(i) });
+    }
+
+    const page1 = await fyloRequest('GET', '/_fylo/pages/?limit=2&offset=0');
+    expect(page1.status).toBe(200);
+    expect(page1.body.docs.length).toBe(2);
+
+    const page2 = await fyloRequest('GET', '/_fylo/pages/?limit=2&offset=2');
+    expect(page2.status).toBe(200);
+    expect(page2.body.docs.length).toBe(2);
+
+    const page1Ids = new Set(page1.body.docs.map(/** @param {{ id: string }} d */ (d) => d.id));
+    const page2Ids = new Set(page2.body.docs.map(/** @param {{ id: string }} d */ (d) => d.id));
+    // Pages must not overlap
+    for (const id of page2Ids) {
+        expect(page1Ids.has(id)).toBe(false);
+    }
+});
+
+test('bare values without PostgREST operator are ignored as filters', async () => {
+    await fyloRequest('POST', '/_fylo/tags/', { label: 'important' });
+
+    // "important" is not a valid PostgREST filter (missing operator.value format)
+    const result = await fyloRequest('GET', '/_fylo/tags/?label=important');
+    expect(result.status).toBe(200);
+    // All docs returned because the bare value is not parsed as a filter
+    expect(result.body.docs.length).toBe(1);
+});
+
 test('malformed encoded REST collection paths fall through as not found', async () => {
     const response = await fyloRequest('GET', '/_fylo/%E0%A4%A/');
 

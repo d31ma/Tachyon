@@ -2,6 +2,7 @@
 
 /**
  * @typedef {{ title: string, summary: string }} ShowcasePayload
+ * @typedef {{ key: string, size: number, preview: string }} StorageEntry
  */
 
 export default class extends Tac {
@@ -9,10 +10,41 @@ export default class extends Tac {
     showcase = null
     /** @type {boolean} */
     loading = true
+    /** @type {StorageEntry[]} */
+    storageEntries = []
+    /** @type {number} */
+    totalStorageBytes = 0
+    /** @type {number} */
+    sessionCount = 0
 
     /** @returns {string} */
     loadingState() {
         return this.loading ? 'loading' : 'live'
+    }
+
+    get storageSummary() {
+        if (this.totalStorageBytes < 1024) return `${this.totalStorageBytes} B`
+        return `${(this.totalStorageBytes / 1024).toFixed(1)} KB`
+    }
+
+    /** @returns {void} */
+    scanStorage() {
+        /** @type {StorageEntry[]} */
+        const entries = []
+        let total = 0
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i)
+            if (!key) continue
+            const value = localStorage.getItem(key) ?? ''
+            const size = new Blob([value]).size
+            total += size
+            const preview = value.length > 60 ? value.slice(0, 60) + '…' : value
+            entries.push({ key, size, preview })
+        }
+        entries.sort((a, b) => b.size - a.size)
+        this.storageEntries = entries
+        this.totalStorageBytes = total
+        this.sessionCount = sessionStorage.length
     }
 
     @onMount
@@ -26,6 +58,7 @@ export default class extends Tac {
         } finally {
             this.loading = false
         }
+        this.scanStorage()
     }
 
     @onMount

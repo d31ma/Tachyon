@@ -16,16 +16,19 @@ export default class Validate {
     static chexSchemas = new Map();
 
     /**
-     * Derives the HTTP method from the parent directory of a handler file path.
-     * Route handlers live at `<route>/<METHOD>/yon.<ext>`, so the method
-     * directory is the last segment after dropping the `yon.<ext>` filename.
-     * @param {string[]} parts - The filesystem path split on `/`. Mutated:
-     *   the trailing `yon.<ext>` and the method directory are popped off.
-     * @returns {string | undefined}
+     * Derives the route directory from a handler file path by stripping the
+     * trailing `yon.<ext>` filename. The remaining path segments form the
+     * route directory that maps to the registered route pattern.
+     * @param {string} handlerPath - Normalized absolute handler file path
+     * @returns {string} The relative route pattern (e.g. `/languages/javascript`)
      */
-    static methodFromHandlerPath(parts) {
-        parts.pop();
-        return parts.pop()?.toUpperCase();
+    static routeFromHandlerPath(handlerPath) {
+        const normalized = handlerPath.replaceAll('\\', '/');
+        const normalizedRoutesPath = Router.routesPath.replaceAll('\\', '/');
+        const parts = normalized.split('/');
+        parts.pop(); // strip yon.<ext>
+        const absoluteDir = parts.join('/');
+        return Router.filesystemPathToRoute(absoluteDir.replace(normalizedRoutesPath, '') || '/');
     }
 
     /**
@@ -97,16 +100,12 @@ export default class Validate {
 
     /**
      * @param {string} handler
+     * @param {string} method - The HTTP method (GET, POST, etc.)
      * @param {string} body
      * @returns {Promise<number | null>}
      */
-    static async matchStatusCode(handler, body) {
-        const normalizedHandler = handler.replaceAll('\\', '/');
-        const normalizedRoutesPath = Router.routesPath.replaceAll('\\', '/');
-        const parts = normalizedHandler.split('/');
-        const method = Validate.methodFromHandlerPath(parts);
-        const absoluteDir = parts.join('/');
-        const relativeRoute = Router.filesystemPathToRoute(absoluteDir.replace(normalizedRoutesPath, '') || '/');
+    static async matchStatusCode(handler, method, body) {
+        const relativeRoute = Validate.routeFromHandlerPath(handler);
         const schema = Router.routeConfigs[relativeRoute];
         if (!schema || !method)
             return null;
@@ -145,17 +144,13 @@ export default class Validate {
     }
 
     /**
-     * @param {string} route
+     * @param {string} handler - Absolute handler file path
+     * @param {string} method - The HTTP method (GET, POST, etc.)
      * @param {string} io
      * @param {unknown} payload
      */
-    static async validateData(route, io, payload) {
-        const normalizedRoute = route.replaceAll('\\', '/');
-        const normalizedRoutesPath = Router.routesPath.replaceAll('\\', '/');
-        const parts = normalizedRoute.split('/');
-        const method = Validate.methodFromHandlerPath(parts);
-        const absoluteDir = parts.join('/');
-        const relativeRoute = Router.filesystemPathToRoute(absoluteDir.replace(normalizedRoutesPath, '') || '/');
+    static async validateData(handler, method, io, payload) {
+        const relativeRoute = Validate.routeFromHandlerPath(handler);
         const schema = Router.routeConfigs[relativeRoute];
         if (!schema || !method) {
             throw new Error(`No validation schema found for route '${relativeRoute}'`);
@@ -168,7 +163,7 @@ export default class Validate {
                 const validationTarget = io === 'req' && methodSchema?.request
                     ? Validate.declaredRequestSections(target, ioSchema)
                     : target;
-                await Validate.validateWithChex(validationTarget, ioSchema, route, relativeRoute, method, io);
+                await Validate.validateWithChex(validationTarget, ioSchema, handler, relativeRoute, method, io);
             } else if (io === 'req' && (target.body !== undefined || target.query !== undefined)) {
                 throw new Error(
                     `Request data present but no 'request' schema defined for '${method} ${relativeRoute}'`

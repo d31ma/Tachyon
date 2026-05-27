@@ -1,17 +1,21 @@
 // @ts-check
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import path from 'path';
 
 /**
- * @typedef {'javascript' | 'typescript' | 'python' | 'ruby' | 'php' | 'dart' | 'go' | 'java' | 'csharp' | 'rust'} YonHandlerLanguage
+ * @typedef {'javascript' | 'typescript' | 'python' | 'ruby' | 'php' | 'dart' | 'java' | 'csharp'} YonHandlerLanguage
  *
  * @typedef {object} HandlerAdapterMatch
  * @property {YonHandlerLanguage} language
  * @property {string[]} command
+ * @property {Set<string>} methods
  *
  */
 
 const ADAPTER_DIR = path.join(import.meta.dir, 'adapters');
+
+/** HTTP methods that map to static method names on the Handler class. */
+const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']);
 
 /**
  * @param {string} commandPath
@@ -30,10 +34,8 @@ export default class HandlerAdapter {
         'ruby',
         'php',
         'dart',
-        'go',
         'java',
         'csharp',
-        'rust',
     ]);
 
     /**
@@ -50,11 +52,15 @@ export default class HandlerAdapter {
             return null;
         }
         const language = HandlerAdapter.detectLanguage(handler, shebangTokens, source);
-        if (!language || !HandlerAdapter.hasHandlerConvention(source, language))
+        if (!language || !HandlerAdapter.hasHandlerClass(source, language))
+            return null;
+        const methods = HandlerAdapter.detectMethods(source, language);
+        if (methods.size === 0)
             return null;
         return {
             language,
             command: HandlerAdapter.commandFor(language, handler),
+            methods,
         };
     }
 
@@ -76,6 +82,7 @@ export default class HandlerAdapter {
         if (language === 'php') {
             return [HandlerAdapter.phpExecutable(), path.join(ADAPTER_DIR, 'yon-php-runner.php'), handler];
         }
+        // Java, C#, Dart — compiled languages
         return [process.execPath, path.join(ADAPTER_DIR, 'yon-compiled-runner.js'), language, handler];
     }
 
@@ -87,7 +94,7 @@ export default class HandlerAdapter {
         const candidate = localAppData
             ? path.join(localAppData, 'Microsoft', 'WinGet', 'Packages', 'PHP.PHP.8.4_Microsoft.Winget.Source_8wekyb3d8bbwe', 'php.exe')
             : '';
-        return candidate && existsSync(candidate) ? candidate : 'php';
+        return candidate && readFileSync.length && candidate ? candidate : 'php';
     }
 
     /**
@@ -110,14 +117,10 @@ export default class HandlerAdapter {
             return 'php';
         if (extension === '.dart')
             return 'dart';
-        if (extension === '.go')
-            return 'go';
         if (extension === '.java')
             return 'java';
         if (extension === '.cs')
             return 'csharp';
-        if (extension === '.rs')
-            return 'rust';
 
         const command = basename(shebangTokens[0] ?? '');
         if (['bun', 'node', 'deno'].includes(command))
@@ -132,14 +135,10 @@ export default class HandlerAdapter {
             return 'php';
         if (command === 'dart')
             return 'dart';
-        if (command === 'go')
-            return 'go';
         if (command === 'java')
             return 'java';
         if (command === 'dotnet' || command === 'csharp')
             return 'csharp';
-        if (command === 'rustc' || command === 'cargo')
-            return 'rust';
         return null;
     }
 
@@ -153,42 +152,85 @@ export default class HandlerAdapter {
     }
 
     /**
+     * Checks whether the source follows the `class Handler` convention.
+     * Each supported language must define a class named `Handler` with at
+     * least one static method whose name matches an HTTP verb.
      * @param {string} source
      * @param {YonHandlerLanguage} language
      * @returns {boolean}
      */
     static hasHandlerConvention(source, language) {
+        if (!HandlerAdapter.hasHandlerClass(source, language))
+            return false;
+        return HandlerAdapter.detectMethods(source, language).size > 0;
+    }
+
+    /**
+     * Checks whether the source declares a `Handler` class.
+     * @param {string} source
+     * @param {YonHandlerLanguage} language
+     * @returns {boolean}
+     */
+    static hasHandlerClass(source, language) {
         if (language === 'javascript' || language === 'typescript') {
-            return /\bexport\s+(?:async\s+)?function\s+handler\b/.test(source)
-                || /\bexport\s+(?:const|let|var)\s+handler\b/.test(source)
-                || /\bexport\s+default\s+(?:async\s+)?function\b/.test(source)
-                || /\bexport\s+default\s+class\b/.test(source)
-                || /\bhandler\s*\(/.test(source);
+            return /\bexport\s+class\s+Handler\b/.test(source)
+                || /\bclass\s+Handler\b/.test(source);
+        }
+        // Python, Ruby, PHP, Dart, Java, C# all use `class Handler`
+        return /\bclass\s+Handler\b/.test(source);
+    }
+
+    /**
+     * Scans source for HTTP method names implemented as static methods on
+     * the `Handler` class. Returns the set of methods found.
+     * @param {string} source
+     * @param {YonHandlerLanguage} language
+     * @returns {Set<string>}
+     */
+    static detectMethods(source, language) {
+        /** @type {Set<string>} */
+        const methods = new Set();
+        for (const method of HTTP_METHODS) {
+            if (HandlerAdapter.hasMethod(source, language, method))
+                methods.add(method);
+        }
+        return methods;
+    }
+
+    /**
+     * @param {string} source
+     * @param {YonHandlerLanguage} language
+     * @param {string} method
+     * @returns {boolean}
+     */
+    static hasMethod(source, language, method) {
+        if (language === 'javascript' || language === 'typescript') {
+            // static GET(request), static async GET(request), or static async *GET() (generator)
+            return new RegExp(`\\bstatic\\s+(?:async\\s+)?(?:\\*\\s*)?${method}\\s*\\(`).test(source);
         }
         if (language === 'python') {
-            return /^\s*(?:async\s+)?def\s+handler\s*\(/m.test(source)
-                || /^\s*class\s+[A-Z][A-Z0-9_]*\b/m.test(source);
+            // @staticmethod\n    def GET(request) or def GET(request) inside class
+            return new RegExp(`\\bdef\\s+${method}\\s*\\(`).test(source);
         }
         if (language === 'ruby') {
-            return /^\s*def\s+handler\s*\(/m.test(source)
-                || /^\s*class\s+[A-Z][A-Z0-9_]*\b/m.test(source);
+            // def self.GET(request)
+            return new RegExp(`\\bdef\\s+self\\.${method}\\b`).test(source);
         }
         if (language === 'php') {
-            return /\bfunction\s+handler\s*\(/.test(source)
-                || /\bclass\s+[A-Z][A-Z0-9_]*\b/.test(source);
+            // public static function GET($request)
+            return new RegExp(`\\bstatic\\s+function\\s+${method}\\s*\\(`).test(source);
         }
         if (language === 'dart') {
-            return /\b(?:Future<[^>]+>\s+|Future\s+|dynamic\s+|Object\??\s+|Map<[^>]+>\s+)?handler\s*\(/.test(source)
-                || /\bclass\s+[A-Z][A-Z0-9_]*\b/.test(source);
+            // static dynamic GET(Map<String, dynamic> request) or static Future<...> GET(...)
+            return new RegExp(`\\bstatic\\s+[\\w<>,?\\s]+\\s+${method}\\s*\\(`).test(source);
         }
-        if (language === 'go') {
-            return /\bfunc\s+Handler\s*\(/.test(source);
+        if (language === 'java') {
+            // public static Object GET(Map<String, Object> request)
+            return new RegExp(`\\bstatic\\s+[\\w<>,?\\[\\]\\s]+\\s+${method}\\s*\\(`).test(source);
         }
-        if (language === 'java' || language === 'csharp') {
-            return /\bHandler\s*\(/.test(source) || /\bhandler\s*\(/.test(source);
-        }
-        if (language === 'rust') {
-            return /\bfn\s+handler\s*\(/.test(source);
+        if (language === 'csharp') {
+            // public static Dictionary<string, object?> GET(JsonElement request)
+            return new RegExp(`\\bstatic\\s+[\\w<>,?\\[\\]\\s]+\\s+${method}\\s*\\(`).test(source);
         }
         return false;
     }

@@ -48,6 +48,12 @@ export default class extends Tac {
     window.dispatchEvent(new CustomEvent('tachyon:refresh'))
   }
 
+  /** @param {string} id */
+  scrollToSection(id) {
+    const el = document.getElementById(id)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   @onMount
   bindThemeListener() {
     window.addEventListener('tachyon:toggle-theme', () => { this.toggleTheme() })

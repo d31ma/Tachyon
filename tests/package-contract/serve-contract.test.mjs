@@ -17,13 +17,15 @@ test('yon.serve handles API requests with request ids and JSON bodies', { timeou
   const app = await createTachyonApp()
   apps.push(app)
 
-  await app.writeFile('server/routes/api/POST/yon.js', [
-    'export function handler(input) {',
-    '  return {',
-    '    ok: true,',
-    '    body: input.body,',
-    '    requestId: input.context.requestId,',
-    '    query: input.query,',
+  await app.writeFile('server/routes/api/yon.js', [
+    'export class Handler {',
+    '  static POST(input) {',
+    '    return {',
+    '      ok: true,',
+    '      body: input.body,',
+    '      requestId: input.context.requestId,',
+    '      query: input.query,',
+    '    }',
     '  }',
     '}',
   ].join('\n'))

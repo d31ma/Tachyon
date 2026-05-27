@@ -1,8 +1,8 @@
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-public class Yon {
-    public static Object handler(Map<String, Object> request) {
+public class Handler {
+    public static Object POST(Map<String, Object> request) {
         Map<String, Map<String, Object>> responses = new LinkedHashMap<>();
         responses.put("416", response("416", "range not satisfiable"));
         responses.put("417", response("417", "expectation failed"));

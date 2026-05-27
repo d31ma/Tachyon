@@ -16,19 +16,8 @@ type DocEntry = {
     doc: Record<string, unknown>;
 };
 
-type HistoryEntry = {
-    id: string;
-    data: Record<string, unknown>;
-    createdAt?: number;
-    updatedAt?: number;
-    isHead?: boolean;
-    deleted?: boolean;
-};
-
 type QueryResult = {
-    kind?: string;
     docs?: DocEntry[];
-    result?: unknown;
     error?: string;
 };
 
@@ -58,19 +47,13 @@ export default class FyloBrowser extends Tac {
     selectedDocId = null;
     /** @type {Record<string, unknown> | null} */
     detailDoc = null;
-    /** @type {HistoryEntry[]} */
-    detailHistory = [];
     /** @type {string | null} */
     detailError = null;
-    /** @type {string | null} */
-    historyError = null;
     /** @type {string[] | undefined} */
     encryptedFields = undefined;
     /** @type {boolean | undefined} */
     revealed = undefined;
 
-    /** @type {"sql" | "find"} */
-    queryMode = "sql";
     querySource = "";
     /** @type {QueryResult | null} */
     queryResult = null;
@@ -132,9 +115,7 @@ export default class FyloBrowser extends Tac {
         this.documents = [];
         this.documentsError = null;
         this.detailDoc = null;
-        this.detailHistory = [];
         this.detailError = null;
-        this.historyError = null;
         this.encryptedFields = undefined;
 
         try {
@@ -155,9 +136,7 @@ export default class FyloBrowser extends Tac {
         this.selectedDocId = id;
         this.detailLoading = true;
         this.detailDoc = null;
-        this.detailHistory = [];
         this.detailError = null;
-        this.historyError = null;
         this.encryptedFields = undefined;
 
         try {
@@ -168,8 +147,6 @@ export default class FyloBrowser extends Tac {
                 return;
             }
             this.detailDoc = documentResponse.doc;
-            this.detailHistory = documentResponse.history || [];
-            this.historyError = documentResponse.historyError || null;
             this.encryptedFields = documentResponse.encryptedFields;
             this.revealed = documentResponse.revealed;
         } catch (error) {
@@ -179,43 +156,27 @@ export default class FyloBrowser extends Tac {
         }
     }
 
-    toggleQueryMode(): void {
-        this.queryMode = this.queryMode === "sql" ? "find" : "sql";
-        if (this.queryMode === "sql") {
-            this.querySource = "SELECT * FROM otel-spans";
-        } else {
-            this.querySource = JSON.stringify({ collection: "otel-spans", query: { $ops: [] } }, null, 2);
-        }
-    }
-
     async runQuery(): Promise<void> {
+        if (!this.selectedCollection) {
+            this.queryError = "Select a collection first";
+            return;
+        }
         this.queryLoading = true;
         this.queryResult = null;
         this.queryError = null;
 
         try {
-            /** @type {Record<string, unknown>} */
-            let queryResponse;
-            if (this.queryMode === "sql") {
-                queryResponse = await fylo.sql(this.querySource);
-            } else {
-                /** @type {{ collection?: string, query?: Record<string, unknown> }} */
-                let parsed;
-                try {
-                    parsed = JSON.parse(this.querySource);
-                } catch (error) {
-                    this.queryError = `Invalid JSON: ${error instanceof Error ? error.message : String(error)}`;
-                    this.queryLoading = false;
-                    return;
+            // Parse PostgREST-style query params from the source text.
+            // e.g. "role=eq.admin&age=gt.18&select=name,role&order=name.asc"
+            const params: Record<string, unknown> = {};
+            if (this.querySource.trim()) {
+                for (const pair of this.querySource.trim().split("&")) {
+                    const eqIndex = pair.indexOf("=");
+                    if (eqIndex === -1) continue;
+                    params[decodeURIComponent(pair.slice(0, eqIndex))] = decodeURIComponent(pair.slice(eqIndex + 1));
                 }
-                const collection = (parsed.collection ?? "").toString();
-                if (!collection) {
-                    this.queryError = "collection is required for find queries";
-                    this.queryLoading = false;
-                    return;
-                }
-                queryResponse = await fylo[collection].find(parsed.query ?? {});
             }
+            const queryResponse = await fylo[this.selectedCollection].find(params);
             if (queryResponse.error) {
                 this.queryError = queryResponse.error;
                 return;
@@ -341,9 +302,6 @@ export default class FyloBrowser extends Tac {
 
         const rootLabelText = this.rootLabel ?? "loading…";
         const collectionLabelText = this.selectedCollection ?? "—";
-        const queryModeLabel = this.queryMode === "sql" ? "SQL" : "findDocs";
-        const queryToggleLabel = this.queryMode === "sql" ? "Switch to findDocs" : "Switch to SQL";
-        const queryFieldLabel = this.queryMode === "sql" ? "SQL statement" : "JSON request — { collection, query }";
 
         return `<div class="fylo-shell">
     <div class="fylo-hero">
@@ -423,27 +381,6 @@ export default class FyloBrowser extends Tac {
                 ${!this.detailDoc || Object.keys(this.detailDoc).length === 0
                     ? `<p class="muted md-typescale-body-medium">No document body returned (may be tombstoned in WORM mode).</p>`
                     : `<pre>${JSON.stringify(this.detailDoc, null, 2)}</pre>`}
-
-                <h3 class="fylo-detail-heading">Version history</h3>
-                ${this.historyError
-                    ? `<p class="muted md-typescale-body-medium">History unavailable: ${this.historyError}</p>`
-                    : this.detailHistory.length === 0
-                        ? `<p class="muted md-typescale-body-medium">No version history (collection is not WORM, or single retained version).</p>`
-                        : `<ol class="fylo-history">
-                            ${this.detailHistory.map((entry) => `
-                            <li class="fylo-history-entry">
-                                <div class="fylo-history-head">
-                                    <code>${entry.id}</code>
-                                    ${entry.isHead ? `<span class="pill pill-accent">HEAD</span>` : ""}
-                                    ${entry.deleted ? `<span class="pill pill-danger">deleted</span>` : ""}
-                                </div>
-                                <div class="fylo-history-meta">
-                                    created ${typeof entry.createdAt === "number" ? this.formatTs(entry.createdAt) : String(entry.createdAt ?? "")} ·
-                                    updated ${typeof entry.updatedAt === "number" ? this.formatTs(entry.updatedAt) : String(entry.updatedAt ?? "")}
-                                </div>
-                                <pre>${JSON.stringify(entry.data, null, 2)}</pre>
-                            </li>`).join("")}
-                        </ol>`}
             ` : ""}
         </div>
     </div>
@@ -451,18 +388,19 @@ export default class FyloBrowser extends Tac {
     <div class="fylo-panel">
         <div class="fylo-panel-header">
             <h2 class="md-typescale-title-large">Query</h2>
-            <span class="chip">${queryModeLabel}</span>
+            <span class="chip">${this.selectedCollection ?? "no collection"}</span>
         </div>
+        <p class="muted md-typescale-body-medium">PostgREST-style filters on the selected collection. e.g. <code>role=eq.admin&amp;age=gt.18&amp;order=name.asc</code></p>
         <div class="fylo-query">
-            <textarea
+            <input
                 class="field-control"
-                rows="5"
-                aria-label="${queryFieldLabel}"
-                placeholder="${queryFieldLabel}"
+                type="text"
+                aria-label="PostgREST query"
+                placeholder="role=eq.admin&amp;order=name.asc"
                 @input="querySource = event.target.value"
-            >${this.querySource || (this.queryMode === "sql" ? "SELECT * FROM otel-spans" : `{ "collection": "otel-spans", "query": { "$ops": [] } }`)}</textarea>
+                value="${this.querySource}"
+            />
             <div class="fylo-query-actions">
-                <button type="button" class="button button-text" @click="toggleQueryMode">${queryToggleLabel}</button>
                 <button type="button" class="button button-primary" @click="runQuery">Run</button>
             </div>
         </div>
@@ -473,7 +411,7 @@ export default class FyloBrowser extends Tac {
                 ? `<div class="fylo-error">${this.queryError}</div>`
                 : this.queryResult
                     ? this.renderQueryResult(this.queryResult)
-                    : `<p class="muted md-typescale-body-medium">Run a SQL statement or findDocs query.</p>`}
+                    : `<p class="muted md-typescale-body-medium">Select a collection and run a query.</p>`}
         </div>
     </div>
 
@@ -503,7 +441,7 @@ export default class FyloBrowser extends Tac {
     }
 
     renderQueryResult(queryResult: QueryResult): string {
-        if (queryResult.kind === "find" && Array.isArray(queryResult.docs)) {
+        if (Array.isArray(queryResult.docs)) {
             if (!queryResult.docs.length) {
                 return `<p class="muted md-typescale-body-medium">Query returned no documents.</p>`;
             }
@@ -517,9 +455,6 @@ export default class FyloBrowser extends Tac {
                     </tr>`).join("")}
                 </tbody>
             </table>`;
-        }
-        if (queryResult.kind === "sql") {
-            return `<pre>${JSON.stringify(queryResult.result, null, 2)}</pre>`;
         }
         return `<pre>${JSON.stringify(queryResult, null, 2)}</pre>`;
     }

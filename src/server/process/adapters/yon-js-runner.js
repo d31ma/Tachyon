@@ -5,25 +5,23 @@ class YonJsRunner {
     static RESPONSE_END = '\x1eTACHYON_RESPONSE\x1f';
 
     /**
-     * @param {unknown} exported
-     * @returns {(request: unknown) => unknown | Promise<unknown>}
+     * Resolves the Handler class from a module's exports.
+     * Looks for a named `Handler` export first, then checks the default export.
+     * @param {unknown} module
+     * @returns {{ new?(): unknown } & Record<string, unknown>}
      */
-    static resolveHandler(exported) {
-        if (typeof exported === 'function') {
-            if (/^class\s/.test(Function.prototype.toString.call(exported))) {
-                const HandlerClass = /** @type {new () => { handler?: unknown }} */ (exported);
-                const instance = new HandlerClass();
-                if (typeof instance.handler !== 'function')
-                    throw new Error('Default class export must define handler(request)');
-                return instance.handler.bind(instance);
-            }
-            return /** @type {(request: unknown) => unknown | Promise<unknown>} */ (exported);
+    static resolveHandlerClass(module) {
+        const mod = /** @type {Record<string, unknown>} */ (module);
+        // Named export: export class Handler { ... }
+        if (mod.Handler && typeof mod.Handler === 'function')
+            return /** @type {any} */ (mod.Handler);
+        // Default export: export default class Handler { ... }
+        if (mod.default && typeof mod.default === 'function') {
+            const defaultExport = /** @type {any} */ (mod.default);
+            if (/^class\s/.test(Function.prototype.toString.call(defaultExport)))
+                return defaultExport;
         }
-        const record = /** @type {{ handler?: unknown } | null} */ (exported && typeof exported === 'object' ? exported : null);
-        if (record && typeof record.handler === 'function') {
-            return record.handler.bind(record);
-        }
-        throw new Error('Route module must export handler(request), a default function, or a default class with handler(request)');
+        throw new Error('Route module must export a class named Handler with static HTTP method handlers');
     }
 
     /**
@@ -131,11 +129,15 @@ class YonJsRunner {
             throw new Error('Missing handler path');
         YonJsRunner.installConsoleSideband();
         const request = await Bun.stdin.json();
+        const method = request?.method;
+        if (!method)
+            throw new Error('Missing HTTP method in request payload');
         const module = await import(`${handlerPath}?t=${Date.now()}`);
-        const handler = module.handler
-            ? YonJsRunner.resolveHandler(module)
-            : YonJsRunner.resolveHandler(module.default);
-        const result = await handler(request);
+        const Handler = YonJsRunner.resolveHandlerClass(module);
+        const dispatch = /** @type {Function | undefined} */ (Handler[method]);
+        if (typeof dispatch !== 'function')
+            throw new Error(`Handler class does not implement static ${method}()`);
+        const result = await dispatch(request);
         if (request?.headers?.accept === 'text/event-stream') {
             if (YonJsRunner.isReadableStream(result)) {
                 await YonJsRunner.writeReadableStream(result);

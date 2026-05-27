@@ -1,13 +1,13 @@
-<div class="surface">
-    <div class="surface-head">
-        <h2 class="md-typescale-title-large">Polyglot routes</h2>
+<div class="min-w-0 max-w-full h-full bg-surface-container text-on-surface border border-outline-variant p-6 flex flex-col gap-4 shadow-sm">
+    <div class="flex items-center justify-between gap-4 min-w-0 flex-wrap">
+        <h2 class="m-0 text-xl font-bold">Polyglot routes</h2>
         <md-assist-chip :label="loadingState()"></md-assist-chip>
     </div>
-    <p class="md-typescale-body-medium muted">These responses are coming from different handler languages under the same routed app.</p>
+    <p class="text-on-surface-variant text-sm m-0">These responses are coming from different handler languages under the same routed app.</p>
     <logic :if="versioned">
-        <div class="callout">
-            <strong class="md-typescale-title-medium">{versioned.message}</strong>
-            <p class="md-typescale-body-small">Route version: {versioned.version}</p>
+        <div class="p-4 bg-primary-container border border-outline-variant grid gap-1.5">
+            <strong class="text-base font-bold text-on-primary-container">{versioned.message}</strong>
+            <p class="text-sm text-on-surface-variant m-0">Route version: {versioned.version}</p>
         </div>
     </logic>
     <md-list>

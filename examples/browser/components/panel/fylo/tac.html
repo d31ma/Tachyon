@@ -1,42 +1,42 @@
-<div class="surface panel-wide">
-    <div class="surface-head">
-        <h2 class="md-typescale-title-large">Fylo Browser</h2>
+<div class="col-span-full min-w-0 max-w-full h-full bg-surface-container text-on-surface border border-outline-variant p-6 flex flex-col gap-4 shadow-sm">
+    <div class="flex items-center justify-between gap-4 min-w-0 flex-wrap">
+        <h2 class="m-0 text-xl font-bold">Fylo Browser</h2>
         <md-assist-chip :label="loadingState()"></md-assist-chip>
     </div>
-    <p class="md-typescale-body-medium muted">Native database browser for any collection stored by `@d31ma/fylo`. Enable with `YON_DATA_BROWSER_ENABLED=true` and visit /_fylo.</p>
+    <p class="text-on-surface-variant text-sm m-0">Native database browser for any collection stored by `@d31ma/fylo`. Enable with `YON_DATA_BROWSER_ENABLED=true` and visit /_fylo.</p>
     <logic :if="info && info.enabled">
-        <div class="stats-inline">
-            <div class="mini-stat">
-                <span>Collections</span>
-                <strong>{info.collections.length}</strong>
+        <div class="grid grid-cols-3 gap-4">
+            <div class="p-4 bg-surface-container-high border border-outline-variant grid gap-1.5">
+                <span class="text-on-surface-variant text-[0.72rem] font-semibold uppercase tracking-wide">Collections</span>
+                <strong class="text-on-surface text-xl">{info.collections.length}</strong>
             </div>
-            <div class="mini-stat">
-                <span>Documents</span>
-                <strong>{docsTotal()}</strong>
+            <div class="p-4 bg-surface-container-high border border-outline-variant grid gap-1.5">
+                <span class="text-on-surface-variant text-[0.72rem] font-semibold uppercase tracking-wide">Documents</span>
+                <strong class="text-on-surface text-xl">{docsTotal()}</strong>
             </div>
-            <div class="mini-stat">
-                <span>Root</span>
-                <strong>{info.root}</strong>
+            <div class="p-4 bg-surface-container-high border border-outline-variant grid gap-1.5">
+                <span class="text-on-surface-variant text-[0.72rem] font-semibold uppercase tracking-wide">Root</span>
+                <strong class="text-on-surface text-xl">{info.root}</strong>
             </div>
         </div>
         <md-list>
             <loop :for="const collection of info.collections">
                 <md-list-item>
-                    <div class="list-item-text">
+                    <div class="grid gap-1">
                         <strong>{collection.name}</strong>
-                        <span>{collection.docsStored || 0} docs - {collection.worm ? 'WORM' : 'mutable'}</span>
+                        <span class="text-on-surface-variant text-sm">{collection.docsStored || 0} docs - {collection.worm ? 'WORM' : 'mutable'}</span>
                     </div>
                 </md-list-item>
             </loop>
         </md-list>
-        <div class="surface-actions">
+        <div class="flex items-center gap-3 flex-wrap">
             <md-filled-button href="/_fylo">Open Fylo Browser</md-filled-button>
         </div>
     </logic>
     <logic :if="info && !info.enabled">
-        <p class="md-typescale-body-medium muted">The data browser is not enabled. Set `YON_DATA_BROWSER_ENABLED=true` and restart to mount it at /_fylo.</p>
+        <p class="text-on-surface-variant text-sm m-0">The data browser is not enabled. Set `YON_DATA_BROWSER_ENABLED=true` and restart to mount it at /_fylo.</p>
     </logic>
     <logic :if="!info">
-        <p class="md-typescale-body-medium muted">Checking whether the Fylo Browser is mounted...</p>
+        <p class="text-on-surface-variant text-sm m-0">Checking whether the Fylo Browser is mounted...</p>
     </logic>
 </div>

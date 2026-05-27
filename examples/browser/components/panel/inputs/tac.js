@@ -32,6 +32,12 @@ export default class extends Tac {
     $subscribed = false
     /** @type {string} */
     $plan = 'starter'
+    /** @type {boolean} */
+    $dragOver = false
+    /** @type {string} */
+    $fileName = ''
+    /** @type {string} */
+    $fileSize = ''
     /** @type {InputValues} */
     fields = {
         search: '',
@@ -114,10 +120,65 @@ export default class extends Tac {
         this.record('radio', value)
     }
 
+    /** @param {number} bytes @returns {string} */
+    formatSize(bytes) {
+        if (bytes < 1024) return `${bytes} B`
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    }
+
     /** @param {FileList | null} files @returns {void} */
     recordFiles(files) {
         const count = files?.length ?? 0
-        this.record('file', count === 1 ? files?.[0]?.name : `${count} files`)
+        this.$dragOver = false
+        if (count === 1) {
+            this.$fileName = files?.[0]?.name ?? ''
+            this.$fileSize = this.formatSize(files?.[0]?.size ?? 0)
+            this.record('file', files?.[0]?.name)
+        } else if (count > 1) {
+            this.$fileName = `${count} files selected`
+            this.$fileSize = this.formatSize(Array.from(files ?? []).reduce((s, f) => s + f.size, 0))
+            this.record('file', `${count} files`)
+        } else {
+            this.$fileName = ''
+            this.$fileSize = ''
+            this.record('file', '(none)')
+        }
+    }
+
+    /** @param {DragEvent} event @returns {void} */
+    onDragOver(event) {
+        event.preventDefault()
+        this.$dragOver = true
+    }
+
+    /** @returns {void} */
+    onDragLeave() {
+        this.$dragOver = false
+    }
+
+    /** @param {DragEvent} event @returns {void} */
+    onDrop(event) {
+        event.preventDefault()
+        this.recordFiles(event.dataTransfer?.files ?? null)
+    }
+
+    /** @returns {void} */
+    triggerFilePicker() {
+        /** @type {HTMLInputElement | null} */
+        const input = this.$el?.querySelector?.('input[type="file"]') ?? null
+        input?.click()
+    }
+
+    /** @returns {void} */
+    clearFile() {
+        this.$fileName = ''
+        this.$fileSize = ''
+        this.$dragOver = false
+        /** @type {HTMLInputElement | null} */
+        const input = this.$el?.querySelector?.('input[type="file"]') ?? null
+        if (input) input.value = ''
+        this.record('file', 'cleared')
     }
 
     /**

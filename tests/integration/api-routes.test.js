@@ -149,9 +149,10 @@ async function createBackendOnlyApp(prefix) {
             },
         },
     }, null, 2));
-    await mkdir(path.join(routeDir, 'GET'), { recursive: true });
-    await Bun.write(path.join(routeDir, 'GET', 'yon.js'), `export async function handler() {
-  return { message: 'ok' }
+    await Bun.write(path.join(routeDir, 'yon.js'), `export class Handler {
+  static async GET() {
+    return { message: 'ok' }
+  }
 }
 `);
     return root;
@@ -682,25 +683,18 @@ describe('Polyglot root route adapters', () => {
         expect(res.status).toEqual(200);
         expect(await res.json()).toHaveProperty('message', 'Hello from Dart!');
     });
-    timedTest('PATCH /languages/rust executes the Rust adapter route', { timeout: 15000 }, async () => {
-        const res = await authFetch('/languages/rust', { method: 'PATCH' });
-        expect(res.status).toEqual(200);
-        expect(await res.json()).toHaveProperty('message', 'Hello from Rust!');
-    });
     test('examples/server/routes covers every supported Yon language', async () => {
         const HandlerAdapter = (await import('../../src/server/process/handler-adapter.js')).default;
         const Pool = (await import('../../src/server/process/process-pool.js')).default;
         const languageRoutes = new Map([
-            ['javascript', `${EXAMPLES_DIR}/server/routes/languages/javascript/GET/yon.js`],
-            ['typescript', `${EXAMPLES_DIR}/server/routes/languages/typescript/GET/yon.ts`],
-            ['python', `${EXAMPLES_DIR}/server/routes/languages/python/GET/yon.py`],
-            ['ruby', `${EXAMPLES_DIR}/server/routes/languages/ruby/GET/yon.rb`],
-            ['php', `${EXAMPLES_DIR}/server/routes/languages/php/GET/yon.php`],
-            ['dart', `${EXAMPLES_DIR}/server/routes/languages/dart/DELETE/yon.dart`],
-            ['go', `${EXAMPLES_DIR}/server/routes/languages/go/GET/yon.go`],
-            ['java', `${EXAMPLES_DIR}/server/routes/languages/java/POST/yon.java`],
-            ['csharp', `${EXAMPLES_DIR}/server/routes/languages/csharp/GET/yon.cs`],
-            ['rust', `${EXAMPLES_DIR}/server/routes/languages/rust/PATCH/yon.rs`],
+            ['javascript', `${EXAMPLES_DIR}/server/routes/languages/javascript/yon.js`],
+            ['typescript', `${EXAMPLES_DIR}/server/routes/languages/typescript/yon.ts`],
+            ['python', `${EXAMPLES_DIR}/server/routes/languages/python/yon.py`],
+            ['ruby', `${EXAMPLES_DIR}/server/routes/languages/ruby/yon.rb`],
+            ['php', `${EXAMPLES_DIR}/server/routes/languages/php/yon.php`],
+            ['dart', `${EXAMPLES_DIR}/server/routes/languages/dart/yon.dart`],
+            ['java', `${EXAMPLES_DIR}/server/routes/languages/java/yon.java`],
+            ['csharp', `${EXAMPLES_DIR}/server/routes/languages/csharp/yon.cs`],
         ]);
         for (const language of HandlerAdapter.supportedLanguages) {
             const handler = languageRoutes.get(language);
@@ -725,9 +719,10 @@ describe('Polyglot root route adapters', () => {
 describe('FYLO machine-interface demo route', () => {
     const machineOperations = [
         'executeSQL', 'createCollection', 'dropCollection', 'inspectCollection', 'rebuildCollection',
-        'getDoc', 'getLatest', 'getHistory', 'findDocs', 'joinDocs', 'putData', 'batchPutData',
-        'patchDoc', 'patchDocs', 'delDoc', 'delDocs', 'importBulkData', 'schemaInspect',
-        'schemaCurrent', 'schemaHistory', 'schemaDoctor', 'schemaValidate', 'schemaMaterialize',
+        'getDoc', 'getLatest', 'findDocs', 'findDeletedDocs', 'restoreDoc', 'joinDocs', 'putData',
+        'batchPutData', 'patchDoc', 'patchDocs', 'delDoc', 'delDocs', 'importBulkData',
+        'schemaInspect', 'schemaCurrent', 'schemaHistory', 'schemaDoctor', 'schemaValidate',
+        'schemaMaterialize',
     ];
     timedTest('POST /languages/javascript/fylo drives the full FYLO machine-interface suite', { timeout: 60000 }, async () => {
         const res = await authFetch('/languages/javascript/fylo', { method: 'POST' });
@@ -870,7 +865,7 @@ describe('Telemetry and browser env', () => {
         expect(spans.length).toBeGreaterThanOrEqual(2);
 
         const requestSpan = spans.find((entry) => getAttribute(entry.span, 'http.route') === '/languages/javascript');
-        const handlerSpan = spans.find((entry) => normalizeTelemetryPath(getAttribute(entry.span, 'code.file.path')).includes('/examples/server/routes/languages/javascript/GET/yon.js'));
+        const handlerSpan = spans.find((entry) => normalizeTelemetryPath(getAttribute(entry.span, 'code.file.path')).includes('/examples/server/routes/languages/javascript/yon.js'));
 
         expect(requestSpan).toBeDefined();
         expect(handlerSpan).toBeDefined();
@@ -890,7 +885,7 @@ describe('Telemetry and browser env', () => {
         expect(handlerSpan?.span.traceId).toBe(traceId);
         expect(handlerSpan?.span.parentSpanId).toBe(requestSpan?.span.spanId);
         expect(normalizeTelemetryPath(getAttribute(handlerSpan?.span ?? {}, 'code.file.path'))).toContain(
-            '/examples/server/routes/languages/javascript/GET/yon.js'
+            '/examples/server/routes/languages/javascript/yon.js'
         );
     });
 
@@ -1164,15 +1159,15 @@ describe('Request headers forwarding', () => {
 describe('Route validation', () => {
     test('route starting with slug segment throws', async () => {
         const Router = (await import('../../src/server/http/route-handler.js')).default;
-        expect(Router.validateRoute(':id/GET/yon.js')).rejects.toThrow('cannot start with a slug');
+        expect(Router.validateRoute(':id/yon.js')).rejects.toThrow('cannot start with a slug');
     });
     test('consecutive slug segments throw', async () => {
         const Router = (await import('../../src/server/http/route-handler.js')).default;
-        expect(Router.validateRoute('api/:id/:name/GET/yon.js')).rejects.toThrow('consecutive slug segments');
+        expect(Router.validateRoute('api/:id/:name/yon.js')).rejects.toThrow('consecutive slug segments');
     });
-    test('valid route does not throw', async () => {
+    test('valid segment path does not throw', async () => {
         const Router = (await import('../../src/server/http/route-handler.js')).default;
-        await expect(Router.validateRoute('users/:id/GET/yon.js')).resolves.toBeUndefined();
+        expect(() => Router.validateSegmentPath('users/:id/route-terminal', 'route-terminal')).not.toThrow();
     });
 });
 // ===========================================================================
@@ -1322,8 +1317,8 @@ describe('Validate.matchStatusCode', () => {
     test('returns matching status code when body fits schema', async () => {
         const { Router, Validate } = await setup();
         Router.routeConfigs['/languages/typescript/items'] = { POST: { '201': { id: '^.+$', name: '^.+$' } } };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST/yon.ts`;
-        expect(await Validate.matchStatusCode(handler, JSON.stringify({ id: 'abc', name: 'widget' }))).toBe(201);
+        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/yon.ts`;
+        expect(await Validate.matchStatusCode(handler, 'POST', JSON.stringify({ id: 'abc', name: 'widget' }))).toBe(201);
     });
     test('returns first schema match in ascending order', async () => {
         const { Router, Validate } = await setup();
@@ -1333,33 +1328,33 @@ describe('Validate.matchStatusCode', () => {
                 '201': { id: '^.+$' },
             }
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST/yon.ts`;
+        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/yon.ts`;
         // body matches 200 schema first
-        expect(await Validate.matchStatusCode(handler, JSON.stringify({ message: 'ok' }))).toBe(200);
+        expect(await Validate.matchStatusCode(handler, 'POST', JSON.stringify({ message: 'ok' }))).toBe(200);
     });
     test('returns null when no numeric schemas are defined', async () => {
         const { Router, Validate } = await setup();
         Router.routeConfigs['/response-only'] = { GET: { response: { '200': { message: '^.+$' } } } };
-        const handler = `${FAKE_ROUTES_PATH}/response-only/GET/yon.js`;
-        expect(await Validate.matchStatusCode(handler, JSON.stringify({ message: 'ok' }))).toBeNull();
+        const handler = `${FAKE_ROUTES_PATH}/response-only/yon.js`;
+        expect(await Validate.matchStatusCode(handler, 'GET', JSON.stringify({ message: 'ok' }))).toBeNull();
     });
     test('returns null when no schema matches', async () => {
         const { Router, Validate } = await setup();
         Router.routeConfigs['/strict'] = { POST: { '201': { id: '^.+$' } } };
-        const handler = `${FAKE_ROUTES_PATH}/strict/POST/yon.js`;
+        const handler = `${FAKE_ROUTES_PATH}/strict/yon.js`;
         // body has wrong shape — no match
-        expect(await Validate.matchStatusCode(handler, JSON.stringify({ message: 'hello' }))).toBeNull();
+        expect(await Validate.matchStatusCode(handler, 'POST', JSON.stringify({ message: 'hello' }))).toBeNull();
     });
     test('returns null for non-JSON body', async () => {
         const { Router, Validate } = await setup();
         Router.routeConfigs['/text'] = { GET: { '200': { message: '^.+$' } } };
-        const handler = `${FAKE_ROUTES_PATH}/text/GET/yon.js`;
-        expect(await Validate.matchStatusCode(handler, 'plain text')).toBeNull();
+        const handler = `${FAKE_ROUTES_PATH}/text/yon.js`;
+        expect(await Validate.matchStatusCode(handler, 'GET', 'plain text')).toBeNull();
     });
     test('returns null when route config is missing', async () => {
         const { Validate } = await setup();
-        const handler = `${FAKE_ROUTES_PATH}/nonexistent/GET/yon.js`;
-        expect(await Validate.matchStatusCode(handler, JSON.stringify({ message: 'ok' }))).toBeNull();
+        const handler = `${FAKE_ROUTES_PATH}/nonexistent/yon.js`;
+        expect(await Validate.matchStatusCode(handler, 'GET', JSON.stringify({ message: 'ok' }))).toBeNull();
     });
     test('validates OPTIONS request body schemas with CHEX regex patterns', async () => {
         const { Router, Validate } = await setup();
@@ -1374,12 +1369,12 @@ describe('Validate.matchStatusCode', () => {
                 '201': { ok: '^(?:true|false)$' },
             },
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST/yon.ts`;
-        await expect(Validate.validateData(handler, 'req', {
+        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/yon.ts`;
+        await expect(Validate.validateData(handler, 'POST', 'req', {
             headers: { accept: 'application/json' },
             body: { name: 'widget-box', count: 2 },
         })).resolves.toBeUndefined();
-        await expect(Validate.validateData(handler, 'req', {
+        await expect(Validate.validateData(handler, 'POST', 'req', {
             headers: { accept: 'application/json' },
             body: { name: 'Widget Box', count: 2 },
         })).rejects.toThrow('RegEx pattern fails');
@@ -1402,8 +1397,8 @@ describe('Validate.matchStatusCode', () => {
                 '201': { ok: '^(?:true|false)$' },
             },
         };
-        const handler = `${FAKE_ROUTES_PATH}/orders/POST/yon.ts`;
-        await expect(Validate.validateData(handler, 'req', {
+        const handler = `${FAKE_ROUTES_PATH}/orders/yon.ts`;
+        await expect(Validate.validateData(handler, 'POST', 'req', {
             body: {
                 orderId: 'ORD-100',
                 items: [
@@ -1412,7 +1407,7 @@ describe('Validate.matchStatusCode', () => {
                 ],
             },
         })).resolves.toBeUndefined();
-        await expect(Validate.validateData(handler, 'req', {
+        await expect(Validate.validateData(handler, 'POST', 'req', {
             body: {
                 orderId: 'ORD-100',
                 items: [{ sku: 'sku-1', quantity: 2 }],
@@ -1431,16 +1426,16 @@ describe('Validate.matchStatusCode', () => {
                 },
             },
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/GET/yon.ts`;
-        await expect(Validate.validateData(handler, '200', JSON.stringify({
+        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/yon.ts`;
+        await expect(Validate.validateData(handler, 'GET', '200', JSON.stringify({
             id: 'one',
             count: 1,
         }))).resolves.toBeUndefined();
-        await expect(Validate.validateData(handler, '200', JSON.stringify({
+        await expect(Validate.validateData(handler, 'GET', '200', JSON.stringify({
             id: 'one',
             count: '1',
         }))).resolves.toBeUndefined();
-        await expect(Validate.validateData(handler, '200', JSON.stringify({
+        await expect(Validate.validateData(handler, 'GET', '200', JSON.stringify({
             id: 'one',
             count: 'one',
         }))).rejects.toThrow('RegEx pattern fails');
@@ -1456,8 +1451,8 @@ describe('Validate.matchStatusCode', () => {
                 },
             },
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/POST/yon.ts`;
-        await expect(Validate.validateData(handler, 'req', {
+        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/yon.ts`;
+        await expect(Validate.validateData(handler, 'POST', 'req', {
             body: { count: 2 },
         })).rejects.toThrow('RegEx pattern fails');
     });
@@ -1708,12 +1703,9 @@ describe('Status code endpoint', () => {
         ['GET', 'python', 308], ['GET', 'python', 400],
         ['GET', 'ruby', 401], ['GET', 'ruby', 402], ['GET', 'ruby', 403], ['GET', 'ruby', 404], ['GET', 'ruby', 405],
         ['GET', 'php', 406], ['GET', 'php', 407], ['GET', 'php', 408], ['GET', 'php', 409], ['GET', 'php', 410],
-        ['GET', 'go', 411], ['GET', 'go', 412], ['GET', 'go', 413], ['GET', 'go', 414], ['GET', 'go', 415],
         ['POST', 'java', 416], ['POST', 'java', 417], ['POST', 'java', 418], ['POST', 'java', 421], ['POST', 'java', 422],
         ['GET', 'csharp', 423], ['GET', 'csharp', 424], ['GET', 'csharp', 425], ['GET', 'csharp', 426], ['GET', 'csharp', 428],
         ['DELETE', 'dart', 429], ['DELETE', 'dart', 431], ['DELETE', 'dart', 451], ['DELETE', 'dart', 500], ['DELETE', 'dart', 501],
-        ['PATCH', 'rust', 502], ['PATCH', 'rust', 503], ['PATCH', 'rust', 504], ['PATCH', 'rust', 505], ['PATCH', 'rust', 506],
-        ['PATCH', 'rust', 507], ['PATCH', 'rust', 508], ['PATCH', 'rust', 510], ['PATCH', 'rust', 511],
     ];
 
     // Per-language runtime dependency. Skip cases whose runtime is missing
@@ -1726,11 +1718,9 @@ describe('Status code endpoint', () => {
         python: 'python3',
         ruby: 'ruby',
         php: 'php',
-        go: 'go',
         java: 'javac',
         csharp: 'dotnet',
         dart: 'dart',
-        rust: 'rustc',
     };
 
     timedTest('returns requested status codes across Yon language adapters', { timeout: 60000 }, async () => {

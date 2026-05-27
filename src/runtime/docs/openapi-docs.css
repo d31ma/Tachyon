@@ -1,41 +1,39 @@
-/* Material Design 2 inspired color tokens (light + dark via [data-theme]).
-   Mirrors the example homepage and /_fylo so /api-docs matches any Tachyon
-   app that adopts the M2 palette. */
+/* Material Design 3 tokens aligned with the Tachyon showcase palette.
+   IBM Plex Sans, sharp corners, teal/green primary. */
 :root,
 [data-theme="light"] {
     color-scheme: light;
-    --md-sys-color-primary: #3f51b5;
+    --md-ref-typeface-plain: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --md-sys-color-primary: #1f6f8b;
     --md-sys-color-on-primary: #ffffff;
-    --md-sys-color-primary-container: #e8eaf6;
-    --md-sys-color-on-primary-container: #1a237e;
-    --md-sys-color-secondary: #00796b;
+    --md-sys-color-primary-container: #d7edf4;
+    --md-sys-color-on-primary-container: #073544;
+    --md-sys-color-secondary: #2f8a5b;
     --md-sys-color-on-secondary: #ffffff;
-    --md-sys-color-secondary-container: #e0f2f1;
-    --md-sys-color-on-secondary-container: #004d40;
-    --md-sys-color-tertiary: #455a64;
+    --md-sys-color-secondary-container: #e6ece9;
+    --md-sys-color-on-secondary-container: #273733;
+    --md-sys-color-tertiary: #6f5b3e;
     --md-sys-color-on-tertiary: #ffffff;
-    --md-sys-color-tertiary-container: #eceff1;
-    --md-sys-color-on-tertiary-container: #263238;
-    --md-sys-color-error: #c62828;
+    --md-sys-color-tertiary-container: #f4e4c7;
+    --md-sys-color-on-tertiary-container: #493116;
+    --md-sys-color-error: #b3261e;
     --md-sys-color-on-error: #ffffff;
-    --md-sys-color-error-container: #ffebee;
-    --md-sys-color-on-error-container: #b71c1c;
-    --md-sys-color-background: #fafafa;
-    --md-sys-color-on-background: #212121;
+    --md-sys-color-error-container: #f9dedc;
+    --md-sys-color-on-error-container: #410e0b;
+    --md-sys-color-background: #f8faf9;
+    --md-sys-color-on-background: #182125;
     --md-sys-color-surface: #ffffff;
-    --md-sys-color-on-surface: #212121;
-    --md-sys-color-surface-variant: #eeeeee;
-    --md-sys-color-on-surface-variant: #616161;
-    --md-sys-color-outline: #9e9e9e;
-    --md-sys-color-outline-variant: #e0e0e0;
+    --md-sys-color-on-surface: #182125;
+    --md-sys-color-surface-variant: #edf3f1;
+    --md-sys-color-on-surface-variant: #526066;
+    --md-sys-color-outline: #7b878c;
+    --md-sys-color-outline-variant: #d8e0de;
     --md-sys-color-surface-container-lowest: #ffffff;
-    --md-sys-color-surface-container-low: #ffffff;
-    --md-sys-color-surface-container: #ffffff;
-    --md-sys-color-surface-container-high: #f5f5f5;
-    --md-sys-color-surface-container-highest: #eeeeee;
+    --md-sys-color-surface-container-low: #f3f7f5;
+    --md-sys-color-surface-container: #edf3f1;
+    --md-sys-color-surface-container-high: #e5ece9;
+    --md-sys-color-surface-container-highest: #d8e0de;
 
-    /* Legacy --swagger-* tokens remapped to M2 - preserves the existing
-       class structure so the docs JS doesn't need to be rewritten. */
     --swagger-green: var(--md-sys-color-primary);
     --swagger-blue: #1976d2;
     --swagger-amber: #f9a825;
@@ -43,7 +41,7 @@
     --swagger-purple: var(--md-sys-color-tertiary);
     --swagger-slate: var(--md-sys-color-on-surface);
     --swagger-line: var(--md-sys-color-outline-variant);
-    --swagger-panel: var(--md-sys-color-surface-container);
+    --swagger-panel: var(--md-sys-color-surface);
     --swagger-panel-soft: var(--md-sys-color-surface-container-low);
     --swagger-shell: var(--md-sys-color-background);
     --swagger-hero: var(--md-sys-color-primary-container);
@@ -51,38 +49,39 @@
     --swagger-muted: var(--md-sys-color-on-surface-variant);
     --swagger-code: var(--md-sys-color-surface-container-highest);
     --swagger-code-text: var(--md-sys-color-on-surface);
-    --swagger-shadow: 0 2px 1px -1px rgba(0, 0, 0, 0.20), 0 1px 1px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.12);
-    --swagger-radius: 6px;
+    --swagger-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 [data-theme="dark"] {
     color-scheme: dark;
-    --md-sys-color-primary: #9fa8da;
-    --md-sys-color-on-primary: #111111;
-    --md-sys-color-primary-container: #303f9f;
-    --md-sys-color-on-primary-container: #e8eaf6;
-    --md-sys-color-secondary-container: #004d40;
-    --md-sys-color-on-secondary-container: #e0f2f1;
-    --md-sys-color-tertiary: #b0bec5;
-    --md-sys-color-on-tertiary: #263238;
-    --md-sys-color-tertiary-container: #37474f;
-    --md-sys-color-on-tertiary-container: #eceff1;
-    --md-sys-color-error: #ef9a9a;
-    --md-sys-color-error-container: #5f1717;
-    --md-sys-color-on-error-container: #ffebee;
-    --md-sys-color-background: #121212;
+    --md-sys-color-primary: #83cde3;
+    --md-sys-color-on-primary: #073544;
+    --md-sys-color-primary-container: rgba(131, 205, 227, 0.18);
+    --md-sys-color-on-primary-container: #e8f8fc;
+    --md-sys-color-secondary: #9bc7b1;
+    --md-sys-color-on-secondary: #102b1f;
+    --md-sys-color-secondary-container: #2f3b3a;
+    --md-sys-color-on-secondary-container: #dce7e4;
+    --md-sys-color-tertiary: #d8c08a;
+    --md-sys-color-on-tertiary: #2a2010;
+    --md-sys-color-tertiary-container: #5a4630;
+    --md-sys-color-on-tertiary-container: #ffe2b8;
+    --md-sys-color-error: #f2b8b5;
+    --md-sys-color-error-container: #8c1d18;
+    --md-sys-color-on-error-container: #f9dedc;
+    --md-sys-color-background: #1c2224;
     --md-sys-color-on-background: #eeeeee;
-    --md-sys-color-surface: #1e1e1e;
+    --md-sys-color-surface: #1c2224;
     --md-sys-color-on-surface: #eeeeee;
-    --md-sys-color-surface-variant: #2b2b2b;
-    --md-sys-color-on-surface-variant: #c7c7c7;
-    --md-sys-color-outline: #8d8d8d;
-    --md-sys-color-outline-variant: #3a3a3a;
-    --md-sys-color-surface-container-lowest: #0f0f0f;
-    --md-sys-color-surface-container-low: #181818;
-    --md-sys-color-surface-container: #1e1e1e;
-    --md-sys-color-surface-container-high: #242424;
-    --md-sys-color-surface-container-highest: #303030;
+    --md-sys-color-surface-variant: #222a2d;
+    --md-sys-color-on-surface-variant: rgba(255, 255, 255, 0.7);
+    --md-sys-color-outline: #66747a;
+    --md-sys-color-outline-variant: #313b3e;
+    --md-sys-color-surface-container-lowest: #161c1e;
+    --md-sys-color-surface-container-low: #161c1e;
+    --md-sys-color-surface-container: #222a2d;
+    --md-sys-color-surface-container-high: #2a3437;
+    --md-sys-color-surface-container-highest: #313b3e;
 }
 
 * {
@@ -99,10 +98,11 @@ body {
   overflow-x: clip;
   background: var(--md-sys-color-background);
   color: var(--md-sys-color-on-background);
-  font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-family: var(--md-ref-typeface-plain);
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button,
@@ -126,7 +126,7 @@ a:hover {
 }
 
 .hero {
-  padding: 32px 24px 24px;
+  padding: 40px 32px 32px;
   background: var(--md-sys-color-primary-container);
   color: var(--md-sys-color-on-primary-container);
   border-top: 4px solid var(--md-sys-color-primary);
@@ -137,10 +137,10 @@ a:hover {
 }
 
 .eyebrow {
-  margin: 0 0 6px;
-  font-size: 11px;
+  margin: 0 0 8px;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--md-sys-color-on-primary-container);
   opacity: 0.78;
@@ -157,7 +157,7 @@ a:hover {
 
 .lede {
   max-width: 72rem;
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   color: var(--md-sys-color-on-primary-container);
   opacity: 0.85;
 }
@@ -173,6 +173,10 @@ a:hover {
   flex-wrap: wrap;
 }
 
+.hero-actions {
+  margin-top: 20px;
+}
+
 .button,
 .badge {
   display: inline-flex;
@@ -180,18 +184,17 @@ a:hover {
   justify-content: center;
   gap: 6px;
   border: 1px solid transparent;
-  border-radius: 16px;
-  padding: 8px 14px;
+  border-radius: 0;
+  padding: 8px 16px;
   text-decoration: none;
   font-size: 13px;
-  font-weight: 560;
+  font-weight: 520;
   letter-spacing: 0.005em;
   line-height: 1.25;
 }
 
 .button {
   cursor: pointer;
-  border-radius: 4px;
 }
 
 .button-primary {
@@ -222,8 +225,8 @@ a:hover {
 .toolbar,
 .summary-grid,
 .content-grid {
-  width: min(1480px, calc(100% - 32px));
-  margin: 18px auto 0;
+  width: min(1480px, calc(100% - 48px));
+  margin: 24px auto 0;
 }
 
 .toolbar {
@@ -241,11 +244,10 @@ a:hover {
   background: var(--swagger-panel);
   border: 1px solid var(--swagger-line);
   box-shadow: var(--swagger-shadow);
-  border-radius: var(--swagger-radius);
 }
 
 .toolbar-panel {
-  padding: 16px;
+  padding: 20px;
 }
 
 .toolbar-grid {
@@ -258,10 +260,13 @@ a:hover {
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 1px;
+  background: var(--md-sys-color-outline-variant);
+  border: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .summary-card {
-  padding: 18px;
+  padding: 20px;
 }
 
 .summary-card strong {
@@ -275,22 +280,23 @@ a:hover {
 .summary-label,
 .label {
   display: block;
-  font-size: 11px;
-  font-weight: 620;
-  letter-spacing: 0.015em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--swagger-muted);
 }
 
 .content-grid {
   display: grid;
   grid-template-columns: minmax(min(100%, 260px), 320px) minmax(0, 1fr);
-  gap: 18px;
+  gap: 20px;
   align-items: start;
   min-width: 0;
 }
 
 .panel {
-  padding: 18px;
+  padding: 20px;
 }
 
 .panel h2 {
@@ -299,21 +305,32 @@ a:hover {
   color: var(--swagger-slate);
 }
 
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  margin-bottom: 16px;
+}
+
 .muted {
   color: var(--swagger-muted);
 }
 
 .route-nav {
-  margin-top: 14px;
+  margin-top: 16px;
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .nav-group h3 {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: 0.72rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0;
+  letter-spacing: 0.06em;
   color: var(--swagger-muted);
 }
 
@@ -330,7 +347,6 @@ a:hover {
   padding: 10px 12px;
   text-decoration: none;
   border: 1px solid var(--swagger-line);
-  border-radius: 4px;
   background: var(--md-sys-color-surface);
 }
 
@@ -345,7 +361,7 @@ a:hover {
 }
 
 .route-card {
-  padding: 18px;
+  padding: 20px;
 }
 
 .route-header,
@@ -369,6 +385,8 @@ a:hover {
   background: var(--md-sys-color-secondary-container);
   border-color: transparent;
   color: var(--md-sys-color-on-secondary-container);
+  font-size: 12px;
+  padding: 4px 12px;
 }
 
 .badge-success {
@@ -389,7 +407,6 @@ a:hover {
   justify-content: center;
   min-width: 72px;
   padding: 6px 12px;
-  border-radius: 16px;
   color: white;
   font-size: 11.5px;
   font-weight: 680;
@@ -411,7 +428,6 @@ a:hover {
   padding: 6px 10px;
   background: var(--md-sys-color-surface-container-high);
   border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 16px;
   color: var(--md-sys-color-on-surface-variant);
   font-size: 12.5px;
   font-weight: 500;
@@ -433,7 +449,7 @@ a:hover {
   background: transparent;
   color: inherit;
   text-align: left;
-  padding: 16px 18px;
+  padding: 16px 20px;
   cursor: pointer;
 }
 
@@ -442,7 +458,7 @@ a:hover {
 }
 
 .operation-path {
-  font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 13px;
   color: var(--swagger-slate);
   overflow-wrap: anywhere;
@@ -458,7 +474,7 @@ a:hover {
 }
 
 .operation-body {
-  padding: 0 18px 18px;
+  padding: 0 20px 20px;
   border-top: 1px solid var(--md-sys-color-outline-variant);
   background: var(--md-sys-color-surface-container-low);
 }
@@ -476,7 +492,7 @@ a:hover {
 }
 
 .try-out-shell {
-  margin: 18px 0 0;
+  margin: 20px 0 0;
   padding: 0;
   border: 0;
   min-width: 0;
@@ -487,7 +503,7 @@ a:hover {
 }
 
 .operation-section {
-  margin-top: 18px;
+  margin-top: 20px;
   display: grid;
   gap: 12px;
 }
@@ -532,7 +548,6 @@ select,
 textarea {
   width: 100%;
   padding: 11px 12px;
-  border-radius: 4px;
   border: 1px solid var(--md-sys-color-outline);
   background: var(--md-sys-color-surface);
   color: var(--md-sys-color-on-surface);
@@ -541,7 +556,7 @@ textarea {
 textarea {
   min-height: 220px;
   resize: vertical;
-  font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   line-height: 1.5;
 }
 
@@ -555,7 +570,6 @@ textarea:focus {
 
 .schema-panel {
   border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 4px;
   overflow: hidden;
   background: var(--md-sys-color-surface);
 }
@@ -579,7 +593,7 @@ textarea:focus {
 
 pre {
   margin: 0;
-  padding: 14px;
+  padding: 16px;
   overflow-x: clip;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -593,7 +607,7 @@ pre {
 code,
 pre,
 samp {
-  font-family: Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 .auth-grid {
@@ -603,12 +617,19 @@ samp {
 }
 
 .auth-card {
-  padding: 14px;
+  padding: 16px;
 }
 
 .live-response {
   display: grid;
   gap: 12px;
+}
+
+.sidebar .panel {
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
 }
 
 @media (max-width: 1080px) {
@@ -618,6 +639,11 @@ samp {
 
   .toolbar-grid {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar .panel {
+    position: static;
+    max-height: none;
   }
 }
 
@@ -630,8 +656,7 @@ samp {
   }
 
   .hero {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding: 24px 16px;
   }
 
   .hero h1 {

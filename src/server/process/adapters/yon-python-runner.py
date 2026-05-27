@@ -4,7 +4,6 @@ import importlib.util
 import importlib.machinery
 import inspect
 import json
-import os
 import sys
 
 
@@ -20,26 +19,22 @@ class YonPythonRunner:
         return module
 
     @staticmethod
-    def route_class_name(handler_path):
-        base = os.path.basename(handler_path).split(".", 1)[0]
-        return base[:1].upper() + base[1:] if base else "Yon"
+    def resolve_handler_class(module):
+        handler_class = getattr(module, "Handler", None)
+        if handler_class is None or not isinstance(handler_class, type):
+            raise RuntimeError("Python route must define a class named Handler")
+        return handler_class
 
     @staticmethod
-    def resolve_handler(module, handler_path):
-        handler = getattr(module, "handler", None)
-        if callable(handler):
-            return handler
-        handler_class = getattr(module, YonPythonRunner.route_class_name(handler_path), None)
-        if handler_class is not None:
-            instance = handler_class()
-            method = getattr(instance, "handler", None)
-            if callable(method):
-                return method
-        raise RuntimeError("Python route must define handler(request) or a method-named class with handler(request)")
+    def resolve_method(handler_class, method):
+        fn = getattr(handler_class, method, None)
+        if fn is None or not callable(fn):
+            raise RuntimeError(f"Handler class does not implement {method}()")
+        return fn
 
     @staticmethod
-    async def call(handler, request):
-        result = handler(request)
+    async def call(fn, request):
+        result = fn(request)
         if inspect.isawaitable(result):
             return await result
         return result
@@ -58,9 +53,13 @@ class YonPythonRunner:
         if len(sys.argv) < 2:
             raise RuntimeError("Missing handler path")
         request = json.loads(sys.stdin.read() or "{}")
+        method = request.get("method")
+        if not method:
+            raise RuntimeError("Missing HTTP method in request payload")
         module = YonPythonRunner.load_module(sys.argv[1])
-        handler = YonPythonRunner.resolve_handler(module, sys.argv[1])
-        YonPythonRunner.write(await YonPythonRunner.call(handler, request))
+        handler_class = YonPythonRunner.resolve_handler_class(module)
+        dispatch = YonPythonRunner.resolve_method(handler_class, method)
+        YonPythonRunner.write(await YonPythonRunner.call(dispatch, request))
 
 
 if __name__ == "__main__":

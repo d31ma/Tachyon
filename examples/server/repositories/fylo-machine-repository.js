@@ -101,7 +101,6 @@ export default class FyloMachineRepository {
         });
         await run({ op: 'getDoc', collection, id: firstId });
         await run({ op: 'getLatest', collection, id: firstId });
-        await run({ op: 'getHistory', collection, id: firstId });
         await run({ op: 'findDocs', collection, query: { $ops: [{ requestId: { $eq: requestId } }], $limit: 10 } });
         await run({ op: 'executeSQL', sql: `SELECT * FROM ${collection}` });
         await run({
@@ -140,6 +139,8 @@ export default class FyloMachineRepository {
         await run({ op: 'schemaMaterialize', collection: schemaCollection, schemaDir: this.schemaDir, document: { name: 'schema', source: 'api', tags: ['demo'], price: '1.00', inStock: 'true' } });
         await run({ op: 'rebuildCollection', collection });
         await run({ op: 'delDoc', collection, id: firstId });
+        await run({ op: 'findDeletedDocs', collection, query: { $deleted: { $gte: 0 } } });
+        await run({ op: 'restoreDoc', collection, id: firstId });
         await run({ op: 'delDocs', collection, delete: { $ops: [{ requestId: { $eq: requestId } }] } });
         await run({ op: 'createCollection', collection: disposable });
         await run({ op: 'dropCollection', collection: disposable });
