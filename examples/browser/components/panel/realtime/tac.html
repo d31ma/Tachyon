@@ -1,0 +1,187 @@
+<div class="col-span-full min-w-0 max-w-full h-full bg-surface-container text-on-surface border border-outline-variant p-6 flex flex-col gap-5 shadow-sm" id="realtime">
+    <div class="flex items-center justify-between gap-4 min-w-0 flex-wrap">
+        <div class="grid gap-1.5">
+            <h2 class="m-0 text-xl font-bold">Durable realtime mailbox</h2>
+            <p class="text-on-surface-variant text-sm m-0">Register a client, open a Server-Sent Events stream, and exchange messages delivered through a durable Yon mailbox.</p>
+        </div>
+        <md-assist-chip :label="status"></md-assist-chip>
+    </div>
+
+    <aside class="flex gap-3 p-4 bg-primary-container text-on-primary-container border border-outline-variant text-sm" aria-label="About this example">
+        <svg class="w-5 h-5 shrink-0 mt-0.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+        </svg>
+        <p class="m-0 leading-relaxed">This is <strong>durable Yon realtime delivery</strong> over Server-Sent Events backed by a LocalQueue mailbox &mdash; not a true bidirectional WebSocket. Messages persist to a cursor, so a reconnecting client replays anything it missed.</p>
+    </aside>
+
+    <logic :if="feedback">
+        <div
+            class="p-4 text-sm font-medium border"
+            :class="status === 'error' ? 'bg-error-container text-on-error-container border-error/20' : 'bg-secondary-container text-on-secondary-container border-outline-variant'"
+            role="status"
+            aria-live="polite"
+        >{feedback}</div>
+    </logic>
+
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-5 items-start min-w-0">
+        <div class="grid gap-5 content-start min-w-0">
+            <section class="grid gap-4 p-5 border border-outline-variant bg-surface-container-low content-start" aria-label="Client identity and connection">
+                <h3 class="m-0 text-sm font-bold uppercase tracking-wide text-on-surface-variant">Identity</h3>
+
+                <label class="grid gap-1.5 text-on-surface-variant text-xs font-medium">
+                    <span>Nickname</span>
+                    <div class="flex gap-3 items-center flex-wrap">
+                        <input
+                            class="flex-1 min-w-0 min-h-[40px] border border-outline px-3 py-2 bg-surface-container-lowest text-on-surface outline-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+                            type="text"
+                            aria-label="Client nickname"
+                            placeholder="Your display name"
+                            :value="$nickname"
+                            @input="$nickname = $event.target.value"
+                        />
+                        <md-filled-button @click="register()">Register</md-filled-button>
+                    </div>
+                </label>
+
+                <div class="grid gap-1.5">
+                    <span class="text-on-surface-variant text-xs font-medium">Durable client id</span>
+                    <logic :if="$$clientId">
+                        <code class="px-3 py-2 bg-surface-container-high border border-outline-variant font-mono text-sm break-all select-all" aria-label="Your durable client id">{$$clientId}</code>
+                    </logic>
+                    <logic :if="!$$clientId">
+                        <p class="m-0 text-on-surface-variant text-sm">Not registered yet. Register to receive a durable id that survives reloads.</p>
+                    </logic>
+                </div>
+
+                <div class="grid gap-3">
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <md-filled-button @click="connect()" :disabled="isConnected">Connect stream</md-filled-button>
+                        <md-text-button @click="disconnect()" :disabled="!isConnected">Disconnect</md-text-button>
+                    </div>
+                    <span class="inline-flex items-center gap-2 text-sm text-on-surface-variant min-w-0">
+                        <span
+                            class="rt-dot w-2 h-2 shrink-0"
+                            :class="isConnected ? 'bg-green-600 rt-dot--live' : status === 'error' ? 'bg-error' : 'bg-outline'"
+                            aria-hidden="true"
+                        ></span>
+                        <span class="truncate">{clientLabel}</span>
+                    </span>
+                </div>
+            </section>
+
+            <section class="grid gap-3 p-5 border border-outline-variant bg-surface-container-low content-start" aria-label="Registered clients">
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                    <h3 class="m-0 text-sm font-bold uppercase tracking-wide text-on-surface-variant">Clients</h3>
+                    <md-text-button @click="refreshClients()">Refresh</md-text-button>
+                </div>
+                <logic :if="clients.length > 0">
+                    <ul class="rt-scroll grid gap-2 m-0 p-0 list-none" aria-label="Registered client list">
+                        <loop :for="const client of clients">
+                            <li>
+                                <button
+                                    type="button"
+                                    class="w-full text-left grid gap-0.5 px-3 py-2 border border-outline-variant bg-surface hover:border-primary hover:bg-primary-container/40 cursor-pointer transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+                                    :class="targetClientId === client.clientId ? 'border-primary bg-primary-container/60' : ''"
+                                    @click="targetClientId = client.clientId"
+                                >
+                                    <strong class="text-sm">{client.nickname}</strong>
+                                    <span class="font-mono text-xs text-on-surface-variant break-all">{client.clientId}</span>
+                                </button>
+                            </li>
+                        </loop>
+                    </ul>
+                </logic>
+                <logic :if="clients.length === 0">
+                    <p class="m-0 text-on-surface-variant text-sm">No clients registered yet. Register here, then open this page in another tab to grow the list.</p>
+                </logic>
+            </section>
+        </div>
+
+        <div class="grid gap-5 content-start min-w-0">
+            <section class="grid gap-4 p-5 border border-outline-variant bg-surface-container-low content-start" aria-label="Compose a message">
+                <h3 class="m-0 text-sm font-bold uppercase tracking-wide text-on-surface-variant">Send a message</h3>
+
+                <label class="grid gap-1.5 text-on-surface-variant text-xs font-medium">
+                    <span>Target client</span>
+                    <select
+                        class="w-full min-h-[40px] border border-outline px-3 py-2 bg-surface-container-lowest text-on-surface outline-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+                        aria-label="Select target client"
+                        :value="targetClientId"
+                        @change="targetClientId = $event.target.value"
+                    >
+                        <option value="">Choose a registered client&hellip;</option>
+                        <loop :for="const client of clients">
+                            <option :value="client.clientId">{client.nickname} &mdash; {client.clientId.slice(0, 12)}</option>
+                        </loop>
+                    </select>
+                </label>
+
+                <label class="grid gap-1.5 text-on-surface-variant text-xs font-medium">
+                    <span>&hellip;or paste a client id</span>
+                    <input
+                        class="w-full min-h-[40px] border border-outline px-3 py-2 bg-surface-container-lowest text-on-surface font-mono outline-none focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+                        type="text"
+                        aria-label="Target client id"
+                        placeholder="clt_…"
+                        :value="targetClientId"
+                        @input="targetClientId = $event.target.value"
+                    />
+                </label>
+
+                <label class="grid gap-1.5 text-on-surface-variant text-xs font-medium">
+                    <span>Message</span>
+                    <textarea
+                        class="w-full min-h-[40px] border border-outline px-3 py-2 bg-surface-container-lowest text-on-surface outline-none resize-y focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2"
+                        rows="3"
+                        aria-label="Message text"
+                        placeholder="Write something durable…"
+                        :value="messageText"
+                        @input="messageText = $event.target.value"
+                    ></textarea>
+                </label>
+
+                <div class="flex justify-end">
+                    <md-filled-button @click="send()">Send message</md-filled-button>
+                </div>
+            </section>
+
+            <section class="grid gap-3 p-5 border border-outline-variant bg-surface-container-low content-start" aria-label="Received messages" aria-live="polite">
+                <h3 class="m-0 text-sm font-bold uppercase tracking-wide text-on-surface-variant">Inbox</h3>
+                <logic :if="messages.length > 0">
+                    <ul class="rt-scroll grid gap-2 m-0 p-0 list-none">
+                        <loop :for="const message of messages">
+                            <li class="grid gap-1 px-3 py-2.5 bg-surface border border-outline-variant">
+                                <div class="flex items-center justify-between gap-3 flex-wrap">
+                                    <md-assist-chip :label="message.event"></md-assist-chip>
+                                    <logic :if="message.sentAt">
+                                        <time class="text-on-surface-variant text-xs font-mono" :datetime="message.sentAt">{message.sentAt}</time>
+                                    </logic>
+                                </div>
+                                <p class="m-0 text-sm text-on-surface break-words">{message.text}</p>
+                                <logic :if="message.from">
+                                    <span class="text-on-surface-variant text-xs font-mono break-all">from {message.from}</span>
+                                </logic>
+                            </li>
+                        </loop>
+                    </ul>
+                </logic>
+                <logic :if="messages.length === 0 && isConnected">
+                    <p class="m-0 text-on-surface-variant text-sm">Connected and listening. Incoming messages will appear here the moment they arrive.</p>
+                </logic>
+                <logic :if="messages.length === 0 && !isConnected">
+                    <p class="m-0 text-on-surface-variant text-sm">No messages yet. Connect the stream to start receiving.</p>
+                </logic>
+            </section>
+        </div>
+    </div>
+
+    <details class="border-t border-outline-variant pt-3 text-on-surface-variant">
+        <summary class="min-h-[38px] flex items-center cursor-pointer text-on-surface font-semibold">How durable delivery works</summary>
+        <ul class="mt-2 mb-0 pl-5 leading-relaxed text-sm space-y-1">
+            <li>Registration stores the client in a Yon-managed list and returns a durable <code>clientId</code>.</li>
+            <li>Connecting opens a one-way <strong>Server-Sent Events</strong> stream at <code>/_yon/realtime/stream</code>.</li>
+            <li>Messages are written to a <strong>LocalQueue</strong> mailbox and replayed from a persisted cursor on reconnect.</li>
+            <li>This is durable one-way push over SSE, not a true bidirectional WebSocket.</li>
+        </ul>
+    </details>
+</div>

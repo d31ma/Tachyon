@@ -70,7 +70,10 @@ Useful commands:
 <tr><td><code>bun run preview</code></td><td>Serve the built <code>dist/</code> directory</td></tr>
 </table>
 
-`bun run serve` is shape-aware: `browser/` only bundles and serves the frontend, `server/` only serves backend routes, and apps with both folders run as a full-stack app on one port.
+`bun run serve` is shape-aware: `browser/` only bundles and serves the frontend,
+`server/` only serves backend routes, apps with both folders run as a full-stack
+app on one port, and `browser/` + `db/` apps mount Tachyon's built-in FYLO
+browser routes when `YON_DATA_BROWSER_ENABLED=true`.
 
 ---
 
@@ -172,6 +175,12 @@ FYLO_INDEX_BACKEND=local-fs
 YON_DATA_BROWSER_ENABLED=false
 YON_DATA_BROWSER_READONLY=true
 YON_DATA_BROWSER_REVEAL=false
+
+YON_REALTIME_ENABLED=false
+YON_REALTIME_PATH=/_yon/realtime
+YON_REALTIME_POLL_MS=1000
+YON_REALTIME_HEARTBEAT_MS=15000
+YON_REALTIME_MAX_EVENT_BYTES=65536
 ```
 
 > **Notes:**
@@ -196,7 +205,7 @@ bun -e "console.log(await Bun.password.hash('user:pass'))"
 <details>
 <summary><h2 style="display:inline">FYLO Storage</h2></summary>
 
-Tachyon uses `@d31ma/fylo@26.21.6`, which is filesystem-first and uses the
+Tachyon uses `@d31ma/fylo@26.22.7`, which is filesystem-first and uses the
 FYLO `local-fs` index backend by default. Set `FYLO_ROOT` to the directory that
 should contain FYLO-managed collections:
 
@@ -256,6 +265,55 @@ fall back to a different backend.
 
 ---
 
+<details>
+<summary><h2 style="display:inline">Yon Realtime</h2></summary>
+
+Yon can expose WebSocket-like realtime delivery over Server-Sent Events (SSE)
+with FYLO-backed durable mailboxes. Enable it explicitly:
+
+```env
+YON_REALTIME_ENABLED=true
+YON_REALTIME_PATH=/_yon/realtime
+FYLO_ROOT=db
+```
+
+The built-in endpoints are:
+
+```bash
+# Register a durable browser/client identifier.
+curl -X POST http://localhost:8000/_yon/realtime/clients
+
+# Listen for messages. Browsers can also use EventSource with the same URL.
+curl -N \
+  -H 'Accept: text/event-stream' \
+  'http://localhost:8000/_yon/realtime/stream?clientId=<TTID>'
+
+# Send a message to a client mailbox.
+curl -X POST http://localhost:8000/_yon/realtime/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"to":"<TTID>","event":"chat.message","data":{"text":"hello"}}'
+```
+
+This is intentionally not a true WebSocket. Yon cannot open a connection back to
+an offline browser. Instead, clients keep or reopen an SSE connection. Messages
+are persisted into a FYLO local queue under the runtime root; if the target
+client is connected, Yon drains the queue immediately into that stream. If the
+server restarts or the browser reconnects later, the client sends its
+`Last-Event-ID` or `cursor` and Yon replays stored messages after that offset.
+
+Realtime uses `YON_REALTIME_ROOT` when it is set; otherwise it shares
+`FYLO_ROOT`, then falls back to Tachyon's default `.fylo-data` store. Leave
+`YON_REALTIME_ROOT` unset unless realtime mailboxes need their own storage root.
+
+Keep this route protected in production with `YON_BASIC_AUTH_HASH`, explicit
+CORS origins, and rate limiting. Client identifiers must be FYLO TTIDs, event
+names are allowlisted, and payload size is bounded by
+`YON_REALTIME_MAX_EVENT_BYTES`.
+
+</details>
+
+---
+
 ## Backend Routing
 
 Yon backend routes live in `server/routes`.
@@ -264,23 +322,22 @@ Yon backend routes live in `server/routes`.
 server/
   routes/                         -> thin request/response controllers
     languages/
-      javascript/GET              -> GET /languages/javascript
-      javascript/POST             -> POST /languages/javascript
-      javascript/PUT              -> PUT /languages/javascript
-      typescript/GET              -> GET /languages/typescript
-      python/GET                  -> GET /languages/python
-      ruby/GET                    -> GET /languages/ruby
-      php/GET                     -> GET /languages/php
-      go/GET                      -> GET /languages/go
-      csharp/GET                  -> GET /languages/csharp
-      java/POST                   -> POST /languages/java
-      dart/DELETE                 -> DELETE /languages/dart
-      rust/PATCH                  -> PATCH /languages/rust
-      python/versions/_version/GET -> GET /languages/python/versions/:version
-      typescript/items/GET        -> GET /languages/typescript/items
-      typescript/items/POST       -> POST /languages/typescript/items
-      typescript/items/DELETE     -> DELETE /languages/typescript/items
-      javascript/telemetry/GET    -> GET /languages/javascript/telemetry
+      javascript/yon.js           -> GET/POST/PUT /languages/javascript
+      typescript/yon.ts           -> GET /languages/typescript
+      python/yon.py               -> GET /languages/python
+      ruby/yon.rb                 -> GET /languages/ruby
+      php/yon.php                 -> GET /languages/php
+      csharp/yon.cs               -> GET /languages/csharp
+      cpp/yon.cpp                 -> GET /languages/cpp
+      swift/yon.swift             -> GET /languages/swift
+      kotlin/yon.kt               -> GET /languages/kotlin
+      rust/yon.rs                 -> GET /languages/rust
+      java/yon.java               -> POST /languages/java
+      dart/yon.dart               -> DELETE /languages/dart
+      python/versions/_version/yon.py -> GET /languages/python/versions/:version
+      typescript/items/yon.ts     -> GET/POST /languages/typescript/items
+      typescript/items/_id/yon.ts -> GET/PUT/PATCH/DELETE /languages/typescript/items/:id
+      javascript/telemetry/yon.js -> GET /languages/javascript/telemetry
       OPTIONS.schema.json         -> route schema files
   services/                       -> application/business logic
   repositories/                   -> database and persistence access
@@ -295,8 +352,8 @@ or runtime data sources. The `/languages/*` example is now the single backend
 showcase: it includes polyglot handlers, CRUD item routes, dynamic routes, and a
 telemetry consumer.
 
-Every language route also demonstrates FYLO access through the `fylo.exec`
-machine interface bundled by `@d31ma/fylo`. The examples extend the existing
+Every non-JavaScript/TypeScript language route demonstrates FYLO access through the `fylo.exec`
+machine interface bundled by `@d31ma/fylo`. These examples extend existing
 routes instead of adding separate FYLO endpoints: the route calls a service, the
 service calls a repository or language-native process helper, and that layer
 sends JSON operations to the FYLO binary. During development they invoke `bunx
@@ -310,19 +367,21 @@ The language examples collectively exercise the FYLO machine interface:
 | `GET /languages/javascript` | `fylo-operation-runs`, `fylo-related-records`, `fylo-disposable-runs` | full operation suite: `executeSQL`, `createCollection`, `dropCollection`, `inspectCollection`, `rebuildCollection`, `getDoc`, `getLatest`, `getHistory`, `findDocs`, `joinDocs`, `putData`, `batchPutData`, `patchDoc`, `patchDocs`, `delDoc`, `delDocs`, `importBulkData`, `schemaInspect`, `schemaCurrent`, `schemaHistory`, `schemaDoctor`, `schemaValidate`, `schemaMaterialize` |
 | `GET /languages/typescript` | `language-route-events` | `createCollection`, `putData`, `findDocs` |
 | `GET /languages/python` | `language-route-events` | `createCollection`, `putData`, `findDocs` |
-| `GET /languages/ruby` | `language-route-events` | `createCollection`, `putData`, `findDocs` |
-| `GET /languages/php` | `language-route-events` | `createCollection`, `putData`, `findDocs` |
-| `GET /languages/go` | `language-route-events` | `createCollection`, `rebuildCollection` |
-| `GET /languages/csharp` | `items` | `schemaCurrent`, `schemaHistory` |
-| `POST /languages/java` | `items` | `schemaInspect` |
+| `GET /languages/ruby` | `language-route-events` | `createCollection`, `putData`, `executeSQL` |
+| `GET /languages/php` | `language-route-events` | `createCollection`, `batchPutData`, `findDocs` |
+| `GET /languages/csharp` | `fylo-demo-items` | `schemaCurrent`, `schemaHistory` |
+| `GET /languages/cpp` | `language-route-events` | `createCollection`, `inspectCollection`, `rebuildCollection` |
+| `GET /languages/swift` | `language-route-events`, `language-route-relations` | `createCollection`, `putData`, `joinDocs` |
+| `GET /languages/kotlin` | `language-route-events` | `createCollection`, `batchPutData`, `patchDocs` |
+| `GET /languages/rust` | `fylo-rust-disposable` | `createCollection`, `inspectCollection`, `dropCollection` |
+| `POST /languages/java` | `language-route-events` | `createCollection`, `putData`, `getLatest` |
 | `DELETE /languages/dart` | `language-route-events` | `createCollection`, `importBulkData` |
-| `PATCH /languages/rust` | `fylo-disposable-runs` | `createCollection`, `dropCollection` |
 
 Rules:
 
-- handler files live at `<METHOD>/yon.<ext>` inside the route directory, e.g. `GET/yon.js`, `POST/yon.ts`, or `PATCH/yon.rs`
-- the parent directory name must be an uppercase HTTP method such as `GET` or `POST`
-- the `OPTIONS.schema.json` schema file sits as a sibling of the method directories
+- handler files live at `<route>/yon.<ext>` and export or define `class Handler`
+- HTTP verbs are public static methods such as `GET`, `POST`, `PUT`, and `DELETE`
+- the `OPTIONS.schema.json` schema file sits beside the route handler file
 - dynamic route segments use `_slug` on disk and become `:slug` at runtime
 - the first segment cannot be dynamic
 - adjacent dynamic segments are not allowed
@@ -377,46 +436,49 @@ Every handler receives this request object:
 If an inbound `X-Request-Id` header is present, Yon preserves it for upstream
 correlation. Otherwise Yon generates a TTID request ID through `@d31ma/fylo`.
 
-Yon invokes pure function/class handlers directly for dynamic runtimes and
-generates tiny build wrappers for compiled/static runtimes. No third-party
+Yon invokes `Handler` classes through small runtime adapters. Dynamic runtimes
+load the route module directly; compiled/static runtimes generate tiny build
+wrappers that call the public static HTTP method on the class. No third-party
 adapter dependency is added; compiled handlers use the language toolchain already
 on the developer or deployment machine.
 
+When `NODE_ENV=production`, Yon caches compiled Java, C#, Dart, C++, Swift, Kotlin, and Rust
+artifacts per handler fingerprint. The fingerprint includes the route file, copied same-language
+service files, and the adapter cache version, so a later `POST` to the same
+compiled route can reuse the artifact prepared by an earlier `GET` while source
+changes still invalidate the cache.
+
 <table>
 <tr><th align="left">Language</th><th align="left">Supported handler shape</th></tr>
-<tr><td>JavaScript</td><td><code>export function handler(request)</code> / <code>default class Yon.handler()</code></td></tr>
-<tr><td>TypeScript</td><td><code>export function handler(request)</code> / <code>default class Yon.handler()</code></td></tr>
-<tr><td>Python</td><td><code>def handler(request)</code> / <code>class Yon.handler()</code></td></tr>
-<tr><td>Ruby</td><td><code>def handler(request)</code> / <code>class Yon#handler</code></td></tr>
-<tr><td>PHP</td><td><code>function handler($request)</code> / <code>class Yon::handler</code></td></tr>
-<tr><td>Dart</td><td><code>handler(Map&lt;String, dynamic&gt; request)</code></td></tr>
-<tr><td>Go</td><td><code>func Handler(request map[string]any) any</code></td></tr>
-<tr><td>Java</td><td><code>Yon.handler(Map&lt;String, Object&gt; request)</code></td></tr>
-<tr><td>C#</td><td><code>Yon.Handler(JsonElement request)</code></td></tr>
-<tr><td>Rust</td><td><code>pub fn handler(request: &amp;JsonValue) -&gt; impl Display</code></td></tr>
+<tr><td>JavaScript</td><td><code>export class Handler { static GET(request) {} }</code></td></tr>
+<tr><td>TypeScript</td><td><code>export class Handler { static GET(request) {} }</code></td></tr>
+<tr><td>Python</td><td><code>class Handler: @staticmethod def GET(request)</code></td></tr>
+<tr><td>Ruby</td><td><code>class Handler; def self.GET(request); end; end</code></td></tr>
+<tr><td>PHP</td><td><code>class Handler { public static function GET($request) {} }</code></td></tr>
+<tr><td>Dart</td><td><code>class Handler { static GET(Map&lt;String, dynamic&gt; request) {} }</code></td></tr>
+<tr><td>Java</td><td><code>public class Handler { public static Object GET(Map&lt;String, Object&gt; request) {} }</code></td></tr>
+<tr><td>C#</td><td><code>public class Handler { public static object GET(JsonElement request) {} }</code></td></tr>
+<tr><td>C++</td><td><code>class Handler { public: static YonJson GET(const YonJson&amp; request) {} };</code></td></tr>
+<tr><td>Swift</td><td><code>enum Handler { static func GET(_ request: [String: Any]) -> Any? {} }</code></td></tr>
+<tr><td>Kotlin</td><td><code>class Handler { companion object { fun GET(request: Map&lt;String, Any?&gt;): Any? {} } }</code></td></tr>
+<tr><td>Rust</td><td><code>struct Handler; impl Handler { pub fn GET(request: &amp;YonJson) -&gt; YonJson {} }</code></td></tr>
 </table>
 
-Java and Rust intentionally stay dependency-free. Yon generates a tiny JSON
-adapter beside the compiled wrapper:
+Java, C++, Kotlin, and Rust intentionally stay dependency-free. Yon generates a tiny JSON
+adapter beside the compiled wrapper; Swift uses the JSON support already in
+`Foundation`:
 
 - Java receives a `java.util.Map<String, Object>` or `Object`.
-- Rust receives `&crate::yon_json::JsonValue` for ergonomic object access.
-
-Rust handlers can import the generated type from the wrapper crate:
-
-```rust
-use crate::yon_json::JsonValue;
-
-pub fn handler(request: &JsonValue) -> JsonValue {
-    let request_id = request
-        .get("context")
-        .and_then(|context| context.get("requestId"))
-        .and_then(JsonValue::as_str)
-        .unwrap_or("unknown");
-
-    JsonValue::String(format!("request: {}", request_id))
-}
-```
+- C++ receives a generated `YonJson` helper with object lookup, scalar coercion,
+  and JSON serialization.
+- Swift receives a `[String: Any]` decoded with `Foundation`'s `JSONSerialization`
+  and may return a `[String: Any]`, array, scalar, or `String`.
+- Kotlin receives a `Map<String, Any?>` from a generated `YonJson` helper and may
+  return a `Map`, `List`, scalar, or `String`. Handlers expose verbs through a
+  `companion object` (or a top-level `object Handler`).
+- Rust receives a generated `YonJson` helper and exposes verbs as associated
+  functions on `impl Handler`, mirroring static methods without requiring a
+  third-party crate.
 
 `OPTIONS.schema.json` files validate both incoming requests and outgoing responses with
 CHEX regex schemas. Yon does not add Tachyon-specific type shorthands:
@@ -982,6 +1044,56 @@ Inside Tac page/component scripts only, `fetch()` is wrapped with a local-first 
 - successful non-`GET` requests invalidate cached `GET` and `HEAD` entries for the same URL so later reads do not serve stale data
 
 This does not override the global browser `fetch` outside Tac page/component execution.
+
+The compiler-injected `fylo` browser client uses the same IndexedDB-backed cache for FYLO REST reads:
+
+```js
+export default class extends Tac {
+  users = []
+
+  async refresh() {
+    const result = await fylo.users.find(
+      { role: 'eq.admin', order: 'email.asc', limit: 25 },
+      { cache: 'network-first' }
+    )
+    this.users = (result.docs ?? []).map((entry) => entry.doc)
+  }
+
+  async save(user) {
+    await fylo.users.create(user)
+    await this.refresh()
+  }
+}
+```
+
+FYLO read cache policies are:
+
+- `cache-first`: default; return a cached `find`, `list`, or `get` response first, then cache successful network reads
+- `network-first`: try the network first, falling back to the cached response if the browser is offline
+- `reload`: bypass the cached read and refresh the cache from the network
+- `no-store`: skip reading and writing the cache
+
+Successful FYLO mutations (`create`, `put`, `patch`, and `del`) invalidate cached reads for that collection. Authenticated FYLO requests are cached in a credential-scoped namespace so one user's cached data is not reused for another user's credentials.
+
+FYLO reads can also run in a sync-first style from Tac scripts:
+
+```js
+export default class extends Tac {
+  users = []
+
+  initUsers() {
+    this.unsubscribeUsers = fylo.users.subscribe(
+      { role: 'eq.admin', order: 'email.asc' },
+      (result) => {
+        this.users = (result.docs ?? []).map((entry) => entry.doc)
+      },
+      { cache: 'network-first' }
+    )
+  }
+}
+```
+
+`subscribe(query, callback, options)` performs an initial `find()`, opens `/_fylo/api/events/stream` as a server-sent event stream, invalidates the collection's IndexedDB read cache after FYLO journal changes, and re-runs the query with `cache: 'reload'`. If `EventSource` cannot be used, such as when the wrapper is sending explicit Basic auth headers, the same API falls back to polling `fylo.<collection>.events()` with the configured `pollMs`.
 
 On the Yon side, handler responses are also given an inferred content type now:
 

@@ -5,26 +5,34 @@ type YonRequest = {
   query?: Record<string, unknown>
 }
 
-const service = new ItemService()
-
 export class Handler {
+  private static readonly service = new ItemService()
+
   static async GET(request: YonRequest): Promise<unknown> {
+    return Handler.service.listItems(Handler.listOptions(request))
+  }
+
+  static async POST(request: YonRequest): Promise<Record<string, unknown>> {
+    return Handler.service.createItem(request.body, Handler.createOptions(request))
+  }
+
+  static async DELETE(): Promise<Record<string, never>> {
+    return Handler.service.clearItems()
+  }
+
+  private static listOptions(request: YonRequest): ListOptions {
     const query = request.query ?? {}
     const options: ListOptions = {}
     if (query.limit !== undefined) options.limit = Number(query.limit)
     if (query.since !== undefined) options.since = String(query.since)
     if (query.simulate === 'error') options.simulate = 'error'
-    return service.listItems(options)
+    return options
   }
 
-  static async POST(request: YonRequest): Promise<Record<string, unknown>> {
+  private static createOptions(request: YonRequest): CreateOptions {
     const query = request.query ?? {}
     const options: CreateOptions = {}
     if (query.simulate === 'error') options.simulate = 'error'
-    return service.createItem(request.body, options)
-  }
-
-  static async DELETE(): Promise<Record<string, never>> {
-    return service.clearItems()
+    return options
   }
 }

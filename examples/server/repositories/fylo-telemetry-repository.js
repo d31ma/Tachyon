@@ -12,7 +12,7 @@ export default class FyloTelemetryRepository {
     constructor(options) {
         this.root = options.root;
         this.collection = options.collection ?? 'otel-spans';
-        this.fylo = new Fylo(fyloOptions(this.root));
+        this.fylo = new Fylo(this.root, fyloOptions(this.root));
     }
 
     /**

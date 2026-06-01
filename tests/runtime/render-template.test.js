@@ -664,7 +664,7 @@ describe('render-template prerender-environment (window=globalThis, __ty_prerend
     beforeAll(() => {
         previousGlobals = {
             window: globalThis.window,
-            __ty_prerender__: globalThis.__ty_prerender__,
+            __ty_prerender__: /** @type {any} */ (globalThis).__ty_prerender__,
         };
         Object.assign(globalThis, {
             window: globalThis,

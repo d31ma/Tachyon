@@ -1,0 +1,42 @@
+{
+    "GET": {
+        "200": {
+            "language": "^kotlin$",
+            "message": "^Hello from Kotlin!$",
+            "requestId": "^.{1,200}$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "operations": ["^[A-Za-z]+$"],
+                "resultCount": "^[0-9]+$"
+            }
+        },
+        "411": {
+            "code": "^411$",
+            "detail": "^length required$"
+        },
+        "412": {
+            "code": "^412$",
+            "detail": "^precondition failed$"
+        },
+        "413": {
+            "code": "^413$",
+            "detail": "^payload too large$"
+        },
+        "414": {
+            "code": "^414$",
+            "detail": "^uri too long$"
+        },
+        "415": {
+            "code": "^415$",
+            "detail": "^unsupported media type$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        },
+        "request": {
+            "query?": {
+                "code?": "^[0-9]+$"
+            }
+        }
+    }
+}

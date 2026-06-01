@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 
 /**
- * @typedef {'javascript' | 'typescript' | 'python' | 'ruby' | 'php' | 'dart' | 'java' | 'csharp'} YonHandlerLanguage
+ * @typedef {'javascript' | 'typescript' | 'python' | 'ruby' | 'php' | 'dart' | 'java' | 'csharp' | 'cpp' | 'swift' | 'kotlin' | 'rust'} YonHandlerLanguage
  *
  * @typedef {object} HandlerAdapterMatch
  * @property {YonHandlerLanguage} language
@@ -36,6 +36,10 @@ export default class HandlerAdapter {
         'dart',
         'java',
         'csharp',
+        'cpp',
+        'swift',
+        'kotlin',
+        'rust',
     ]);
 
     /**
@@ -82,7 +86,7 @@ export default class HandlerAdapter {
         if (language === 'php') {
             return [HandlerAdapter.phpExecutable(), path.join(ADAPTER_DIR, 'yon-php-runner.php'), handler];
         }
-        // Java, C#, Dart — compiled languages
+        // Java, C#, Dart, C++, Swift, Kotlin, Rust — compiled languages
         return [process.execPath, path.join(ADAPTER_DIR, 'yon-compiled-runner.js'), language, handler];
     }
 
@@ -121,6 +125,14 @@ export default class HandlerAdapter {
             return 'java';
         if (extension === '.cs')
             return 'csharp';
+        if (extension === '.cpp' || extension === '.cc' || extension === '.cxx')
+            return 'cpp';
+        if (extension === '.swift')
+            return 'swift';
+        if (extension === '.kt' || extension === '.kts')
+            return 'kotlin';
+        if (extension === '.rs')
+            return 'rust';
 
         const command = basename(shebangTokens[0] ?? '');
         if (['bun', 'node', 'deno'].includes(command))
@@ -139,6 +151,14 @@ export default class HandlerAdapter {
             return 'java';
         if (command === 'dotnet' || command === 'csharp')
             return 'csharp';
+        if (command === 'clang++' || command === 'g++' || command === 'c++')
+            return 'cpp';
+        if (command === 'swift' || command === 'swiftc')
+            return 'swift';
+        if (command === 'kotlin' || command === 'kotlinc')
+            return 'kotlin';
+        if (command === 'rust' || command === 'rustc')
+            return 'rust';
         return null;
     }
 
@@ -176,7 +196,19 @@ export default class HandlerAdapter {
             return /\bexport\s+class\s+Handler\b/.test(source)
                 || /\bclass\s+Handler\b/.test(source);
         }
-        // Python, Ruby, PHP, Dart, Java, C# all use `class Handler`
+        // Swift handlers may namespace static methods under a class, struct, or enum.
+        if (language === 'swift') {
+            return /\b(?:class|struct|enum)\s+Handler\b/.test(source);
+        }
+        // Kotlin handlers expose HTTP verbs through a `class Handler { companion object }`
+        // or a top-level `object Handler`.
+        if (language === 'kotlin') {
+            return /\b(?:class|object)\s+Handler\b/.test(source);
+        }
+        if (language === 'rust') {
+            return /\b(?:struct|enum)\s+Handler\b/.test(source) && /\bimpl\s+Handler\b/.test(source);
+        }
+        // Python, Ruby, PHP, Dart, Java, C#, C++ all use `class Handler`
         return /\bclass\s+Handler\b/.test(source);
     }
 
@@ -224,13 +256,26 @@ export default class HandlerAdapter {
             // static dynamic GET(Map<String, dynamic> request) or static Future<...> GET(...)
             return new RegExp(`\\bstatic\\s+[\\w<>,?\\s]+\\s+${method}\\s*\\(`).test(source);
         }
-        if (language === 'java') {
-            // public static Object GET(Map<String, Object> request)
-            return new RegExp(`\\bstatic\\s+[\\w<>,?\\[\\]\\s]+\\s+${method}\\s*\\(`).test(source);
+        if (language === 'java' || language === 'cpp') {
+            // Java: public static Object GET(Map<String, Object> request)
+            // C++: static YonJson GET(const YonJson& request)
+            return new RegExp(`\\bstatic\\s+[\\w:<>,?\\[\\]&*\\s]+\\s+${method}\\s*\\(`).test(source);
         }
         if (language === 'csharp') {
             // public static Dictionary<string, object?> GET(JsonElement request)
             return new RegExp(`\\bstatic\\s+[\\w<>,?\\[\\]\\s]+\\s+${method}\\s*\\(`).test(source);
+        }
+        if (language === 'swift') {
+            // static func GET(_ request: [String: Any]) -> Any?
+            return new RegExp(`\\bstatic\\s+func\\s+${method}\\s*\\(`).test(source);
+        }
+        if (language === 'kotlin') {
+            // fun GET(request: Map<String, Any?>): Any? inside `companion object` / `object Handler`
+            return new RegExp(`\\bfun\\s+${method}\\s*\\(`).test(source);
+        }
+        if (language === 'rust') {
+            // impl Handler { pub fn GET(request: &YonJson) -> YonJson { ... } }
+            return new RegExp(`\\b(?:pub\\s+)?fn\\s+${method}\\s*\\(`).test(source);
         }
         return false;
     }

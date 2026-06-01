@@ -7,7 +7,7 @@ final class PhpFyloRepository
 
     public function __construct(?string $root = null)
     {
-        $this->root = $root ?? getenv('FYLO_ROOT') ?: getcwd() . '/server/data/language-route-events';
+        $this->root = $root ?? getenv('FYLO_ROOT') ?: getcwd() . '/db';
         $path = getenv('FYLO_EXEC_PATH');
         $this->executable = $path === false || $path === '' ? null : $path;
     }
@@ -65,9 +65,35 @@ final class PhpFyloRepository
             'collection' => $collection,
             'id' => (string) $id,
             'document' => $document,
-            'matched' => is_array($found) ? count($found) : 0,
+            'matched' => is_array($found) ? (string) count($found) : '0',
             'operations' => ['createCollection', 'putData', 'findDocs'],
-            'resultCount' => 3,
+            'resultCount' => '3',
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function batchSample(string $language, string $requestId): array
+    {
+        $collection = 'language-route-events';
+        $this->machine(['op' => 'createCollection', 'collection' => $collection]);
+        $this->machine([
+            'op' => 'batchPutData',
+            'collection' => $collection,
+            'batch' => [
+                ['language' => $language, 'source' => 'fylo.exec', 'requestId' => $requestId, 'batch' => 'a'],
+                ['language' => $language, 'source' => 'fylo.exec', 'requestId' => $requestId, 'batch' => 'b'],
+            ],
+        ]);
+        $found = $this->machine([
+            'op' => 'findDocs',
+            'collection' => $collection,
+            'query' => ['$ops' => [['language' => ['$eq' => $language]]], '$limit' => 5],
+        ]);
+        return [
+            'collection' => $collection,
+            'matched' => is_array($found) ? (string) count($found) : '0',
+            'operations' => ['createCollection', 'batchPutData', 'findDocs'],
+            'resultCount' => '3',
         ];
     }
 }

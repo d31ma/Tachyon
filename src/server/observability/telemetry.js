@@ -248,7 +248,8 @@ class FyloTelemetryStore extends TelemetryStore {
      */
     async getFylo() {
         if (!FyloTelemetryStore.fyloPromise) {
-            FyloTelemetryStore.fyloPromise = Promise.resolve(new Fylo(fyloOptions(TelemetryConfig.root())));
+            const root = TelemetryConfig.root();
+            FyloTelemetryStore.fyloPromise = Promise.resolve(new Fylo(root, fyloOptions(root)));
         }
         return await FyloTelemetryStore.fyloPromise;
     }

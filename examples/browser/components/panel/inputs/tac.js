@@ -165,9 +165,8 @@ export default class extends Tac {
 
     /** @returns {void} */
     triggerFilePicker() {
-        /** @type {HTMLInputElement | null} */
-        const input = this.$el?.querySelector?.('input[type="file"]') ?? null
-        input?.click()
+        const input = document.querySelector('#input-gallery input[type="file"]')
+        if (input instanceof HTMLInputElement) input.click()
     }
 
     /** @returns {void} */
@@ -175,9 +174,8 @@ export default class extends Tac {
         this.$fileName = ''
         this.$fileSize = ''
         this.$dragOver = false
-        /** @type {HTMLInputElement | null} */
-        const input = this.$el?.querySelector?.('input[type="file"]') ?? null
-        if (input) input.value = ''
+        const input = document.querySelector('#input-gallery input[type="file"]')
+        if (input instanceof HTMLInputElement) input.value = ''
         this.record('file', 'cleared')
     }
 

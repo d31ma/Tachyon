@@ -1,0 +1,59 @@
+use std::env;
+use std::io::Write;
+use std::process::{Command, Stdio};
+
+pub struct RustFyloRepository {
+    root: String,
+    executable: Option<String>,
+}
+
+impl RustFyloRepository {
+    pub fn new() -> RustFyloRepository {
+        RustFyloRepository {
+            root: env::var("FYLO_ROOT").unwrap_or_else(|_| "db".to_string()),
+            executable: env::var("FYLO_EXEC_PATH").ok().filter(|value| !value.is_empty()),
+        }
+    }
+
+    pub fn disposable_sample(&self) -> YonJson {
+        let collection = "fylo-rust-disposable";
+        self.machine(YonJson::object(vec![("op", "createCollection".into()), ("collection", collection.into())]));
+        self.machine(YonJson::object(vec![("op", "inspectCollection".into()), ("collection", collection.into())]));
+        self.machine(YonJson::object(vec![("op", "dropCollection".into()), ("collection", collection.into())]));
+        YonJson::object(vec![
+            ("collection", collection.into()),
+            ("operations", YonJson::array(vec!["createCollection".into(), "inspectCollection".into(), "dropCollection".into()])),
+            ("resultCount", "3".into()),
+        ])
+    }
+
+    fn machine(&self, request: YonJson) -> YonJson {
+        let mut command = if let Some(executable) = &self.executable {
+            let mut cmd = Command::new(executable);
+            cmd.arg("exec");
+            cmd
+        } else {
+            let mut cmd = Command::new("bunx");
+            cmd.args(["--bun", "fylo.exec", "exec"]);
+            cmd
+        };
+        let mut child = command
+            .args(["--request", "-", "--root", &self.root])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Unable to start fylo.exec");
+        child.stdin.as_mut().expect("stdin").write_all(request.stringify().as_bytes()).expect("write fylo request");
+        let output = child.wait_with_output().expect("wait for fylo.exec");
+        if !output.status.success() {
+            panic!("{}", String::from_utf8_lossy(&output.stderr));
+        }
+        let response = YonJson::parse(&String::from_utf8_lossy(&output.stdout)).expect("parse fylo response");
+        let ok = response.get("ok").map(|value| value.as_string()).unwrap_or_default();
+        if ok != "true" {
+            panic!("fylo.exec returned an error");
+        }
+        response.get("result").cloned().unwrap_or(YonJson::Null)
+    }
+}

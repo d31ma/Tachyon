@@ -11,7 +11,7 @@
  * @typedef {{ backend: 'local-fs' }} FyloLocalFsIndexOptions
  * @typedef {{ backend: 's3-client', s3?: FyloS3IndexOptions }} FyloS3ClientIndexOptions
  * @typedef {FyloLocalFsIndexOptions | FyloS3ClientIndexOptions} FyloIndexOptions
- * @typedef {{ root: string, index: FyloIndexOptions }} TachyonFyloOptions
+ * @typedef {{ index: FyloIndexOptions }} TachyonFyloOptions
  */
 
 /**
@@ -47,23 +47,24 @@ function fyloS3Options(env) {
 /**
  * Builds FYLO constructor options from Tachyon's runtime environment.
  *
- * FYLO 26.20 indexes through local-fs by default. Tachyon makes that default
+ * FYLO 26.22 accepts the database root as the first constructor argument and
+ * index/backend configuration as the second. Tachyon makes the local-fs default
  * explicit so deployments can audit the selected index backend from env alone.
  *
- * @param {string} root
+ * @param {string} _root
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {TachyonFyloOptions}
  */
-export function fyloOptions(root, env = process.env) {
+export function fyloOptions(_root, env = process.env) {
     const backend = envValue(env, ['FYLO_INDEX_BACKEND']) ?? 'local-fs';
 
     if (backend === 'local-fs') {
-        return { root, index: { backend: 'local-fs' } };
+        return { index: { backend: 'local-fs' } };
     }
 
     if (backend === 's3-client') {
         const s3 = fyloS3Options(env);
-        return s3 ? { root, index: { backend: 's3-client', s3 } } : { root, index: { backend: 's3-client' } };
+        return s3 ? { index: { backend: 's3-client', s3 } } : { index: { backend: 's3-client' } };
     }
 
     throw new Error(`Unsupported FYLO_INDEX_BACKEND "${backend}". Use "local-fs" or "s3-client".`);

@@ -1,0 +1,38 @@
+{
+    "GET": {
+        "200": {
+            "language": "^rust$",
+            "message": "^Hello from Rust!$",
+            "requestId": "^.{1,200}$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "operations": ["^[A-Za-z]+$"],
+                "resultCount": "^[0-9]+$"
+            }
+        },
+        "512": {
+            "code": "^512$",
+            "detail": "^web server is returning an unknown error$"
+        },
+        "513": {
+            "code": "^513$",
+            "detail": "^message too large$"
+        },
+        "514": {
+            "code": "^514$",
+            "detail": "^upload failed$"
+        },
+        "515": {
+            "code": "^515$",
+            "detail": "^unsupported media extension$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        },
+        "request": {
+            "query?": {
+                "code?": "^[0-9]+$"
+            }
+        }
+    }
+}

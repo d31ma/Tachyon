@@ -284,6 +284,7 @@ function setStatus(next) { status = next; }
 </switch>`);
     return root;
 }
+/** @param {string} template */
 async function createInvalidSwitchFixture(template) {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-invalid-switch-'));
     tempDirs.push(root);
@@ -874,7 +875,7 @@ timedTest('value-bound handlers retain DOM-style target access on synthetic upda
     const windowInstance = new Window();
     const input = windowInstance.document.createElement('input');
     input.value = 'beta';
-    await render(inputId, createValueEventDetail(input, new windowInstance.Event('input')));
+    await render(inputId, createValueEventDetail(/** @type {any} */ (input), /** @type {any} */ (new windowInstance.Event('input'))));
     expect(await render()).toContain('Selected beta');
     await windowInstance.happyDOM.close();
 });

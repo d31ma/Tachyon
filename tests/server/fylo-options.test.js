@@ -4,14 +4,12 @@ import { fyloOptions } from '../../src/server/fylo-options.js';
 
 test('fyloOptions defaults to FYLO local-fs indexing', () => {
     expect(fyloOptions('/tmp/fylo', {})).toEqual({
-        root: '/tmp/fylo',
         index: { backend: 'local-fs' },
     });
 });
 
 test('fyloOptions accepts explicit FYLO local-fs indexing', () => {
     expect(fyloOptions('/tmp/fylo', { FYLO_INDEX_BACKEND: 'local-fs' })).toEqual({
-        root: '/tmp/fylo',
         index: { backend: 'local-fs' },
     });
 });
@@ -27,7 +25,6 @@ test('fyloOptions passes through FYLO s3-client indexing', () => {
     });
 
     expect(options).toEqual({
-        root: '/tmp/fylo',
         index: {
             backend: 's3-client',
             s3: {

@@ -1,6 +1,7 @@
 // @ts-check
 import { afterEach, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
+import Fylo from '@d31ma/fylo';
 import net from 'net';
 import path from 'path';
 import { tmpdir } from 'os';
@@ -17,10 +18,10 @@ afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 /**
- * @param {{ frontend?: boolean, backend?: boolean }} [options]
+ * @param {{ frontend?: boolean, backend?: boolean, data?: boolean }} [options]
  */
 async function createExampleApp(options = {}) {
-    const { frontend = true, backend = true } = options;
+    const { frontend = true, backend = true, data = false } = options;
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-serve-full-'));
     tempDirs.push(root);
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
@@ -49,6 +50,13 @@ document.documentElement.dataset.boot = bootMessage;
   }
 }
 `);
+    }
+    if (data) {
+        const fylo = new Fylo(path.join(root, 'db'));
+        await fylo.putData('users', {
+            email: 'browser-db@example.test',
+            role: 'admin',
+        });
     }
     return root;
 }
@@ -239,6 +247,77 @@ timedTest('yon.serve serves frontend only when only the browser folder exists', 
         const stdout = await new Response(proc.stdout).text();
         const stderr = await new Response(proc.stderr).text();
         throw new Error(`serve did not return frontend-only output. last=${lastSnapshot}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
+    }
+    expect(proc.exitCode).toBeNull();
+});
+timedTest('yon.serve mounts FYLO browser routes for browser and db folders without server folder', { timeout: 40000 }, async () => {
+    const root = await createExampleApp({ backend: false, data: true });
+    const port = await getFreePort();
+    /** @type {NodeJS.ProcessEnv} */
+    const env = {
+        ...process.env,
+        YON_PORT: String(port),
+        YON_HOST: '127.0.0.1',
+        YON_DEV: 'true',
+        YON_DATA_BROWSER_ENABLED: 'true',
+        FYLO_ROOT: path.join(root, 'db'),
+    };
+    delete env.YON_BASIC_AUTH;
+    delete env.YON_BASIC_AUTH_HASH;
+    delete env.YON_VALIDATE;
+    let lastSnapshot = 'no attempts yet';
+    const proc = Bun.spawn(['bun', path.join(import.meta.dir, '../../src/cli/serve.js')], {
+        cwd: root,
+        env,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    processes.push(proc);
+    const ok = await waitFor(async () => {
+        try {
+            const [frontendRes, fyloMetaRes, fyloListRes, apiRes] = await Promise.all([
+                fetch(`http://127.0.0.1:${port}/`, {
+                    headers: {
+                        'sec-fetch-dest': 'document',
+                        'sec-fetch-mode': 'navigate',
+                    }
+                }),
+                fetch(`http://127.0.0.1:${port}/_fylo/api/meta`),
+                fetch(`http://127.0.0.1:${port}/_fylo/users/`),
+                fetch(`http://127.0.0.1:${port}/api`, {
+                    headers: { accept: 'application/json' },
+                }),
+            ]);
+            const body = await frontendRes.text();
+            const meta = await fyloMetaRes.json().catch(() => null);
+            const users = await fyloListRes.json().catch(() => null);
+            lastSnapshot = JSON.stringify({
+                frontendStatus: frontendRes.status,
+                fyloMetaStatus: fyloMetaRes.status,
+                fyloListStatus: fyloListRes.status,
+                apiStatus: apiRes.status,
+                meta,
+                users,
+            });
+            return frontendRes.ok
+                && body.includes('type="module" src="/spa-renderer.js"')
+                && fyloMetaRes.ok
+                && meta?.path === '/_fylo'
+                && fyloListRes.ok
+                && users?.collection === 'users'
+                && apiRes.status === 404;
+        }
+        catch {
+            lastSnapshot = 'request connection failed';
+            return false;
+        }
+    }, 30000);
+    if (!ok) {
+        proc.kill();
+        await proc.exited.catch(() => { });
+        const stdout = await new Response(proc.stdout).text();
+        const stderr = await new Response(proc.stderr).text();
+        throw new Error(`serve did not mount FYLO for browser+db output. last=${lastSnapshot}\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
     }
     expect(proc.exitCode).toBeNull();
 });

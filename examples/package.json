@@ -9,7 +9,6 @@
     "telemetry:alerts": "bun ./server/workers/telemetry-alert-worker.js"
   },
   "dependencies": {
-    "@material/web": "^2.4.1",
     "dayjs": "^1.11.20"
   }
 }

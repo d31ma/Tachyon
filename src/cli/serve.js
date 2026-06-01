@@ -77,19 +77,31 @@ async function directoryHasFiles(root) {
     return false;
 }
 /**
- * @returns {Promise<{ frontend: boolean, backend: boolean, mode: 'frontend' | 'backend' | 'full' | 'empty' }>}
+ * @param {string | undefined | null} value
+ * @returns {boolean}
+ */
+function isTruthy(value) {
+    const normalized = value?.trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+}
+/**
+ * @returns {Promise<{ frontend: boolean, backend: boolean, data: boolean, builtInBackend: boolean, mode: 'frontend' | 'backend' | 'full' | 'empty' }>}
  */
 async function detectAppShape() {
     const frontend = await directoryHasFiles(path.join(process.cwd(), 'browser'));
     const backend = await directoryHasFiles(path.join(process.cwd(), 'server'));
+    const data = await directoryHasFiles(path.join(process.cwd(), 'db'));
+    const builtInBackend = data && isTruthy(process.env.YON_DATA_BROWSER_ENABLED);
     return {
         frontend,
         backend,
-        mode: frontend && backend
+        data,
+        builtInBackend,
+        mode: frontend && (backend || builtInBackend)
             ? 'full'
             : frontend
                 ? 'frontend'
-                : backend
+                : backend || builtInBackend
                     ? 'backend'
                     : 'empty',
     };
@@ -120,18 +132,22 @@ async function loadMiddleware() {
 }
 const appShape = await detectAppShape();
 const frontendEnabled = appShape.frontend;
-const backendEnabled = appShape.backend;
+const backendEnabled = appShape.backend || appShape.builtInBackend;
+const userBackendEnabled = appShape.backend;
 const isProduction = process.env.NODE_ENV === 'production';
 const hmrEnabled = (frontendEnabled || bundleWatchEnabled) && !isProduction;
 async function configureRoutes(isReload = false) {
     Router.resetStaticState();
     if (isReload)
         Pool.clearWarmedProcesses();
-    if (backendEnabled) {
+    if (userBackendEnabled) {
         await loadMiddleware();
         await Router.validateRoutes();
+    }
+    if (backendEnabled) {
         Yon.createServerRoutes();
-        Pool.prewarmAllHandlers();
+        if (userBackendEnabled)
+            Pool.prewarmAllHandlers();
     }
     if (frontendEnabled && !isProduction) {
         await Router.validatePageRoutes();

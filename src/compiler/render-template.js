@@ -218,6 +218,18 @@ const localFirstFetch = async (input, init) => {
     const request = new Request(input, init)
     const method = request.method.toUpperCase()
     const browserEnv = __ty_isBrowserEnv()
+    const sharedCache = /** @type {{ fetch?: Function } | undefined} */ (
+        /** @type {Record<string, unknown>} */ (globalThis).__ty_browser_cache__
+    )
+    if (browserEnv && typeof sharedCache?.fetch === 'function') {
+        const canCacheRead = (method === 'GET' || method === 'HEAD') && request.cache !== 'no-store'
+        return await sharedCache.fetch(input, init, {
+            key: canCacheRead ? `${method}:${request.url}` : null,
+            invalidateKeys: method === 'GET' || method === 'HEAD'
+                ? []
+                : [`GET:${request.url}`, `HEAD:${request.url}`],
+        })
+    }
     const canReadThroughCache = browserEnv
         && (method === 'GET' || method === 'HEAD')
         && request.cache !== 'no-store'

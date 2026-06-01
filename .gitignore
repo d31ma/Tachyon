@@ -14,10 +14,15 @@ __pycache__/
 .gemini/
 src/shared/manifests/route-manifest.json
 examples/db/collections.stale-*
+examples/.collections/
+examples/.queue/
 examples/db/.collections/fylo-operation-runs/
 examples/db/.collections/fylo-related-records/
 examples/db/.collections/fylo-demo-items/
 examples/db/.collections/language-route-events/
+examples/db/.collections/yon-realtime-clients/
+examples/db/.collections/demo-realtime-clients/
+examples/db/.collections/demo-realtime-messages/
 examples/db/schemas/fylo-demo-items/
 package-lock.json
 

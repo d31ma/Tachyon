@@ -14,6 +14,18 @@
 // If the Fylo browser route isn't mounted (no `/_fylo` endpoint), every method
 // returns a graceful "not enabled" error.
 
+import { tacBrowserCache } from './browser-cache.js';
+
+/**
+ * @typedef {'cache-first' | 'network-first' | 'reload' | 'no-store'} FyloCachePolicy
+ * @typedef {{ cache?: FyloCachePolicy }} FyloQueryOptions
+ * @typedef {{ collection?: string, events?: unknown[], offset?: number, exists?: boolean, error?: string }} FyloEventsPayload
+ * @typedef {'initial' | 'event-stream' | 'poll'} FyloSubscribeSource
+ * @typedef {{ collection: string, events: unknown[], offset: number, source: FyloSubscribeSource }} FyloSubscribeMeta
+ * @typedef {(payload: unknown, meta: FyloSubscribeMeta) => void | Promise<void>} FyloSubscribeCallback
+ * @typedef {FyloQueryOptions & { pollMs?: number, since?: number, onError?: (error: unknown) => void }} FyloSubscribeOptions
+ */
+
 /**
  * Resolves the Fylo browser API base path. Reads from the shell-injected
  * `<meta name="fylo-browser-path">` tag, falling back to `/_fylo`.
@@ -31,6 +43,16 @@ function resolveBrowserPath() {
     }
 }
 
+/** @param {string} value */
+function hashString(value) {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < value.length; i += 1) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(36);
+}
+
 class FyloCollectionClient {
     /**
      * @param {FyloBrowserClient} browserClient
@@ -45,39 +67,81 @@ class FyloCollectionClient {
      * Query the collection using PostgREST-style filters.
      * e.g. find({ role: 'eq.admin', age: 'gt.18', select: 'name,role', order: 'name.asc', limit: 10 })
      * @param {Record<string, unknown>} [query]
+     * @param {FyloQueryOptions} [options]
      */
-    async find(query = {}) {
+    async find(query = {}, options = {}) {
         const params = new URLSearchParams();
-        for (const [key, value] of Object.entries(query)) {
+        for (const [key, value] of Object.entries(query).sort(([a], [b]) => a.localeCompare(b))) {
             params.set(key, String(value));
         }
         const qs = params.toString();
         const url = `/${encodeURIComponent(this.collection)}/${qs ? `?${qs}` : ''}`;
-        const response = await this.browserClient.fetch(url);
+        const response = await this.browserClient.fetch(url, {}, {
+            cache: options.cache,
+            cacheKey: this.browserClient.cacheKey('GET', url),
+        });
         return response.json();
     }
 
-    /** @param {number} [limit] */
-    async list(limit = 25) {
-        const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/?limit=${limit}`);
+    /** @param {number} [limit] @param {FyloQueryOptions} [options] */
+    async list(limit = 25, options = {}) {
+        const url = `/${encodeURIComponent(this.collection)}/?limit=${limit}`;
+        const response = await this.browserClient.fetch(url, {}, {
+            cache: options.cache,
+            cacheKey: this.browserClient.cacheKey('GET', url),
+        });
         return response.json();
     }
 
-    /** @param {string} id */
-    async get(id) {
-        const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`);
+    /** @param {string} id @param {FyloQueryOptions} [options] */
+    async get(id, options = {}) {
+        const url = `/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`;
+        const response = await this.browserClient.fetch(url, {}, {
+            cache: options.cache,
+            cacheKey: this.browserClient.cacheKey('GET', url),
+        });
         return response.json();
     }
 
-    /** @param {number} [since] */
+    /** @param {number | 'latest'} [since] */
     async events(since = 0) {
-        const response = await this.browserClient.fetch(`/api/events?collection=${encodeURIComponent(this.collection)}&since=${since}`);
+        const response = await this.browserClient.fetch(`/api/events?collection=${encodeURIComponent(this.collection)}&since=${since}`, {}, {
+            cache: 'no-store',
+        });
         return response.json();
+    }
+
+    /**
+     * Subscribe to collection changes and re-run a cached FYLO query whenever
+     * the FYLO event journal changes.
+     * @param {Record<string, unknown> | FyloSubscribeCallback} [queryOrCallback]
+     * @param {FyloSubscribeCallback | FyloSubscribeOptions} [callbackOrOptions]
+     * @param {FyloSubscribeOptions} [maybeOptions]
+     * @returns {() => void}
+     */
+    subscribe(queryOrCallback = {}, callbackOrOptions = {}, maybeOptions = {}) {
+        if (typeof queryOrCallback === 'function') {
+            return this.browserClient.subscribeCollection(
+                this.collection,
+                {},
+                queryOrCallback,
+                /** @type {FyloSubscribeOptions} */ (callbackOrOptions ?? {}),
+            );
+        }
+        if (typeof callbackOrOptions !== 'function') {
+            throw new TypeError('fylo.<collection>.subscribe(query, callback, options) requires a callback');
+        }
+        return this.browserClient.subscribeCollection(
+            this.collection,
+            queryOrCallback,
+            callbackOrOptions,
+            maybeOptions,
+        );
     }
 
     /** @param {Record<string, unknown>} doc */
     async create(doc) {
-        return this.browserClient.postJson(`/${encodeURIComponent(this.collection)}/`, doc);
+        return this.browserClient.postJson(`/${encodeURIComponent(this.collection)}/`, doc, this.collection);
     }
 
     /** @param {string} id @param {Record<string, unknown>} doc */
@@ -86,6 +150,9 @@ class FyloCollectionClient {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(doc),
+        }, {
+            invalidatePrefixes: [this.browserClient.collectionCachePrefix(this.collection)],
+            invalidateKeys: [this.browserClient.cacheKey('GET', `/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`)],
         });
         return response.json();
     }
@@ -96,13 +163,19 @@ class FyloCollectionClient {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(doc),
+        }, {
+            invalidatePrefixes: [this.browserClient.collectionCachePrefix(this.collection)],
+            invalidateKeys: [this.browserClient.cacheKey('GET', `/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`)],
         });
         return response.json();
     }
 
     /** @param {string} id */
     async del(id) {
-        const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`, { method: 'DELETE' });
+        const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`, { method: 'DELETE' }, {
+            invalidatePrefixes: [this.browserClient.collectionCachePrefix(this.collection)],
+            invalidateKeys: [this.browserClient.cacheKey('GET', `/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`)],
+        });
         if (response.status === 204) return { ok: true };
         return response.json();
     }
@@ -177,15 +250,70 @@ class FyloBrowserClient {
         this.authHeader = null;
     }
 
+    /** @returns {string} */
+    authScope() {
+        return this.authHeader ? `auth-${hashString(this.authHeader)}` : 'anon';
+    }
+
+    /** @param {string} path */
+    normalizedPath(path) {
+        return path.startsWith('/') ? path : `/${path}`;
+    }
+
+    /**
+     * @param {string} apiPath
+     * @returns {string}
+     */
+    resolveUrl(apiPath) {
+        const baseUrl = typeof window !== 'undefined' && window.location?.href && window.location.href !== 'about:blank'
+            ? window.location.href
+            : 'http://localhost/';
+        return new URL(`${this.basePath}${apiPath}`, baseUrl).href;
+    }
+
+    /**
+     * @param {string} method
+     * @param {string} apiPath
+     * @returns {string}
+     */
+    cacheKey(method, apiPath) {
+        return `fylo:${this.authScope()}:${this.basePath}:${method.toUpperCase()}:${this.normalizedPath(apiPath)}`;
+    }
+
+    /**
+     * @param {string} collection
+     * @returns {string}
+     */
+    collectionCachePrefix(collection) {
+        return `fylo:${this.authScope()}:${this.basePath}:GET:/${encodeURIComponent(collection)}/`;
+    }
+
+    /**
+     * @param {string} collection
+     * @returns {Promise<void>}
+     */
+    invalidateCollection(collection) {
+        return tacBrowserCache.invalidate([], [this.collectionCachePrefix(collection)]);
+    }
+
     /**
      * @param {string} apiPath
      * @param {RequestInit} [init]
+     * @param {FyloQueryOptions & { cacheKey?: string | null, invalidateKeys?: string[], invalidatePrefixes?: string[] }} [options]
      * @returns {Promise<Response>}
      */
-    fetch(apiPath, init = {}) {
+    fetch(apiPath, init = {}, options = {}) {
         const headers = new Headers(init.headers || {});
         if (this.authHeader) headers.set('Authorization', this.authHeader);
-        return fetch(`${this.basePath}${apiPath}`, { ...init, headers });
+        const requestInit = { ...init, headers };
+        const request = new Request(this.resolveUrl(apiPath), requestInit);
+        const method = request.method.toUpperCase();
+        return tacBrowserCache.fetch(request, undefined, {
+            cache: options.cache,
+            key: options.cacheKey ?? ((method === 'GET' || method === 'HEAD') ? this.cacheKey(method, apiPath) : null),
+            invalidateKeys: options.invalidateKeys,
+            invalidatePrefixes: options.invalidatePrefixes,
+        });
     }
 
     /**
@@ -197,7 +325,7 @@ class FyloBrowserClient {
         if (/^https?:\/\//i.test(apiPath)) {
             const headers = new Headers(init.headers || {});
             if (this.authHeader) headers.set('Authorization', this.authHeader);
-            return fetch(apiPath, { ...init, headers });
+            return tacBrowserCache.fetch(apiPath, { ...init, headers }, { cache: 'network-first' });
         }
         const path = apiPath.startsWith(this.basePath) ? apiPath.slice(this.basePath.length) || '/' : apiPath;
         return this.fetch(path, init);
@@ -206,15 +334,151 @@ class FyloBrowserClient {
     /**
      * @param {string} apiPath
      * @param {Record<string, unknown>} body
+     * @param {string} [collection]
      * @returns {Promise<any>}
      */
-    async postJson(apiPath, body) {
+    async postJson(apiPath, body, collection) {
         const response = await this.fetch(apiPath, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
+        }, {
+            invalidatePrefixes: collection ? [this.collectionCachePrefix(collection)] : [],
         });
         return response.json();
+    }
+
+    /**
+     * @param {number | undefined} value
+     * @returns {number}
+     */
+    normalizePollMs(value) {
+        if (!Number.isFinite(value) || !value || value <= 0) return 1000;
+        return Math.max(250, Math.min(Math.trunc(value), 60000));
+    }
+
+    /**
+     * @param {string} collection
+     * @param {Record<string, unknown>} query
+     * @param {FyloSubscribeCallback} callback
+     * @param {FyloSubscribeOptions} [options]
+     * @returns {() => void}
+     */
+    subscribeCollection(collection, query, callback, options = {}) {
+        const client = new FyloCollectionClient(this, collection);
+        const pollMs = this.normalizePollMs(options.pollMs);
+        const hasExplicitSince = Number.isFinite(options.since) && Number(options.since) >= 0;
+        let offset = hasExplicitSince
+            ? Math.trunc(Number(options.since))
+            : 0;
+        const startingOffset = hasExplicitSince ? String(offset) : 'latest';
+        let active = true;
+        let refreshing = false;
+        /** @type {unknown[]} */
+        let pendingEvents = [];
+        /** @type {FyloSubscribeSource | null} */
+        let pendingSource = null;
+        /** @type {EventSource | null} */
+        let eventSource = null;
+        /** @type {ReturnType<typeof setInterval> | null} */
+        let pollTimer = null;
+
+        /** @param {unknown} error */
+        const reportError = (error) => {
+            if (typeof options.onError === 'function') options.onError(error);
+        };
+
+        /** @param {FyloSubscribeSource} source @param {unknown[]} events */
+        const refresh = async (source, events = []) => {
+            if (!active) return;
+            if (refreshing) {
+                if (source !== 'initial') {
+                    pendingEvents = pendingEvents.concat(events);
+                    pendingSource = source;
+                }
+                return;
+            }
+            refreshing = true;
+            try {
+                if (source !== 'initial') await this.invalidateCollection(collection);
+                const result = await client.find(query, {
+                    cache: source === 'initial' ? (options.cache ?? 'network-first') : 'reload',
+                });
+                if (active) {
+                    await callback(result, { collection, events, offset, source });
+                }
+            } catch (error) {
+                reportError(error);
+            } finally {
+                refreshing = false;
+                if (active && pendingEvents.length > 0) {
+                    const nextEvents = pendingEvents;
+                    const nextSource = pendingSource ?? 'event-stream';
+                    pendingEvents = [];
+                    pendingSource = null;
+                    await refresh(nextSource, nextEvents);
+                }
+            }
+        };
+
+        /** @param {FyloEventsPayload} payload @param {FyloSubscribeSource} source */
+        const handleEventsPayload = async (payload, source) => {
+            if (!active) return;
+            if (payload.error) {
+                reportError(new Error(payload.error));
+                return;
+            }
+            offset = Number.isFinite(payload.offset) && Number(payload.offset) >= 0
+                ? Math.trunc(Number(payload.offset))
+                : offset;
+            const events = Array.isArray(payload.events) ? payload.events : [];
+            if (events.length > 0) await refresh(source, events);
+        };
+
+        refresh('initial');
+
+        const canUseEventSource = typeof EventSource !== 'undefined' && !this.authHeader;
+        if (canUseEventSource) {
+            const streamUrl = new URL(this.resolveUrl('/api/events/stream'));
+            streamUrl.searchParams.set('collection', collection);
+            streamUrl.searchParams.set('since', startingOffset);
+            streamUrl.searchParams.set('poll', String(pollMs));
+            eventSource = new EventSource(streamUrl.href);
+            eventSource.addEventListener('fylo.events', (event) => {
+                try {
+                    handleEventsPayload(JSON.parse(/** @type {MessageEvent} */ (event).data), 'event-stream');
+                } catch (error) {
+                    reportError(error);
+                }
+            });
+            eventSource.addEventListener('fylo.error', (event) => {
+                try {
+                    const payload = JSON.parse(/** @type {MessageEvent} */ (event).data);
+                    reportError(new Error(payload.error || 'FYLO subscription stream failed'));
+                } catch (error) {
+                    reportError(error);
+                }
+            });
+            eventSource.onerror = () => {
+                reportError(new Error('FYLO subscription stream interrupted; the browser will retry automatically'));
+            };
+        } else {
+            const poll = async () => {
+                try {
+                    const payload = /** @type {FyloEventsPayload} */ (await client.events(offset === 0 && !hasExplicitSince ? 'latest' : offset));
+                    await handleEventsPayload(payload, 'poll');
+                } catch (error) {
+                    reportError(error);
+                }
+            };
+            pollTimer = setInterval(poll, pollMs);
+        }
+
+        return () => {
+            active = false;
+            if (eventSource) eventSource.close();
+            if (pollTimer) clearInterval(pollTimer);
+        };
     }
 
     async collections() {
@@ -245,7 +509,7 @@ class FyloBrowserClient {
 }
 
 /** @param {string} basePath */
-function createFyloClient(basePath) {
+export function createFyloClient(basePath) {
     return new FyloBrowserClient(basePath);
 }
 
@@ -259,6 +523,8 @@ const noopCollection = {
     async get() { return { error: 'Fylo browser not enabled' }; },
     /** @returns {Promise<{ error: string }>} */
     async events() { return { error: 'Fylo browser not enabled' }; },
+    /** @returns {() => void} */
+    subscribe() { return () => {}; },
     /** @returns {Promise<{ error: string }>} */
     async create() { return { error: 'Fylo browser not enabled' }; },
     /** @returns {Promise<{ error: string }>} */

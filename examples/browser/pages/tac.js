@@ -58,4 +58,14 @@ export default class extends Tac {
   bindThemeListener() {
     window.addEventListener('tachyon:toggle-theme', () => { this.toggleTheme() })
   }
+
+  @onMount
+  adaptSidebarToViewport() {
+    const media = window.matchMedia('(max-width: 900px)')
+    const sync = () => {
+      this.$sidebarOpen = !media.matches
+    }
+    sync()
+    media.addEventListener('change', sync)
+  }
 }

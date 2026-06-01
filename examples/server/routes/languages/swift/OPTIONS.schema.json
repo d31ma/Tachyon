@@ -1,0 +1,38 @@
+{
+    "GET": {
+        "200": {
+            "language": "^swift$",
+            "message": "^Hello from Swift!$",
+            "requestId": "^.{1,200}$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "operations": ["^[A-Za-z]+$"],
+                "resultCount": "^[0-9]+$"
+            }
+        },
+        "507": {
+            "code": "^507$",
+            "detail": "^insufficient storage$"
+        },
+        "508": {
+            "code": "^508$",
+            "detail": "^loop detected$"
+        },
+        "510": {
+            "code": "^510$",
+            "detail": "^not extended$"
+        },
+        "511": {
+            "code": "^511$",
+            "detail": "^network authentication required$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        },
+        "request": {
+            "query?": {
+                "code?": "^[0-9]+$"
+            }
+        }
+    }
+}

@@ -26,6 +26,10 @@ function normalizePublicPath(value, fallback) {
 
 const BROWSER_PATH = normalizePublicPath(process.env.YON_DATA_BROWSER_PATH, '/_fylo');
 const READONLY_DEFAULT = true;
+const DEFAULT_EVENT_STREAM_POLL_MS = 1000;
+const MIN_EVENT_STREAM_POLL_MS = 250;
+const MAX_EVENT_STREAM_POLL_MS = 30000;
+const EVENT_STREAM_LIMIT = 500;
 
 /** @param {string} collection */
 function isSafeCollectionName(collection) {
@@ -312,7 +316,7 @@ function shellHtml() {
  */
 async function listCollections() {
     const root = fyloRoot();
-    const fylo = new Fylo(fyloOptions(root));
+    const fylo = new Fylo(root, fyloOptions(root));
     /** @type {Array<{ name: string, exists: boolean, docsStored?: number, indexedDocs?: number, worm?: boolean, error?: string }>} */
     const collections = [];
     /** @type {string[]} */
@@ -367,7 +371,8 @@ async function patchDocument(request) {
                 return { error: `cannot save: encrypted field "${field}" is masked. Set YON_DATA_BROWSER_REVEAL=true to edit` };
         }
     }
-    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    const root = fyloRoot();
+    const fylo = new Fylo(root, fyloOptions(root));
     try {
         const newId = await fylo.patchDoc(collection, { [id]: /** @type {Record<string, any>} */ (doc) });
         return { ok: true, id: newId };
@@ -386,7 +391,8 @@ async function deleteDocument(url) {
     const id = url.searchParams.get('id') ?? '';
     if (!collection || !id)
         return { error: 'collection and id query parameters required' };
-    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    const root = fyloRoot();
+    const fylo = new Fylo(root, fyloOptions(root));
     try {
         await fylo.delDoc(collection, id);
         return { ok: true };
@@ -504,7 +510,8 @@ async function createRestDocument(request) {
     if (!route || route.id) return jsonResponse(request, { error: 'not found' }, 404);
     const doc = await readJsonObject(request);
     await assertEditableDocument(route.collection, doc);
-    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    const root = fyloRoot();
+    const fylo = new Fylo(root, fyloOptions(root));
     try {
         const id = await fylo.putData(route.collection, /** @type {Record<string, any>} */ (doc));
         return jsonResponse(request, { ok: true, id }, 201);
@@ -521,7 +528,8 @@ async function updateRestDocument(request) {
     if (!route || !route.id) return jsonResponse(request, { error: 'not found' }, 404);
     const doc = await readJsonObject(request);
     await assertEditableDocument(route.collection, doc);
-    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    const root = fyloRoot();
+    const fylo = new Fylo(root, fyloOptions(root));
     try {
         const id = request.method === 'PUT'
             ? await fylo.putData(route.collection, { [route.id]: /** @type {Record<string, any>} */ (doc) })
@@ -538,7 +546,8 @@ async function deleteRestDocument(request) {
     if (readonly) return readonly;
     const route = parseRestDocumentPath(request);
     if (!route || !route.id) return jsonResponse(request, { error: 'not found' }, 404);
-    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    const root = fyloRoot();
+    const fylo = new Fylo(root, fyloOptions(root));
     try {
         await fylo.delDoc(route.collection, route.id);
         return new Response(null, { status: 204, headers: Router.getHeaders(request) });
@@ -563,7 +572,8 @@ async function rebuildCollectionAction(request) {
     const collection = (body.collection ?? '').toString();
     if (!collection)
         return { error: 'collection is required' };
-    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    const root = fyloRoot();
+    const fylo = new Fylo(root, fyloOptions(root));
     try {
         const result = await fylo.rebuildCollection(collection);
         return { ok: true, result };
@@ -581,10 +591,20 @@ async function tailEvents(url) {
         return { error: 'collection query parameter required' };
     if (!isSafeCollectionName(collection))
         return { error: 'invalid collection query parameter' };
-    const sinceParam = Number(url.searchParams.get('since') ?? 0);
+    const sinceRaw = url.searchParams.get('since') ?? '0';
+    const sinceParam = sinceRaw === 'latest' ? Number.MAX_SAFE_INTEGER : Number(sinceRaw);
     const since = Number.isFinite(sinceParam) && sinceParam >= 0 ? Math.trunc(sinceParam) : 0;
     const limitParam = Number(url.searchParams.get('limit') ?? 100);
     const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.trunc(limitParam), 500) : 100;
+    return readEventJournal(collection, since, limit);
+}
+
+/**
+ * @param {string} collection
+ * @param {number} since
+ * @param {number} limit
+ */
+async function readEventJournal(collection, since, limit) {
     const eventsPath = path.join(fyloRoot(), '.collections', collection, 'events', `${collection}.ndjson`);
     const file = Bun.file(eventsPath);
     if (!await file.exists()) {
@@ -602,18 +622,132 @@ async function tailEvents(url) {
     }
     /** @type {Array<unknown>} */
     const events = [];
-    const lines = text.split('\n');
+    let consumedBytes = 0;
+    const encoder = new TextEncoder();
+    const lines = text.endsWith('\n') ? text.split('\n') : text.split('\n').slice(0, -1);
     for (const raw of lines) {
-        const line = raw.trim();
-        if (!line) continue;
         if (events.length >= limit) break;
+        const lineBytes = encoder.encode(`${raw}\n`).byteLength;
+        const line = raw.trim();
+        if (!line) {
+            consumedBytes += lineBytes;
+            continue;
+        }
         try {
             events.push(JSON.parse(line));
         } catch {
             // ignore malformed line (likely a partial trailing write)
         }
+        consumedBytes += lineBytes;
     }
-    return { collection, events, offset: size, exists: true };
+    return { collection, events, offset: since + consumedBytes, exists: true };
+}
+
+/** @param {number} value */
+function clampEventStreamPollMs(value) {
+    if (!Number.isFinite(value) || value <= 0) return DEFAULT_EVENT_STREAM_POLL_MS;
+    return Math.max(MIN_EVENT_STREAM_POLL_MS, Math.min(Math.trunc(value), MAX_EVENT_STREAM_POLL_MS));
+}
+
+/**
+ * @param {string | undefined} id
+ * @param {string} event
+ * @param {unknown} data
+ * @returns {string}
+ */
+function eventStreamFrame(id, event, data) {
+    const idLine = id ? `id: ${id}\n` : '';
+    const dataLines = JSON.stringify(data)
+        .split(/\r?\n/)
+        .map((line) => `data: ${line}`)
+        .join('\n');
+    return `${idLine}event: ${event}\n${dataLines}\n\n`;
+}
+
+/**
+ * @param {Request} request
+ */
+async function streamEvents(request) {
+    const url = new URL(request.url);
+    const collection = url.searchParams.get('collection') ?? '';
+    if (!collection)
+        return jsonResponse(request, { error: 'collection query parameter required' }, 400);
+    if (!isSafeCollectionName(collection))
+        return jsonResponse(request, { error: 'invalid collection query parameter' }, 400);
+
+    const sinceRaw = url.searchParams.get('since') ?? '0';
+    const sinceParam = sinceRaw === 'latest' ? Number.MAX_SAFE_INTEGER : Number(sinceRaw);
+    let offset = Number.isFinite(sinceParam) && sinceParam >= 0 ? Math.trunc(sinceParam) : 0;
+    const pollParam = Number(url.searchParams.get('poll') ?? DEFAULT_EVENT_STREAM_POLL_MS);
+    const pollMs = clampEventStreamPollMs(pollParam);
+
+    const encoder = new TextEncoder();
+    let timer = /** @type {ReturnType<typeof setInterval> | null} */ (null);
+    let closed = false;
+    let inFlight = false;
+
+    const stream = new ReadableStream({
+        start(controller) {
+            /** @param {string} frame */
+            const send = (frame) => {
+                if (!closed) controller.enqueue(encoder.encode(frame));
+            };
+            const close = () => {
+                if (closed) return;
+                closed = true;
+                if (timer) clearInterval(timer);
+                try {
+                    controller.close();
+                } catch {
+                    // The browser may close the connection while a tick is pending.
+                }
+            };
+
+            request.signal?.addEventListener('abort', close, { once: true });
+            send(`retry: ${Math.max(1000, pollMs)}\n: fylo stream connected\n\n`);
+
+            const tick = async () => {
+                if (closed || inFlight) return;
+                inFlight = true;
+                try {
+                    const payload = await readEventJournal(collection, offset, EVENT_STREAM_LIMIT);
+                    if ('error' in payload) {
+                        send(eventStreamFrame(undefined, 'fylo.error', payload));
+                        return;
+                    }
+                    offset = typeof payload.offset === 'number' ? payload.offset : offset;
+                    if (Array.isArray(payload.events) && payload.events.length > 0) {
+                        send(eventStreamFrame(String(offset), 'fylo.events', payload));
+                    }
+                } catch (error) {
+                    send(eventStreamFrame(undefined, 'fylo.error', {
+                        collection,
+                        error: error instanceof Error ? error.message : String(error),
+                    }));
+                } finally {
+                    inFlight = false;
+                }
+            };
+
+            tick();
+            timer = setInterval(tick, pollMs);
+        },
+        cancel() {
+            closed = true;
+            if (timer) clearInterval(timer);
+        },
+    });
+
+    return new Response(stream, {
+        status: 200,
+        headers: {
+            ...Router.getHeaders(request),
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no',
+        },
+    });
 }
 
 /**
@@ -624,7 +758,8 @@ async function getDocument(url) {
     const id = url.searchParams.get('id') ?? '';
     if (!collection || !id)
         return { error: 'collection and id query parameters required' };
-    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    const root = fyloRoot();
+    const fylo = new Fylo(root, fyloOptions(root));
     const encryptedFields = await getEncryptedFields(collection);
     /** @type {Record<string, unknown> | null} */
     let doc = null;
@@ -864,7 +999,8 @@ async function listDocuments(url) {
         ? { $ops: [{ [filters[0].field]: filters[0].filter }], $limit: (limit + offset) * (filters.length > 1 ? 4 : 1) }
         : {};
 
-    const fylo = new Fylo(fyloOptions(fyloRoot()));
+    const root = fyloRoot();
+    const fylo = new Fylo(root, fyloOptions(root));
     const encryptedFields = await getEncryptedFields(collection);
     /** @type {Array<{ id: string, doc: unknown }>} */
     const docs = [];
@@ -1016,6 +1152,12 @@ export default class FyloBrowser {
                 const url = new URL(request.url);
                 return jsonOk(request, await tailEvents(url));
             }, `${BROWSER_PATH}/api/events`),
+        };
+
+        Router.reqRoutes[`${BROWSER_PATH}/api/events/stream`] = {
+            GET: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/api/events/stream`)) => {
+                return streamEvents(request);
+            }, `${BROWSER_PATH}/api/events/stream`),
         };
 
         Router.reqRoutes[`${BROWSER_PATH}/api/patch`] = {

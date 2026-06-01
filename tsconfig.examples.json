@@ -13,9 +13,11 @@
     "node_modules*",
     "dist",
     "examples/dist",
+    "examples/dist*",
     "examples/dist-debug",
     "examples/node_modules",
     "examples/node_modules*",
+    "**/*conflicted copy*",
     "**/*.as.ts"
   ]
 }

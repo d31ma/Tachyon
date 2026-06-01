@@ -1,0 +1,6 @@
+{
+  "clientId": "^[0-9A-Z]{11}$",
+  "nickname": "^.{1,40}$",
+  "streamUrl": "^/_yon/realtime/stream\\?clientId=[0-9A-Z]{11}$",
+  "registeredAt": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+}

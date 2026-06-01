@@ -120,6 +120,47 @@ test('rejects traversal-shaped collection names before tailing FYLO event files'
     expect(response.body.error).toBe('invalid collection query parameter');
 });
 
+test('streams FYLO collection event journal changes as server-sent events', async () => {
+    await fyloRequest('POST', '/_fylo/books/', {
+        title: 'Realtime FYLO',
+        status: 'draft',
+    });
+    const latest = await fyloApiGet('/_fylo/api/events?collection=books&since=latest');
+    expect(latest.status).toBe(200);
+    expect(latest.body.events).toEqual([]);
+    expect(latest.body.offset).toBeGreaterThan(0);
+
+    const handler = Router.reqRoutes['/_fylo/api/events/stream']?.GET;
+    if (!handler) throw new Error('Missing FYLO event stream handler');
+    const controller = new AbortController();
+    const response = await handler(new Request('http://localhost/_fylo/api/events/stream?collection=books&since=0&poll=250', {
+        signal: controller.signal,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toContain('text/event-stream');
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Expected event stream body');
+    const decoder = new TextDecoder();
+    let text = '';
+    for (let i = 0; i < 5 && !text.includes('event: fylo.events'); i += 1) {
+        const chunk = await Promise.race([
+            reader.read(),
+            Bun.sleep(500).then(() => { throw new Error('timed out waiting for event stream chunk'); }),
+        ]);
+        if (chunk.done) break;
+        text += decoder.decode(chunk.value);
+    }
+    controller.abort();
+    await reader.cancel().catch(() => {});
+
+    expect(text).toContain(': fylo stream connected');
+    expect(text).toContain('event: fylo.events');
+    expect(text).toContain('"collection":"books"');
+    expect(text).toContain('"events":[');
+});
+
 test('filters collection documents using PostgREST eq operator', async () => {
     await fyloRequest('POST', '/_fylo/people/', { name: 'Alice', role: 'admin' });
     await fyloRequest('POST', '/_fylo/people/', { name: 'Bob', role: 'viewer' });
