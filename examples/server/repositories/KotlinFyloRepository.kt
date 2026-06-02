@@ -33,12 +33,13 @@ class KotlinFyloRepository {
         } else {
             listOf(executable, "exec", "--request", "-", "--root", root)
         }
-        val process = ProcessBuilder(command).start()
+        val processBuilder = ProcessBuilder(command)
+        processBuilder.redirectErrorStream(true)
+        val process = processBuilder.start()
         OutputStreamWriter(process.outputStream).use { it.write(YonJson.stringify(request)) }
         val stdout = process.inputStream.bufferedReader().readText()
-        val stderr = process.errorStream.bufferedReader().readText()
         val code = process.waitFor()
-        if (code != 0) error(if (stderr.isNotBlank()) stderr else stdout)
+        if (code != 0) error(stdout)
         val response = YonJson.parse(if (stdout.isBlank()) "{}" else stdout) as Map<String, Any?>
         if (response["ok"] != true) error("fylo.exec returned an error")
         return response["result"]

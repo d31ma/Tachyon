@@ -59,13 +59,7 @@ export default class RealtimeRepository {
         /** @type {Array<{ clientId: string, nickname: string, streamUrl: string, registeredAt: string }>} */
         const clients = [];
         for await (const entry of this.fylo.findDocs(CLIENTS_COLLECTION, {}).collect()) {
-            if (RealtimeRepository.isClient(entry)) {
-                clients.push(entry);
-                continue;
-            }
-            for (const value of Object.values(/** @type {Record<string, unknown>} */ (entry))) {
-                if (RealtimeRepository.isClient(value)) clients.push(value);
-            }
+            RealtimeRepository.collectClients(entry, clients);
         }
         return clients.sort((a, b) => a.nickname.localeCompare(b.nickname));
     }
@@ -132,5 +126,20 @@ export default class RealtimeRepository {
             && typeof /** @type {{ streamUrl?: unknown }} */ (value).streamUrl === 'string'
             && typeof /** @type {{ registeredAt?: unknown }} */ (value).registeredAt === 'string',
         );
+    }
+
+    /**
+     * @param {unknown} value
+     * @param {Array<{ clientId: string, nickname: string, streamUrl: string, registeredAt: string }>} clients
+     */
+    static collectClients(value, clients) {
+        if (RealtimeRepository.isClient(value)) {
+            clients.push(value);
+            return;
+        }
+        if (!value || typeof value !== 'object') return;
+        for (const nested of Object.values(/** @type {Record<string, unknown>} */ (value))) {
+            RealtimeRepository.collectClients(nested, clients);
+        }
     }
 }

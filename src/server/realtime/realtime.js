@@ -281,11 +281,14 @@ export default class YonRealtime {
                 activeConnection = connection;
                 YonRealtime.addConnection(clientId, connection);
                 YonRealtime.registerClient(clientId)
-                    .then(() => YonRealtime.enqueue(controller, `event: ready\ndata: ${JSON.stringify({ clientId, cursor })}\n\n`))
-                    .then(() => YonRealtime.drain(clientId, connection))
+                    .then(() => {
+                        if (connection.closed) return undefined;
+                        YonRealtime.enqueue(controller, `event: ready\ndata: ${JSON.stringify({ clientId, cursor })}\n\n`);
+                        return YonRealtime.drain(clientId, connection);
+                    })
                     .catch(() => {
                         connection.closed = true;
-                        controller.close();
+                        try { controller.close(); } catch {}
                         YonRealtime.removeConnection(clientId, connection);
                     });
                 const interval = setInterval(() => {

@@ -27,14 +27,15 @@ public class JavaFyloRepository {
             List<String> command = executable == null || executable.isBlank()
                 ? List.of("bunx", "--bun", "fylo.exec", "exec", "--request", "-", "--root", root)
                 : List.of(executable, "exec", "--request", "-", "--root", root);
-            Process process = new ProcessBuilder(command).start();
+            ProcessBuilder processBuilder = new ProcessBuilder(command);
+            processBuilder.redirectErrorStream(true);
+            Process process = processBuilder.start();
             try (OutputStreamWriter stdin = new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8)) {
                 stdin.write(YonJson.stringify(request));
             }
             String stdout = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)).lines().reduce("", (a, b) -> a + b);
-            String stderr = new BufferedReader(new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8)).lines().reduce("", (a, b) -> a + b);
             int code = process.waitFor();
-            if (code != 0) throw new RuntimeException(stderr.isBlank() ? stdout : stderr);
+            if (code != 0) throw new RuntimeException(stdout);
             Map<String, Object> response = YonJson.parseObject(stdout.isBlank() ? "{}" : stdout);
             if (!Boolean.TRUE.equals(response.get("ok"))) throw new RuntimeException("fylo.exec returned an error");
             return response.get("result");

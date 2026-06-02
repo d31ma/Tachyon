@@ -146,6 +146,15 @@ export class TacBrowserCache {
             tx.oncomplete = () => resolve(undefined);
             tx.onerror = () => resolve(undefined);
 
+            if (typeof IDBKeyRange !== 'undefined') {
+                try {
+                    store.delete(IDBKeyRange.bound(prefix, `${prefix}\uffff`));
+                } catch {
+                    resolve(undefined);
+                }
+                return;
+            }
+
             if (typeof store.openCursor !== 'function') {
                 resolve(undefined);
                 return;

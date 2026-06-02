@@ -26,17 +26,18 @@ struct SwiftFyloRepository {
         }
         let input = Pipe()
         let output = Pipe()
-        let error = Pipe()
         process.standardInput = input
         process.standardOutput = output
-        process.standardError = error
+        process.standardError = output
         try! process.run()
         input.fileHandleForWriting.write(try! JSONSerialization.data(withJSONObject: request))
         input.fileHandleForWriting.closeFile()
-        process.waitUntilExit()
         let stdout = output.fileHandleForReading.readDataToEndOfFile()
-        let stderr = String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        if process.terminationStatus != 0 { fatalError(stderr.isEmpty ? "fylo.exec failed" : stderr) }
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            let outputText = String(data: stdout, encoding: .utf8) ?? ""
+            fatalError(outputText.isEmpty ? "fylo.exec failed" : outputText)
+        }
         let response = (try! JSONSerialization.jsonObject(with: stdout.isEmpty ? Data("{}".utf8) : stdout)) as! [String: Any]
         guard response["ok"] as? Bool == true else { fatalError("fylo.exec returned an error") }
         return response["result"]

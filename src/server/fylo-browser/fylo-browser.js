@@ -624,7 +624,13 @@ async function readEventJournal(collection, since, limit) {
     const events = [];
     let consumedBytes = 0;
     const encoder = new TextEncoder();
-    const lines = text.endsWith('\n') ? text.split('\n') : text.split('\n').slice(0, -1);
+    const lines = text.split('\n');
+    const hasTrailingNewline = text.endsWith('\n');
+    if (lines.length > 0 && lines.at(-1) === '') {
+        lines.pop();
+    } else if (lines.length > 0 && !hasTrailingNewline) {
+        lines.pop();
+    }
     for (const raw of lines) {
         if (events.length >= limit) break;
         const lineBytes = encoder.encode(`${raw}\n`).byteLength;
