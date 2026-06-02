@@ -53,7 +53,7 @@ describe('findEventTarget', () => {
     test('creates DOM-compatible context for synthetic value rerenders', () => {
         const input = document.createElement('input');
         input.value = 'selected';
-        const detail = createValueEventDetail(input, new windowInstance.Event('input'));
+        const detail = createValueEventDetail(input, /** @type {any} */ (new windowInstance.Event('input')));
         expect(detail.value).toBe('selected');
         expect(detail.target).toBe(input);
         expect(detail.currentTarget).toBe(input);

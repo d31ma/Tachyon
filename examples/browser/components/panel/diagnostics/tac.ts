@@ -60,17 +60,21 @@ export default class extends Tac {
             { path: '/languages/dart', language: 'Dart' },
             { path: '/languages/java', language: 'Java' },
             { path: '/languages/csharp', language: 'C#' },
+            { path: '/languages/cpp', language: 'C++' },
+            { path: '/languages/swift', language: 'Swift' },
+            { path: '/languages/kotlin', language: 'Kotlin' },
+            { path: '/languages/rust', language: 'Rust' },
         ]
-        const results: LanguageHandler[] = []
-        for (const lang of langs) {
+        // Probe handlers concurrently so a slow compiled-language cold start
+        // (e.g. Kotlin's first kotlinc build) cannot serially stall the panel.
+        this.handlers = await Promise.all(langs.map(async (lang): Promise<LanguageHandler> => {
             try {
                 const res = await fetch(lang.path, { cache: 'reload' })
-                results.push({ language: lang.language, status: res.ok ? 'active' : 'error' })
+                return { language: lang.language, status: res.ok ? 'active' : 'error' }
             } catch {
-                results.push({ language: lang.language, status: 'unavailable' })
+                return { language: lang.language, status: 'unavailable' }
             }
-        }
-        this.handlers = results
+        }))
         this.loading = false
     }
 

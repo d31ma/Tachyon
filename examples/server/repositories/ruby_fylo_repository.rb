@@ -3,7 +3,7 @@ require 'open3'
 
 class RubyFyloRepository
   def initialize(root = nil)
-    @root = root || ENV.fetch('FYLO_ROOT', File.expand_path('server/data/language-route-events', Dir.pwd))
+    @root = root || ENV.fetch('FYLO_ROOT', File.expand_path('db', Dir.pwd))
     @executable = ENV['FYLO_EXEC_PATH']
   end
 
@@ -39,9 +39,30 @@ class RubyFyloRepository
       collection: collection,
       id: doc_id,
       document: document,
-      matched: found.is_a?(Hash) ? found.length : 0,
+      matched: found.is_a?(Hash) ? found.length.to_s : '0',
       operations: ['createCollection', 'putData', 'findDocs'],
-      resultCount: 3
+      resultCount: '3'
+    }
+  end
+
+  def query_with_sql(language, request_id)
+    collection = 'language-route-events'
+    machine({ op: 'createCollection', collection: collection })
+    machine({
+      op: 'putData',
+      collection: collection,
+      data: {
+        language: language,
+        source: 'fylo.exec',
+        requestId: request_id,
+        query: 'sql'
+      }
+    })
+    rows = machine({ op: 'executeSQL', sql: "SELECT * FROM #{collection}" })
+    {
+      collection: collection,
+      operations: ['createCollection', 'putData', 'executeSQL'],
+      resultCount: rows.is_a?(Array) ? rows.length.to_s : '1'
     }
   end
 end

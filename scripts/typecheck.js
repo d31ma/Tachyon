@@ -29,7 +29,9 @@ const includesExamples = configs.some(config => path.basename(config) === 'tscon
 /** @type {Record<string, string[]>} */
 const CONFIG_ROOTS = {
     'tsconfig.src.json': ['src'],
-    'tsconfig.tests.json': ['src', 'scripts', 'tests'],
+    // Tests import a few example modules (e.g. the realtime repository), so the
+    // staged tests project must include `examples` for those imports to resolve.
+    'tsconfig.tests.json': ['src', 'scripts', 'tests', 'examples'],
     'tsconfig.examples.json': ['src', 'examples'],
 };
 

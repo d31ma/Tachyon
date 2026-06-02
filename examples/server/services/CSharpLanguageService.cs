@@ -3,6 +3,8 @@ using System.Text.Json;
 
 public class CSharpLanguageService
 {
+    private readonly CSharpFyloRepository _fyloRepository = new();
+
     public Dictionary<string, object?> Describe(JsonElement request)
     {
         var requestId = "unknown";
@@ -17,6 +19,7 @@ public class CSharpLanguageService
             ["language"] = "csharp",
             ["message"] = "Hello from C#!",
             ["requestId"] = requestId,
+            ["fylo"] = _fyloRepository.ReadCurrentSchema(),
         };
     }
 }

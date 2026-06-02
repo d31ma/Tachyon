@@ -1,8 +1,8 @@
 import LanguageService from '@/services/language-service.js';
 
-const service = new LanguageService();
-
 export class Handler {
+  static #service = new LanguageService();
+
   /**
    * Drives the FYLO machine interface end-to-end via `fylo.exec` for the
    * dashboard's polyglot showcase. Heavy (approximately 25 subprocess spawns) — kept on a
@@ -13,6 +13,6 @@ export class Handler {
    * @returns {Promise<Record<string, unknown>>}
    */
   static async POST(request) {
-    return await service.fyloDemo(request);
+    return await Handler.#service.fyloDemo(request);
   }
 }

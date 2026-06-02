@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.23.01] — 2026-06-01
+
+### Added
+
+- Yon realtime SSE mailboxes behind `YON_REALTIME_ENABLED=true`.
+  `/_yon/realtime/clients` issues durable TTID client IDs,
+  `/_yon/realtime/stream` replays queued messages over Server-Sent Events, and
+  `/_yon/realtime/messages` stores messages in FYLO's local queue while waking
+  any currently connected client stream.
+- The example app now includes a Yon realtime messaging slice: MVC routes under
+  `/realtime`, FYLO/CHEX schemas for demo clients and messages, and a Tac
+  companion script ready for the browser UI markup/styling pass.
+- Tac's compiler-injected `fylo` browser client now caches successful
+  collection reads in IndexedDB, supports explicit cache policies, falls back
+  to cached reads when offline, and invalidates collection cache entries after
+  FYLO mutations.
+- The example users panel now demonstrates every FYLO browser cache policy and
+  includes a temporary create/delete flow that shows mutation invalidation.
+- `bun serve` now treats `browser/` + `db/` apps with
+  `YON_DATA_BROWSER_ENABLED=true` as a built-in backend, so app authors can use
+  the Tac FYLO browser wrapper without adding a `server/` folder.
+
+### Changed
+
+- Upgraded `@d31ma/fylo` to `26.22.7` and migrated Tachyon's FYLO integrations
+  to the root-first constructor API.
+- Yon compiled route adapters now cache Java, C#, Dart, C++, Swift, Kotlin, and Rust
+  build artifacts when `NODE_ENV=production`, keyed by the route file,
+  same-language service files, and adapter cache version.
+- Yon now supports C++ backend route handlers through `yon.cpp`, generated
+  dependency-free `YonJson` helpers, and the compiled route adapter.
+- Yon now supports Swift (`yon.swift`) and Kotlin (`yon.kt`) backend route
+  handlers through the compiled route adapter. Swift handlers namespace static
+  verbs under an `enum`/`struct`/`class Handler` and exchange JSON through
+  `Foundation`; Kotlin handlers expose verbs from a `class Handler` companion
+  object (or top-level `object Handler`) and receive a generated dependency-free
+  `YonJson` helper. Example routes ship under `/languages/swift` and
+  `/languages/kotlin`.
+- Yon now supports Rust (`yon.rs`) backend route handlers through `rustc`.
+  Rust handlers use `struct Handler; impl Handler { pub fn GET(...) { ... } }`,
+  receive a generated dependency-free `YonJson` helper, and ship with a
+  `/languages/rust` example route/service.
+- The example capability atlas now uses a responsive mobile drawer for its
+  navigation rail while preserving the persistent desktop rail.
+
+### Fixed
+
+- The example FYLO users panel now redacts API-key-shaped previews before
+  rendering them in the browser.
+
 ## [26.22.03] — 2026-05-27
 
 ### Added
@@ -36,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `export class Handler` with static methods named after HTTP verbs
   (`static async GET(request)`) replaces the prior method-per-directory
   convention (`routes/<path>/GET/yon.<ext>`). All polyglot adapters (JS,
-  TS, Python, Ruby, PHP, Java, C#, Dart) support the new pattern.
+  TS, Python, Ruby, PHP, Java, C#, Dart, C++) support the new pattern.
 - Upgraded `@d31ma/fylo` to `^26.22.3`. Removed `getHistory()` calls;
   added `findDeletedDocs()` and `restoreDoc()` to the machine-interface
   demo.

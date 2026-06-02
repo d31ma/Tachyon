@@ -26,6 +26,8 @@ let serverProcess = null;
 /** @type {string} */
 let telemetryRoot = '';
 /** @type {string} */
+let realtimeRoot = '';
+/** @type {string} */
 let itemDataPath = '';
 /** @type {string} */
 let testDistPath = '';
@@ -49,6 +51,23 @@ function commandAvailable(command) {
             stderr: 'pipe',
         });
         return probe.exitCode === 0;
+    }
+    catch {
+        return false;
+    }
+}
+
+/**
+ * `kotlinc` rejects `--version`, so probe it with its native `-version` flag.
+ * @returns {boolean}
+ */
+function kotlincAvailable() {
+    try {
+        return Bun.spawnSync({
+            cmd: ['kotlinc', '-version'],
+            stdout: 'pipe',
+            stderr: 'pipe',
+        }).exitCode === 0;
     }
     catch {
         return false;
@@ -179,7 +198,7 @@ async function authFetch(path, init = {}) {
  * @returns {Promise<Array<{ resource: Record<string, any>, scope: Record<string, any>, span: Record<string, any> }>>}
  */
 async function waitForTelemetrySpans(requestId) {
-    const fylo = new Fylo({ root: telemetryRoot });
+    const fylo = new Fylo(telemetryRoot);
     const startedAt = Date.now();
     while (Date.now() - startedAt < 4_000) {
         try {
@@ -314,6 +333,7 @@ function normalizeTelemetryPath(value) {
 
 beforeAll(async () => {
     telemetryRoot = await mkdtemp(path.join(tmpdir(), 'tachyon-otel-'));
+    realtimeRoot = await mkdtemp(path.join(tmpdir(), 'tachyon-realtime-'));
     itemDataPath = path.join(telemetryRoot, 'items.json');
     testDistPath = path.join(telemetryRoot, 'dist');
     await Bun.write(itemDataPath, '[]');
@@ -332,6 +352,9 @@ beforeAll(async () => {
             YON_MAX_BODY_BYTES: '64',
             YON_OTEL_ENABLED: 'true',
             YON_OTEL_ROOT: telemetryRoot,
+            YON_REALTIME_ENABLED: 'true',
+            YON_REALTIME_ROOT: realtimeRoot,
+            YON_REALTIME_POLL_MS: '100',
             YON_ITEMS_DATA_PATH: itemDataPath,
             YON_DIST_PATH: testDistPath,
             YON_OTEL_SERVICE_NAME: 'tachyon-tests',
@@ -356,6 +379,8 @@ afterAll(async () => {
     }
     if (telemetryRoot)
         await rm(telemetryRoot, { recursive: true, force: true });
+    if (realtimeRoot)
+        await rm(realtimeRoot, { recursive: true, force: true });
 }, 15_000);
 const routeTestCases = [
     {
@@ -671,17 +696,87 @@ describe('Response body content', () => {
 // Polyglot Root Route Adapters
 // ===========================================================================
 describe('Polyglot root route adapters', () => {
+    test('GET /languages/python demonstrates FYLO findDocs through Python', async () => {
+        const res = await authFetch('/languages/python');
+        expect(res.status).toEqual(200);
+        const body = await res.json();
+        expect(body).toHaveProperty('message', 'Hello from Python!');
+        expect(body.fylo.operations).toEqual(['createCollection', 'putData', 'findDocs']);
+    });
+    test('GET /languages/ruby demonstrates FYLO executeSQL through Ruby', async () => {
+        const res = await authFetch('/languages/ruby');
+        expect(res.status).toEqual(200);
+        const body = await res.json();
+        expect(body).toHaveProperty('message', 'Hello from Ruby!');
+        expect(body.fylo.operations).toEqual(['createCollection', 'putData', 'executeSQL']);
+    });
+    test('GET /languages/php demonstrates FYLO batchPutData through PHP', async () => {
+        const res = await authFetch('/languages/php');
+        expect(res.status).toEqual(200);
+        const body = await res.json();
+        expect(body).toHaveProperty('message', 'Hello from PHP!');
+        expect(body.fylo.operations).toEqual(['createCollection', 'batchPutData', 'findDocs']);
+    });
     timedTest('POST /languages/java executes the Java adapter route', { timeout: 15000 }, async () => {
         const res = await authFetch('/languages/java', { method: 'POST' });
         expect(res.status).toEqual(200);
-        expect(await res.json()).toHaveProperty('message', 'Hello from Java!');
+        const body = await res.json();
+        expect(body).toHaveProperty('message', 'Hello from Java!');
+        expect(body.fylo.operations).toEqual(['createCollection', 'putData', 'getLatest']);
+    });
+    timedTest('GET /languages/csharp demonstrates FYLO schemaCurrent through C#', { timeout: 60000 }, async () => {
+        if (!commandAvailable('dotnet'))
+            return;
+        const res = await authFetch('/languages/csharp');
+        expect(res.status).toEqual(200);
+        const body = await res.json();
+        expect(body).toHaveProperty('message', 'Hello from C#!');
+        expect(body.fylo.operations).toEqual(['schemaCurrent', 'schemaHistory']);
+    });
+    timedTest('GET /languages/cpp executes the C++ adapter route', { timeout: 60000 }, async () => {
+        if (!commandAvailable('clang++') && !commandAvailable('g++') && !commandAvailable('c++'))
+            return;
+        const res = await authFetch('/languages/cpp');
+        expect(res.status).toEqual(200);
+        const body = await res.json();
+        expect(body).toHaveProperty('message', 'Hello from C++!');
+        expect(body.fylo.operations).toEqual(['createCollection', 'inspectCollection', 'rebuildCollection']);
+    });
+    timedTest('GET /languages/swift executes the Swift adapter route', { timeout: 180000 }, async () => {
+        if (!commandAvailable('swiftc'))
+            return;
+        const res = await authFetch('/languages/swift');
+        expect(res.status).toEqual(200);
+        const body = await res.json();
+        expect(body).toHaveProperty('message', 'Hello from Swift!');
+        expect(body.fylo.operations).toEqual(['createCollection', 'putData', 'joinDocs']);
+    });
+    timedTest('GET /languages/kotlin executes the Kotlin adapter route', { timeout: 180000 }, async () => {
+        if (!kotlincAvailable() || !commandAvailable('java'))
+            return;
+        const res = await authFetch('/languages/kotlin');
+        expect(res.status).toEqual(200);
+        const body = await res.json();
+        expect(body).toHaveProperty('message', 'Hello from Kotlin!');
+        expect(body.fylo.operations).toEqual(['createCollection', 'batchPutData', 'patchDocs']);
+    });
+    timedTest('GET /languages/rust executes the Rust adapter route', { timeout: 60000 }, async () => {
+        if (!commandAvailable('rustc'))
+            return;
+        const res = await authFetch('/languages/rust');
+        expect(res.status).toEqual(200);
+        const body = await res.json();
+        expect(body).toHaveProperty('message', 'Hello from Rust!');
+        expect(body.fylo.operations).toEqual(['createCollection', 'inspectCollection', 'dropCollection']);
     });
     test('DELETE /languages/dart executes the Dart adapter route', async () => {
         if (!commandAvailable('dart'))
             return;
         const res = await authFetch('/languages/dart', { method: 'DELETE' });
         expect(res.status).toEqual(200);
-        expect(await res.json()).toHaveProperty('message', 'Hello from Dart!');
+        const body = await res.json();
+        expect(body).toHaveProperty('message', 'Hello from Dart!');
+        expect(body.fylo.operations).toEqual(['createCollection', 'importBulkData']);
     });
     test('examples/server/routes covers every supported Yon language', async () => {
         const HandlerAdapter = (await import('../../src/server/process/handler-adapter.js')).default;
@@ -695,6 +790,10 @@ describe('Polyglot root route adapters', () => {
             ['dart', `${EXAMPLES_DIR}/server/routes/languages/dart/yon.dart`],
             ['java', `${EXAMPLES_DIR}/server/routes/languages/java/yon.java`],
             ['csharp', `${EXAMPLES_DIR}/server/routes/languages/csharp/yon.cs`],
+            ['cpp', `${EXAMPLES_DIR}/server/routes/languages/cpp/yon.cpp`],
+            ['swift', `${EXAMPLES_DIR}/server/routes/languages/swift/yon.swift`],
+            ['kotlin', `${EXAMPLES_DIR}/server/routes/languages/kotlin/yon.kt`],
+            ['rust', `${EXAMPLES_DIR}/server/routes/languages/rust/yon.rs`],
         ]);
         for (const language of HandlerAdapter.supportedLanguages) {
             const handler = languageRoutes.get(language);
@@ -1140,6 +1239,58 @@ describe('SSE streaming', () => {
             if (!(error instanceof Error) || error.name !== 'AbortError')
                 throw error;
         }
+    });
+});
+// ===========================================================================
+// Yon Realtime Example
+// ===========================================================================
+describe('Yon realtime example', () => {
+    test('registers two clients and delivers a durable message over SSE', async () => {
+        const adaResponse = await authFetch('/realtime/clients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: 'Ada' }),
+        });
+        const benResponse = await authFetch('/realtime/clients', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nickname: 'Ben' }),
+        });
+        expect(adaResponse.status).toEqual(200);
+        expect(benResponse.status).toEqual(200);
+        const ada = await adaResponse.json();
+        const ben = await benResponse.json();
+        expect(ada.clientId).toMatch(/^[0-9A-Z]{11}$/);
+        expect(ben.clientId).toMatch(/^[0-9A-Z]{11}$/);
+
+        const stream = await authFetch(`/_yon/realtime/stream?clientId=${ada.clientId}`, {
+            headers: { Accept: 'text/event-stream' },
+        });
+        expect(stream.status).toEqual(200);
+        expect(stream.headers.get('content-type')).toContain('text/event-stream');
+        const reader = stream.body?.getReader();
+        if (!reader) throw new Error('Expected realtime stream body');
+        await reader.read();
+
+        const messageResponse = await authFetch('/realtime/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: ben.clientId, to: ada.clientId, text: 'Hello Ada' }),
+        });
+        expect(messageResponse.status).toEqual(200);
+        const message = await messageResponse.json();
+        expect(message.stored).toBe(true);
+
+        let received = '';
+        const deadline = Date.now() + 2_000;
+        while (!received.includes('Hello Ada') && Date.now() < deadline) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            received += new TextDecoder().decode(chunk.value);
+        }
+        await reader.cancel();
+        expect(received).toContain('event: demo.message');
+        expect(received).toContain('Hello Ada');
     });
 });
 // ===========================================================================
@@ -1694,6 +1845,7 @@ describe('Parameter length limits', () => {
 // Status code endpoints — verifies status matching across Yon language adapters
 // ===========================================================================
 describe('Status code endpoint', () => {
+    /** @type {Array<[string, string, number]>} */
     const cases = [
         ['GET', 'javascript', 200], ['GET', 'javascript', 201], ['GET', 'javascript', 202], ['GET', 'javascript', 203],
         ['GET', 'javascript', 205], ['GET', 'javascript', 206],
@@ -1706,6 +1858,13 @@ describe('Status code endpoint', () => {
         ['POST', 'java', 416], ['POST', 'java', 417], ['POST', 'java', 418], ['POST', 'java', 421], ['POST', 'java', 422],
         ['GET', 'csharp', 423], ['GET', 'csharp', 424], ['GET', 'csharp', 425], ['GET', 'csharp', 426], ['GET', 'csharp', 428],
         ['DELETE', 'dart', 429], ['DELETE', 'dart', 431], ['DELETE', 'dart', 451], ['DELETE', 'dart', 500], ['DELETE', 'dart', 501],
+        ['GET', 'cpp', 502], ['GET', 'cpp', 503], ['GET', 'cpp', 504], ['GET', 'cpp', 505], ['GET', 'cpp', 506],
+        ['GET', 'swift', 507], ['GET', 'swift', 508], ['GET', 'swift', 510], ['GET', 'swift', 511],
+        ['GET', 'rust', 512], ['GET', 'rust', 513], ['GET', 'rust', 514], ['GET', 'rust', 515],
+        // Kotlin's compiler is slow in dev (recompile per request), so the matrix
+        // exercises a single representative status to keep the suite responsive;
+        // the dedicated execution test covers the full Kotlin round-trip.
+        ['GET', 'kotlin', 411],
     ];
 
     // Per-language runtime dependency. Skip cases whose runtime is missing
@@ -1721,12 +1880,21 @@ describe('Status code endpoint', () => {
         java: 'javac',
         csharp: 'dotnet',
         dart: 'dart',
+        cpp: 'clang++',
+        swift: 'swiftc',
+        kotlin: 'kotlinc',
+        rust: 'rustc',
     };
 
-    timedTest('returns requested status codes across Yon language adapters', { timeout: 60000 }, async () => {
+    timedTest('returns requested status codes across Yon language adapters', { timeout: 240000 }, async () => {
         for (const [method, language, code] of cases) {
             const required = requiredCommands[String(language)];
-            if (required && !commandAvailable(required)) {
+            const hasRuntime = language === 'cpp'
+                ? commandAvailable('clang++') || commandAvailable('g++') || commandAvailable('c++')
+                : language === 'kotlin'
+                    ? kotlincAvailable() && commandAvailable('java')
+                    : !required || commandAvailable(required);
+            if (!hasRuntime) {
                 console.warn(`[status-code-endpoint] Skipping ${method} /languages/${language}?code=${code}: '${required}' not available`);
                 continue;
             }
@@ -1762,7 +1930,7 @@ describe('FYLO_SCHEMA schema loading', () => {
 
         try {
             process.env.FYLO_SCHEMA = schemasDir;
-            const fylo = new Fylo({ root });
+            const fylo = new Fylo(root);
             await fylo.ready();
 
             const inspect = await fylo.inspectCollection(collection);

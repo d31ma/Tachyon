@@ -7,7 +7,7 @@ class PythonFyloRepository:
     def __init__(self, root=None):
         self.root = root or os.environ.get(
             "FYLO_ROOT",
-            os.path.abspath(os.path.join(os.getcwd(), "server", "data", "language-route-events")),
+            os.path.abspath(os.path.join(os.getcwd(), "db")),
         )
         self.executable = os.environ.get("FYLO_EXEC_PATH")
 
@@ -50,7 +50,7 @@ class PythonFyloRepository:
             "collection": collection,
             "id": doc_id,
             "document": document,
-            "matched": len(found.keys()) if isinstance(found, dict) else 0,
+            "matched": str(len(found.keys()) if isinstance(found, dict) else 0),
             "operations": ["createCollection", "putData", "findDocs"],
-            "resultCount": 3,
+            "resultCount": "3",
         }

@@ -83,16 +83,39 @@ declare global {
    * Per-collection proxy returned by `fylo.<collectionName>` property access.
    * All methods are async and return JSON envelopes from the /_fylo/api/* server.
    */
+  type FyloCachePolicy = 'cache-first' | 'network-first' | 'reload' | 'no-store';
+  interface FyloQueryOptions {
+    cache?: FyloCachePolicy;
+  }
+
+  type FyloSubscribeSource = 'initial' | 'event-stream' | 'poll';
+  interface FyloSubscribeMeta {
+    collection: string;
+    events: unknown[];
+    offset: number;
+    source: FyloSubscribeSource;
+  }
+  type FyloSubscribeCallback = (payload: FyloQueryResult, meta: FyloSubscribeMeta) => void | Promise<void>;
+  type FyloSubscribeOptions = FyloQueryOptions & {
+    pollMs?: number;
+    since?: number;
+    onError?: (error: unknown) => void;
+  };
+
   interface FyloCollectionProxy {
     /**
      * Query the collection using PostgREST-style filters.
      * Values follow `operator.value` syntax: `{ role: 'eq.admin', age: 'gt.18' }`.
      * Reserved keys: `select` (vertical filter), `order` (sort), `limit`, `offset`.
      */
-    find(query?: Record<string, unknown>): Promise<FyloQueryResult>;
-    list(limit?: number): Promise<{ docs: Array<{ id: string; doc: unknown }>; error?: string; encryptedFields?: string[]; revealed?: boolean }>;
-    get(id: string): Promise<FyloDocResponse>;
+    find(query?: Record<string, unknown>, options?: FyloQueryOptions): Promise<FyloQueryResult>;
+    list(limit?: number, options?: FyloQueryOptions): Promise<{ docs: Array<{ id: string; doc: unknown }>; error?: string; encryptedFields?: string[]; revealed?: boolean }>;
+    get(id: string, options?: FyloQueryOptions): Promise<FyloDocResponse>;
     events(since?: number): Promise<{ collection: string; events: unknown[]; offset: number; exists: boolean; error?: string }>;
+    subscribe(callback: FyloSubscribeCallback, options?: FyloSubscribeOptions): () => void;
+    subscribe(query: Record<string, unknown>, callback: FyloSubscribeCallback, options?: FyloSubscribeOptions): () => void;
+    create(doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; doc?: unknown; error?: string }>;
+    put(id: string, doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; error?: string }>;
     patch(id: string, doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; error?: string }>;
     del(id: string): Promise<{ ok?: boolean; error?: string }>;
     rebuild(): Promise<{ ok?: boolean; result?: unknown; error?: string }>;

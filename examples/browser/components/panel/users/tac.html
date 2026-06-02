@@ -1,18 +1,61 @@
 <div class="col-span-full min-w-0 max-w-full h-full bg-surface-container text-on-surface border border-outline-variant p-6 flex flex-col gap-4 shadow-sm">
     <div class="flex items-center justify-between gap-4 min-w-0 flex-wrap">
         <div class="grid gap-1">
-            <h2 class="m-0 text-xl font-bold">Users</h2>
-            <p class="text-on-surface-variant text-sm m-0">Reads <code>fylo.users.find()</code> directly from the browser. The <code>fylo</code> global is compiler-injected - no manual import.</p>
+            <h2 class="m-0 text-xl font-bold">FYLO Browser Cache</h2>
+            <p class="text-on-surface-variant text-sm m-0">Reads <code>fylo.users.find(query, options)</code> directly from Tac, stores successful reads in IndexedDB, and keeps the view fresh with <code>fylo.users.subscribe(query, callback)</code>.</p>
         </div>
         <md-assist-chip :label="loadingState()"></md-assist-chip>
     </div>
+
+    <div class="p-3 bg-tertiary-container text-on-tertiary-container border border-tertiary/20 grid gap-1">
+        <span class="text-[0.68rem] font-bold uppercase tracking-wide">Sync-first subscription</span>
+        <span class="text-sm">FYLO event journal: {syncStatus}</span>
+    </div>
+
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,150px),1fr))] gap-2">
+        <loop :for="const policy of cachePolicies">
+            <div @click="loadWithPolicy(policy)" role="button" tabindex="0" class="grid gap-1 p-3 border cursor-pointer select-none transition-colors duration-150" :class="policy === selectedPolicy ? 'border-primary bg-primary-container text-on-primary-container' : 'border-outline-variant bg-surface-container-high text-on-surface hover:border-primary/50'">
+                <span class="text-[0.68rem] font-bold uppercase tracking-wide">{policy}</span>
+                <span class="text-xs opacity-80">{policy === 'cache-first' ? 'IndexedDB first' : policy === 'network-first' ? 'Network, then cache' : policy === 'reload' ? 'Refresh cache' : 'Bypass cache'}</span>
+            </div>
+        </loop>
+    </div>
+
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-3">
+        <div class="p-4 bg-surface-container-high border border-outline-variant grid gap-2">
+            <span class="text-primary text-[0.68rem] font-bold uppercase tracking-wide">Latest cache runs</span>
+            <logic :if="cacheRuns.length === 0">
+                <p class="text-on-surface-variant text-sm m-0">Pick a cache policy to query users.</p>
+            </logic>
+            <logic :if="cacheRuns.length > 0">
+                <div class="grid gap-2">
+                    <loop :for="const run of cacheRuns">
+                        <div class="grid grid-cols-[auto_1fr_auto] gap-3 items-start text-sm">
+                            <strong class="text-primary">{run.policy}</strong>
+                            <span class="text-on-surface-variant">{run.note}</span>
+                            <span class="text-on-surface">{run.duration}</span>
+                        </div>
+                    </loop>
+                </div>
+            </logic>
+        </div>
+        <div class="p-4 bg-surface-container-high border border-outline-variant grid gap-3">
+            <span class="text-primary text-[0.68rem] font-bold uppercase tracking-wide">Mutation invalidation</span>
+            <p class="text-on-surface-variant text-sm m-0">{mutationLog}</p>
+            <div class="flex items-center gap-2 flex-wrap">
+                <md-filled-button @click="runMutationDemo()" :disabled="mutating">{mutating ? 'Working...' : 'Create temp user'}</md-filled-button>
+                <md-text-button @click="loadWithPolicy('reload')">Reload users</md-text-button>
+            </div>
+        </div>
+    </div>
+
     <logic :if="users.length > 0">
         <md-list>
             <loop :for="const user of users">
                 <md-list-item>
                     <div class="grid gap-1">
                         <strong>{user.email}</strong>
-                        <span class="text-on-surface-variant text-sm">{user.role} - {user.id}</span>
+                        <span class="text-on-surface-variant text-sm">{user.role} - {user.id} - {maskedApiKey(user.apiKeyPreview)}</span>
                     </div>
                     <md-assist-chip :label="user.role"></md-assist-chip>
                 </md-list-item>

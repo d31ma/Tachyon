@@ -1,0 +1,42 @@
+{
+    "GET": {
+        "200": {
+            "language": "^cpp$",
+            "message": "^Hello from C\\+\\+!$",
+            "requestId": "^.{1,200}$",
+            "fylo?": {
+                "collection": "^[\\s\\S]+$",
+                "operations": ["^[A-Za-z]+$"],
+                "resultCount": "^[0-9]+$"
+            }
+        },
+        "502": {
+            "code": "^502$",
+            "detail": "^bad gateway$"
+        },
+        "503": {
+            "code": "^503$",
+            "detail": "^service unavailable$"
+        },
+        "504": {
+            "code": "^504$",
+            "detail": "^gateway timeout$"
+        },
+        "505": {
+            "code": "^505$",
+            "detail": "^http version not supported$"
+        },
+        "506": {
+            "code": "^506$",
+            "detail": "^variant also negotiates$"
+        },
+        "500": {
+            "detail": "^[\\s\\S]+$"
+        },
+        "request": {
+            "query?": {
+                "code?": "^[0-9]+$"
+            }
+        }
+    }
+}

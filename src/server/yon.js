@@ -6,6 +6,7 @@ import Pool from "./process/process-pool.js";
 import Validate from "./http/schema-validator.js";
 import OpenAPI from "./openapi/openapi.js";
 import FyloBrowser from "./fylo-browser/fylo-browser.js";
+import YonRealtime from "./realtime/realtime.js";
 import Telemetry from './observability/telemetry.js';
 import { withPublicBrowserEnv } from './http/browser-env.js';
 import logger from './observability/logger.js';
@@ -27,6 +28,7 @@ import logger from './observability/logger.js';
  * @property {{ token: string, verified: false }} [bearer]
  *
  * @typedef {object} RequestPayload
+ * @property {string} [method]
  * @property {StringMap} [headers]
  * @property {Record<string, unknown>} [paths]
  * @property {unknown} [body]
@@ -1000,6 +1002,7 @@ export default class Yon {
         const wrapRoute = (handler, options) => Yon.wrapInlineRoute(handler, options);
         OpenAPI.registerRoutes();
         FyloBrowser.registerRoutes(wrapRoute);
+        YonRealtime.registerRoutes(wrapRoute);
         for (const healthPath of [...Yon.healthRoutePaths, ...Yon.readyRoutePaths]) {
             if (!Router.reqRoutes[healthPath])
                 Router.reqRoutes[healthPath] = {};
@@ -1171,3 +1174,5 @@ export default class Yon {
         }
     }
 }
+
+export { YonRealtime };
