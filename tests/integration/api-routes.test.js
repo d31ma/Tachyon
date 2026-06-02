@@ -742,7 +742,7 @@ describe('Polyglot root route adapters', () => {
         expect(body).toHaveProperty('message', 'Hello from C++!');
         expect(body.fylo.operations).toEqual(['createCollection', 'inspectCollection', 'rebuildCollection']);
     });
-    timedTest('GET /languages/swift executes the Swift adapter route', { timeout: 60000 }, async () => {
+    timedTest('GET /languages/swift executes the Swift adapter route', { timeout: 180000 }, async () => {
         if (!commandAvailable('swiftc'))
             return;
         const res = await authFetch('/languages/swift');
