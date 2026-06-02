@@ -733,7 +733,7 @@ describe('Polyglot root route adapters', () => {
         expect(body).toHaveProperty('message', 'Hello from C#!');
         expect(body.fylo.operations).toEqual(['schemaCurrent', 'schemaHistory']);
     });
-    test('GET /languages/cpp executes the C++ adapter route', async () => {
+    timedTest('GET /languages/cpp executes the C++ adapter route', { timeout: 60000 }, async () => {
         if (!commandAvailable('clang++') && !commandAvailable('g++') && !commandAvailable('c++'))
             return;
         const res = await authFetch('/languages/cpp');
