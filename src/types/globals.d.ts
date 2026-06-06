@@ -32,12 +32,17 @@ declare global {
   var __ty_prerender__: boolean | undefined;
   const Tac: typeof import("../runtime/tac.js").default;
   type TacProps = import("../runtime/tac.js").TacProps;
-  const inject: typeof import("../runtime/decorators.js").inject;
-  const provide: typeof import("../runtime/decorators.js").provide;
   const env: typeof import("../runtime/decorators.js").env;
   const onMount: typeof import("../runtime/decorators.js").onMount;
-  const emit: typeof import("../runtime/decorators.js").emit;
-  const render: typeof import("../runtime/decorators.js").render;
+  const publish: typeof import("../runtime/decorators.js").publish;
+  const subscribe: typeof import("../runtime/decorators.js").subscribe;
+  type Json = unknown;
+  interface TacWorkerRequest {
+    len(): number;
+    body(): string;
+    json(): Json;
+  }
+  function json(value: string | Json): Json;
   /**
    * FYLO collection query helper — globally available in Tac companion scripts
    * and on `window` for plain script tags. Bootstrapped by
@@ -60,11 +65,14 @@ declare global {
   const fylo: FyloApi;
 
   interface Window {
-    __ty_context__?: Map<string, unknown>;
     __ty_fetch_cache_db__?: IDBDatabase | null;
     __ty_onMount_queue__?: Array<() => void | Promise<void>>;
     __ty_public_env__?: Record<string, unknown>;
     __ty_rerender?: () => void;
+    __ty_signals__?: {
+      values: Map<string, unknown>;
+      listeners: Map<string, Set<(value: unknown) => void | Promise<void>>>;
+    };
     Tac?: {
       version?: string;
       modules?: Map<string, unknown>;
@@ -88,7 +96,7 @@ declare global {
     cache?: FyloCachePolicy;
   }
 
-  type FyloSubscribeSource = 'initial' | 'event-stream' | 'poll';
+  type FyloSubscribeSource = 'initial' | 'event-stream' | 'poll' | 'local';
   interface FyloSubscribeMeta {
     collection: string;
     events: unknown[];

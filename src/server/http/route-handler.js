@@ -74,6 +74,7 @@ export default class Router {
     static routesPath = Router.resolveWorkspacePath('YON_ROUTES_PATH', ['server/routes', 'routes']);
     static pagesPath = Router.resolveWorkspacePath('YON_PAGES_PATH', ['browser/pages', 'routes']);
     static componentsPath = Router.resolveWorkspacePath('YON_COMPONENTS_PATH', ['browser/components', 'components']);
+    static workersPath = Router.resolveWorkspacePath('YON_WORKERS_PATH', ['browser/workers']);
     static assetsPath = Router.resolveWorkspacePath('YON_ASSETS_PATH', ['browser/shared/assets', 'shared/assets', 'assets']);
     static sharedDataPath = Router.resolveWorkspacePath('YON_SHARED_DATA_PATH', ['browser/shared/data', 'shared/data']);
     static sharedScriptsPath = Router.resolveWorkspacePath('YON_SHARED_SCRIPTS_PATH', ['browser/shared/scripts']);
@@ -171,7 +172,7 @@ export default class Router {
             // Security headers
             "X-Frame-Options": "DENY",
             "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": process.env.YON_CONTENT_SECURITY_POLICY || "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'",
+            "Content-Security-Policy": process.env.YON_CONTENT_SECURITY_POLICY || "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'",
             "Referrer-Policy": "strict-origin-when-cross-origin",
         };
         if (request?.headers.get('origin') && allowOrigin && allowOrigin !== '*') {

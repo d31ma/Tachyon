@@ -17,11 +17,11 @@
 
 - Polyglot backend handlers with executable files and shebangs
 - Tac pages and components with `tac.html` templates
-- Companion `*.js`, `*.ts`, `*.wasm`, source-backed Wasm (`*.as.ts`, `*.rs`, `*.c`, `*.go`, `*.zig`, `*.wat`), and `*.css` files beside templates
+- Companion `*.js`, `*.ts`, and `*.css` files beside templates
 - OOP-style companion classes with `export default class extends Tac`
-- Wasm-backed Tac companions through the `tac-wasm-json@1` ABI and generated adapters
+- Browser-local Tac Workers compiled in-house to `tac.wasm` (no external toolchain), invoked with `fetch("tac://...")`
 - Automatic persistence for `$`-prefixed (sessionStorage) and `$$`-prefixed (localStorage) instance fields
-- Local-first browser `fetch()` for Tac page/component scripts with IndexedDB-backed read caching and mutation-aware invalidation
+- Local-first browser `fetch()` plus worker-owned OPFS-backed FYLO document mirrors for Tac page/component scripts
 - Explicit browser env allowlisting through `TAC_PUBLIC_ENV` and `this.env(...)`
 - Static export with prerendered `dist/**/index.html`
 - Shared frontend assets under `/shared/assets/*`
@@ -94,6 +94,10 @@ browser/
     styles/
     assets/
     data/
+  workers/
+    language/
+      rust/
+        tac.rs
 
 server/
   routes/
@@ -114,9 +118,9 @@ The example app in [examples/](examples/) demonstrates Tac and Yon working toget
 - accessible native controls and a reactive canvas studio with semantic
   `progress`, `meter`, `output`, `time`, and `details` elements
 - persisted `$` (sessionStorage) and `$$` (localStorage) fields
-- local-first fetches
+- local-first fetches and OPFS-backed FYLO browser reads
+- browser-local Tac Workers for heavier frontend work
 - frontend-only external SSE streaming with reactive Tac updates
-- prebuilt Tac Wasm companions with source examples in WAT, AssemblyScript, Rust, C, Go, and Zig
 - backend handlers in multiple languages
 - shared data, shared assets, and a browser entry
 - middleware, OpenAPI docs, embedded route manifests, and component companions
@@ -149,7 +153,7 @@ YON_ALLOW_METHODS=GET,POST,PUT,DELETE,PATCH,OPTIONS
 YON_BASIC_AUTH=
 YON_BASIC_AUTH_HASH=
 YON_VALIDATE=true
-YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'
+YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'
 YON_ENABLE_HSTS=false
 YON_SKIP_BUNDLE=false
 
@@ -162,6 +166,7 @@ YON_RATE_LIMIT_WINDOW_MS=
 YON_ROUTES_PATH=server/routes
 YON_PAGES_PATH=browser/pages
 YON_COMPONENTS_PATH=browser/components
+YON_WORKERS_PATH=browser/workers
 YON_ASSETS_PATH=browser/shared/assets
 YON_SHARED_SCRIPTS_PATH=browser/shared/scripts
 YON_SHARED_STYLES_PATH=browser/shared/styles
@@ -587,6 +592,11 @@ Templates support:
 - `<my-component />`
 - `<my-component lazy />`
 
+Template expressions run inside Tac's async render function, so `await` is
+available in interpolation, dynamic attributes, and control expressions. Prefer
+companion-script fields for uncached network data so rerenders do not repeatedly
+fetch the same resource.
+
 Example page:
 
 ```html
@@ -662,116 +672,13 @@ Available helpers through `Tac`:
 
 - `this.env(key, fallback?)`
 - `this.fetch(input, init)`
-- `this.emit(name, detail)`
-- `this.inject(key, fallback?)`
-- `this.provide(key, value)`
 - `this.onMount(fn)`
+- `this.publish(name, value, options?)`
 - `this.rerender()`
+- `this.subscribe(name, callbackOrFallback?, options?)`
 - `this.isBrowser`
 - `this.isServer`
 - `this.props`
-
-### Wasm Companions
-
-Tac can also load prebuilt WebAssembly companions. The browser still receives a generated JavaScript adapter that extends `Tac`, so templates keep the same shape:
-
-```html
-<!-- browser/components/clicker/tac.html -->
-<button @click="increment()">{label}: {clicks}</button>
-```
-
-Place the Wasm module and manifest beside the template:
-
-```text
-browser/components/clicker/
-  tac.html
-  tac.wasm
-  tac.tac.json
-```
-
-Or give Tachyon source and let `bun serve` / `bun run bundle` compile it before generating the Tac adapter:
-
-```text
-browser/components/clicker/
-  tac.html
-  tac.rs
-  tac.tac.json
-```
-
-Source-backed companions are selected before a sibling `tac.wasm`, so app authors can keep a checked-in fallback while local development still compiles from source when the compiler is available. If source compilation fails and a sibling `.wasm` exists, Tachyon logs a warning and uses the prebuilt fallback; without a fallback, the bundle fails with the compiler error.
-
-`tac.tac.json` declares the stable Tac ABI:
-
-```json
-{
-  "abi": "tac-wasm-json@1",
-  "state": {
-    "clicks": 0,
-    "label": "Ready"
-  },
-  "methods": ["increment"]
-}
-```
-
-The Wasm module must export:
-
-- `memory`
-- `alloc(size) -> ptr`
-- `dealloc(ptr, len)`
-- `init(ptr, len)`
-- `call(methodPtr, methodLen, payloadPtr, payloadLen)`
-- `output_ptr() -> ptr`
-- `output_len() -> len`
-
-`init` receives JSON shaped as `{ "props": { ... } }`. `call` receives the method name as JSON plus a payload shaped as `{ "args": [...], "props": { ... }, "state": { ... } }`. Both functions report their response through `output_ptr` / `output_len`; the response JSON can contain `{ "state": { ... }, "result": ..., "effects": [...] }`.
-
-Supported effects:
-
-- `{ "type": "emit", "name": "saved", "detail": { ... } }`
-- `{ "type": "provide", "key": "theme", "value": "dark" }`
-- `{ "type": "rerender" }`
-
-Any language can participate by compiling to a `.wasm` module that follows this ABI. Tachyon keeps rendering, event binding, persistence, local-first fetch, and DOM access in the generated adapter rather than exposing the DOM directly to Wasm.
-
-<details>
-<summary><h3 style="display:inline">Compiler Support</h3></summary>
-
-Tachyon currently knows how to compile these source companions when the matching compiler is installed on the app author's machine:
-
-<table>
-<tr><th align="left">Extension</th><th align="left">Compiler</th><th align="left">Install</th></tr>
-<tr><td><code>tac.as.ts</code></td><td><code>asc</code></td><td><code>bun add -d assemblyscript</code></td></tr>
-<tr><td><code>tac.rs</code></td><td><code>rustc</code></td><td>Install Rust + <code>rustup target add wasm32-unknown-unknown</code></td></tr>
-<tr><td><code>tac.c</code></td><td><code>clang</code></td><td>Install LLVM/Clang with WebAssembly target support</td></tr>
-<tr><td><code>tac.go</code></td><td><code>tinygo</code></td><td>Standard Go browser Wasm target uses a Go runtime shim, not the Tac ABI shape</td></tr>
-<tr><td><code>tac.zig</code></td><td><code>zig</code></td><td></td></tr>
-<tr><td><code>tac.wat</code></td><td><code>wat2wasm</code></td><td>Install WABT</td></tr>
-</table>
-
-Compiler path overrides are available for CI or non-standard installs:
-
-<table>
-<tr><th align="left">Variable</th><th align="left">Compiler</th></tr>
-<tr><td><code>TACHYON_WASM_ASC</code></td><td>AssemblyScript</td></tr>
-<tr><td><code>TACHYON_WASM_RUSTC</code></td><td>Rust</td></tr>
-<tr><td><code>TACHYON_WASM_CLANG</code></td><td>C (Clang)</td></tr>
-<tr><td><code>TACHYON_WASM_TINYGO</code></td><td>Go (TinyGo)</td></tr>
-<tr><td><code>TACHYON_WASM_ZIG</code></td><td>Zig</td></tr>
-<tr><td><code>TACHYON_WASM_WAT2WASM</code></td><td>WAT (wabt)</td></tr>
-</table>
-
-</details>
-
-The checked-in examples under `examples/browser/components/wasm/` use real source-backed companion filenames plus sibling `.wasm` fallbacks, so the example app runs without requiring every language compiler to be installed:
-
-- `clicker/tac.wat` for raw WebAssembly text
-- `assemblyscript/tac.as.ts`
-- `rust/tac.rs`
-- `c/tac.c`
-- `go/tac.go`
-- `zig/tac.zig`
-
-Tachyon intentionally treats language compilers as optional; plain `.wasm` works without adding a framework dependency. For strict CSP deployments, keep `script-src 'wasm-unsafe-eval'` in `YON_CONTENT_SECURITY_POLICY` so browsers can instantiate Wasm modules.
 
 ### Decorator Form
 
@@ -785,8 +692,8 @@ globals once in the app:
 ```
 
 The `yon.init` scaffold writes this to `tachyon-env.d.ts` automatically. It
-lets app-authored page and component scripts use bare `Tac`, `inject`,
-`provide`, `env`, `onMount`, `emit`, `render`, and `fylo` without local imports
+lets app-authored page and component scripts use bare `Tac`, `publish`,
+`subscribe`, `env`, `onMount`, `fylo`, and `Worker` without local imports
 or `Cannot find name` diagnostics from TypeScript-aware tooling.
 
 If the app also uses plain ESLint `no-undef`, import Tachyon's globals map in
@@ -807,21 +714,21 @@ export default class extends Tac {
   label = 'Interactions'
 
   /** @type {string | undefined} */
-  @inject('demo-release', 'Tac')
+  @subscribe
   release
 
   /** @type {string} */
-  @provide('demo-release')
+  @publish('release')
   appVersion = 'TACHYON'
 
   /** @type {number | undefined} */
   @env('PUBLIC_PORT', 3000)
   port
 
-  @onMount
-  refresh() { /* runs once after the component is attached */ }
+  @subscribe('demo-refresh', { onMount: true })
+  refresh() { /* runs once after mount and again when demo-refresh publishes */ }
 
-  @emit('saved')
+  @publish('saved')
   async save(payload) { return await this.fetch('/languages/typescript/items', { method: 'POST', body: JSON.stringify(payload) }) }
 }
 ```
@@ -830,19 +737,20 @@ Decorator semantics:
 
 <table>
 <tr><th align="left">Decorator</th><th align="left">Kind</th><th align="left">Behavior</th></tr>
-<tr><td><code>@inject(key, fallback?)</code></td><td>field</td><td>Field initialized from <code>tac.inject(key, fallback)</code></td></tr>
-<tr><td><code>@provide(key)</code></td><td>field</td><td>Initial value registered with <code>tac.provide(key, value)</code> after construction</td></tr>
+<tr><td><code>@subscribe</code> or <code>@subscribe(name, fallback?)</code></td><td>field</td><td>Field initialized from the retained signal value, falls back when the signal has not been published, and updates when the signal changes. Bare <code>@subscribe</code> uses the field name as the signal name.</td></tr>
+<tr><td><code>@subscribe</code>, <code>@subscribe(name, options?)</code>, or <code>@subscribe(options)</code></td><td>method</td><td>Method receives every future publication for the signal. Bare <code>@subscribe</code> uses the method name as the signal name. Pass <code>{ onMount: true }</code> to also run once after the component/page mounts.</td></tr>
+<tr><td><code>@publish</code> or <code>@publish(name)</code></td><td>field</td><td>Initial field value is retained as the signal value and future assignments publish retained updates. Bare <code>@publish</code> uses the field name as the signal name.</td></tr>
+<tr><td><code>@publish</code>, <code>@publish(name, options?)</code>, or <code>@publish(options)</code></td><td>method</td><td>Return value (or resolved value for async) is published as <code>name</code>. Bare <code>@publish</code> uses the method name as the signal name. Rejections propagate without publishing.</td></tr>
 <tr><td><code>@env(key, fallback?)</code></td><td>field</td><td>Field initialized from <code>tac.env(key, fallback)</code></td></tr>
 <tr><td><code>@onMount</code></td><td>method</td><td>Method registered as an <code>onMount</code> handler bound to the instance</td></tr>
-<tr><td><code>@emit(name)</code></td><td>method</td><td>Return value (or resolved value for async) emitted as <code>name</code>. Rejections propagate without emitting.</td></tr>
 </table>
 
-`@inject` and `@env` mirror the underlying `tac.inject` / `tac.env` types and may return `undefined` when no fallback is supplied; declare the field's JSDoc type accordingly.
+`@subscribe` and `@env` mirror the underlying `tac.subscribe` / `tac.env` types and may return `undefined` when no fallback is supplied; declare the field's JSDoc type accordingly.
 
 Outside of companion scripts (tests, library code), import the decorators explicitly:
 
 ```js
-import { inject, provide, env, onMount, emit } from '@d31ma/tachyon/decorators'
+import { subscribe, publish, env, onMount } from '@d31ma/tachyon/decorators'
 ```
 
 ### Reactive Fields
@@ -859,7 +767,7 @@ export default class extends Tac {
 }
 ```
 
-`$`-prefixed and `$$`-prefixed persistent fields are reactive too, and still write through to `sessionStorage` / `localStorage`. `this.rerender()` remains available for rare cases where code mutates nested object/array contents in place instead of assigning a new field value.
+`$`-prefixed and `$$`-prefixed persistent fields are reactive too, and still write through to `sessionStorage` / `localStorage`. Strict v2 reactivity is assignment-based: mutate nested object/array contents by assigning a new field value rather than relying on a manual render escape hatch.
 
 ### Prop Auto-Binding
 
@@ -906,6 +814,209 @@ Important boundary:
 - private secrets must stay in Yon and be used through server routes, middleware, or upstream API calls made on the server
 
 There is no secure way to give a browser script a secret and also keep that secret hidden from the browser.
+
+### Tac Workers
+
+Tac Workers let page and component scripts call a browser-local worker backend
+with the same authoring feel as Yon routes:
+
+```text
+browser/workers/
+  language/
+    rust/
+      tac.rs
+    c/
+      tac.c
+    cpp/
+      tac.cpp
+    zig/
+      tac.zig
+    python/
+      tac.py
+    csharp/
+      tac.cs
+    go/
+      tac.go
+    javascript/
+      tac.js
+    typescript/
+      tac.ts
+```
+
+The worker is shaped exactly like a Yon route handler - `impl Handler` with
+methods named after HTTP verbs:
+
+```rust
+// browser/workers/language/rust/tac.rs
+impl Handler {
+    pub fn GET(request: Request) -> i32 { request.len() }
+    pub fn POST(request: Request) -> String { /* ... */ }
+    pub fn PATCH(request: Request) -> Json { json(request.body()) }
+}
+```
+
+Page and component scripts invoke it with the native `fetch` API - the request
+verb selects the handler method (default `GET`):
+
+```js
+export default class extends Tac {
+  summary = ''
+
+  async summarize(text) {
+    const response = await fetch('tac://language/rust', { method: 'POST', body: { text } })
+    const payload = await response.json()
+    this.summary = payload.body.result
+  }
+}
+```
+
+At bundle time, Tachyon compiles each worker source into sibling runtime assets
+under `dist/workers/**`:
+
+```text
+dist/workers/language/rust/tac.worker.js
+dist/workers/language/rust/tac.wasm
+dist/workers/language/c/tac.worker.js
+dist/workers/language/c/tac.wasm
+dist/workers/language/cpp/tac.worker.js
+dist/workers/language/cpp/tac.wasm
+dist/workers/language/zig/tac.worker.js
+dist/workers/language/zig/tac.wasm
+dist/workers/language/python/tac.worker.js
+dist/workers/language/python/tac.wasm
+dist/workers/language/csharp/tac.worker.js
+dist/workers/language/csharp/tac.wasm
+dist/workers/language/go/tac.worker.js
+dist/workers/language/go/tac.wasm
+dist/workers/language/javascript/tac.worker.js
+dist/workers/language/javascript/tac.wasm
+dist/workers/language/typescript/tac.worker.js
+dist/workers/language/typescript/tac.wasm
+```
+
+`fetch('tac://language/rust', init)` resolves to the generated
+`/workers/language/rust/tac.worker.js` module, runs the matching verb method in
+a Web Worker, and returns a normal browser `Response`. Every non-`tac://` URL is
+delegated to the platform `fetch`, so local-first caching is unaffected.
+
+Tac caches one browser Worker per route by default. Heavy compute paths can opt
+into a Tachyon-managed route pool without changing the worker source:
+
+```js
+await fetch('tac://language/rust?pool=4', { method: 'POST', body })
+await fetch('tac://language/rust', {
+  method: 'POST',
+  headers: { 'X-Tac-Workers': '4' },
+  body,
+})
+await fetch('tac://language/rust', {
+  method: 'POST',
+  tac: { poolSize: 4 },
+  body,
+})
+```
+
+Pool sizes are clamped between `1` and `16`. Tachyon reuses the route pool and
+dispatches calls to the least-busy worker with round-robin tie breaking, which
+keeps concurrent Wasm work off the UI thread and spreads bursts before Tachyon
+adds true shared-memory Wasm threading.
+
+Compilation is fully in-house - no `rustc`/`clang`/`emcc`. Tachyon parses the
+handler subset directly and emits `tac.wasm` exposing the worker ABI
+(`memory`, `alloc`, optional `dealloc`, `call`, `output_ptr`, `output_len`).
+**Rust** (`tac.rs`), **C** (`tac.c`), **C++** (`tac.cpp`), **Zig**
+(`tac.zig`), **Python** (`tac.py`), **C#** (`tac.cs`), **Go** (`tac.go`),
+**JavaScript** (`tac.js`), and **TypeScript** (`tac.ts`) frontends ship today.
+Swift and Kotlin remain supported by Yon backend routes, but they are not part
+of the frontend Tac Worker Wasm compiler surface.
+
+How the in-house compiler works:
+
+1. Tachyon finds `browser/workers/**/tac.<language>` during `bun run bundle`.
+2. The language-specific frontend tokenizes/parses only Tachyon's documented
+   handler subset, not the full language.
+3. That parser emits a shared handler AST: methods named after HTTP verbs,
+   typed expressions, local bindings, loops, conditionals, and request helpers.
+4. `tac-handler-codegen.js` type-checks the AST, rejects unsupported methods or
+   type mismatches, and emits Wasm through Tachyon's own encoder.
+5. The generated `tac.worker.js` loads `tac.wasm`, dispatches the fetch method
+   to the matching handler method, and returns a normal `Response`.
+
+Worker contracts may also live beside the source as `OPTIONS.schema.json`, just
+like Yon backend routes:
+
+```text
+browser/workers/language/rust/
+  tac.rs
+  OPTIONS.schema.json
+```
+
+When present, Tachyon emits the schema to
+`dist/workers/<route>/OPTIONS.schema.json`, embeds it in the generated worker
+runtime, validates declared request sections before calling Wasm, and validates
+the response body for the matching status code before resolving the `fetch`.
+The browser worker validator follows Tachyon's strict CHEX-style contract
+shape: string leaves are regex patterns, data values are coerced to strings for
+matching, objects reject unknown properties, keys may be nullable with `?`,
+arrays must contain exactly one scalar or object template, and record
+descriptors are single-key objects whose key starts with `^`.
+
+Worker methods can return i32-backed integer aliases, `bool`,
+`String`/`string`/`str`, or `Json`/`json`. Boolean responses are emitted as
+real JSON `true`/`false` values. String responses are JSON-escaped
+automatically. Json responses are copied into `body.result` as raw JSON, so
+`json(request.body())` can echo a JSON object or array as a real structured
+value. `request.json()` returns the whole request envelope as raw JSON for
+handlers that need the method/body metadata together.
+
+Integer aliases are intentionally backed by the same signed 32-bit Wasm lane
+today. Use them for familiar authoring syntax, not native-width overflow
+semantics. Float/double primitives are not exposed yet; they need a dedicated
+f64 arithmetic and JSON formatting path before Tachyon can claim production
+support for them.
+
+Supported worker subset by language:
+
+- Rust: `impl Handler`, `pub fn VERB(request: Request) -> i8|i16|i32|u8|u16|u32|isize|usize|bool|String|Json`,
+  `let`/`let mut`, assignment, arithmetic, comparisons, logical `! && ||`,
+  `if/else` expressions, `while`, string literals + `+`, `request.len()`,
+  `request.body()`, `request.json()`, and `json(...)`.
+- C: top-level `VERB(Request request)` functions returning
+  `char|short|int|unsigned int|bool|string|json` plus fixed-width
+  `*_t` aliases, declarations, assignment, arithmetic, comparisons, logical
+  `! && ||`, ternary `?:`, `while`, string literals + `+`, `request.len()`,
+  `request.body()`, `request.json()`, and `json(...)`.
+- C++: `class Handler` static methods returning integer aliases, `bool`,
+  `string`, or `json`, local declarations, assignment, arithmetic, comparisons,
+  logical `! && ||`, ternary `?:`, `while`, string literals + `+`,
+  `request.len()`, `request.body()`, `request.json()`, and `json(...)`.
+- Zig: `const Handler = struct`, `pub fn VERB(request: Request) i8|i16|i32|u8|u16|u32|isize|usize|bool|string|json`,
+  `const`/`var`, assignment, arithmetic, comparisons, logical `! && ||`,
+  ternary `?:`, `while`, string literals + `+`, `request.len()`,
+  `request.body()`, `request.json()`, and `json(...)`.
+- Python: `class Handler`, optional `@staticmethod`, `def VERB(request) ->
+  int|bool|str|json`, assignments, arithmetic, comparisons, Python logical
+  `not/and/or`, Python ternary expressions (`a if condition else b`), `while`,
+  string literals + `+`, `request.len()`, `request.body()`, `request.json()`,
+  and `json(...)`.
+- C#: `class Handler` static methods returning integer aliases, `bool`,
+  `string`/`String`, or `Json`, declarations, assignment, arithmetic,
+  comparisons, logical `! && ||`, ternary `?:`, `while`, string literals + `+`,
+  `request.len()`, `request.body()`, `request.json()`, and `json(...)`.
+- Go: `func (Handler) VERB(request Request) int|int8|int16|int32|uint|uint8|uint16|uint32|uintptr|bool|string|json`,
+  `var` declarations, assignment, arithmetic, comparisons, logical `! && ||`,
+  Tac-Go ternary `?:`, `for condition` loops, string literals + `+`,
+  `request.len()`, `request.body()`, `request.json()`, and `json(...)`.
+- JavaScript: `class Handler` methods named after HTTP verbs, optional
+  `static`, JSDoc `@returns {number|boolean|string|json}` when inference is not
+  enough, `const`/`let`/`var`, assignment, arithmetic, comparisons, logical
+  `! && ||`, ternary `?:`, `while`, string literals + `+`, `request.len()`,
+  `request.body()`, `request.json()`, and `json(...)`.
+- TypeScript: `class Handler` or `export default class Handler`, methods named
+  after HTTP verbs with a `TacWorkerRequest` parameter and return annotations
+  `number|boolean|string|Json|json`, typed locals, assignment, arithmetic,
+  comparisons, logical `! && ||`, ternary `?:`, `while`, string literals + `+`,
+  `request.len()`, `request.body()`, `request.json()`, and `json(...)`.
 
 ---
 
@@ -1045,7 +1156,13 @@ Inside Tac page/component scripts only, `fetch()` is wrapped with a local-first 
 
 This does not override the global browser `fetch` outside Tac page/component execution.
 
-The compiler-injected `fylo` browser client uses the same IndexedDB-backed cache for FYLO REST reads:
+The compiler-injected `fylo` browser client adds a document-level local mirror
+for FYLO reads. Tachyon runs that local mirror behind a dedicated browser worker
+so OPFS reads, writes, and query filtering stay off the UI thread. The worker
+stores hydrated FYLO documents in OPFS when the browser supports it, falls back
+safely when OPFS is unavailable, and keeps the older IndexedDB response cache as
+a network fallback layer for plain fetches. This worker boundary is also the
+future seam for a native FYLO Wasm core when the FYLO package exposes one.
 
 ```js
 export default class extends Tac {
@@ -1068,12 +1185,15 @@ export default class extends Tac {
 
 FYLO read cache policies are:
 
-- `cache-first`: default; return a cached `find`, `list`, or `get` response first, then cache successful network reads
-- `network-first`: try the network first, falling back to the cached response if the browser is offline
-- `reload`: bypass the cached read and refresh the cache from the network
-- `no-store`: skip reading and writing the cache
+- `cache-first`: default; return locally mirrored `find`, `list`, or `get` data first when present, then hydrate from the network
+- `network-first`: try the network first, write successful results into the local mirror, and fall back to local data when offline
+- `reload`: bypass local reads and refresh local data from the network
+- `no-store`: skip local reads/writes and use the network path only
 
-Successful FYLO mutations (`create`, `put`, `patch`, and `del`) invalidate cached reads for that collection. Authenticated FYLO requests are cached in a credential-scoped namespace so one user's cached data is not reused for another user's credentials.
+Successful FYLO mutations (`create`, `put`, `patch`, and `del`) still require a
+successful Yon `/_fylo` response before Tachyon updates the browser-local mirror.
+Authenticated FYLO data is stored in a credential-scoped namespace so one user's
+local documents are not reused for another user's credentials.
 
 FYLO reads can also run in a sync-first style from Tac scripts:
 
@@ -1093,7 +1213,13 @@ export default class extends Tac {
 }
 ```
 
-`subscribe(query, callback, options)` performs an initial `find()`, opens `/_fylo/api/events/stream` as a server-sent event stream, invalidates the collection's IndexedDB read cache after FYLO journal changes, and re-runs the query with `cache: 'reload'`. If `EventSource` cannot be used, such as when the wrapper is sending explicit Basic auth headers, the same API falls back to polling `fylo.<collection>.events()` with the configured `pollMs`.
+`subscribe(query, callback, options)` performs an initial `find()`, subscribes to
+the browser-local FYLO mirror for same-tab mutations, opens
+`/_fylo/api/events/stream` as a server-sent event stream for remote changes, and
+re-runs the query after each local or remote event. If `EventSource` cannot be
+used, such as when the wrapper is sending explicit Basic auth headers, the same
+API falls back to polling `fylo.<collection>.events()` with the configured
+`pollMs`.
 
 On the Yon side, handler responses are also given an inferred content type now:
 
@@ -1155,6 +1281,25 @@ dist/
   modules/*.js
   shared/assets/*
   shared/data/*
+  workers/language/rust/tac.worker.js
+  workers/language/rust/tac.wasm
+  workers/language/c/tac.worker.js
+  workers/language/c/tac.wasm
+  workers/language/cpp/tac.worker.js
+  workers/language/cpp/tac.wasm
+  workers/language/zig/tac.worker.js
+  workers/language/zig/tac.wasm
+  workers/language/python/tac.worker.js
+  workers/language/python/tac.wasm
+  workers/language/csharp/tac.worker.js
+  workers/language/csharp/tac.wasm
+  workers/language/go/tac.worker.js
+  workers/language/go/tac.wasm
+  workers/language/javascript/tac.worker.js
+  workers/language/javascript/tac.wasm
+  workers/language/typescript/tac.worker.js
+  workers/language/typescript/tac.wasm
+  fylo-local-worker.js
   spa-renderer.js
   imports.js
   imports.css

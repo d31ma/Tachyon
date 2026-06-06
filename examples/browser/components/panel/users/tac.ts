@@ -27,7 +27,7 @@ type FyloSubscribeMeta = {
     collection: string
     events: unknown[]
     offset: number
-    source: 'initial' | 'event-stream' | 'poll'
+    source: 'initial' | 'event-stream' | 'poll' | 'local'
 }
 
 type CacheRun = {
@@ -56,6 +56,7 @@ export default class extends Tac {
         return `${this.users.length} loaded`
     }
 
+    @subscribe('tachyon:refresh')
     async refresh(): Promise<void> {
         await this.loadWithPolicy('network-first')
     }
@@ -180,21 +181,15 @@ export default class extends Tac {
     private policyNote(policy: CachePolicy): string {
         switch (policy) {
             case 'cache-first':
-                return 'reads IndexedDB first, then network only on a miss'
+                return 'reads the local FYLO mirror first, then network only on a miss'
             case 'network-first':
-                return 'tries network first and falls back to IndexedDB offline'
+                return 'tries network first and falls back to the local mirror offline'
             case 'reload':
-                return 'bypasses the cached read and replaces it from network'
+                return 'bypasses local reads and refreshes the mirror from network'
             case 'no-store':
-                return 'skips both reading and writing IndexedDB'
+                return 'skips both reading and writing the local mirror'
             default:
                 return 'unknown cache policy'
         }
-    }
-
-    @onMount
-    bindRefreshListener(): void {
-        const handler = () => { this.refresh() }
-        window.addEventListener('tachyon:refresh', handler)
     }
 }

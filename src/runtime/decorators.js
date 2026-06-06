@@ -6,7 +6,7 @@
  *
  * In compiled companion scripts, these decorators are auto-imported by the
  * Tachyon compiler — user code references them as bare identifiers
- * (`@inject`, `@provide`, …). Outside the compiler (tests, library code) the
+ * (`@subscribe`, `@publish`, …). Outside the compiler (tests, library code) the
  * imports must be explicit.
  */
 
@@ -15,37 +15,201 @@
  */
 
 /**
- * Field decorator. Replaces the field's initial value with `tac.inject(key, fallback)`.
- * @template T
- * @param {string} key
- * @param {T} [fallback]
+ * @typedef {{ name: string, field: string | symbol, options: { retain: true } & Record<string, unknown> }} TacPublishedField
  */
-export function inject(key, fallback) {
-    return /** @type {(value: undefined, ctx: ClassFieldDecoratorContext) => (initial: unknown) => T | undefined} */ (
-        (_value, ctx) => {
-            if (ctx.kind !== 'field') throw new TypeError('@inject only decorates fields');
-            return /** @this {Tac} */ function () {
-                return this.tac.inject(key, fallback);
-            };
-        }
+
+/**
+ * @param {Tac & { __ty_signal_publish_fields__?: TacPublishedField[] }} self
+ * @param {string} name
+ * @param {string | symbol} field
+ * @param {Record<string, unknown>} options
+ */
+function registerPublishedField(self, name, field, options) {
+    if (!Object.prototype.hasOwnProperty.call(self, '__ty_signal_publish_fields__')) {
+        Object.defineProperty(self, '__ty_signal_publish_fields__', {
+            configurable: true,
+            enumerable: false,
+            value: [],
+            writable: true,
+        });
+    }
+    const fields = /** @type {TacPublishedField[]} */ (self.__ty_signal_publish_fields__);
+    fields.push({
+        name,
+        field,
+        options: { ...options, retain: true },
+    });
+}
+
+/**
+ * @typedef {{ onMount?: boolean }} TacSubscribeMethodOptions
+ */
+
+/**
+ * @param {unknown} value
+ * @returns {value is ClassFieldDecoratorContext | ClassMethodDecoratorContext}
+ */
+function isDecoratorContext(value) {
+    return Boolean(value && typeof value === 'object' && 'kind' in value && 'name' in value);
+}
+
+/**
+ * @param {string | symbol} name
+ */
+function memberSignalName(name) {
+    return String(name);
+}
+
+/**
+ * @param {unknown} name
+ * @param {ClassFieldDecoratorContext | ClassMethodDecoratorContext} ctx
+ */
+function resolveSignalName(name, ctx) {
+    return typeof name === 'string' && name.length > 0
+        ? name
+        : memberSignalName(ctx.name);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isPlainOptions(value) {
+    return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+/**
+ * @param {unknown} nameOrOptions
+ * @param {unknown} fallbackOrOptions
+ * @returns {TacSubscribeMethodOptions}
+ */
+function resolveSubscribeMethodOptions(nameOrOptions, fallbackOrOptions) {
+    if (typeof nameOrOptions === 'string') {
+        return isPlainOptions(fallbackOrOptions)
+            ? /** @type {TacSubscribeMethodOptions} */ (fallbackOrOptions)
+            : {};
+    }
+    return isPlainOptions(nameOrOptions)
+        ? /** @type {TacSubscribeMethodOptions} */ (nameOrOptions)
+        : {};
+}
+
+/**
+ * @param {unknown} nameOrOptions
+ * @param {unknown} options
+ * @returns {{ retain?: boolean }}
+ */
+function resolvePublishOptions(nameOrOptions, options) {
+    if (typeof nameOrOptions === 'string') {
+        return isPlainOptions(options) ? /** @type {{ retain?: boolean }} */ (options) : {};
+    }
+    return isPlainOptions(nameOrOptions) ? /** @type {{ retain?: boolean }} */ (nameOrOptions) : {};
+}
+
+/**
+ * @template T
+ * @param {unknown} nameOrOptions
+ * @param {T | TacSubscribeMethodOptions | undefined} fallbackOrOptions
+ * @param {undefined | Function} _value
+ * @param {ClassFieldDecoratorContext | ClassMethodDecoratorContext} ctx
+ */
+function applySubscribe(nameOrOptions, fallbackOrOptions, _value, ctx) {
+    const name = resolveSignalName(nameOrOptions, ctx);
+    if (ctx.kind === 'method') {
+        const options = resolveSubscribeMethodOptions(nameOrOptions, fallbackOrOptions);
+        ctx.addInitializer(/** @this {Tac & Record<string | symbol, unknown>} */ function () {
+            const self = /** @type {Tac & Record<string | symbol, unknown>} */ (this);
+            queueMicrotask(() => {
+                self.tac.subscribe(name, (/** @type {unknown} */ value) => {
+                    const handler = /** @type {Function} */ (self[ctx.name]);
+                    handler.call(self, value);
+                }, { immediate: false });
+                if (options.onMount) {
+                    self.tac.onMount(() => {
+                        const handler = /** @type {Function} */ (self[ctx.name]);
+                        return handler.call(self);
+                    });
+                }
+            });
+        });
+        return;
+    }
+    if (ctx.kind !== 'field') throw new TypeError('@subscribe only decorates fields or methods');
+    ctx.addInitializer(/** @this {Tac & Record<string | symbol, unknown>} */ function () {
+        const self = /** @type {Tac & Record<string | symbol, unknown>} */ (this);
+        queueMicrotask(() => {
+            self.tac.subscribe(name, (/** @type {unknown} */ value) => {
+                self[ctx.name] = value;
+            }, { immediate: true });
+        });
+    });
+    return /** @this {Tac} */ function () {
+        return /** @type {T | undefined} */ (this.tac.subscribe(name, fallbackOrOptions));
+    };
+}
+
+/**
+ * Field decorator. Replaces the field's initial value with the retained signal
+ * value, falls back when the signal has not been published, and subscribes the
+ * field to future publications. Method decorator. Subscribes the method to
+ * future publications and can optionally run it once on mount.
+ * @template T
+ * @param {string | T | TacSubscribeMethodOptions | undefined} [name]
+ * @param {T | TacSubscribeMethodOptions} [fallbackOrOptions]
+ */
+export function subscribe(name, fallbackOrOptions) {
+    if (isDecoratorContext(fallbackOrOptions)) {
+        return applySubscribe(undefined, undefined, /** @type {undefined | Function} */ (name), fallbackOrOptions);
+    }
+    return /** @type {any} */ (
+        (/** @type {undefined | Function} */ _value, /** @type {ClassFieldDecoratorContext | ClassMethodDecoratorContext} */ ctx) => applySubscribe(name, fallbackOrOptions, _value, ctx)
     );
 }
 
 /**
- * Field decorator. Keeps the field's initial value and registers it via
- * `tac.provide(key, value)` after init.
- * @param {string} key
+ * @param {unknown} nameOrOptions
+ * @param {{ retain?: boolean } | undefined} options
+ * @param {undefined | Function} value
+ * @param {ClassFieldDecoratorContext | ClassMethodDecoratorContext} ctx
  */
-export function provide(key) {
-    return /** @type {(value: undefined, ctx: ClassFieldDecoratorContext) => void} */ (
-        (_value, ctx) => {
-            if (ctx.kind !== 'field') throw new TypeError('@provide only decorates fields');
-            ctx.addInitializer(function () {
-                const self = /** @type {Tac & Record<string | symbol, unknown>} */ (this);
-                self.tac.provide(key, self[ctx.name]);
+function applyPublish(nameOrOptions, options, value, ctx) {
+    const name = resolveSignalName(nameOrOptions, ctx);
+    const publishOptions = resolvePublishOptions(nameOrOptions, options);
+    if (ctx.kind === 'field') {
+        ctx.addInitializer(/** @this {Tac & { __ty_signal_publish_fields__?: TacPublishedField[] }} */ function () {
+            const self = /** @type {Tac & { __ty_signal_publish_fields__?: TacPublishedField[] }} */ (this);
+            registerPublishedField(self, name, ctx.name, publishOptions);
+        });
+        return;
+    }
+    if (ctx.kind !== 'method') throw new TypeError('@publish only decorates fields or methods');
+    return /** @type {any} */ (/** @this {Tac} */ function (/** @type {unknown[]} */ ...args) {
+        const result = /** @type {Function} */ (value).apply(this, args);
+        const tac = this.tac;
+        if (result && typeof (/** @type {Promise<unknown>} */ (result)).then === 'function') {
+            return /** @type {Promise<unknown>} */ (result).then((detail) => {
+                tac.publish(name, detail, publishOptions);
+                return detail;
             });
         }
-    );
+        tac.publish(name, result, publishOptions);
+        return result;
+    });
+}
+
+/**
+ * Field or method decorator factory. On fields, publishes the retained value
+ * after construction and after future assignments. On methods, publishes the
+ * return value after the method runs; async rejections propagate without
+ * publishing.
+ * @param {string | { retain?: boolean } | undefined | Function} [name]
+ * @param {{ retain?: boolean } | ClassFieldDecoratorContext | ClassMethodDecoratorContext} [options]
+ */
+export function publish(name, options = {}) {
+    if (isDecoratorContext(options)) {
+        return applyPublish(undefined, undefined, /** @type {undefined | Function} */ (name), options);
+    }
+    return /** @type {any} */ ((/** @type {undefined | Function} */ value, /** @type {ClassFieldDecoratorContext | ClassMethodDecoratorContext} */ ctx) => applyPublish(name, /** @type {{ retain?: boolean } | undefined} */ (options), value, ctx));
 }
 
 /**
@@ -79,58 +243,4 @@ export function onMount(_value, ctx) {
         // app constructor omits the injected Tac helper argument.
         queueMicrotask(() => self.tac.onMount(() => self[ctx.name].call(self)));
     });
-}
-
-/**
- * Method decorator. Triggers a re-render of the host component after the
- * decorated method settles (sync return, sync throw, promise resolve, or
- * promise reject). On the server (`!tac.isBrowser`) the underlying helper is
- * a no-op, so this is safe everywhere.
- * @param {Function} _value
- * @param {ClassMethodDecoratorContext} ctx
- */
-export function render(_value, ctx) {
-    if (ctx.kind !== 'method') throw new TypeError('@render only decorates methods');
-    return /** @type {any} */ (/** @this {Tac} */ function (/** @type {unknown[]} */ ...args) {
-        const original = /** @type {Function} */ (_value);
-        const tac = this.tac;
-        let result;
-        try {
-            result = original.apply(this, args);
-        } catch (error) {
-            tac.rerender();
-            throw error;
-        }
-        if (result && typeof (/** @type {Promise<unknown>} */ (result)).then === 'function') {
-            return /** @type {Promise<unknown>} */ (result).finally(() => { tac.rerender(); });
-        }
-        tac.rerender();
-        return result;
-    });
-}
-
-/**
- * Method decorator factory. Calls `tac.emit(name, returnValue)` after the
- * method runs. For async methods, emits with the resolved value; rejections
- * propagate without emitting.
- * @param {string} name
- */
-export function emit(name) {
-    return /** @type {<F extends Function>(value: F, ctx: ClassMethodDecoratorContext) => F} */ (
-        (original, ctx) => {
-            if (ctx.kind !== 'method') throw new TypeError('@emit only decorates methods');
-            return /** @type {any} */ (/** @this {Tac} */ function (/** @type {unknown[]} */ ...args) {
-                const result = /** @type {Function} */ (original).apply(this, args);
-                const tac = this.tac;
-                if (result && typeof (/** @type {Promise<unknown>} */ (result)).then === 'function') {
-                    return /** @type {Promise<unknown>} */ (result).then((detail) => {
-                        tac.emit(name, detail);
-                        return detail;
-                    });
-                }
-                tac.emit(name, result);
-                return result;
-            });
-        }
-    );
 }

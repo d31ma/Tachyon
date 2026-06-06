@@ -15,12 +15,13 @@
 // returns a graceful "not enabled" error.
 
 import { tacBrowserCache } from './browser-cache.js';
+import { getFyloLocalEngine } from './fylo-local.js';
 
 /**
  * @typedef {'cache-first' | 'network-first' | 'reload' | 'no-store'} FyloCachePolicy
  * @typedef {{ cache?: FyloCachePolicy }} FyloQueryOptions
  * @typedef {{ collection?: string, events?: unknown[], offset?: number, exists?: boolean, error?: string }} FyloEventsPayload
- * @typedef {'initial' | 'event-stream' | 'poll'} FyloSubscribeSource
+ * @typedef {'initial' | 'event-stream' | 'poll' | 'local'} FyloSubscribeSource
  * @typedef {{ collection: string, events: unknown[], offset: number, source: FyloSubscribeSource }} FyloSubscribeMeta
  * @typedef {(payload: unknown, meta: FyloSubscribeMeta) => void | Promise<void>} FyloSubscribeCallback
  * @typedef {FyloQueryOptions & { pollMs?: number, since?: number, onError?: (error: unknown) => void }} FyloSubscribeOptions
@@ -76,31 +77,19 @@ class FyloCollectionClient {
         }
         const qs = params.toString();
         const url = `/${encodeURIComponent(this.collection)}/${qs ? `?${qs}` : ''}`;
-        const response = await this.browserClient.fetch(url, {}, {
-            cache: options.cache,
-            cacheKey: this.browserClient.cacheKey('GET', url),
-        });
-        return response.json();
+        return this.browserClient.findCollection(this.collection, query, url, options);
     }
 
     /** @param {number} [limit] @param {FyloQueryOptions} [options] */
     async list(limit = 25, options = {}) {
         const url = `/${encodeURIComponent(this.collection)}/?limit=${limit}`;
-        const response = await this.browserClient.fetch(url, {}, {
-            cache: options.cache,
-            cacheKey: this.browserClient.cacheKey('GET', url),
-        });
-        return response.json();
+        return this.browserClient.findCollection(this.collection, { limit }, url, options);
     }
 
     /** @param {string} id @param {FyloQueryOptions} [options] */
     async get(id, options = {}) {
         const url = `/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`;
-        const response = await this.browserClient.fetch(url, {}, {
-            cache: options.cache,
-            cacheKey: this.browserClient.cacheKey('GET', url),
-        });
-        return response.json();
+        return this.browserClient.getCollectionDoc(this.collection, id, url, options);
     }
 
     /** @param {number | 'latest'} [since] */
@@ -141,43 +130,22 @@ class FyloCollectionClient {
 
     /** @param {Record<string, unknown>} doc */
     async create(doc) {
-        return this.browserClient.postJson(`/${encodeURIComponent(this.collection)}/`, doc, this.collection);
+        return this.browserClient.createCollectionDoc(this.collection, doc);
     }
 
     /** @param {string} id @param {Record<string, unknown>} doc */
     async put(id, doc) {
-        const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(doc),
-        }, {
-            invalidatePrefixes: [this.browserClient.collectionCachePrefix(this.collection)],
-            invalidateKeys: [this.browserClient.cacheKey('GET', `/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`)],
-        });
-        return response.json();
+        return this.browserClient.putCollectionDoc(this.collection, id, doc);
     }
 
     /** @param {string} id @param {Record<string, unknown>} doc */
     async patch(id, doc) {
-        const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(doc),
-        }, {
-            invalidatePrefixes: [this.browserClient.collectionCachePrefix(this.collection)],
-            invalidateKeys: [this.browserClient.cacheKey('GET', `/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`)],
-        });
-        return response.json();
+        return this.browserClient.patchCollectionDoc(this.collection, id, doc);
     }
 
     /** @param {string} id */
     async del(id) {
-        const response = await this.browserClient.fetch(`/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`, { method: 'DELETE' }, {
-            invalidatePrefixes: [this.browserClient.collectionCachePrefix(this.collection)],
-            invalidateKeys: [this.browserClient.cacheKey('GET', `/${encodeURIComponent(this.collection)}/${encodeURIComponent(id)}/`)],
-        });
-        if (response.status === 204) return { ok: true };
-        return response.json();
+        return this.browserClient.deleteCollectionDoc(this.collection, id);
     }
 
     async rebuild() {
@@ -191,6 +159,7 @@ class FyloBrowserClient {
         this.basePath = basePath;
         /** @type {string | null} */
         this.authHeader = null;
+        this.local = getFyloLocalEngine();
         this.state = this.createState();
         this.proxy = this.createProxy();
     }
@@ -296,6 +265,148 @@ class FyloBrowserClient {
         return tacBrowserCache.invalidate([], [this.collectionCachePrefix(collection)]);
     }
 
+    /** @param {import('./fylo-local.js').FyloLocalCachePolicy | undefined} policy */
+    shouldReadLocalFirst(policy) {
+        return policy !== 'network-first' && policy !== 'reload' && policy !== 'no-store';
+    }
+
+    /** @param {import('./fylo-local.js').FyloLocalCachePolicy | undefined} policy */
+    shouldFallbackLocal(policy) {
+        return policy !== 'reload' && policy !== 'no-store';
+    }
+
+    /**
+     * @param {string} collection
+     * @param {Record<string, unknown>} query
+     * @param {string} url
+     * @param {FyloQueryOptions} [options]
+     */
+    async findCollection(collection, query, url, options = {}) {
+        const localAvailable = await this.local.available();
+        if (localAvailable && this.shouldReadLocalFirst(options.cache)) {
+            const local = await this.local.find(this.authScope(), collection, query);
+            if (local.docs.length > 0)
+                return local;
+        }
+        try {
+            const response = await this.fetch(url, {}, {
+                cache: options.cache,
+                cacheKey: this.cacheKey('GET', url),
+            });
+            const payload = await response.json();
+            if (response.ok && localAvailable && options.cache !== 'no-store')
+                await this.local.ingestFindResult(this.authScope(), collection, payload);
+            return payload;
+        } catch (error) {
+            if (localAvailable && this.shouldFallbackLocal(options.cache))
+                return this.local.find(this.authScope(), collection, query);
+            throw error;
+        }
+    }
+
+    /**
+     * @param {string} collection
+     * @param {string} id
+     * @param {string} url
+     * @param {FyloQueryOptions} [options]
+     */
+    async getCollectionDoc(collection, id, url, options = {}) {
+        const localAvailable = await this.local.available();
+        if (localAvailable && this.shouldReadLocalFirst(options.cache)) {
+            const local = await this.local.get(this.authScope(), collection, id);
+            if (local)
+                return local;
+        }
+        try {
+            const response = await this.fetch(url, {}, {
+                cache: options.cache,
+                cacheKey: this.cacheKey('GET', url),
+            });
+            const payload = await response.json();
+            if (response.ok && localAvailable && options.cache !== 'no-store')
+                await this.local.ingestGetResult(this.authScope(), collection, payload);
+            return payload;
+        } catch (error) {
+            if (localAvailable && this.shouldFallbackLocal(options.cache)) {
+                const local = await this.local.get(this.authScope(), collection, id);
+                if (local)
+                    return local;
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * @param {string} collection
+     * @param {Record<string, unknown>} doc
+     */
+    async createCollectionDoc(collection, doc) {
+        const result = await this.postJson(`/${encodeURIComponent(collection)}/`, doc, collection);
+        if (result && typeof result.id === 'string' && await this.local.available()) {
+            await this.local.put(this.authScope(), collection, result.id, doc, 'create');
+        }
+        return result;
+    }
+
+    /**
+     * @param {string} collection
+     * @param {string} id
+     * @param {Record<string, unknown>} doc
+     */
+    async putCollectionDoc(collection, id, doc) {
+        const url = `/${encodeURIComponent(collection)}/${encodeURIComponent(id)}/`;
+        const response = await this.fetch(url, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc),
+        }, {
+            invalidatePrefixes: [this.collectionCachePrefix(collection)],
+            invalidateKeys: [this.cacheKey('GET', url)],
+        });
+        const result = await response.json();
+        if (response.ok && await this.local.available())
+            await this.local.put(this.authScope(), collection, id, doc, 'put');
+        return result;
+    }
+
+    /**
+     * @param {string} collection
+     * @param {string} id
+     * @param {Record<string, unknown>} doc
+     */
+    async patchCollectionDoc(collection, id, doc) {
+        const url = `/${encodeURIComponent(collection)}/${encodeURIComponent(id)}/`;
+        const response = await this.fetch(url, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc),
+        }, {
+            invalidatePrefixes: [this.collectionCachePrefix(collection)],
+            invalidateKeys: [this.cacheKey('GET', url)],
+        });
+        const result = await response.json();
+        if (response.ok && await this.local.available())
+            await this.local.put(this.authScope(), collection, id, doc, 'patch');
+        return result;
+    }
+
+    /**
+     * @param {string} collection
+     * @param {string} id
+     */
+    async deleteCollectionDoc(collection, id) {
+        const url = `/${encodeURIComponent(collection)}/${encodeURIComponent(id)}/`;
+        const response = await this.fetch(url, { method: 'DELETE' }, {
+            invalidatePrefixes: [this.collectionCachePrefix(collection)],
+            invalidateKeys: [this.cacheKey('GET', url)],
+        });
+        if (response.ok && await this.local.available())
+            await this.local.delete(this.authScope(), collection, id);
+        if (response.status === 204)
+            return { ok: true };
+        return response.json();
+    }
+
     /**
      * @param {string} apiPath
      * @param {RequestInit} [init]
@@ -382,6 +493,8 @@ class FyloBrowserClient {
         let eventSource = null;
         /** @type {ReturnType<typeof setInterval> | null} */
         let pollTimer = null;
+        /** @type {() => void} */
+        let unsubscribeLocal = () => {};
 
         /** @param {unknown} error */
         const reportError = (error) => {
@@ -400,9 +513,13 @@ class FyloBrowserClient {
             }
             refreshing = true;
             try {
-                if (source !== 'initial') await this.invalidateCollection(collection);
+                if (source !== 'initial' && source !== 'local') await this.invalidateCollection(collection);
                 const result = await client.find(query, {
-                    cache: source === 'initial' ? (options.cache ?? 'network-first') : 'reload',
+                    cache: source === 'initial'
+                        ? (options.cache ?? 'network-first')
+                        : source === 'local'
+                            ? 'cache-first'
+                            : 'reload',
                 });
                 if (active) {
                     await callback(result, { collection, events, offset, source });
@@ -436,6 +553,9 @@ class FyloBrowserClient {
         };
 
         refresh('initial');
+        unsubscribeLocal = this.local.subscribe(this.authScope(), collection, () => {
+            void refresh('local', []);
+        });
 
         const canUseEventSource = typeof EventSource !== 'undefined' && !this.authHeader;
         if (canUseEventSource) {
@@ -476,6 +596,7 @@ class FyloBrowserClient {
 
         return () => {
             active = false;
+            unsubscribeLocal();
             if (eventSource) eventSource.close();
             if (pollTimer) clearInterval(pollTimer);
         };

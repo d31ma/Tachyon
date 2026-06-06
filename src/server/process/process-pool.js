@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from 'fs';
 import Router from "../http/route-handler.js";
 import HandlerAdapter from './handler-adapter.js';
+import { hasInHouseBackend } from './backends/registry.js';
 import logger from '../observability/logger.js';
 /** Maximum time (ms) a handler process may run before it is killed. Default: 30 s. */
 const HANDLER_TIMEOUT_MS = process.env.YON_HANDLER_TIMEOUT_MS
@@ -114,7 +115,10 @@ export default class Pool {
                 // Bun.spawn on first request when routeHandlers was
                 // temporarily empty during HMR reload.
                 const handler = Router.routeHandlers[route]?.[method];
-                if (handler && existsSync(handler))
+                // In-house backends (wasm-compiled / wasm-interpreter) run
+                // in-process; they need no warm subprocess (and must not spawn a
+                // toolchain runner for a route we serve from wasm).
+                if (handler && existsSync(handler) && !hasInHouseBackend(handler))
                     Pool.prewarmHandler(handler);
             }
         }

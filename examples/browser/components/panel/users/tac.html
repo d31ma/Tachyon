@@ -1,8 +1,8 @@
 <div class="col-span-full min-w-0 max-w-full h-full bg-surface-container text-on-surface border border-outline-variant p-6 flex flex-col gap-4 shadow-sm">
     <div class="flex items-center justify-between gap-4 min-w-0 flex-wrap">
         <div class="grid gap-1">
-            <h2 class="m-0 text-xl font-bold">FYLO Browser Cache</h2>
-            <p class="text-on-surface-variant text-sm m-0">Reads <code>fylo.users.find(query, options)</code> directly from Tac, stores successful reads in IndexedDB, and keeps the view fresh with <code>fylo.users.subscribe(query, callback)</code>.</p>
+            <h2 class="m-0 text-xl font-bold">FYLO Browser Mirror</h2>
+            <p class="text-on-surface-variant text-sm m-0">Reads <code>fylo.users.find(query, options)</code> directly from Tac, mirrors successful FYLO documents through a browser worker into OPFS when available, and keeps the view fresh with <code>fylo.users.subscribe(query, callback)</code>.</p>
         </div>
         <md-assist-chip :label="loadingState()"></md-assist-chip>
     </div>
@@ -16,7 +16,7 @@
         <loop :for="const policy of cachePolicies">
             <div @click="loadWithPolicy(policy)" role="button" tabindex="0" class="grid gap-1 p-3 border cursor-pointer select-none transition-colors duration-150" :class="policy === selectedPolicy ? 'border-primary bg-primary-container text-on-primary-container' : 'border-outline-variant bg-surface-container-high text-on-surface hover:border-primary/50'">
                 <span class="text-[0.68rem] font-bold uppercase tracking-wide">{policy}</span>
-                <span class="text-xs opacity-80">{policy === 'cache-first' ? 'IndexedDB first' : policy === 'network-first' ? 'Network, then cache' : policy === 'reload' ? 'Refresh cache' : 'Bypass cache'}</span>
+                <span class="text-xs opacity-80">{policy === 'cache-first' ? 'Local mirror first' : policy === 'network-first' ? 'Network, then local' : policy === 'reload' ? 'Refresh local mirror' : 'Bypass local mirror'}</span>
             </div>
         </loop>
     </div>

@@ -33,9 +33,9 @@
         "bundle:watch": "bun src/cli/bundle.js --watch",
         "start": "bun run serve",
         "typecheck": "bun scripts/typecheck.js",
-        "test": "bun --env-file=tests/.env.test test tests",
-        "test:blackbox": "bun run scripts/verify-package-contract.js && bun test tests/package-contract --timeout 120000",
-        "test:coverage": "bun --env-file=tests/.env.test test tests --coverage",
+        "test": "bun --env-file=tests/.env.test test ./tests --max-concurrency=1",
+        "test:blackbox": "bun run scripts/verify-package-contract.js && bun test ./tests/package-contract --timeout 120000",
+        "test:coverage": "bun --env-file=tests/.env.test test ./tests --coverage --max-concurrency=1",
         "stress:tac": "bun tests/stress/tac-dom-stress.js"
     },
     "files": [
@@ -67,7 +67,7 @@
         "url": "https://github.com/d31ma/Tachyon/issues"
     },
     "dependencies": {
-        "@d31ma/fylo": "26.22.7"
+        "@d31ma/fylo": "^26.23.5"
     },
     "devDependencies": {
         "@happy-dom/global-registrator": "^20.8.9",

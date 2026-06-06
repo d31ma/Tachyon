@@ -10,7 +10,7 @@ export default class extends Tac {
   /** @type {number} */
   $$totalVisits = 0
   /** @type {string} */
-  @provide('demo-release')
+  @publish
   release = 'TACHYON'
   /** @type {string} */
   headline = 'Build what the browser can imagine, backed by Yon and FYLO'
@@ -27,6 +27,7 @@ export default class extends Tac {
   }
 
   /** @returns {void} */
+  @subscribe('tachyon:toggle-theme')
   toggleTheme() {
     this.$theme = this.$theme === 'dark' ? 'light' : 'dark'
     this.applyTheme()
@@ -39,24 +40,19 @@ export default class extends Tac {
   }
 
   /** @returns {Promise<void>} */
+  @publish('tachyon:refresh')
   @onMount
   async refreshAll() {
     this.$visits += 1
     this.$$totalVisits += 1
     document.title = 'TACHYON Showcase'
     this.applyTheme()
-    window.dispatchEvent(new CustomEvent('tachyon:refresh'))
   }
 
   /** @param {string} id */
   scrollToSection(id) {
     const el = document.getElementById(id)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
-  @onMount
-  bindThemeListener() {
-    window.addEventListener('tachyon:toggle-theme', () => { this.toggleTheme() })
   }
 
   @onMount

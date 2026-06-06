@@ -9,7 +9,7 @@ YON_DEV=true
 YON_LOG_LEVEL=info
 YON_LOG_FORMAT=pretty
 YON_TRUST_PROXY=
-YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'
+YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'
 TAC_FORMAT=esm
 TAC_PUBLIC_ENV=
 YON_MAX_BODY_BYTES=1048576
@@ -36,6 +36,7 @@ YON_DATA_BROWSER_REVEAL=false
 YON_CORS_ORIGIN=
 YON_PAGES_PATH=browser/pages
 YON_COMPONENTS_PATH=browser/components
+YON_WORKERS_PATH=browser/workers
 YON_ASSETS_PATH=browser/shared/assets
 YON_ROUTES_PATH=server/routes
 YON_SHARED_SCRIPTS_PATH=browser/shared/scripts
@@ -101,6 +102,7 @@ document.documentElement.setAttribute('data-theme', 'light')
 `,
     'browser/shared/assets/.gitkeep': ``,
     'browser/shared/data/.gitkeep': ``,
+    'browser/workers/.gitkeep': ``,
     'server/routes/yon.js': `export class Handler {
   static async GET() {
     return { ok: true, framework: 'Tachyon' }

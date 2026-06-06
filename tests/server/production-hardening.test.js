@@ -35,10 +35,10 @@ test('cache policy marks dist assets cacheable', () => {
     expect(Router.getCacheControlHeader('/shared/assets/logo.svg', 'image/svg+xml'))
         .toBe('public, max-age=3600');
 });
-test('default CSP allows first-class Tac Wasm companions', () => {
+test('default CSP keeps script execution locked to self', () => {
     delete process.env.YON_CONTENT_SECURITY_POLICY;
     const headers = Router.getHeaders();
-    expect(headers['Content-Security-Policy']).toContain("script-src 'self' 'wasm-unsafe-eval'");
+    expect(headers['Content-Security-Policy']).toBe("default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'");
 });
 test('YON_CORS_ORIGIN configures cross-origin response headers', () => {
     process.env.YON_CORS_ORIGIN = 'http://localhost:5173';

@@ -5,6 +5,6 @@ export default class extends Tac {
     /** @type {string} */
     label = 'Interactions'
     /** @type {string | undefined} */
-    @inject('demo-release', 'Tac')
+    @subscribe
     release
 }

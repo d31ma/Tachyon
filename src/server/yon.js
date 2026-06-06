@@ -3,6 +3,8 @@ import path from 'path';
 import Fylo from '@d31ma/fylo';
 import Router from "./http/route-handler.js";
 import Pool from "./process/process-pool.js";
+import { resolveBackend } from "./process/backends/registry.js";
+import * as WasmCompiled from "./process/backends/wasm-compiled.js";
 import Validate from "./http/schema-validator.js";
 import OpenAPI from "./openapi/openapi.js";
 import FyloBrowser from "./fylo-browser/fylo-browser.js";
@@ -626,6 +628,42 @@ export default class Yon {
         }
     }
     /**
+     * Acquire a non-streaming route response through the handler's execution
+     * backend. Defaults to the subprocess runner (today's behavior); routes
+     * registered as `wasm-compiled` or `wasm-interpreter` execute in-process.
+     * Keeping this switch here lets {@link Yon.serveRequest} stay backend-agnostic.
+     * @param {string} handler
+     * @param {RequestPayload} stdin
+     * @param {RequestContext} context
+     * @param {RouteOptions | undefined} config
+     * @returns {Promise<RouteResponse>}
+     */
+    static getBackendResponse(handler, stdin, context, config) {
+        switch (resolveBackend(handler)) {
+            case 'wasm-compiled':
+                return WasmCompiled.getResponse(handler, stdin, context, config);
+            // Phase 2/3 add the 'wasm-interpreter' arm here.
+            default:
+                return Yon.getResponse([handler], stdin, context, config);
+        }
+    }
+    /**
+     * Streaming variant of {@link Yon.getBackendResponse}.
+     * @param {string} handler
+     * @param {RequestPayload} stdin
+     * @param {RequestContext} context
+     * @param {RouteOptions | undefined} config
+     * @returns {AsyncGenerator<RouteResponse>}
+     */
+    static getBackendStream(handler, stdin, context, config) {
+        switch (resolveBackend(handler)) {
+            case 'wasm-compiled':
+                return WasmCompiled.getStreamResponse(handler, stdin, context, config);
+            default:
+                return Yon.getStreamResponse([handler], stdin, context, config);
+        }
+    }
+    /**
      * @param {string | null | undefined} authorization
      * @returns {string | null}
      */
@@ -795,7 +833,7 @@ export default class Yon {
         if (stdin.headers?.accept === Yon.STREAM_MIME_TYPE) {
             const stream = new ReadableStream({
                 async start(controller) {
-                    for await (const { body, status } of Yon.getStreamResponse([handler], processStdin, context, config)) {
+                    for await (const { body, status } of Yon.getBackendStream(handler, processStdin, context, config)) {
                         if (process.env.YON_VALIDATE !== undefined) {
                             try {
                                 await Validate.validateData(handler, method, status === 200 ? "res" : "err", body);
@@ -815,7 +853,7 @@ export default class Yon {
             });
             return new Response(stream, { headers: { ...responseHeaders, "Content-Type": Yon.STREAM_MIME_TYPE } });
         }
-        const { body, status } = await Yon.getResponse([handler], processStdin, context, config);
+        const { body, status } = await Yon.getBackendResponse(handler, processStdin, context, config);
         const matchedStatus = body ? await Validate.matchStatusCode(handler, method, body) : null;
         const finalStatus = matchedStatus ?? status;
         if (process.env.YON_VALIDATE !== undefined) {

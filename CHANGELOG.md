@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Tac frontend messaging now uses a single signals system. `@publish` and
+  `@subscribe` replace the previous `@emit`, `@provide`, and `@inject`
+  decorators, with retained field signals for context-style values and
+  ephemeral method signals for event-style messages.
+- Tac method subscribers can now pass `{ onMount: true }` to run once after
+  mount and then react to future signal publications.
+- Bare `@subscribe` and `@publish` now use the decorated field or method name
+  as the default signal name.
+- Removed the `@render` decorator from the strict v2 Tac API. Companion state
+  now rerenders through field assignment, including `$` and `$$` persistent
+  fields.
+- Upgraded `@d31ma/fylo` to `^26.23.5`. The new version adds query caching
+  (`FYLO_CACHE_BACKEND`, `FYLO_CACHE_METHOD`, `FYLO_CACHE_TTL`), WORM mode
+  (`FYLO_WORM=strict`), RLS toggle (`FYLO_RLS`), local queue toggle
+  (`FYLO_QUEUE`), and sync-mode selection (`FYLO_SYNC_MODE`) as environment-
+  driven options in `fyloOptions()`. The Fylo browser now exposes soft-delete
+  inspection and restoration through `/_fylo/api/deleted` (GET) and
+  `/_fylo/api/restore` (POST).
+- Upgraded Tachyon website's `@d31ma/fylo` dependency from `^26.19.7` to
+  `^26.23.5`.
+
 ## [26.23.01] — 2026-06-01
 
 ### Added

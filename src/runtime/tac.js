@@ -5,10 +5,21 @@
 
 /**
  * @template T
- * @callback InjectHelper
- * @param {string} key
- * @param {T} [fallback]
- * @returns {T | undefined}
+ * @callback SignalSubscribeHelper
+ * @param {string} name
+ * @param {((value: unknown) => void | Promise<void>) | T} [callbackOrFallback]
+ * @param {TacSignalSubscribeOptions} [options]
+ * @returns {(() => void) | T | undefined}
+ */
+
+/**
+ * @typedef {object} TacSignalPublishOptions
+ * @property {boolean} [retain]
+ */
+
+/**
+ * @typedef {object} TacSignalSubscribeOptions
+ * @property {boolean} [immediate]
  */
 
 /**
@@ -18,12 +29,11 @@
  * @property {(controller: Record<string, unknown>) => void} bindPersistentFields
  * @property {<T>(key: string, fallback?: T) => T | undefined} env
  * @property {TacProps} props
- * @property {(name: string, detail?: unknown) => boolean} emit
  * @property {(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>} fetch
- * @property {InjectHelper<unknown>} inject
  * @property {(fn: () => void | Promise<void>) => void} onMount
- * @property {(key: string, value: unknown) => void} provide
+ * @property {(name: string, value?: unknown, options?: TacSignalPublishOptions) => boolean} publish
  * @property {() => void} rerender
+ * @property {SignalSubscribeHelper<unknown>} subscribe
  */
 
 /** @type {TacRuntimeBindings} */
@@ -33,12 +43,11 @@ const noopHelpers = {
     bindPersistentFields: () => { },
     env: (_, fallback) => fallback,
     props: {},
-    emit: () => false,
     fetch: (input, init) => fetch(input, init),
-    inject: (_, fallback) => fallback,
     onMount: () => { },
-    provide: () => { },
+    publish: () => false,
     rerender: () => { },
+    subscribe: (_name, callbackOrFallback) => typeof callbackOrFallback === 'function' ? () => { } : callbackOrFallback,
 };
 
 export default class Tac {

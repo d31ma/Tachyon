@@ -10,6 +10,15 @@
             <p class="text-sm text-on-surface-variant m-0">Route version: {versioned.version}</p>
         </div>
     </logic>
+    <logic :if="workerResults.length">
+        <div class="p-4 bg-tertiary-container border border-outline-variant grid gap-1.5">
+            <strong class="text-base font-bold text-on-tertiary-container">Tac Workers: in-house language subsets to wasm</strong>
+            <p class="text-sm text-on-surface-variant m-0">Rust opts into a two-worker browser pool with <code>tac://language/rust?pool=2</code>; JavaScript and TypeScript authors can target the same Wasm worker lane with <code>tac.js</code> and <code>tac.ts</code>.</p>
+            <loop :for="const result of workerResults">
+                <p class="text-sm text-on-surface-variant m-0">{result.language} <code>{result.method}</code>: {formatResult(result.result)}</p>
+            </loop>
+        </div>
+    </logic>
     <md-list>
         <md-list-item>GET /languages/javascript via Bun</md-list-item>
         <md-list-item>GET /languages/typescript via TypeScript</md-list-item>

@@ -8,11 +8,11 @@
  */
 export default {
     Tac: 'readonly',
-    inject: 'readonly',
-    provide: 'readonly',
     env: 'readonly',
     onMount: 'readonly',
-    emit: 'readonly',
-    render: 'readonly',
+    publish: 'readonly',
+    subscribe: 'readonly',
     fylo: 'readonly',
+    json: 'readonly',
+    Worker: 'readonly',
 };

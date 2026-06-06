@@ -29,14 +29,13 @@ const __ty_props__ = __ty_helpers__.decodeProps(props);
 const __ty_scope__ = __ty_helpers__.createScope(null, __ty_props__);
 
 with (__ty_scope__) {
-    const emit = __ty_helpers__.emit;
     const fetch = __ty_helpers__.fetch;
     const isBrowser = __ty_helpers__.isBrowser;
     const isServer = __ty_helpers__.isServer;
     const onMount = __ty_helpers__.onMount;
+    const publish = __ty_helpers__.publish;
     const rerender = __ty_helpers__.rerender;
-    const inject = __ty_helpers__.inject;
-    const provide = __ty_helpers__.provide;
+    const subscribe = __ty_helpers__.subscribe;
 
     ${testScript}
 
@@ -145,6 +144,12 @@ function createFakeIndexedDB() {
             /** @type {any} */
             const request = {
                 result: {
+                    objectStoreNames: {
+                        /** @param {string} storeName */
+                        contains(storeName) {
+                            return stores.has(storeName);
+                        },
+                    },
                     /** @param {string} storeName */
                     createObjectStore(storeName) {
                         ensureStore(storeName);
@@ -217,15 +222,15 @@ describe('render-template server-side (no window)', () => {
         await factory();
         expect(r.called).toBe(false);
     });
-    test('inject returns fallback when window is absent', async () => {
+    test('subscribe returns fallback when window is absent', async () => {
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.value = inject('key', 'fallback')`);
+        const factory = await buildTestFactory(`__ty_test__.value = subscribe('key', 'fallback')`);
         await factory();
         expect(r.value).toBe('fallback');
     });
-    test('inject returns undefined fallback by default', async () => {
+    test('subscribe returns undefined fallback by default', async () => {
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.value = inject('key')`);
+        const factory = await buildTestFactory(`__ty_test__.value = subscribe('key')`);
         await factory();
         expect(r.value).toBeUndefined();
     });
@@ -270,6 +275,9 @@ describe('render-template browser-side (with window)', () => {
             CustomEvent: globalThis.CustomEvent,
             indexedDB: globalThis.indexedDB,
             fetch: globalThis.fetch,
+            __ty_browser_cache__: /** @type {any} */ (globalThis).__ty_browser_cache__,
+            __ty_fetch_installed__: /** @type {any} */ (globalThis).__ty_fetch_installed__,
+            __ty_native_fetch__: /** @type {any} */ (globalThis).__ty_native_fetch__,
         };
         Object.assign(globalThis, {
             window: windowInstance,
@@ -283,6 +291,10 @@ describe('render-template browser-side (with window)', () => {
     afterAll(async () => {
         await windowInstance.happyDOM.close();
         Object.assign(globalThis, previousGlobals);
+        for (const key of ['__ty_browser_cache__', '__ty_fetch_installed__', '__ty_native_fetch__']) {
+            if (previousGlobals[key] === undefined)
+                Reflect.deleteProperty(globalThis, key);
+        }
     });
     test('isBrowser is true and isServer is false', async () => {
         const r = testResults();
@@ -316,28 +328,60 @@ describe('render-template browser-side (with window)', () => {
         queue.forEach(/** @param {() => void | Promise<void>} fn */ (fn) => fn());
         expect(r.order).toEqual([1, 2]);
     });
-    test('inject retrieves value from window.__ty_context__', async () => {
-        const ctx = new Map([['apiBase', 'https://api.example.com']]);
-        (/** @type {any} */ (windowInstance)).__ty_context__ = ctx;
+    test('subscribe retrieves retained signal value', async () => {
+        (/** @type {any} */ (windowInstance)).__ty_signals__ = {
+            values: new Map([['apiBase', 'https://api.example.com']]),
+            listeners: new Map(),
+        };
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.value = inject('apiBase')`);
+        const factory = await buildTestFactory(`__ty_test__.value = subscribe('apiBase')`);
         await factory();
         expect(r.value).toBe('https://api.example.com');
     });
-    test('inject returns fallback for absent key', async () => {
-        ;
-        (/** @type {any} */ (windowInstance)).__ty_context__ = new Map();
+    test('subscribe returns fallback for absent signal', async () => {
+        (/** @type {any} */ (windowInstance)).__ty_signals__ = {
+            values: new Map(),
+            listeners: new Map(),
+        };
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.value = inject('missing', 'default')`);
+        const factory = await buildTestFactory(`__ty_test__.value = subscribe('missing', 'default')`);
         await factory();
         expect(r.value).toBe('default');
     });
-    test('provide sets value in window.__ty_context__', async () => {
-        const ctx = new Map();
-        (/** @type {any} */ (windowInstance)).__ty_context__ = ctx;
-        const factory = await buildTestFactory(`provide('svc', { url: '/api' })`);
+    test('publish stores retained signal values', async () => {
+        delete (/** @type {any} */ (windowInstance)).__ty_signals__;
+        const factory = await buildTestFactory(`publish('svc', { url: '/api' }, { retain: true })`);
         await factory();
-        expect(ctx.get('svc')).toEqual({ url: '/api' });
+        expect((/** @type {any} */ (windowInstance)).__ty_signals__.values.get('svc')).toEqual({ url: '/api' });
+    });
+    test('publish notifies subscribers', async () => {
+        delete (/** @type {any} */ (windowInstance)).__ty_signals__;
+        const r = testResults();
+        r.events = [];
+        const factory = await buildTestFactory(`
+            subscribe('saved', (value) => { __ty_test__.events.push(value) }, { immediate: false })
+            publish('saved', { id: 1 })
+        `);
+        await factory();
+        expect(r.events).toEqual([{ id: 1 }]);
+    });
+    test('published companion fields retain initial values and future assignments', async () => {
+        delete (/** @type {any} */ (windowInstance)).__ty_signals__;
+        const factory = await buildTestFactory(`
+            const controller = {
+                theme: 'light',
+                __ty_signal_publish_fields__: [{ name: 'theme', field: 'theme', options: { retain: true } }]
+            }
+            const helpers = __ty_helpers__.createTacHelpers({})
+            __ty_helpers__.bindCompanion(controller, {}, helpers)
+            __ty_test__.initial = subscribe('theme')
+            controller.theme = 'dark'
+            __ty_test__.updated = subscribe('theme')
+        `);
+        const r = testResults();
+        await factory();
+        expect(r.initial).toBe('light');
+        expect(r.updated).toBe('dark');
     });
     test('public browser env values are exposed only through the explicit helper', async () => {
         (/** @type {any} */ (windowInstance)).__ty_public_env__ = {
@@ -624,6 +668,7 @@ describe('render-template browser-side (with window)', () => {
     test('successful non-GET requests invalidate cached GET responses for the same URL', async () => {
         const r = testResults();
         (/** @type {any} */ (windowInstance)).__ty_fetch_cache_db__ = null;
+        const previousNativeFetch = (/** @type {any} */ (globalThis)).__ty_native_fetch__;
         /** @type {string[]} */
         const seen = [];
         const fetchStub = /** @type {typeof fetch} */ (async (input, init) => {
@@ -636,22 +681,28 @@ describe('render-template browser-side (with window)', () => {
                 return new Response('cached-get', { status: 200 });
             return new Response('fresh-get', { status: 200 });
         });
-        globalThis.fetch = fetchStub;
         (/** @type {any} */ (globalThis)).__ty_native_fetch__ = fetchStub;
-        (/** @type {any} */ (windowInstance)).fetch = fetchStub;
-        const factory = await buildTestFactory(`
-            async function run() {
-                const helpers = __ty_helpers__.createTacHelpers({})
-                const first = await helpers.fetch('https://example.test/items')
-                const mutation = await helpers.fetch('https://example.test/items', { method: 'POST', body: 'name=widget' })
-                const second = await helpers.fetch('https://example.test/items')
-                __ty_test__.first = await first.text()
-                __ty_test__.mutation = await mutation.text()
-                __ty_test__.second = await second.text()
+        try {
+            const factory = await buildTestFactory(`
+                async function run() {
+                    const helpers = __ty_helpers__.createTacHelpers({})
+                    const first = await helpers.fetch('https://example.test/items')
+                    const mutation = await helpers.fetch('https://example.test/items', { method: 'POST', body: 'name=widget' })
+                    const second = await helpers.fetch('https://example.test/items')
+                    __ty_test__.first = await first.text()
+                    __ty_test__.mutation = await mutation.text()
+                    __ty_test__.second = await second.text()
+                }
+                await run()
+            `);
+            await factory();
+        } finally {
+            if (previousNativeFetch === undefined) {
+                Reflect.deleteProperty(globalThis, '__ty_native_fetch__');
+            } else {
+                (/** @type {any} */ (globalThis)).__ty_native_fetch__ = previousNativeFetch;
             }
-            await run()
-        `);
-        await factory();
+        }
         expect(r.first).toBe('cached-get');
         expect(r.mutation).toBe('mutated');
         expect(r.second).toBe('fresh-get');
@@ -716,9 +767,9 @@ describe('render-template prerender-environment (window=globalThis, __ty_prerend
         await factory();
         expect(r.val).toBe('light');
     });
-    test('inject returns fallback during prerender', async () => {
+    test('subscribe returns fallback during prerender', async () => {
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.value = inject('k', 'prerender-fallback')`);
+        const factory = await buildTestFactory(`__ty_test__.value = subscribe('k', 'prerender-fallback')`);
         await factory();
         expect(r.value).toBe('prerender-fallback');
     });

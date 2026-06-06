@@ -585,6 +585,74 @@ async function rebuildCollectionAction(request) {
 /**
  * @param {URL} url
  */
+async function listDeletedDocuments(url) {
+    const collection = url.searchParams.get('collection') ?? '';
+    if (!collection)
+        return { error: 'collection query parameter required' };
+    if (!isSafeCollectionName(collection))
+        return { error: 'invalid collection query parameter' };
+    const limitParam = Number(url.searchParams.get('limit') ?? 25);
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(Math.trunc(limitParam), 200) : 25;
+    const offsetParam = Number(url.searchParams.get('offset') ?? 0);
+    const offset = Number.isFinite(offsetParam) && offsetParam >= 0 ? Math.trunc(offsetParam) : 0;
+
+    const root = fyloRoot();
+    const fylo = new Fylo(root, fyloOptions(root));
+    const encryptedFields = await getEncryptedFields(collection);
+    /** @type {Array<{ id: string, doc: unknown, deletedAt?: string }>} */
+    const docs = [];
+    let skipped = 0;
+    try {
+        for await (const entry of fylo.findDeletedDocs(collection).collect()) {
+            for (const [id, doc] of Object.entries(/** @type {Record<string, unknown>} */ (entry))) {
+                if (skipped < offset) { skipped++; continue; }
+                const redacted = redactDoc(doc, encryptedFields);
+                const deletedAt = typeof (/** @type {any} */ (doc)?._deleted) === 'number'
+                    ? new Date(/** @type {any} */ (doc)._deleted).toISOString()
+                    : undefined;
+                docs.push({ id, doc: redacted, deletedAt });
+                if (docs.length >= limit) break;
+            }
+            if (docs.length >= limit) break;
+        }
+    } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) };
+    }
+    return { collection, docs, encryptedFields, revealed: reveal() };
+}
+
+/**
+ * @param {Request} request
+ */
+async function restoreDocumentAction(request) {
+    if (readOnly())
+        return { error: 'browser is read-only; set YON_DATA_BROWSER_READONLY=false to enable restores' };
+    /** @type {{ collection?: string, id?: string }} */
+    let body;
+    try {
+        body = await request.json();
+    } catch {
+        return { error: 'invalid JSON body' };
+    }
+    const collection = (body.collection ?? '').toString();
+    const id = (body.id ?? '').toString();
+    if (!collection || !id)
+        return { error: 'collection and id are required' };
+    if (!isSafeCollectionName(collection))
+        return { error: 'invalid collection name' };
+    const root = fyloRoot();
+    const fylo = new Fylo(root, fyloOptions(root));
+    try {
+        const restoredId = await fylo.restoreDoc(collection, id);
+        return { ok: true, id: restoredId };
+    } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) };
+    }
+}
+
+/**
+ * @param {URL} url
+ */
 async function tailEvents(url) {
     const collection = url.searchParams.get('collection') ?? '';
     if (!collection)
@@ -1183,6 +1251,19 @@ export default class FyloBrowser {
             POST: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/api/rebuild`, { method: 'POST' })) => {
                 return jsonOk(request, await rebuildCollectionAction(request));
             }, `${BROWSER_PATH}/api/rebuild`),
+        };
+
+        Router.reqRoutes[`${BROWSER_PATH}/api/deleted`] = {
+            GET: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/api/deleted`)) => {
+                const url = new URL(request.url);
+                return jsonOk(request, await listDeletedDocuments(url));
+            }, `${BROWSER_PATH}/api/deleted`),
+        };
+
+        Router.reqRoutes[`${BROWSER_PATH}/api/restore`] = {
+            POST: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/api/restore`, { method: 'POST' })) => {
+                return jsonOk(request, await restoreDocumentAction(request));
+            }, `${BROWSER_PATH}/api/restore`),
         };
 
         Router.reqRoutes[`${BROWSER_PATH}/api/meta`] = {

@@ -48,10 +48,6 @@ function getTacGlobal() {
     return registry;
 }
 
-/** @type {Map<string, unknown>} */
-const context = new Map();
-window.__ty_context__ = context;
-
 /** @type {TacRender | null} */
 let pageRender = null;
 /** @type {TacRender | null} */
@@ -600,8 +596,6 @@ function canHandleClientNavigation(url) {
 Object.assign(tac, {
     navigate,
     rerender,
-    /** @param {string} key @param {unknown} value */
-    provide: (key, value) => context.set(key, value),
 });
 
 window.__ty_rerender = refreshCurrentView;

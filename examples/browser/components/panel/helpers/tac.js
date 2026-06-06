@@ -27,14 +27,15 @@ export default class extends Tac {
     }
 
     /** @returns {void} */
+    @publish('tachyon:toggle-theme')
     toggleTheme() {
-        window.dispatchEvent(new CustomEvent('tachyon:toggle-theme'))
     }
 
-    /** @returns {void} */
-    @emit('tac:bookmark')
+    /** @returns {{ bookmarks: number }} */
+    @publish('tac:bookmark')
     addBookmark() {
         this.$$bookmarks += 1
+        return { bookmarks: this.$$bookmarks }
     }
 
     /** @returns {void} */

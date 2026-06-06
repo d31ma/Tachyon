@@ -9,7 +9,8 @@
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const TY_BOUND_PERSISTENT_FIELDS = '__ty_bound_persistent_fields__'
 const TY_BOUND_REACTIVE_FIELDS = '__ty_bound_reactive_fields__'
-const TY_INTERNAL_FIELDS = new Set(['props', 'tac', TY_BOUND_PERSISTENT_FIELDS, TY_BOUND_REACTIVE_FIELDS])
+const TY_SIGNAL_PUBLISH_FIELDS = '__ty_signal_publish_fields__'
+const TY_INTERNAL_FIELDS = new Set(['props', 'tac', TY_BOUND_PERSISTENT_FIELDS, TY_BOUND_REACTIVE_FIELDS, TY_SIGNAL_PUBLISH_FIELDS])
 
 /** @param {string} name */
 const ty_camelCasePropName = (name) => name.replace(/-([a-zA-Z0-9])/g, (_match, char) => char.toUpperCase())
@@ -317,17 +318,6 @@ const ty_createHelpers = (modulePath) => {
      * @param {T} [fallback]
      * @returns {T | undefined}
      */
-    const inject = (key, fallback = undefined) => {
-        if (!isBrowser) return fallback
-        return /** @type {T | undefined} */ (window.__ty_context__?.get(key) ?? fallback)
-    }
-
-    /**
-     * @template T
-     * @param {string} key
-     * @param {T} [fallback]
-     * @returns {T | undefined}
-     */
     const env = (key, fallback = undefined) => {
         if (!isBrowser) return fallback
         const publicEnv = /** @type {Record<string, unknown> | undefined} */ (window.__ty_public_env__)
@@ -375,12 +365,35 @@ const ty_createHelpers = (modulePath) => {
         })
     })()
 
+    /** @param {string} name */
+    const signalName = (name) => String(name || '').trim()
+
+    const signalHub = () => {
+        if (!isBrowser) return null
+        const targetWindow = /** @type {Window & { __ty_signals__?: { values: Map<string, unknown>, listeners: Map<string, Set<(value: unknown) => void | Promise<void>>> } }} */ (window)
+        if (!targetWindow.__ty_signals__) {
+            targetWindow.__ty_signals__ = {
+                values: new Map(),
+                listeners: new Map(),
+            }
+        }
+        return targetWindow.__ty_signals__
+    }
+
     /**
-     * @param {string} key
+     * @param {(value: unknown) => void | Promise<void>} listener
      * @param {unknown} value
      */
-    const provide = (key, value) => {
-        if (isBrowser) window.__ty_context__?.set(key, value)
+    const notifySignalListener = (listener, value) => {
+        try {
+            const result = listener(value)
+            if (result && typeof result.then === 'function') {
+                result.catch(() => {})
+            }
+        } catch {
+            // Signal subscribers are isolated so one listener cannot block
+            // delivery to the rest of the page/component tree.
+        }
     }
 
     /**
@@ -395,23 +408,55 @@ const ty_createHelpers = (modulePath) => {
 
     /**
      * @param {string} name
-     * @param {unknown} detail
+     * @param {unknown} value
+     * @param {{ retain?: boolean }} [options]
      * @returns {boolean}
      */
-    const emit = (name, detail) => {
-        const eventName = String(name || '').replace(/^@/, '')
-        const targetId = renderContext.componentRootId
+    const publish = (name, value, options = {}) => {
+        const resolvedName = signalName(name)
+        const hub = signalHub()
+        if (!resolvedName || !hub) return false
+        if (options.retain) hub.values.set(resolvedName, value)
+        const listeners = hub.listeners.get(resolvedName)
+        if (!listeners || listeners.size === 0) return false
+        for (const listener of [...listeners]) {
+            notifySignalListener(listener, value)
+        }
+        return true
+    }
 
-        if (!eventName || !targetId || typeof document === 'undefined') return false
-
-        const target = document.getElementById(targetId)
-        if (!target || typeof CustomEvent === 'undefined') return false
-
-        return target.dispatchEvent(new CustomEvent(eventName, {
-            detail,
-            bubbles: true,
-            composed: true,
-        }))
+    /**
+     * @template T
+     * @param {string} name
+     * @param {((value: unknown) => void | Promise<void>) | T} [callbackOrFallback]
+     * @param {{ immediate?: boolean }} [options]
+     * @returns {(() => void) | T | undefined}
+     */
+    const subscribe = (name, callbackOrFallback = undefined, options = {}) => {
+        const resolvedName = signalName(name)
+        const hub = signalHub()
+        if (!resolvedName || !hub) {
+            return typeof callbackOrFallback === 'function' ? () => {} : callbackOrFallback
+        }
+        if (typeof callbackOrFallback !== 'function') {
+            return /** @type {T | undefined} */ (hub.values.has(resolvedName)
+                ? hub.values.get(resolvedName)
+                : callbackOrFallback)
+        }
+        const listener = /** @type {(value: unknown) => void | Promise<void>} */ (callbackOrFallback)
+        let listeners = hub.listeners.get(resolvedName)
+        if (!listeners) {
+            listeners = new Set()
+            hub.listeners.set(resolvedName, listeners)
+        }
+        listeners.add(listener)
+        if (options.immediate !== false && hub.values.has(resolvedName)) {
+            notifySignalListener(listener, hub.values.get(resolvedName))
+        }
+        return () => {
+            listeners?.delete(listener)
+            if (listeners && listeners.size === 0) hub.listeners.delete(resolvedName)
+        }
     }
 
     /**
@@ -527,6 +572,36 @@ const ty_createHelpers = (modulePath) => {
 
     /**
      * @param {Record<string, unknown>} controller
+     * @param {string} fieldName
+     * @param {unknown} value
+     */
+    const publishSignalField = (controller, fieldName, value) => {
+        const fields = Array.isArray(controller[TY_SIGNAL_PUBLISH_FIELDS])
+            ? controller[TY_SIGNAL_PUBLISH_FIELDS]
+            : []
+        for (const field of fields) {
+            if (field && field.field === fieldName) {
+                publish(String(field.name || ''), value, field.options || { retain: true })
+            }
+        }
+    }
+
+    /**
+     * @param {Record<string, unknown>} controller
+     */
+    const publishSignalFields = (controller) => {
+        const fields = Array.isArray(controller[TY_SIGNAL_PUBLISH_FIELDS])
+            ? controller[TY_SIGNAL_PUBLISH_FIELDS]
+            : []
+        for (const field of fields) {
+            if (field && typeof field.field === 'string' && field.field in controller) {
+                publish(String(field.name || ''), controller[field.field], field.options || { retain: true })
+            }
+        }
+    }
+
+    /**
+     * @param {Record<string, unknown>} controller
      */
     const bindReactiveFields = (controller) => {
         const boundFields = controller[TY_BOUND_REACTIVE_FIELDS] instanceof Set
@@ -553,6 +628,7 @@ const ty_createHelpers = (modulePath) => {
                         if (Object.is(currentValue, nextValue))
                             return
                         currentValue = nextValue
+                        publishSignalField(controller, fieldName, nextValue)
                         scheduleRerender()
                     },
                 })
@@ -571,8 +647,10 @@ const ty_createHelpers = (modulePath) => {
                         const previousValue = descriptor.get?.call(controller)
                         descriptor.set?.call(controller, nextValue)
                         const currentValue = descriptor.get?.call(controller)
-                        if (!Object.is(previousValue, currentValue))
+                        if (!Object.is(previousValue, currentValue)) {
+                            publishSignalField(controller, fieldName, currentValue)
                             scheduleRerender()
+                        }
                     },
                 })
                 boundFields.add(fieldName)
@@ -590,13 +668,12 @@ const ty_createHelpers = (modulePath) => {
         },
         env,
         props,
-        emit,
         /** @param {RequestInfo | URL} input @param {RequestInit} [init] */
         fetch: (input, init) => localFirstFetch(input, init),
-        inject,
         onMount,
-        provide,
+        publish,
         rerender,
+        subscribe,
     })
 
     /**
@@ -641,6 +718,7 @@ const ty_createHelpers = (modulePath) => {
             }
             bindPersistentFields(instance, props)
             bindReactiveFields(instance)
+            publishSignalFields(instance)
         }
         finally {
             suppressReactiveRerender = false
@@ -670,13 +748,12 @@ const ty_createHelpers = (modulePath) => {
         createScope: ty_createScope,
         decodeProps: ty_decodeProps,
         env,
-        emit,
-        inject,
         isBrowser,
         isServer,
         onMount,
-        provide,
+        publish,
         rerender,
+        subscribe,
         fylo,
         loadTacModule,
         /**

@@ -1,7 +1,7 @@
 // @ts-check
 import { describe, expect, test } from 'bun:test';
 import Tac from '../../src/runtime/tac.js';
-import { inject, provide, env, onMount, emit, render } from '../../src/runtime/decorators.js';
+import { subscribe, publish, env, onMount } from '../../src/runtime/decorators.js';
 
 /**
  * @typedef {import('../../src/runtime/tac.js').TacRuntimeBindings} TacRuntimeBindings
@@ -9,65 +9,107 @@ import { inject, provide, env, onMount, emit, render } from '../../src/runtime/d
 
 /**
  * @returns {TacRuntimeBindings & {
- *   store: Map<string, unknown>,
+ *   values: Map<string, unknown>,
+ *   listeners: Map<string, Set<(value: unknown) => void | Promise<void>>>,
  *   envs: Map<string, unknown>,
  *   mountFns: Array<() => void | Promise<void>>,
- *   emitted: Array<{ name: string, detail: unknown }>,
- *   rerenderCount: { value: number },
  * }}
  */
 function createHelpers() {
-    const store = new Map();
+    const values = new Map();
+    /** @type {Map<string, Set<(value: unknown) => void | Promise<void>>>} */
+    const listeners = new Map();
     const envs = new Map([['PORT', 4242]]);
     /** @type {Array<() => void | Promise<void>>} */
     const mountFns = [];
-    /** @type {Array<{ name: string, detail: unknown }>} */
-    const emitted = [];
-    const rerenderCount = { value: 0 };
     return {
-        store,
+        values,
+        listeners,
         envs,
         mountFns,
-        emitted,
-        rerenderCount,
         isBrowser: false,
         isServer: true,
         props: {},
         bindPersistentFields() { },
         env: (key, fallback) => /** @type {any} */ (envs.has(key) ? envs.get(key) : fallback),
-        emit: (name, detail) => { emitted.push({ name, detail }); return true; },
         fetch: async () => new Response(''),
-        inject: (key, fallback) => store.has(key) ? store.get(key) : fallback,
         onMount: (fn) => { mountFns.push(fn); },
-        provide: (key, value) => { store.set(key, value); },
-        rerender: () => { rerenderCount.value += 1; },
+        publish: (name, value, options = {}) => {
+            if (options.retain) values.set(name, value);
+            for (const listener of listeners.get(name) ?? []) void listener(value);
+            return (listeners.get(name)?.size ?? 0) > 0;
+        },
+        rerender: () => { },
+        subscribe: (name, callbackOrFallback, options = {}) => {
+            if (typeof callbackOrFallback !== 'function') {
+                return values.has(name) ? values.get(name) : callbackOrFallback;
+            }
+            let signalListeners = listeners.get(name);
+            if (!signalListeners) {
+                signalListeners = new Set();
+                listeners.set(name, signalListeners);
+            }
+            signalListeners.add(callbackOrFallback);
+            if (options.immediate !== false && values.has(name)) void callbackOrFallback(values.get(name));
+            return () => signalListeners?.delete(callbackOrFallback);
+        },
     };
 }
 
 describe('Tac decorators', () => {
-    test('@inject reads from context with fallback', () => {
+    test('@subscribe field reads retained signal with fallback', async () => {
         class Fixture extends Tac {
             /** @type {string | undefined} */
-            @inject('demo-release', 'Tac')
+            @subscribe('demo-release', 'Tac')
             release;
         }
         const helpers = createHelpers();
-        helpers.store.set('demo-release', 'TACHYON 2.0.0');
+        helpers.values.set('demo-release', 'TACHYON 2.0.0');
         const ctrl = new Fixture({}, helpers);
         expect(ctrl.release).toBe('TACHYON 2.0.0');
+        await Promise.resolve();
+        helpers.publish('demo-release', 'TACHYON 2.1.0', { retain: true });
+        expect(ctrl.release).toBe('TACHYON 2.1.0');
 
         const fallback = new Fixture({}, createHelpers());
         expect(fallback.release).toBe('Tac');
     });
 
-    test('@provide registers field value into context', () => {
+    test('@subscribe field uses the field name as the default signal name', async () => {
         class Fixture extends Tac {
-            @provide('demo-release')
+            /** @type {string | undefined} */
+            @subscribe
+            release;
+        }
+        const helpers = createHelpers();
+        helpers.values.set('release', 'TACHYON 2.0.0');
+        const ctrl = new Fixture({}, helpers);
+        expect(ctrl.release).toBe('TACHYON 2.0.0');
+        await Promise.resolve();
+        helpers.publish('release', 'TACHYON 2.1.0', { retain: true });
+        expect(ctrl.release).toBe('TACHYON 2.1.0');
+    });
+
+    test('@publish field registers retained signal value', () => {
+        class Fixture extends Tac {
+            @publish('demo-release')
             release = 'TACHYON 2.0.0';
         }
         const helpers = createHelpers();
-        new Fixture({}, helpers);
-        expect(helpers.store.get('demo-release')).toBe('TACHYON 2.0.0');
+        const controller = new Fixture({}, helpers);
+        const fields = /** @type {Array<{ name: string, field: string, options: { retain: true } }>} */ (controller.__ty_signal_publish_fields__);
+        expect(fields).toEqual([{ name: 'demo-release', field: 'release', options: { retain: true } }]);
+    });
+
+    test('@publish field uses the field name as the default signal name', () => {
+        class Fixture extends Tac {
+            @publish
+            release = 'TACHYON 2.0.0';
+        }
+        const helpers = createHelpers();
+        const controller = new Fixture({}, helpers);
+        const fields = /** @type {Array<{ name: string, field: string, options: { retain: true } }>} */ (controller.__ty_signal_publish_fields__);
+        expect(fields).toEqual([{ name: 'release', field: 'release', options: { retain: true } }]);
     });
 
     test('@env reads env helper with fallback', () => {
@@ -117,75 +159,116 @@ describe('Tac decorators', () => {
         expect(called).toBe(1);
     });
 
-    test('@emit emits return value (sync)', () => {
+    test('@publish method publishes return value (sync)', () => {
         class Fixture extends Tac {
-            @emit('saved')
+            @publish('saved')
             save() { return { id: 1 }; }
         }
         const helpers = createHelpers();
+        /** @type {unknown[]} */
+        const received = [];
+        helpers.subscribe('saved', (value) => { received.push(value); }, { immediate: false });
         const ctrl = new Fixture({}, helpers);
         const result = ctrl.save();
         expect(result).toEqual({ id: 1 });
-        expect(helpers.emitted).toEqual([{ name: 'saved', detail: { id: 1 } }]);
+        expect(received).toEqual([{ id: 1 }]);
     });
 
-    test('@emit emits resolved value (async) and propagates rejection', async () => {
+    test('@publish method uses the method name as the default signal name', () => {
         class Fixture extends Tac {
-            @emit('saved')
+            @publish
+            saved() { return { id: 5 }; }
+        }
+        const helpers = createHelpers();
+        /** @type {unknown[]} */
+        const received = [];
+        helpers.subscribe('saved', (value) => { received.push(value); }, { immediate: false });
+        const ctrl = new Fixture({}, helpers);
+        const result = ctrl.saved();
+        expect(result).toEqual({ id: 5 });
+        expect(received).toEqual([{ id: 5 }]);
+    });
+
+    test('@publish method publishes resolved value (async) and propagates rejection', async () => {
+        class Fixture extends Tac {
+            @publish('saved')
             async saveOk() { return { id: 2 }; }
-            @emit('saved')
+            @publish('saved')
             async saveFail() { throw new Error('boom'); }
         }
         const helpers = createHelpers();
+        /** @type {unknown[]} */
+        const received = [];
+        helpers.subscribe('saved', (value) => { received.push(value); }, { immediate: false });
         const ctrl = new Fixture({}, helpers);
         await ctrl.saveOk();
-        expect(helpers.emitted).toEqual([{ name: 'saved', detail: { id: 2 } }]);
+        expect(received).toEqual([{ id: 2 }]);
 
         await expect(ctrl.saveFail()).rejects.toThrow('boom');
-        expect(helpers.emitted).toHaveLength(1);
+        expect(received).toHaveLength(1);
     });
 
-    test('@render fires after a sync method returns', () => {
+    test('@subscribe method receives published values', async () => {
+        /** @type {unknown[]} */
+        const received = [];
         class Fixture extends Tac {
-            @render
-            tick() { return 'ok'; }
+            @subscribe('saved')
+            onSaved(value) { received.push(value); }
         }
         const helpers = createHelpers();
-        const ctrl = new Fixture({}, helpers);
-        expect(ctrl.tick()).toBe('ok');
-        expect(helpers.rerenderCount.value).toBe(1);
+        new Fixture({}, helpers);
+        await Promise.resolve();
+        helpers.publish('saved', { id: 3 });
+        expect(received).toEqual([{ id: 3 }]);
     });
 
-    test('@render fires after a sync method throws and re-raises', () => {
+    test('@subscribe method uses the method name as the default signal name', async () => {
+        /** @type {unknown[]} */
+        const received = [];
         class Fixture extends Tac {
-            @render
-            boom() { throw new Error('nope'); }
+            @subscribe
+            saved(value) { received.push(value); }
         }
         const helpers = createHelpers();
-        const ctrl = new Fixture({}, helpers);
-        expect(() => ctrl.boom()).toThrow('nope');
-        expect(helpers.rerenderCount.value).toBe(1);
+        new Fixture({}, helpers);
+        await Promise.resolve();
+        helpers.publish('saved', { id: 6 });
+        expect(received).toEqual([{ id: 6 }]);
     });
 
-    test('@render fires after an async method resolves', async () => {
+    test('@subscribe method can also run once on mount', async () => {
+        /** @type {unknown[]} */
+        const received = [];
         class Fixture extends Tac {
-            @render
-            async work() { return 7; }
+            @subscribe('saved', { onMount: true })
+            onSaved(value) { received.push(value ?? 'mounted'); }
         }
         const helpers = createHelpers();
-        const ctrl = new Fixture({}, helpers);
-        await expect(ctrl.work()).resolves.toBe(7);
-        expect(helpers.rerenderCount.value).toBe(1);
+        new Fixture({}, helpers);
+        await Promise.resolve();
+        expect(helpers.mountFns).toHaveLength(1);
+        expect(received).toEqual([]);
+
+        helpers.mountFns[0]();
+        expect(received).toEqual(['mounted']);
+
+        helpers.publish('saved', { id: 4 });
+        expect(received).toEqual(['mounted', { id: 4 }]);
     });
 
-    test('@render fires after an async method rejects and propagates', async () => {
+    test('@subscribe method with default signal name can run once on mount', async () => {
+        /** @type {unknown[]} */
+        const received = [];
         class Fixture extends Tac {
-            @render
-            async work() { throw new Error('async-boom'); }
+            @subscribe({ onMount: true })
+            saved(value) { received.push(value ?? 'mounted'); }
         }
         const helpers = createHelpers();
-        const ctrl = new Fixture({}, helpers);
-        await expect(ctrl.work()).rejects.toThrow('async-boom');
-        expect(helpers.rerenderCount.value).toBe(1);
+        new Fixture({}, helpers);
+        await Promise.resolve();
+        expect(helpers.mountFns).toHaveLength(1);
+        helpers.mountFns[0]();
+        helpers.publish('saved', { id: 7 });
+        expect(received).toEqual(['mounted', { id: 7 }]);
     });
 });

@@ -27,6 +27,14 @@ export default class extends Tac {
         return `${(this.totalStorageBytes / 1024).toFixed(1)} KB`
     }
 
+    /** @returns {Promise<string>} */
+    async awaitedTemplateNote() {
+        await Promise.resolve()
+        return this.showcase
+            ? `Resolved "${this.showcase.title}" from an awaited HTML expression.`
+            : 'Tac HTML can await companion methods during render.'
+    }
+
     /** @returns {void} */
     scanStorage() {
         /** @type {StorageEntry[]} */
@@ -47,7 +55,7 @@ export default class extends Tac {
         this.sessionCount = sessionStorage.length
     }
 
-    @onMount
+    @subscribe('tachyon:refresh', { onMount: true })
     async refresh() {
         this.loading = true
         try {
@@ -61,9 +69,4 @@ export default class extends Tac {
         this.scanStorage()
     }
 
-    @onMount
-    bindRefreshListener() {
-        const handler = () => { this.refresh() }
-        window.addEventListener('tachyon:refresh', handler)
-    }
 }

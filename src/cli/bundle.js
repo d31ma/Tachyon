@@ -9,7 +9,7 @@ import path from "path";
 import { pathToFileURL } from "url";
 
 /**
- * @typedef {'main' | 'full' | 'page' | 'component' | 'asset'} BuildChangeType
+ * @typedef {'main' | 'full' | 'page' | 'component' | 'worker' | 'asset'} BuildChangeType
  * @typedef {'file' | 'directory'} WatchTargetKind
  * @typedef {{ type: BuildChangeType, relative: string }} BuildChange
  * @typedef {{ incremental?: boolean }} BundleWatcherOptions
@@ -143,6 +143,7 @@ function classifyChange(targetPath) {
         return { type: 'full', relative };
     const pagesPrefix = normalizeRelative(path.relative(process.cwd(), Router.pagesPath)) + '/';
     const componentsPrefix = normalizeRelative(path.relative(process.cwd(), Router.componentsPath)) + '/';
+    const workersPrefix = normalizeRelative(path.relative(process.cwd(), Router.workersPath)) + '/';
     const assetsPrefix = normalizeRelative(path.relative(process.cwd(), Router.assetsPath)) + '/';
     const sharedDataPrefix = normalizeRelative(path.relative(process.cwd(), Router.sharedDataPath)) + '/';
     const sharedScriptsPrefix = normalizeRelative(path.relative(process.cwd(), Router.sharedScriptsPath)) + '/';
@@ -157,6 +158,12 @@ function classifyChange(targetPath) {
         const componentFile = relative.slice(componentsPrefix.length);
         if (componentFile.endsWith(`/${Router.pageFileName}`) || componentFile === Router.pageFileName)
             return { type: 'component', relative: componentFile };
+        return { type: 'full', relative };
+    }
+    if (relative.startsWith(workersPrefix)) {
+        const workerFile = relative.slice(workersPrefix.length);
+        if (workerFile.split('/').pop()?.startsWith('tac.'))
+            return { type: 'worker', relative: workerFile };
         return { type: 'full', relative };
     }
     if (relative.startsWith(assetsPrefix)) {
@@ -247,6 +254,10 @@ async function runSelectiveBuild(change) {
         logIncrementalBuild();
         return;
     }
+    if (change.type === 'worker') {
+        await runBuild();
+        return;
+    }
     await runBuild();
 }
 /**
@@ -280,6 +291,7 @@ async function watchPaths(onChange) {
     const roots = [
         Router.pagesPath,
         Router.componentsPath,
+        Router.workersPath,
         Router.assetsPath,
         Router.sharedDataPath,
         Router.sharedScriptsPath,
@@ -413,6 +425,7 @@ export async function startBundleWatcher(options = {}) {
     bundleLogger.info('Watching source paths for bundle changes', {
         pagesPath: Router.pagesPath,
         componentsPath: Router.componentsPath,
+        workersPath: Router.workersPath,
         assetsPath: Router.assetsPath,
         sharedDataPath: Router.sharedDataPath,
         sharedScriptsPath: Router.sharedScriptsPath,

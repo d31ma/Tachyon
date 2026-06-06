@@ -1,6 +1,6 @@
 // @ts-check
 import { afterEach, expect, test } from 'bun:test';
-import { chmod, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'fs/promises';
 import path from 'path';
 import { tmpdir } from 'os';
 import { pathToFileURL } from 'url';
@@ -10,7 +10,6 @@ const timedTest = /** @type {any} */ (test);
 /** @type {string[]} */
 const tempDirs = [];
 const bundleEntrypoint = path.join(process.cwd(), 'src/cli/bundle.js');
-const wasmClickerFixture = 'AGFzbQEAAAABFgRgAX8Bf2ACf38AYAR/f39/AGAAAX8DBwYAAQECAwMFAwEAAQYLAn8BQQALfwFBAAsHRAcGbWVtb3J5AgAFYWxsb2MAAAdkZWFsbG9jAAEEaW5pdAACBGNhbGwAAwpvdXRwdXRfcHRyAAQKb3V0cHV0X2xlbgAFCiwGBQBBgBALAgALCwBB5AAkAEEmJAELCwBByAEkAEEoJAELBAAjAAsEACMBCwtbAgBB5AALJnsic3RhdGUiOnsiY2xpY2tzIjowLCJsYWJlbCI6IlJlYWR5In19AEHIAQsoeyJzdGF0ZSI6eyJjbGlja3MiOjEsImxhYmVsIjoiQ2xpY2tlZCJ9fQ==';
 /**
  * @param {string} source
  * @returns {Record<string, unknown>}
@@ -106,6 +105,42 @@ async function createLiteralReplacementTokenFixture() {
         path.join(root, 'browser', 'pages', 'tac.html'),
         '<main><p>Session field `$` and local field `$$` remain literal.</p></main>',
     );
+    return root;
+}
+async function createAwaitTemplateFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-await-template-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'browser', 'pages'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-await-template-fixture',
+        private: true,
+    }, null, 2));
+    await writeFile(path.join(root, 'browser', 'pages', 'tac.html'), `
+<main>
+  <p>{await message()}</p>
+  <div :data-status="await status()">Status</div>
+  <logic :if="await ready()">
+    <strong>Ready branch</strong>
+  </logic>
+</main>`);
+    await writeFile(path.join(root, 'browser', 'pages', 'tac.js'), `
+export default class extends Tac {
+  async message() {
+    await Promise.resolve()
+    return 'Async <ready>'
+  }
+
+  async status() {
+    await Promise.resolve()
+    return 'online'
+  }
+
+  async ready() {
+    await Promise.resolve()
+    return true
+  }
+}
+`);
     return root;
 }
 async function createFailingBundleWithExistingDistFixture() {
@@ -456,65 +491,108 @@ async function createCompanionScriptFixture() {
     await writeFile(path.join(root, 'routes', 'tac.html'), `<clicker label="Companion" />`);
     return root;
 }
-async function createWasmCompanionFixture() {
-    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-wasm-companion-'));
+async function createTacWorkerFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-tac-worker-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'clicker'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'workers', 'language', 'rust'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'workers', 'language', 'c'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'workers', 'language', 'cpp'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'workers', 'language', 'zig'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'workers', 'language', 'python'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'workers', 'language', 'csharp'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'workers', 'language', 'go'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'workers', 'language', 'javascript'), { recursive: true });
+    await mkdir(path.join(root, 'browser', 'workers', 'language', 'typescript'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
-        name: 'tachyon-wasm-companion-fixture',
+        name: 'tachyon-tac-worker-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.html'), `<button @click="increment()">Wasm {label}: {clicks}</button>`);
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.wasm'), Buffer.from(wasmClickerFixture, 'base64'));
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.tac.json'), JSON.stringify({
-        abi: 'tac-wasm-json@1',
-        state: {
-            clicks: 99,
-            label: 'Manifest',
-        },
-        methods: ['increment'],
-    }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<clicker />`);
-    return root;
-}
-async function createWasmSourceCompanionFixture() {
-    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-wasm-source-companion-'));
-    tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'clicker'), { recursive: true });
-    await writeFile(path.join(root, 'package.json'), JSON.stringify({
-        name: 'tachyon-wasm-source-companion-fixture',
-        private: true,
-    }, null, 2));
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.html'), `<button @click="increment()">Wasm {label}: {clicks}</button>`);
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.wat'), '(module)');
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.tac.json'), JSON.stringify({
-        abi: 'tac-wasm-json@1',
-        state: {
-            clicks: 99,
-            label: 'Manifest',
-        },
-        methods: ['increment'],
-    }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<clicker />`);
-    const compilerScriptPath = path.join(root, process.platform === 'win32' ? 'fake-wat2wasm.js' : 'fake-wat2wasm');
-    await writeFile(compilerScriptPath, `#!/usr/bin/env bun
-const outIndex = process.argv.indexOf('-o') + 1;
-if (outIndex <= 0 || !process.argv[outIndex]) {
-  console.error('missing -o output');
-  process.exit(1);
-}
-await Bun.write(process.argv[outIndex], Buffer.from(${JSON.stringify(wasmClickerFixture)}, 'base64'));
-`);
-    await chmod(compilerScriptPath, 0o755);
-    const compilerPath = process.platform === 'win32'
-        ? path.join(root, 'fake-wat2wasm.cmd')
-        : compilerScriptPath;
-    if (process.platform === 'win32') {
-        await writeFile(compilerPath, '@echo off\r\nbun "%~dp0fake-wat2wasm.js" %*\r\n');
+    await writeFile(path.join(root, 'browser', 'pages', 'tac.html'), `
+<main>
+  <button @click="summarize()">Summarize</button>
+  <p>{summary}</p>
+</main>`);
+    await writeFile(path.join(root, 'browser', 'pages', 'tac.ts'), `
+export default class extends Tac {
+    summary = 'pending'
+
+    async summarize() {
+        const response = await fetch('tac://language/rust', { method: 'POST', body: { text: 'hello' } })
+        const payload = await response.json()
+        this.summary = String(payload.body.result)
     }
-    return { root, compilerPath };
+}
+`);
+    await writeFile(path.join(root, 'browser', 'workers', 'language', 'rust', 'tac.rs'), `
+// Handler-shaped worker compiled in-house to wasm (no external toolchain).
+impl Handler {
+    pub fn POST(request: Request) -> i32 {
+        request.len()
+    }
+}
+`);
+    await writeFile(path.join(root, 'browser', 'workers', 'language', 'rust', 'OPTIONS.schema.json'), JSON.stringify({
+        POST: {
+            request: { body: '^[\\s\\S]*$' },
+            200: { method: '^POST$', result: '^[0-9]+$' },
+        },
+    }, null, 2));
+    await writeFile(path.join(root, 'browser', 'workers', 'language', 'c', 'tac.c'), `
+int POST(Request request) {
+    return request.len();
+}
+`);
+    await writeFile(path.join(root, 'browser', 'workers', 'language', 'cpp', 'tac.cpp'), `
+class Handler {
+public:
+    static int POST(Request request) {
+        return request.len();
+    }
+};
+`);
+    await writeFile(path.join(root, 'browser', 'workers', 'language', 'zig', 'tac.zig'), `
+const Handler = struct {
+    pub fn POST(request: Request) i32 {
+        return request.len();
+    }
+};
+`);
+    await writeFile(path.join(root, 'browser', 'workers', 'language', 'python', 'tac.py'), `
+class Handler:
+    @staticmethod
+    def POST(request) -> int:
+        return request.len()
+`);
+    await writeFile(path.join(root, 'browser', 'workers', 'language', 'csharp', 'tac.cs'), `
+class Handler {
+    public static int POST(Request request) {
+        return request.len();
+    }
+}
+`);
+    await writeFile(path.join(root, 'browser', 'workers', 'language', 'go', 'tac.go'), `
+package main
+type Handler struct{}
+func (Handler) POST(request Request) int {
+    return request.len();
+}
+`);
+    await writeFile(path.join(root, 'browser', 'workers', 'language', 'javascript', 'tac.js'), `
+class Handler {
+    POST(request) {
+        return request.len();
+    }
+}
+`);
+    await writeFile(path.join(root, 'browser', 'workers', 'language', 'typescript', 'tac.ts'), `
+export default class Handler {
+    POST(request: TacWorkerRequest): number {
+        return request.len();
+    }
+}
+`);
+    return root;
 }
 async function createGlobalTacFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-global-tac-'));
@@ -549,29 +627,32 @@ async function requestMfa() {
 <p>{status}</p>`);
     return root;
 }
-async function createComponentEmitFixture() {
-    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-component-emit-'));
+async function createComponentSignalFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-component-signal-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'routes'), { recursive: true });
     await mkdir(path.join(root, 'components', 'child', 'picker'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
-        name: 'tachyon-component-emit-fixture',
+        name: 'tachyon-component-signal-fixture',
         private: true
     }, null, 2));
     await writeFile(path.join(root, 'components', 'child', 'picker', 'tac.html'), `<script>
 let label = 'fallback';
 function choose() {
-    emit('selected', { label, source: 'child-picker' });
+    publish('selected', { label, source: 'child-picker' });
 }
 </script>
 <button @click="choose()">Choose {label}</button>`);
     await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
 let selected = 'none';
-function receive(event) {
-    selected = event.detail.label + ':' + event.detail.source;
+subscribe('selected', (event) => {
+    selected = event.label + ':' + event.source;
+});
+function receive() {
+    selected = 'handled-by-signal';
 }
 </script>
-<child-picker label="alpha" @selected="receive($event)" />
+<child-picker label="alpha" />
 <p>Selected {selected}</p>`);
     return root;
 }
@@ -699,6 +780,18 @@ timedTest('static prerender preserves literal dollar replacement tokens in templ
     const document = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
     expect(document).toContain('Session field `$` and local field `$$` remain literal.');
     expect(document.match(/<!DOCTYPE html>/g)).toHaveLength(1);
+});
+timedTest('Tac HTML expressions can await companion methods during render', { timeout: 20000 }, async () => {
+    const cwd = await createAwaitTemplateFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    expect(stderr).toBe('');
+    const document = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
+    expect(document).toContain('Async &lt;ready&gt;');
+    expect(document).toContain('data-status="online"');
+    expect(document).toContain('Ready branch');
 });
 timedTest('tac.bundle leaves the previous dist intact when a full build fails', { timeout: 20000 }, async () => {
     const cwd = await createFailingBundleWithExistingDistFixture();
@@ -1161,8 +1254,9 @@ timedTest('component companion scripts in JavaScript or TypeScript and scoped cs
     const updated = await render(buttonId);
     expect(updated).toContain('Clicked: 1');
 });
-timedTest('prebuilt Wasm companions use the Tac JSON ABI through generated adapters', { timeout: 20000 }, async () => {
-    const cwd = await createWasmCompanionFixture();
+timedTest('tac.bundle compiles browser tac protocol workers into bundled worker assets', { timeout: 20000 }, async () => {
+    const cwd = await createTacWorkerFixture();
+    // No external toolchain: the in-house compiler turns the handler source into wasm.
     const proc = Bun.spawn(['bun', bundleEntrypoint], {
         cwd,
         stdout: 'pipe',
@@ -1176,47 +1270,31 @@ timedTest('prebuilt Wasm companions use the Tac JSON ABI through generated adapt
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
-    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?wasm-companion=${Date.now()}`);
-    const render = await pageModule.default();
-    const initial = await render();
-    const buttonId = initial.match(/<button[^>]* id="([^"]+)"/)?.[1];
-    expect(initial).toContain('Wasm Ready: 0');
-    expect(buttonId).toBeDefined();
-    const updated = await render(buttonId);
-    expect(updated).toContain('Wasm Clicked: 1');
+    const pageScript = await readFile(path.join(cwd, 'dist', 'pages', 'tac.js'), 'utf8');
+
+    expect(pageScript).toContain('tac://language/rust');
+    expect(pageScript).toContain('Tac workers require the browser Worker API');
+    const fyloLocalWorker = await readFile(path.join(cwd, 'dist', 'fylo-local-worker.js'), 'utf8');
+    expect(fyloLocalWorker).toContain('tachyon-fylo');
+
+    for (const language of ['rust', 'c', 'cpp', 'zig', 'python', 'csharp', 'go', 'javascript', 'typescript']) {
+        const workerScript = await readFile(path.join(cwd, 'dist', 'workers', 'language', language, 'tac.worker.js'), 'utf8');
+        const wasmBytes = await readFile(path.join(cwd, 'dist', 'workers', 'language', language, 'tac.wasm'));
+        expect(workerScript).toContain("new URL('./tac.wasm', import.meta.url)");
+        expect(workerScript).toContain('class TacWorkerRuntime');
+        expect([...wasmBytes.subarray(0, 4)]).toEqual([0, 97, 115, 109]);
+
+        // The in-house output is genuinely runnable wasm exposing the worker ABI.
+        const { instance } = await WebAssembly.instantiate(new Uint8Array(wasmBytes), {});
+        expect(instance.exports.memory).toBeInstanceOf(WebAssembly.Memory);
+        for (const name of ['alloc', 'call', 'output_ptr', 'output_len'])
+            expect(typeof (/** @type {Record<string, unknown>} */ (instance.exports))[name]).toBe('function');
+    }
+    const optionsSchema = await readFile(path.join(cwd, 'dist', 'workers', 'language', 'rust', 'OPTIONS.schema.json'), 'utf8');
+    expect(JSON.parse(optionsSchema).POST.request.body).toBe('^[\\s\\S]*$');
 });
-timedTest('source-backed Wasm companions compile before adapter generation', { timeout: 20000 }, async () => {
-    const { root: cwd, compilerPath } = await createWasmSourceCompanionFixture();
-    const proc = Bun.spawn(['bun', bundleEntrypoint], {
-        cwd,
-        env: {
-            ...process.env,
-            TACHYON_WASM_WAT2WASM: compilerPath,
-        },
-        stdout: 'pipe',
-        stderr: 'pipe'
-    });
-    const [_stdout, stderr, exitCode] = await Promise.all([
-        decode(proc.stdout),
-        decode(proc.stderr),
-        proc.exited
-    ]);
-    if (exitCode !== 0)
-        throw new Error(stderr);
-    expect(stderr).toBe('');
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
-    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?wasm-source-companion=${Date.now()}`);
-    const render = await pageModule.default();
-    const initial = await render();
-    const buttonId = initial.match(/<button[^>]* id="([^"]+)"/)?.[1];
-    expect(initial).toContain('Wasm Ready: 0');
-    expect(buttonId).toBeDefined();
-    const updated = await render(buttonId);
-    expect(updated).toContain('Wasm Clicked: 1');
-});
-timedTest('components can emit custom events handled by their parent wrapper', { timeout: 20000 }, async () => {
-    const cwd = await createComponentEmitFixture();
+timedTest('components can publish signals handled by their parent page', { timeout: 20000 }, async () => {
+    const cwd = await createComponentSignalFixture();
     const proc = Bun.spawn(['bun', bundleEntrypoint], {
         cwd,
         stdout: 'pipe',
@@ -1230,10 +1308,6 @@ timedTest('components can emit custom events handled by their parent wrapper', {
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
-    const pageModule = await import(`${pathToFileURL(pageModulePath).href}?component-emit=${Date.now()}`);
-    const render = await pageModule.default();
-    const initial = await render();
     const windowInstance = new Window();
     const previousGlobals = {
         window: globalThis.window,
@@ -1249,24 +1323,17 @@ timedTest('components can emit custom events handled by their parent wrapper', {
             document: windowInstance.document,
             CustomEvent: windowInstance.CustomEvent,
         });
+        const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
+        const pageModule = await import(`${pathToFileURL(pageModulePath).href}?component-signal=${Date.now()}`);
+        const render = await pageModule.default();
+        const initial = await render();
         document.body.innerHTML = initial;
-        const wrapperId = initial.match(/<div id="([^"]+)"[^>]*@selected/)?.[1];
-        const wrapper = wrapperId ? document.getElementById(wrapperId) : null;
         const button = document.querySelector('button');
-        expect(wrapper?.id).toBeTruthy();
         expect(button?.id).toBeTruthy();
         expect(initial).toContain('Selected none');
-        if (!wrapper || !button)
-            throw new Error('Expected wrapper and button to exist in the emitted component fixture');
-        const received = new Promise((resolve) => {
-            wrapper.addEventListener('selected', async (event) => {
-                const selectedEvent = /** @type {CustomEvent<{ label: string, source: string }>} */ (event);
-                await render(wrapper.id, selectedEvent);
-                resolve(selectedEvent.detail);
-            });
-        });
+        if (!button)
+            throw new Error('Expected button to exist in the signal component fixture');
         await render(button.id, new windowInstance.MouseEvent('click'));
-        expect(await received).toEqual({ label: 'alpha', source: 'child-picker' });
         expect(await render()).toContain('Selected alpha:child-picker');
     }
     finally {

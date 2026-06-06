@@ -26,7 +26,7 @@ export default class extends Tac {
             : 'just now'
     }
 
-    @onMount
+    @subscribe('tachyon:refresh', { onMount: true })
     async refresh(): Promise<void> {
         try {
             const response = await fetch('/languages/typescript/items', { cache: 'reload' })
@@ -35,12 +35,6 @@ export default class extends Tac {
         } catch {
             this.items = []
         }
-    }
-
-    @onMount
-    bindRefreshListener(): void {
-        const handler = () => { this.refresh() }
-        window.addEventListener('tachyon:refresh', handler)
     }
 
     async addItem(): Promise<void> {
@@ -67,13 +61,18 @@ export default class extends Tac {
         await this.refresh()
         this.newItem = ''
         this.feedback = `Saved "${name}" through Yon.`
-        window.dispatchEvent(new CustomEvent('inventory:changed'))
+        this.notifyInventoryChanged()
     }
 
     async clearItems(): Promise<void> {
         await fetch('/languages/typescript/items', { method: 'DELETE' })
         this.items = []
         this.feedback = 'Inventory reset.'
-        window.dispatchEvent(new CustomEvent('inventory:changed'))
+        this.notifyInventoryChanged()
+    }
+
+    @publish('inventory:changed')
+    notifyInventoryChanged(): { count: number } {
+        return { count: this.items.length }
     }
 }

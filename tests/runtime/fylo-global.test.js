@@ -5,6 +5,7 @@ import { pathToFileURL } from 'url';
 
 const FYLO_GLOBAL_URL = pathToFileURL(`${import.meta.dir}/../../src/runtime/fylo-global.js`).href;
 const BROWSER_CACHE_URL = pathToFileURL(`${import.meta.dir}/../../src/runtime/browser-cache.js`).href;
+const FYLO_LOCAL_URL = pathToFileURL(`${import.meta.dir}/../../src/runtime/fylo-local.js`).href;
 
 function createFakeIndexedDB() {
     const stores = new Map();
@@ -113,7 +114,9 @@ function createFakeIndexedDB() {
  *   EventSource?: typeof EventSource,
  *   fetch: typeof fetch,
  *   __ty_browser_cache__?: any,
- *   __ty_native_fetch__?: typeof fetch
+ *   __ty_native_fetch__?: typeof fetch,
+ *   __ty_fylo_local_engine__?: any,
+ *   __ty_fylo_memory_store__?: any
  * }} TestGlobal
  */
 
@@ -157,10 +160,14 @@ describe('fylo browser global cache', () => {
             fetch: global.fetch,
             __ty_browser_cache__: global.__ty_browser_cache__,
             __ty_native_fetch__: global.__ty_native_fetch__,
+            __ty_fylo_local_engine__: global.__ty_fylo_local_engine__,
+            __ty_fylo_memory_store__: global.__ty_fylo_memory_store__,
         };
         installWindow(windowInstance);
         Reflect.deleteProperty(globalThis, '__ty_browser_cache__');
         Reflect.deleteProperty(globalThis, '__ty_native_fetch__');
+        const { resetFyloLocalEngineForTest } = await import(FYLO_LOCAL_URL);
+        resetFyloLocalEngineForTest();
         const { tacBrowserCache } = await import(BROWSER_CACHE_URL);
         tacBrowserCache.dbPromise = null;
         testGlobal().__ty_browser_cache__ = tacBrowserCache;
@@ -169,7 +176,7 @@ describe('fylo browser global cache', () => {
     afterEach(async () => {
         await windowInstance.happyDOM.close();
         Object.assign(globalThis, previousGlobals);
-        for (const key of ['__ty_browser_cache__', '__ty_native_fetch__']) {
+        for (const key of ['__ty_browser_cache__', '__ty_native_fetch__', '__ty_fylo_local_engine__', '__ty_fylo_memory_store__']) {
             if (previousGlobals[key] === undefined)
                 Reflect.deleteProperty(globalThis, key);
         }
@@ -200,7 +207,7 @@ describe('fylo browser global cache', () => {
         expect(calls).toBe(2);
     });
 
-    test('collection mutations invalidate cached collection queries', async () => {
+    test('collection mutations update the local Fylo document mirror', async () => {
         let version = 0;
         const fetchStub = /** @type {typeof fetch} */ (async (_input, init) => {
             const request = new Request(_input, init);
@@ -217,10 +224,62 @@ describe('fylo browser global cache', () => {
         const { fylo } = await importFylo();
         const first = await fylo.users.find({ limit: 1 });
         await fylo.users.create({ name: 'Grace' });
-        const second = await fylo.users.find({ limit: 1 });
+        const second = await fylo.users.find({ limit: 5 });
 
         expect(first.docs[0].doc.version).toBe(1);
-        expect(second.docs[0].doc.version).toBe(2);
+        expect(second.docs.some((/** @type {{ doc: { name?: string } }} */ entry) => entry.doc.name === 'Grace')).toBe(true);
+        expect(version).toBe(1);
+    });
+
+    test('cache-first find() reads from the local Fylo mirror after network hydration', async () => {
+        let calls = 0;
+        const fetchStub = /** @type {typeof fetch} */ (async (_input, init) => {
+            const request = new Request(_input, init);
+            if (request.url.endsWith('/_fylo/api/meta'))
+                return Response.json({ root: '/tmp/fylo', readOnly: false, revealed: true, path: '/_fylo' });
+            calls += 1;
+            return Response.json({ docs: [{ id: 'u1', doc: { name: 'Ada', role: 'admin' } }] });
+        });
+        testGlobal().fetch = fetchStub;
+        testGlobal().__ty_native_fetch__ = fetchStub;
+
+        const { fylo } = await importFylo();
+        const hydrated = await fylo.users.find({ role: 'eq.admin' }, { cache: 'network-first' });
+        const local = await fylo.users.find({ role: 'eq.admin' });
+
+        expect(hydrated.docs[0].doc.name).toBe('Ada');
+        expect(local.docs[0].doc.name).toBe('Ada');
+        expect(local.local).toBe(true);
+        expect(calls).toBe(1);
+    });
+
+    test('no-store find() bypasses and does not update the local Fylo mirror', async () => {
+        let calls = 0;
+        const fetchStub = /** @type {typeof fetch} */ (async (_input, init) => {
+            const request = new Request(_input, init);
+            if (request.url.endsWith('/_fylo/api/meta'))
+                return Response.json({ root: '/tmp/fylo', readOnly: false, revealed: true, path: '/_fylo' });
+            calls += 1;
+            return Response.json({
+                docs: [{
+                    id: 'u1',
+                    doc: { name: calls === 1 ? 'Ada' : 'Grace', role: 'admin' },
+                }],
+            });
+        });
+        testGlobal().fetch = fetchStub;
+        testGlobal().__ty_native_fetch__ = fetchStub;
+
+        const { fylo } = await importFylo();
+        const hydrated = await fylo.users.find({ role: 'eq.admin' }, { cache: 'network-first' });
+        const uncached = await fylo.users.find({ role: 'eq.admin' }, { cache: 'no-store' });
+        const local = await fylo.users.find({ role: 'eq.admin' });
+
+        expect(hydrated.docs[0].doc.name).toBe('Ada');
+        expect(uncached.docs[0].doc.name).toBe('Grace');
+        expect(local.docs[0].doc.name).toBe('Ada');
+        expect(local.local).toBe(true);
+        expect(calls).toBe(2);
     });
 
     test('authenticated FYLO caches are scoped without storing raw credentials in keys', async () => {
@@ -318,5 +377,48 @@ describe('fylo browser global cache', () => {
         ]);
         expect(eventOffsets).toEqual(['latest', '10']);
         expect(findCalls).toBe(2);
+    });
+
+    test('subscribe() receives local Fylo mutations before a remote event is needed', async () => {
+        testGlobal().EventSource = /** @type {any} */ (undefined);
+        const fetchStub = /** @type {typeof fetch} */ (async (_input, init) => {
+            const request = new Request(_input, init);
+            const url = new URL(request.url);
+            if (request.url.endsWith('/_fylo/api/meta'))
+                return Response.json({ root: '/tmp/fylo', readOnly: false, revealed: true, path: '/_fylo' });
+            if (url.pathname.endsWith('/_fylo/api/events'))
+                return Response.json({ collection: 'users', events: [], offset: 0, exists: true });
+            if (request.method === 'POST')
+                return Response.json({ ok: true, id: 'u2' }, { status: 201 });
+            return Response.json({ docs: [] });
+        });
+        testGlobal().fetch = fetchStub;
+        testGlobal().__ty_native_fetch__ = fetchStub;
+
+        const { fylo } = await importFylo();
+        /** @type {Array<{ count: number, source: string }>} */
+        const updates = [];
+        const completed = new Promise((resolve) => {
+            const unsubscribe = fylo.users.subscribe(
+                {},
+                (/** @type {any} */ result, /** @type {any} */ meta) => {
+                    updates.push({ count: result.docs.length, source: meta.source });
+                    if (updates.some((entry) => entry.source === 'local' && entry.count === 1)) {
+                        unsubscribe();
+                        resolve(undefined);
+                    }
+                },
+                { pollMs: 50 },
+            );
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await fylo.users.create({ name: 'Grace' });
+        await Promise.race([
+            completed,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('local subscribe timed out')), 1500)),
+        ]);
+
+        expect(updates).toContainEqual({ count: 1, source: 'local' });
     });
 });

@@ -35,7 +35,7 @@ export default class extends Tac {
         return this.handlers.length
     }
 
-    @onMount
+    @subscribe('tachyon:refresh', { onMount: true })
     async refresh(): Promise<void> {
         this.loading = true
         try {
@@ -76,11 +76,5 @@ export default class extends Tac {
             }
         }))
         this.loading = false
-    }
-
-    @onMount
-    bindRefreshListener(): void {
-        const handler = () => { this.refresh() }
-        window.addEventListener('tachyon:refresh', handler)
     }
 }

@@ -6,7 +6,7 @@ export default class extends Tac {
     /** @type {{ health: string, ready: string, summary: string }} */
     health = { health: 'loading', ready: 'loading', summary: 'loading' }
 
-    @onMount
+    @subscribe('tachyon:refresh', { onMount: true })
     async refresh() {
         await Promise.all([
             this.loadItemsCount(),
@@ -14,15 +14,8 @@ export default class extends Tac {
         ])
     }
 
-    @onMount
-    bindRefreshListeners() {
-        const refreshHandler = () => { this.refresh() }
-        window.addEventListener('tachyon:refresh', refreshHandler)
-        const inventoryHandler = () => { this.loadItemsCount() }
-        window.addEventListener('inventory:changed', inventoryHandler)
-    }
-
     /** @returns {Promise<void>} */
+    @subscribe('inventory:changed')
     async loadItemsCount() {
         try {
             const response = await fetch('/languages/typescript/items', { cache: 'reload' })

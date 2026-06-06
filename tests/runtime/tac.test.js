@@ -14,12 +14,11 @@ function createHelpers() {
         props: {},
         bindPersistentFields: () => { },
         env: (_key, fallback) => fallback,
-        emit: () => true,
         fetch: async () => new Response(''),
-        inject: (_key, fallback) => fallback,
         onMount: () => { },
-        provide: () => { },
+        publish: () => true,
         rerender: () => { },
+        subscribe: (_name, callbackOrFallback) => typeof callbackOrFallback === 'function' ? () => { } : callbackOrFallback,
     };
 }
 

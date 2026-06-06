@@ -2,6 +2,7 @@
 // @ts-check
 import Yon from "../server/yon.js";
 import Pool from "../server/process/process-pool.js";
+import { clearHandlerBackends, registerHandlerBackends } from "../server/process/backends/resolve.js";
 import Router from "../server/http/route-handler.js";
 import logger from "../server/observability/logger.js";
 import { watch } from "fs";
@@ -138,11 +139,13 @@ const isProduction = process.env.NODE_ENV === 'production';
 const hmrEnabled = (frontendEnabled || bundleWatchEnabled) && !isProduction;
 async function configureRoutes(isReload = false) {
     Router.resetStaticState();
+    clearHandlerBackends();
     if (isReload)
         Pool.clearWarmedProcesses();
     if (userBackendEnabled) {
         await loadMiddleware();
         await Router.validateRoutes();
+        registerHandlerBackends();
     }
     if (backendEnabled) {
         Yon.createServerRoutes();
@@ -235,6 +238,9 @@ async function startHmrWatchers(server) {
     }
     if (await pathExists(Router.componentsPath)) {
         hmrWatchers.push(watch(Router.componentsPath, { recursive: true }, onFileChange));
+    }
+    if (await pathExists(Router.workersPath)) {
+        hmrWatchers.push(watch(Router.workersPath, { recursive: true }, onFileChange));
     }
     if (await pathExists(Router.assetsPath)) {
         hmrWatchers.push(watch(Router.assetsPath, { recursive: true }, onFileChange));
