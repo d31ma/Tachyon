@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Tachyon app icon">
+  <defs>
+    <linearGradient id="tachyon-icon-gradient" x1="140" y1="140" x2="372" y2="372" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
+  </defs>
+  <!-- Full-bleed background: safe for maskable icon crops. -->
+  <rect width="512" height="512" fill="#0F172A"/>
+  <!-- The tachyon mark, kept inside the central safe zone. -->
+  <path d="M150 186 L220 256 L150 326" fill="none" stroke="url(#tachyon-icon-gradient)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+  <path d="M204 158 L302 256 L204 354" fill="none" stroke="url(#tachyon-icon-gradient)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" opacity="0.75"/>
+  <circle cx="352" cy="256" r="46" fill="url(#tachyon-icon-gradient)"/>
+</svg>

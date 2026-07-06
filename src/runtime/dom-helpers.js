@@ -10,9 +10,12 @@
  * @returns {Element | null}
  */
 export function findEventTarget(element, eventName) {
+    // Tac compiles `on<event>` to a DuVay-safe `data-tac-on-<event>` marker (colons
+    // in component event names encoded to `__`).
+    const marker = `data-tac-on-${eventName.replaceAll(':', '__')}`;
     let candidate = element;
     while (candidate && candidate !== document.body) {
-        if (candidate.hasAttribute(`@${eventName}`))
+        if (candidate.hasAttribute(marker))
             return candidate;
         candidate = candidate.parentElement;
     }
@@ -124,6 +127,62 @@ export function syncAttributes(currentElement, desiredElement) {
     syncFormControlState(currentElement, desiredElement);
 }
 
+/** @param {Element} element */
+function isCustomElement(element) {
+    return element.localName.includes('-');
+}
+
+/**
+ * Light DOM component libraries render their own shell around authored children.
+ * Only slots owned by this host belong to its public child-content surface.
+ * @param {Element} host
+ * @returns {HTMLSlotElement[]}
+ */
+function ownedSlots(host) {
+    return Array.from(host.querySelectorAll('slot')).filter((slot) => {
+        let ancestor = slot.parentElement;
+        while (ancestor && ancestor !== host) {
+            if (isCustomElement(ancestor))
+                return false;
+            ancestor = ancestor.parentElement;
+        }
+        return ancestor === host;
+    });
+}
+
+/**
+ * Reconciles authored children inside a Light DOM component's slots without
+ * touching the component-generated wrapper, controls, or event listeners.
+ * @param {Element} currentElement
+ * @param {Element} desiredElement
+ * @param {MorphOptions} options
+ */
+function morphLightDomSlots(currentElement, desiredElement, options) {
+    const slots = ownedSlots(currentElement);
+    if (slots.length === 0)
+        return false;
+    /** @type {Map<string, Node[]>} */
+    const desiredBySlot = new Map();
+    for (const child of Array.from(desiredElement.childNodes)) {
+        const slotName = child.nodeType === Node.ELEMENT_NODE
+            ? /** @type {Element} */ (child).getAttribute('slot') ?? ''
+            : '';
+        const children = desiredBySlot.get(slotName) ?? [];
+        children.push(child);
+        desiredBySlot.set(slotName, children);
+    }
+    for (const slot of slots) {
+        const desiredChildren = desiredBySlot.get(slot.name);
+        if (!desiredChildren)
+            continue;
+        const fragment = document.createDocumentFragment();
+        for (const child of desiredChildren)
+            fragment.appendChild(child);
+        morphChildren(slot, fragment, options);
+    }
+    return true;
+}
+
 /**
  * @param {Element | DocumentFragment} parent
  * @param {DocumentFragment} desired
@@ -159,7 +218,10 @@ export function morphChildren(parent, desired, options = {}) {
             const currentElement = /** @type {Element} */ (currentChild);
             if (options.preserveElement?.(currentElement))
                 continue;
-            syncAttributes(currentElement, /** @type {Element} */ (desiredChild));
+            const desiredElement = /** @type {Element} */ (desiredChild);
+            syncAttributes(currentElement, desiredElement);
+            if (isCustomElement(currentElement) && morphLightDomSlots(currentElement, desiredElement, options))
+                continue;
             const desiredChildFragment = document.createDocumentFragment();
             while (desiredChild.firstChild)
                 desiredChildFragment.appendChild(desiredChild.firstChild);

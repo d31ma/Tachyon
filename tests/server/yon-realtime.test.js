@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import path from 'path';
 import Router from '../../src/server/http/route-handler.js';
 import YonRealtime from '../../src/server/realtime/realtime.js';
-import RealtimeRepository from '../../examples/server/repositories/realtime-repository.js';
+import RealtimeRepository from '../fixtures/fullstack/server/repositories/realtime-repository.js';
 
 /** @type {Record<string, string | undefined>} */
 const originalEnv = {};

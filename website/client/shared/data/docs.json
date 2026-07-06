@@ -1,0 +1,139 @@
+{
+  "order": [
+    "introduction",
+    "routing",
+    "templates",
+    "companions",
+    "workers",
+    "storage",
+    "operations"
+  ],
+  "topics": {
+    "introduction": {
+      "title": "Introduction",
+      "summary": "Tachyon is a polyglot, file-system-routed full-stack framework for Bun. Tac is the frontend layer, Yon is the backend/runtime layer, and FYLO is the document store beneath both.",
+      "sections": [
+        {
+          "heading": "Install",
+          "body": "Install the package, scaffold an app, and start the shape-aware dev server. Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
+          "code": "bun add @d31ma/tachyon\nyon.init my-app --name \"My App\"\ncd my-app && bun install\nbun run serve"
+        },
+        {
+          "heading": "Layout",
+          "body": "Pages live in client/pages, components in client/components, workers in client/workers, and backend routes in server/routes. Shared browser assets and data live under client/shared.",
+          "code": "client/\n  pages/tac.html\n  components/hero/tac.html\n  workers/language/rust/tac.rs\n  shared/assets/  shared/data/\nserver/\n  routes/posts/yon.js"
+        }
+      ]
+    },
+    "routing": {
+      "title": "Routing",
+      "summary": "Both layers route from the file system: a directory is a path, and dynamic segments use _slug directories that become :slug parameters at runtime.",
+      "sections": [
+        {
+          "heading": "Frontend pages",
+          "body": "client/pages/tac.html serves /, client/pages/docs/tac.html serves /docs, and client/pages/docs/_topic/tac.html serves /docs/:topic — the page you are reading uses exactly that dynamic segment. An ancestor page containing a slot element becomes a reusable shell for its descendants.",
+          "code": "client/pages/\n  tac.html          -> /\n  docs/tac.html     -> /docs (shell with <slot />)\n  docs/_topic/\n    tac.html        -> /docs/:topic"
+        },
+        {
+          "heading": "Backend routes",
+          "body": "A route file at server/routes/<path>/yon.<ext> exports a Handler class whose static methods are HTTP verbs. One route can be split across languages with sibling yon files declaring non-overlapping verbs — the Tachyon repo's full-stack fixture app splits its /language route across JavaScript (GET/HEAD), Rust (POST/DELETE) and C++ (PUT/PATCH).",
+          "code": "export class Handler {\n  static GET() { return { items: [] } }\n  static async POST(request) { return { created: request.body } }\n}"
+        },
+        {
+          "heading": "Validation",
+          "body": "An OPTIONS.schema.json beside each handler validates requests and responses with CHEX regex schemas, and feeds the generated OpenAPI 3.1 document served at /openapi.json with a docs UI at /api-docs."
+        }
+      ]
+    },
+    "templates": {
+      "title": "Tac templates",
+      "summary": "Templates are HTML with braces for interpolation, on:event attributes for delegated events, and loop, logic, and switch elements for control flow.",
+      "sections": [
+        {
+          "heading": "Interpolation and events",
+          "body": "Braces evaluate JavaScript inside the async render function, so await is available anywhere. Event handlers are single expressions compiled to one delegated listener per event type, registered at the document and hydrated off the critical path with lossless replay.",
+          "code": "<h1>{headline}</h1>\n<button on:click=\"refresh()\">Refresh</button>\n<input :value=\"name\" on:input=\"name = $event.target.value\" />"
+        },
+        {
+          "heading": "Control flow",
+          "body": "Loops, conditionals and switches are elements, so structure stays visible in the markup.",
+          "code": "<loop :for=\"post of posts\">\n  <article>{post.title}</article>\n</loop>\n<logic :if=\"ready\"><p>Ready.</p></logic>\n<switch :value=\"status\">\n  <case :when=\"'loading'\"><p>Working…</p></case>\n  <case default><p>Done.</p></case>\n</switch>"
+        },
+        {
+          "heading": "Components",
+          "body": "A component folder under client/components maps to a hyphenated tag: components/panel/users becomes panel-users. Props pass as attributes, and adding the lazy attribute defers loading until the component scrolls into view."
+        }
+      ]
+    },
+    "companions": {
+      "title": "Companions",
+      "summary": "A tac.js or tac.ts file beside a template is instantiated automatically; its fields and methods are visible to the template without wiring.",
+      "sections": [
+        {
+          "heading": "Reactive fields",
+          "body": "Assigning to a declared field schedules one batched rerender of the component subtree. Fields prefixed with $ persist to sessionStorage; $$ fields persist to localStorage. Props auto-bind onto same-named declared fields.",
+          "code": "export default class {\n  count = 0\n  $visits = 0\n  $$theme = 'light'\n\n  increment() { this.count += 1 }\n}"
+        },
+        {
+          "heading": "Decorators",
+          "body": "Stage 3 decorators expose the same helpers declaratively — publish and subscribe for cross-component signals, env for allowlisted browser config, and onMount for lifecycle. The compiler auto-imports them.",
+          "code": "export default class {\n  @subscribe release\n  @publish('release') appVersion = 'TACHYON'\n  @env('PUBLIC_API_BASE', '/language') apiBase\n\n  @subscribe('demo-refresh', { onMount: true })\n  refresh() {}\n}"
+        }
+      ]
+    },
+    "workers": {
+      "title": "Tac Workers",
+      "summary": "Browser-local worker backends shaped like Yon routes, compiled in-house to WebAssembly with no external toolchain, and invoked with fetch(\"tac://…\").",
+      "sections": [
+        {
+          "heading": "Author like a route",
+          "body": "A worker at client/workers/language/rust/tac.rs exposes verb methods. Tac workers are written in Rust, JavaScript, or TypeScript and compile to WebAssembly for the browser.",
+          "code": "impl Handler {\n    pub fn POST(request: Request) -> String {\n        \"processed \" + request.len() + \" bytes\"\n    }\n}"
+        },
+        {
+          "heading": "Invoke with fetch",
+          "body": "The request verb selects the handler method, and heavy routes can opt into a worker pool. A small platform boundary exposes curated facts like os, arch and timezone through request.platform().",
+          "code": "const res = await fetch('tac://language/rust?pool=4', {\n  method: 'POST',\n  body: text,\n})\nconst payload = await res.json()"
+        }
+      ]
+    },
+    "storage": {
+      "title": "Storage and data",
+      "summary": "FYLO is filesystem-first: collections, indexes, event journals and WORM history all live under one root that Yon serves through /_fylo.",
+      "sections": [
+        {
+          "heading": "Local-first browser reads",
+          "body": "Inside Tac scripts, fetch() caches successful GET responses into IndexedDB, and the compiler-injected fylo client mirrors documents into OPFS with cache-first, network-first, reload and no-store policies.",
+          "code": "const result = await fylo.users.find(\n  { order: 'email.asc' },\n  { cache: 'network-first' },\n)\nthis.users = (result.docs ?? []).map((entry) => entry.doc)"
+        },
+        {
+          "heading": "Live subscriptions",
+          "body": "subscribe() runs an initial find, listens to the browser-local mirror for same-tab mutations, and follows the server event stream for remote changes — falling back to polling when SSE is unavailable."
+        },
+        {
+          "heading": "Realtime mailboxes",
+          "body": "Yon realtime persists messages into durable FYLO queues and delivers them over Server-Sent Events; reconnecting clients replay from their last cursor, so offline browsers never lose messages."
+        }
+      ]
+    },
+    "operations": {
+      "title": "Operations",
+      "summary": "Health and readiness endpoints, generated OpenAPI docs, middleware hooks, rate limiting, and OpenTelemetry spans persisted into FYLO come built in.",
+      "sections": [
+        {
+          "heading": "Observability",
+          "body": "With YON_OTEL_ENABLED, Yon writes request and handler spans as OTLP JSON into the otel-spans collection, continues incoming traceparent headers, and emits Traceparent and X-Trace-Id on responses. This site's telemetry panel reads them back from /language/telemetry."
+        },
+        {
+          "heading": "Build and deploy",
+          "body": "bun run bundle writes a static-ready dist/web by default; --target all emits self-contained native webview hosts for macOS, Windows, Linux, iOS and Android from the same client source.",
+          "code": "bun run bundle -- --target all\nbun run preview"
+        },
+        {
+          "heading": "Security",
+          "body": "Security headers on every response, hashed Basic Auth, request limits and handler timeouts, origin-aware CORS rejection, and schema validation are all on by default in production."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,16 @@
+<w-card variant="outlined" class="panel-card">
+  <w-card-item title="Persisted drafts and signals" subtitle="$ fields survive reloads, $$ fields survive browsers closing, and @publish signals any subscriber.">
+  </w-card-item>
+  <w-card-text>
+    <label class="draft-label">
+      Draft note ({charCount} characters, {wordCount} words — {draftStatus})
+      <textarea rows="3" :value="$draftNote" on:input="updateDraft($event.target.value)"></textarea>
+    </label>
+    <div class="w-row ga-2 helpers-actions">
+      <w-btn size="sm" variant="outlined" on:click="addBookmark()">Bookmark ({$$bookmarks})</w-btn>
+      <w-btn size="sm" variant="text" on:click="resetBookmarks()">Reset bookmarks</w-btn>
+      <w-btn size="sm" variant="text" on:click="clearDraft()">Clear draft</w-btn>
+    </div>
+    <p class="helpers-note">Reload this page: the draft (sessionStorage) and bookmark count (localStorage) come back on their own.</p>
+  </w-card-text>
+</w-card>

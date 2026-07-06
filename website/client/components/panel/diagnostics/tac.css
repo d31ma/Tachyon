@@ -1,0 +1,28 @@
+.diag-status {
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.diag-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.diag-table th,
+.diag-table td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--w-text) 10%, transparent);
+  font-size: var(--w-font-sm);
+}
+
+.diag-summary {
+  color: var(--w-text-subtle);
+  word-break: break-word;
+}
+
+.diag-note {
+  margin: 0.75rem 0 0;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}

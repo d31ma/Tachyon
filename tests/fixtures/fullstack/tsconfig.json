@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "allowJs": true,
+    "checkJs": true,
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": [
+      "@types/bun",
+      "@types/node"
+    ],
+    "paths": {
+      "@/*": [
+        "./server/*"
+      ]
+    }
+  },
+  "include": [
+    "tachyon-env.d.ts",
+    "client/**/*.js",
+    "client/**/*.ts",
+    "server/**/*.js",
+    "server/**/*.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules"
+  ]
+}

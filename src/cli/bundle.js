@@ -2,27 +2,87 @@
 // @ts-check
 import Router from "../server/http/route-handler.js";
 import Compiler from "../compiler/index.js";
+import { generateNativeHost } from "../compiler/native/index.js";
+import { hasNativePackager, packageNativeArtifact } from "../compiler/native/packagers.js";
+import { NATIVE_TARGET_SET, readTargetArg, resolveBundleTargets } from "../shared/native-targets.js";
 import logger from "../server/observability/logger.js";
-import { access, mkdir, mkdtemp, readdir, rename, rm, stat } from "fs/promises";
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat } from "fs/promises";
 import { watch } from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
 
 /**
- * @typedef {'main' | 'full' | 'page' | 'component' | 'asset'} BuildChangeType
  * @typedef {'file' | 'directory'} WatchTargetKind
- * @typedef {{ type: BuildChangeType, relative: string }} BuildChange
  * @typedef {{ incremental?: boolean }} BundleWatcherOptions
+ * @typedef {import("../shared/native-targets.js").BundleTarget} BundleTarget
  */
 
 const distPath = path.resolve(process.env.YON_DIST_PATH ?? path.join(process.cwd(), 'dist'));
 let activeDistPath = distPath;
 const watchMode = process.argv.includes('--watch');
 const skipInitialBuild = process.argv.includes('--skip-initial-build');
+const skipNativeHost = process.argv.includes('--skip-native-host');
+// Artifact export (.apk / .ipa): on for production bundles, opt-in elsewhere
+// with --package, opt-out with --skip-package. Missing toolchains downgrade
+// to a logged skip — the generated host project is always usable by hand.
+const packageNativeArtifacts = !process.argv.includes('--skip-package')
+    && (process.argv.includes('--package') || process.env.NODE_ENV === 'production');
+const bundleTargets = resolveBundleTargets(readTargetArg(process.argv) ?? process.env.TAC_BUNDLE_TARGET ?? process.env.TAC_TARGET);
+process.env.TAC_BUNDLE_TARGETS = bundleTargets.join(',');
 const WATCH_DEBOUNCE_MS = 200;
 const BUILD_CONCURRENCY = 8;
 const bundleLogger = logger.child({ scope: 'cli:bundle' });
-/** @returns {Promise<((context: { distRoot: string }) => Promise<void> | void) | null>} */
+async function resolveAppName() {
+    try {
+        const pkg = JSON.parse(await readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
+        const configuredName = typeof pkg.tachyon?.appName === 'string'
+            ? pkg.tachyon.appName.trim()
+            : typeof pkg.tac?.appName === 'string'
+                ? pkg.tac.appName.trim()
+                : typeof pkg.displayName === 'string'
+                    ? pkg.displayName.trim()
+                    : typeof pkg.productName === 'string'
+                        ? pkg.productName.trim()
+                        : '';
+        if (configuredName)
+            return configuredName;
+        const name = typeof pkg.name === 'string' ? pkg.name.split('/').pop() : '';
+        if (name)
+            return name;
+    }
+    catch { }
+    return path.basename(process.cwd());
+}
+/**
+ * Replace a generated host project directory with just its built artifacts.
+ * @param {string} projectRoot
+ * @param {string[]} artifactPaths
+ * @returns {Promise<string[]>} The artifact basenames now under projectRoot.
+ */
+async function reduceToArtifacts(projectRoot, artifactPaths) {
+    const holding = `${projectRoot}-artifacts`;
+    await rm(holding, { recursive: true, force: true });
+    await mkdir(holding, { recursive: true });
+    const names = [];
+    for (const artifact of artifactPaths) {
+        const name = path.basename(artifact);
+        await rename(artifact, path.join(holding, name));
+        names.push(name);
+    }
+    await rm(projectRoot, { recursive: true, force: true });
+    await rename(holding, projectRoot);
+    return names;
+}
+async function resolveAppVersion() {
+    try {
+        const pkg = JSON.parse(await readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
+        if (typeof pkg.version === 'string' && pkg.version.trim())
+            return pkg.version.trim();
+    }
+    catch { }
+    return '1.0.0';
+}
+/** @returns {Promise<((context: { distRoot: string, targets: BundleTarget[], targetRoots: Record<string, string> }) => Promise<void> | void) | null>} */
 async function loadPostBundleHook() {
     const configPath = path.resolve(process.cwd(), 'tac.config.js');
     try {
@@ -34,11 +94,16 @@ async function loadPostBundleHook() {
     const config = (await import(`${pathToFileURL(configPath).href}?t=${Date.now()}`)).default;
     return typeof config?.postBundle === 'function' ? config.postBundle : null;
 }
-async function runPostBundleHook() {
+/** @param {string} distRoot */
+async function runPostBundleHook(distRoot = activeDistPath) {
     const hook = await loadPostBundleHook();
     if (!hook)
         return;
-    await hook({ distRoot: activeDistPath });
+    await hook({
+        distRoot,
+        targets: bundleTargets,
+        targetRoots: Object.fromEntries(bundleTargets.map((target) => [target, path.join(distRoot, target)])),
+    });
 }
 /**
  * @template T
@@ -68,7 +133,11 @@ async function buildRouteOutput(route) {
         return;
     try {
         const response = await handler();
-        await Bun.write(Bun.file(`${activeDistPath}${route}`), await response.blob());
+        const outputPath = `${activeDistPath}${route}`;
+        await Bun.write(Bun.file(outputPath), await response.blob());
+        if (Compiler.nativeWorkerBinaryRoutes.has(route) && process.platform !== 'win32') {
+            await chmod(outputPath, 0o755);
+        }
     }
     catch (error) {
         bundleLogger.error('Failed to build route', { route, err: error });
@@ -77,40 +146,122 @@ async function buildRouteOutput(route) {
 export async function runBuild() {
     const start = Date.now();
     const stagingPath = await mkdtemp(path.join(path.dirname(distPath), `${path.basename(distPath)}-staging-`));
-    const backupPath = path.join(path.dirname(distPath), `${path.basename(distPath)}-backup-${Date.now()}`);
-    let hasBackup = false;
-    Router.resetStaticState();
-    activeDistPath = stagingPath;
+    const previousTargetEnv = process.env.TAC_BUNDLE_TARGETS;
     try {
-        await Compiler.createStaticRoutes();
-        await runWithConcurrency(Object.keys(Router.reqRoutes), BUILD_CONCURRENCY, buildRouteOutput);
-        await Compiler.prerenderStaticPages(activeDistPath);
-        await runPostBundleHook();
-        if (await pathExists(distPath)) {
-            await rename(distPath, backupPath);
-            hasBackup = true;
+        let routeCount = 0;
+        const appName = await resolveAppName();
+        const appVersion = await resolveAppVersion();
+        /** @type {Array<{ target: BundleTarget, outputRoot: string }>} */
+        const nativeHosts = [];
+        for (const target of bundleTargets) {
+            Router.resetStaticState();
+            process.env.TAC_BUNDLE_TARGETS = target;
+            activeDistPath = path.join(stagingPath, target);
+            await mkdir(activeDistPath, { recursive: true });
+            await Compiler.createStaticRoutes();
+            await runWithConcurrency(Object.keys(Router.reqRoutes), BUILD_CONCURRENCY, buildRouteOutput);
+            await Compiler.prerenderStaticPages(activeDistPath);
+            if (!skipNativeHost && NATIVE_TARGET_SET.has(target)) {
+                nativeHosts.push({
+                    target,
+                    // Temporary staging dir; the generated host is swapped into
+                    // the target slot below so it ships at dist/<target>/.
+                    outputRoot: path.join(stagingPath, `${target}-native`),
+                });
+            }
+            routeCount = Math.max(routeCount, Object.keys(Router.reqRoutes).length);
         }
-        await rename(stagingPath, distPath);
-        if (hasBackup)
-            await rm(backupPath, { recursive: true, force: true });
-        bundleLogger.info('Bundle completed', {
-            durationMs: Date.now() - start,
-            routeCount: Object.keys(Router.reqRoutes).length,
-            distPath,
+        process.env.TAC_BUNDLE_TARGETS = bundleTargets.join(',');
+        activeDistPath = stagingPath;
+        await runPostBundleHook(stagingPath);
+        for (const { target, outputRoot } of nativeHosts) {
+            const targetRoot = path.join(stagingPath, target);
+            await generateNativeHost({
+                target,
+                assetRoot: targetRoot,
+                outputRoot,
+                appName,
+                version: appVersion,
+            });
+            // Native targets ship the host at dist/<target>/. Replace the
+            // standalone web bundle (already embedded in the host's Resources/)
+            // with the generated host.
+            await rm(targetRoot, { recursive: true, force: true });
+            await rename(outputRoot, targetRoot);
+            bundleLogger.info('Native host generated', { target, outputRoot: path.join(distPath, target) });
+            if (!packageNativeArtifacts || !hasNativePackager(target))
+                continue;
+            try {
+                const result = await packageNativeArtifact({
+                    target,
+                    projectRoot: targetRoot,
+                    appName,
+                    version: appVersion,
+                });
+                if ('artifactPaths' in result) {
+                    // Ship only the artifacts: replace the host project at
+                    // dist/<target>/ with the built .apk/.ipa/.app output.
+                    const artifactNames = await reduceToArtifacts(targetRoot, result.artifactPaths);
+                    bundleLogger.info('Native artifact exported', {
+                        target,
+                        artifacts: artifactNames.map((name) => path.join(distPath, target, name)).join(','),
+                    });
+                }
+                else {
+                    bundleLogger.warn('Native artifact export skipped', { target, reason: result.skipped });
+                }
+            }
+            catch (error) {
+                // Missing toolchains downgrade to a skip above; an actual
+                // build failure must fail the production bundle.
+                bundleLogger.error('Native artifact export failed', { target, err: error });
+                throw error;
+            }
+        }
+        // Swap in only what this run built: each staged top-level entry
+        // (the dist/<target> dirs, plus anything a postBundle hook wrote at
+        // the staging root) replaces its live counterpart individually, so
+        // sibling targets from earlier runs survive — building android must
+        // not delete dist/web out from under a dev server, or dist/macos out
+        // from under a running generated app. Each swap is atomic per entry:
+        // retire the live dir, rename the staged one in, then drop the
+        // retired copy.
+        await mkdir(distPath, { recursive: true });
+        for (const entry of await readdir(stagingPath)) {
+            const staged = path.join(stagingPath, entry);
+            const live = path.join(distPath, entry);
+            const retired = path.join(path.dirname(distPath), `${path.basename(distPath)}-retired-${entry}-${Date.now()}`);
+            let hasRetired = false;
+            if (await pathExists(live)) {
+                await rename(live, retired);
+                hasRetired = true;
+            }
+            try {
+                await rename(staged, live);
+            }
+            catch (error) {
+                if (hasRetired)
+                    await rename(retired, live);
+                throw error;
+            }
+            if (hasRetired)
+                await rm(retired, { recursive: true, force: true });
+        }
+        await rm(stagingPath, { recursive: true, force: true });
+        bundleLogger.info(`Bundle completed in ${Date.now() - start}ms`, {
+            routes: routeCount,
+            targets: bundleTargets.join(','),
+            nativeHosts: nativeHosts.length ? nativeHosts.map((host) => host.target).join(',') : undefined,
         });
+        bundleLogger.debug('Bundle output path', { distPath });
     }
     catch (error) {
         await rm(stagingPath, { recursive: true, force: true });
-        if (hasBackup && !(await pathExists(distPath))) {
-            await rename(backupPath, distPath);
-            hasBackup = false;
-        }
         throw error;
     }
     finally {
         activeDistPath = distPath;
-        if (hasBackup)
-            await rm(backupPath, { recursive: true, force: true });
+        process.env.TAC_BUNDLE_TARGETS = previousTargetEnv ?? bundleTargets.join(',');
     }
 }
 /** @param {string} route */
@@ -132,122 +283,198 @@ function normalizeRelative(filePath) {
     return filePath.replaceAll(path.sep, '/').replace(/^\.\//, '');
 }
 /**
- * @param {string} targetPath
- * @returns {BuildChange}
+ * Roots whose files, when changed, can trigger a rebuild. Mirrors the watched paths.
+ * @returns {string[]}
  */
-function classifyChange(targetPath) {
-    const relative = normalizeRelative(path.relative(process.cwd(), targetPath));
-    if (Compiler.isMainEntrypoint(relative))
-        return { type: 'main', relative };
-    if (relative === 'package.json')
-        return { type: 'full', relative };
-    const pagesPrefix = normalizeRelative(path.relative(process.cwd(), Router.pagesPath)) + '/';
-    const componentsPrefix = normalizeRelative(path.relative(process.cwd(), Router.componentsPath)) + '/';
-    const assetsPrefix = normalizeRelative(path.relative(process.cwd(), Router.assetsPath)) + '/';
-    const sharedDataPrefix = normalizeRelative(path.relative(process.cwd(), Router.sharedDataPath)) + '/';
-    const sharedScriptsPrefix = normalizeRelative(path.relative(process.cwd(), Router.sharedScriptsPath)) + '/';
-    const sharedStylesPrefix = normalizeRelative(path.relative(process.cwd(), Router.sharedStylesPath)) + '/';
-    if (relative.startsWith(pagesPrefix)) {
-        const routeFile = relative.slice(pagesPrefix.length);
-        if (routeFile.endsWith(`/${Router.pageFileName}`) || routeFile === Router.pageFileName)
-            return { type: 'page', relative: routeFile };
-        return { type: 'full', relative };
-    }
-    if (relative.startsWith(componentsPrefix)) {
-        const componentFile = relative.slice(componentsPrefix.length);
-        if (componentFile.endsWith(`/${Router.pageFileName}`) || componentFile === Router.pageFileName)
-            return { type: 'component', relative: componentFile };
-        return { type: 'full', relative };
-    }
-    if (relative.startsWith(assetsPrefix)) {
-        return { type: 'asset', relative: relative.slice(assetsPrefix.length) };
-    }
-    if (relative.startsWith(sharedDataPrefix)) {
-        return { type: 'full', relative };
-    }
-    if (relative.startsWith(sharedScriptsPrefix) || relative.startsWith(sharedStylesPrefix)) {
-        return { type: 'full', relative };
-    }
-    return { type: 'full', relative };
+function watchedRoots() {
+    return [
+        Router.pagesPath,
+        Router.componentsPath,
+        Router.workersPath,
+        Router.assetsPath,
+        Router.sharedDataPath,
+        Router.sharedScriptsPath,
+        Router.sharedStylesPath,
+    ];
 }
-/** @param {BuildChange} change */
-async function runSelectiveBuild(change) {
-    const start = Date.now();
-    const logIncrementalBuild = () => bundleLogger.info('Incremental build completed', {
-        changeType: change.type,
-        target: change.relative,
-        durationMs: Date.now() - start,
-    });
-    if (change.type === 'main') {
-        const previousRoutes = new Set(Compiler.getBrowserRuntimeRoutes());
-        const outputRoutes = await Compiler.bundleBrowserRuntimeAssets();
-        for (const staleRoute of previousRoutes) {
-            if (!outputRoutes.includes(staleRoute)) {
-                await rm(`${distPath}${staleRoute}`, { force: true });
+/**
+ * Snapshots mtimes of every watched source file. The rebuild decision diffs two
+ * snapshots rather than trusting fs event types, which are unreliable across
+ * editors (atomic saves fire rename + temp-file events, not change).
+ * @returns {Promise<Map<string, number>>}
+ */
+async function snapshotSources() {
+    /** @type {Map<string, number>} */
+    const snapshot = new Map();
+    await Promise.all(watchedRoots().map(async (root) => {
+        if (!await pathExists(root))
+            return;
+        for (const relative of new Bun.Glob('**/*').scanSync({ cwd: root })) {
+            const absolute = path.resolve(root, relative);
+            try {
+                snapshot.set(absolute, (await stat(absolute)).mtimeMs);
+            }
+            catch { /* file vanished mid-scan */ }
+        }
+    }));
+    for (const file of [...Compiler.getMainEntryCandidates(), `${process.cwd()}/package.json`]) {
+        try {
+            snapshot.set(path.resolve(file), (await stat(file)).mtimeMs);
+        }
+        catch { /* optional file absent */ }
+    }
+    return snapshot;
+}
+/** A page/component module's own entry + companion files (tac.html, tac.ts, tac.css, …). */
+const TAC_MODULE_FILE = /^tac\.(html|[cm]?jsx?|[cm]?tsx?|css|scss|sass|less)$/;
+/**
+ * Maps a changed file under a page/component root to its owning module's tac.html
+ * route, or null if it isn't a recognised module file (e.g. an imported helper,
+ * which Bun.build inlines into unknown consumers and so requires a full rebuild).
+ * @param {string} relative
+ * @returns {string | null}
+ */
+function moduleOwnerRoute(relative) {
+    const normalized = normalizeRelative(relative);
+    const base = normalized.split('/').pop() ?? '';
+    if (!TAC_MODULE_FILE.test(base))
+        return null;
+    const dir = normalized.includes('/') ? normalized.slice(0, normalized.lastIndexOf('/') + 1) : '';
+    return `${dir}${Compiler.pageFileName}`;
+}
+/**
+ * @typedef {{ kind: 'page' | 'component' | 'asset', route: string } | { kind: 'other' }} ChangedSource
+ * @param {string} absolutePath
+ * @returns {ChangedSource}
+ */
+function classifyPath(absolutePath) {
+    const pageRelative = path.relative(Router.pagesPath, absolutePath);
+    if (!pageRelative.startsWith('..') && !path.isAbsolute(pageRelative)) {
+        const route = moduleOwnerRoute(pageRelative);
+        return route ? { kind: 'page', route } : { kind: 'other' };
+    }
+    const componentRelative = path.relative(Router.componentsPath, absolutePath);
+    if (!componentRelative.startsWith('..') && !path.isAbsolute(componentRelative)) {
+        const route = moduleOwnerRoute(componentRelative);
+        return route ? { kind: 'component', route } : { kind: 'other' };
+    }
+    const assetRelative = path.relative(Router.assetsPath, absolutePath);
+    if (!assetRelative.startsWith('..') && !path.isAbsolute(assetRelative))
+        return { kind: 'asset', route: normalizeRelative(assetRelative) };
+    return { kind: 'other' };
+}
+/** Whether in-memory compiler state from a prior full build can back an incremental rebuild. */
+let incrementalReady = false;
+/**
+ * Recompiles a single page and re-prerenders only its route into the live dist.
+ * Returns false when this page wraps other pages (it has a slot that nested pages
+ * render into, so its markup is baked into their prerendered HTML) — those nested
+ * pages would go stale, so the caller falls back to a full rebuild.
+ * @param {string} pageRoute page source relative to pagesPath, e.g. 'about/tac.html'
+ * @param {string} targetDist dist root for the active target, e.g. dist/web
+ * @returns {Promise<boolean>}
+ */
+async function rebuildPageOutput(pageRoute, targetDist) {
+    const publicPath = `/pages/${Compiler.toModuleOutputRoute(pageRoute)}`;
+    const routePath = Compiler.routePathFromPageSource(pageRoute);
+    const pageWrapsOtherPages = () => Object.values(Compiler.wrapperPages).some((entry) => entry?.path === publicPath);
+    const wrappedOtherPagesBefore = pageWrapsOtherPages();
+    await Compiler.bundlePageFile(pageRoute);
+    if (wrappedOtherPagesBefore || pageWrapsOtherPages())
+        return false;
+    await buildRouteOutput(publicPath);
+    await Compiler.prerenderRoutes(targetDist, [routePath]);
+    return true;
+}
+/** Mtime snapshot of watched sources from the last build; backs the incremental decision. */
+let lastSnapshot = new Map();
+/**
+ * Attempts an incremental rebuild for a set of changed sources. Returns false
+ * (caller falls back to full) if any change isn't an isolated page/component/asset
+ * edit, or if a changed page wraps other pages.
+ * @param {ChangedSource[]} changes
+ * @returns {Promise<boolean>}
+ */
+async function tryIncrementalBuild(changes) {
+    if (!incrementalReady || bundleTargets.length !== 1 || changes.length === 0)
+        return false;
+    if (!changes.every((change) => change.kind !== 'other'))
+        return false;
+    const target = bundleTargets[0];
+    const targetDist = path.join(distPath, target);
+    const previousTargetEnv = process.env.TAC_BUNDLE_TARGETS;
+    activeDistPath = targetDist;
+    process.env.TAC_BUNDLE_TARGETS = target;
+    try {
+        for (const change of changes) {
+            if (change.kind === 'asset') {
+                await Compiler.bundleAssetFile(change.route);
+                await buildRouteOutput(`/shared/assets/${change.route}`);
+            }
+            else if (change.kind === 'component') {
+                // Components are hydrated client-side from their own module — pages
+                // embed only a placeholder — so recompiling the module is sufficient.
+                await Compiler.bundleComponentFile(change.route);
+                await buildRouteOutput(`/components/${Compiler.toModuleOutputRoute(change.route)}`);
+            }
+            else if (!await rebuildPageOutput(change.route, targetDist)) {
+                return false; // page wraps other pages — full rebuild handles the pages nested in it
             }
         }
-        for (const route of outputRoutes) {
-            await writeRouteOutput(route);
-        }
-        await Compiler.prerenderRoutes(distPath, Compiler.getHtmlRoutes());
-        await runPostBundleHook();
-        logIncrementalBuild();
-        return;
+        return true;
     }
-    if (change.type === 'asset') {
-        const sourcePath = path.join(Router.assetsPath, change.relative);
-        const outputPath = path.join(distPath, 'shared', 'assets', change.relative);
-        if (!await pathExists(sourcePath)) {
-            delete Router.reqRoutes[`/shared/assets/${change.relative}`];
-            await rm(outputPath, { force: true });
-        }
-        else {
-            await Compiler.bundleAssetFile(change.relative);
-            await writeRouteOutput(`/shared/assets/${change.relative}`);
-        }
-        await runPostBundleHook();
-        logIncrementalBuild();
-        return;
+    finally {
+        activeDistPath = distPath;
+        process.env.TAC_BUNDLE_TARGETS = previousTargetEnv ?? bundleTargets.join(',');
     }
-    if (change.type === 'component') {
-        const sourcePath = path.join(Router.componentsPath, change.relative);
-        const outputRoute = `/components/${change.relative.replace('.html', '.js')}`;
-        if (!await pathExists(sourcePath)) {
-            delete Router.reqRoutes[outputRoute];
-            await rm(`${distPath}${outputRoute}`, { force: true });
-            await runBuild();
-            return;
-        }
-        await Compiler.bundleComponentFile(change.relative);
-        await writeRouteOutput(outputRoute);
-        await Compiler.prerenderRoutes(distPath, Compiler.getHtmlRoutes());
-        await runPostBundleHook();
-        logIncrementalBuild();
-        return;
+}
+/**
+ * Diffs the source tree against the last snapshot and rebuilds the minimal scope.
+ * Structural changes (added/removed files) and non-page/asset edits force a full build.
+ */
+async function reconcileBuild() {
+    const start = Date.now();
+    const next = await snapshotSources();
+    /** @type {string[]} */
+    const changedPaths = [];
+    let structural = false;
+    for (const [absolute, mtime] of next) {
+        const previous = lastSnapshot.get(absolute);
+        if (previous === undefined)
+            structural = true; // new file may add a route
+        else if (previous !== mtime)
+            changedPaths.push(absolute);
     }
-    if (change.type === 'page') {
-        const sourcePath = path.join(Router.pagesPath, change.relative);
-        const outputRoute = `/pages/${change.relative.replace(/\.html$/, '.js')}`;
-        const routePath = Compiler.routePathFromPageSource(change.relative);
-        if (!await pathExists(sourcePath)) {
-            delete Router.reqRoutes[outputRoute];
-            await rm(`${distPath}${outputRoute}`, { force: true });
-            await rm(routePath === '/' ? `${distPath}/index.html` : `${distPath}${routePath}/index.html`, { force: true });
-            await runBuild();
-            return;
-        }
-        await Router.validatePageRoutes();
-        const outputRoutes = await Compiler.bundleBrowserRuntimeAssets();
-        for (const route of outputRoutes)
-            await writeRouteOutput(route);
-        await Compiler.bundlePageFile(change.relative);
-        await writeRouteOutput(outputRoute);
-        await Compiler.prerenderRoutes(distPath, Compiler.getHtmlRoutes());
-        await runPostBundleHook();
-        logIncrementalBuild();
-        return;
+    for (const absolute of lastSnapshot.keys()) {
+        if (!next.has(absolute))
+            structural = true; // removed file may drop a route
     }
-    await runBuild();
+    lastSnapshot = next;
+    if (!structural && changedPaths.length === 0)
+        return; // spurious event, nothing actually changed
+    const changes = [...new Map(changedPaths.map(classifyPath).map((change) => [
+        change.kind === 'other' ? Symbol() : `${change.kind}:${change.route}`,
+        change,
+    ])).values()];
+    let mode = 'full';
+    if (!structural) {
+        try {
+            if (await tryIncrementalBuild(changes))
+                mode = 'incremental';
+        }
+        catch (error) {
+            bundleLogger.warn('Incremental rebuild failed; falling back to full build', { err: error });
+        }
+    }
+    if (mode === 'full') {
+        await runBuild();
+        // A single-target full build leaves in-memory state a later incremental can reuse.
+        incrementalReady = bundleTargets.length === 1;
+        lastSnapshot = await snapshotSources();
+    }
+    bundleLogger.info(`Rebuilt ${changes.length} file${changes.length === 1 ? '' : 's'} in ${Date.now() - start}ms (${mode})`, {
+        structural: structural || undefined,
+    });
 }
 /**
  * @param {string} root
@@ -280,6 +507,7 @@ async function watchPaths(onChange) {
     const roots = [
         Router.pagesPath,
         Router.componentsPath,
+        Router.workersPath,
         Router.assetsPath,
         Router.sharedDataPath,
         Router.sharedScriptsPath,
@@ -343,38 +571,16 @@ export async function startBundleWatcher(options = {}) {
     const incremental = options.incremental ?? true;
     if (!skipInitialBuild) {
         await runBuild();
+        incrementalReady = incremental && bundleTargets.length === 1;
     }
+    // Baseline snapshot so the first change diffs to just the edited file(s).
+    lastSnapshot = await snapshotSources();
     /** @type {ReturnType<typeof setTimeout> | undefined} */
     let debounceTimer;
     let building = false;
     let queued = false;
-    /** @type {BuildChange | null} */
-    let pendingChange = null;
-    /**
-     * @param {BuildChange | null} current
-     * @param {BuildChange} next
-     * @returns {BuildChange}
-     */
-    const mergeChanges = (current, next) => {
-        if (!current)
-            return next;
-        if (current.type === 'full' || next.type === 'full')
-            return { type: 'full', relative: next.relative };
-        if (current.type === next.type && current.relative === next.relative)
-            return current;
-        return { type: 'full', relative: next.relative };
-    };
-    /**
-     * @param {string} targetPath
-     * @param {string} eventType
-     */
-    const schedule = (targetPath, eventType) => {
+    const schedule = () => {
         clearTimeout(debounceTimer);
-        /** @type {BuildChange} */
-        const nextChange = eventType === 'rename'
-            ? { type: 'full', relative: normalizeRelative(path.relative(process.cwd(), targetPath)) }
-            : classifyChange(targetPath);
-        pendingChange = mergeChanges(pendingChange, nextChange);
         debounceTimer = setTimeout(async () => {
             if (building) {
                 queued = true;
@@ -383,36 +589,32 @@ export async function startBundleWatcher(options = {}) {
             building = true;
             try {
                 await watcher.refresh();
-                const change = pendingChange ?? { type: 'full', relative: 'unknown' };
-                pendingChange = null;
                 if (incremental) {
-                    await runSelectiveBuild(change);
+                    await reconcileBuild();
                 }
                 else {
                     await runBuild();
+                    lastSnapshot = await snapshotSources();
                 }
             }
             catch (error) {
-                bundleLogger.error('Watch rebuild failed', {
-                    changedPath: targetPath,
-                    eventType,
-                    err: error,
-                });
+                bundleLogger.error('Watch rebuild failed', { err: error });
             }
             finally {
                 building = false;
                 if (queued) {
                     queued = false;
-                    pendingChange = mergeChanges(pendingChange, { type: 'full', relative: 'queued-change' });
-                    schedule(process.cwd(), 'change');
+                    schedule();
                 }
             }
         }, WATCH_DEBOUNCE_MS);
     };
     const watcher = await watchPaths(schedule);
-    bundleLogger.info('Watching source paths for bundle changes', {
+    bundleLogger.info('Watching for changes');
+    bundleLogger.debug('Watched source paths', {
         pagesPath: Router.pagesPath,
         componentsPath: Router.componentsPath,
+        workersPath: Router.workersPath,
         assetsPath: Router.assetsPath,
         sharedDataPath: Router.sharedDataPath,
         sharedScriptsPath: Router.sharedScriptsPath,

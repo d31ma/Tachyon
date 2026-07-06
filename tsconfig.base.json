@@ -17,7 +17,7 @@
     "skipLibCheck": true,
     "noUncheckedSideEffectImports": false,
     "paths": {
-      "@/*": ["./examples/server/*"]
+      "@/*": ["./tests/fixtures/fullstack/server/*"]
     }
   }
 }

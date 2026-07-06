@@ -1,0 +1,7 @@
+<h2>Documentation</h2>
+<nav class="docs-nav">
+  <loop :for="topic of topics">
+    <a :href="'/docs/' + topic.slug" :class="topic.slug === activeSlug ? 'docs-link active' : 'docs-link'">{topic.title}</a>
+  </loop>
+</nav>
+<p class="docs-hint">This section is a wrapper page: <code>docs/tac.html</code> holds a <code>&lt;slot /&gt;</code> and each topic is a dynamic <code>_topic</code> route.</p>

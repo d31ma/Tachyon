@@ -2,5 +2,5 @@
 // @ts-check
 import Compiler from '../compiler/index.js';
 const payload = await Bun.stdin.json();
-const html = await Compiler.renderPageDocumentForWorker(payload.distPath, payload.pathname, payload.shellHTML, payload.layoutMapping);
+const html = await Compiler.renderPageDocumentForWorker(payload.distPath, payload.pathname, payload.shellHTML, payload.wrapperPages);
 Bun.stdout.write(html);

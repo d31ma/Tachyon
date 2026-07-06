@@ -1,0 +1,60 @@
+.users-policies,
+.users-status {
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.users-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+
+@container (min-width: 720px) {
+  .users-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.users-grid h3 {
+  margin: 0 0 0.5rem;
+  font-size: var(--w-font-base);
+}
+
+.users-empty {
+  margin: 0;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}
+
+.users-list,
+.users-runs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.users-list li,
+.users-runs li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--w-text) 12%, transparent);
+  border-radius: var(--w-radius-sm);
+  font-size: var(--w-font-sm);
+}
+
+.users-runs small {
+  color: var(--w-text-very-subtle);
+  flex-basis: 100%;
+}
+
+.users-log {
+  margin: 0.9rem 0 0.5rem;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}

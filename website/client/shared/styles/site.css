@@ -1,0 +1,236 @@
+/* Tachyon website brand layer on top of DuVay. */
+@import "../assets/duvay/duvay.min.css";
+
+:root {
+  --tachyon-from: #0ea5e9;
+  --tachyon-to: #14b8a6;
+  --tachyon-gradient: linear-gradient(120deg, var(--tachyon-from), var(--tachyon-to));
+}
+
+body {
+  margin: 0;
+  background: var(--w-surface);
+  color: var(--w-text);
+  font-family: var(--w-font-family, system-ui, -apple-system, "Segoe UI", sans-serif);
+}
+
+/* ---- containers ---------------------------------------------------------
+   w-container's self-applied sizing doesn't survive Tac hydration, so the
+   brand layer owns it: centered content column, full-bleed backgrounds. */
+
+w-container {
+  display: block;
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding-inline: clamp(1rem, 3vw, 2rem);
+}
+
+/* ---- sticky shell ------------------------------------------------------
+   Tac wraps <site-header /> in a scope div exactly as tall as the header, so
+   w-app-bar's own sticky has no room to work. Pin the wrapper instead. */
+
+[data-tac-scope="site-header"] {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+/* Native hosts draw behind a transparent status bar and inject the inset as
+   --tac-safe-top (WebView can't read env(safe-area-inset-top)); browsers fall
+   back to env() for standalone PWA displays, else 0. */
+w-app-bar {
+  padding-top: var(--tac-safe-top, env(safe-area-inset-top, 0px));
+  /* DuVay paints an inner div, not the host element, so the safe-area strip
+     needs its own surface — otherwise scrolled content shows through it. */
+  background: var(--w-surface);
+}
+
+/* Anchored sections land below the pinned header. */
+[id] {
+  scroll-margin-top: 5rem;
+}
+
+/* ---- brand ------------------------------------------------------------ */
+
+.brand-mark {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.brand-name {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.text-gradient {
+  background: var(--tachyon-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.code-block {
+  margin: 0;
+  padding: 0.9rem 1.1rem;
+  overflow-x: auto;
+  background: var(--w-surface-container-high);
+  border: 1px solid var(--w-border, color-mix(in srgb, var(--w-text) 14%, transparent));
+  border-radius: var(--w-radius);
+  font-size: var(--w-font-sm);
+  line-height: 1.6;
+}
+
+.code-block code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---- polymorphic shell -------------------------------------------------
+   The site header companion stamps the Tac platform globals onto <body>
+   (data-environment: browser | desktop | mobile). Each environment keeps its
+   own feel: mobile gets bottom navigation and roomier touch targets, desktop
+   gets the full app-bar navigation, tablet sits between with the drawer. */
+
+.site-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .site-bottom-nav {
+    display: block;
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 30;
+    background: var(--w-surface);
+    border-top: 1px solid color-mix(in srgb, var(--w-text) 12%, transparent);
+  }
+
+  /* Spread the items across the full bar — the component's own grow
+     classes don't survive hydration, so the brand layer owns the layout. */
+  .site-bottom-nav w-bottom-navigation,
+  .site-bottom-nav w-bottom-navigation > nav {
+    display: flex;
+    width: 100%;
+  }
+
+  .site-bottom-nav w-bottom-nav-item {
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .site-bottom-nav w-bottom-nav-item > * {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* The bottom navigation covers the drawer's destinations on phones. */
+  w-app-bar-nav-icon {
+    display: none !important;
+  }
+
+  body {
+    padding-bottom: calc(var(--w-bottom-nav-height, 64px) + env(safe-area-inset-bottom));
+  }
+
+  .w-hide-phone {
+    display: none !important;
+  }
+}
+
+@media (min-width: 761px) {
+  .only-phone {
+    display: none !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  .only-below-desktop {
+    display: none !important;
+  }
+}
+
+body[data-environment="mobile"] {
+  --w-bottom-nav-height: 68px;
+}
+
+body[data-environment="mobile"] .w-btn,
+body[data-environment="mobile"] button {
+  min-height: 44px;
+}
+
+body[data-environment="desktop"] {
+  font-size: 15px;
+}
+
+/* ---- content-level container queries ----------------------------------
+   Panel grids adapt to the space they are given, not the viewport, so the
+   same components compose correctly on phone, tablet and desktop. */
+
+.cq {
+  container-type: inline-size;
+}
+
+.panel-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+
+/* Equal-height cards: stretch through the Tac scope wrapper and DuVay's
+   inner card box so side-by-side panels line up. */
+.panel-grid > * {
+  min-width: 0;
+}
+
+.panel-grid [data-tac-scope],
+.panel-grid .panel-card,
+.panel-grid .panel-card > .w-card {
+  height: 100%;
+  box-sizing: border-box;
+}
+
+@container (min-width: 700px) {
+  .panel-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel-grid > .panel-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Non-desktop viewports hide the scrollbar for a native app feel. */
+@media (max-width: 1024px) {
+  html {
+    scrollbar-width: none;
+  }
+
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+}
+
+/* Native desktop bundles hide it too — the window is the app, not a web
+   page. Browsers (data-environment="browser") keep their scrollbars. */
+html:has(body[data-environment="desktop"]) {
+  scrollbar-width: none;
+}
+
+body[data-environment="desktop"]::-webkit-scrollbar,
+body[data-environment="desktop"] ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}

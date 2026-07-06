@@ -1,0 +1,78 @@
+<site-header />
+
+<main class="page-main cq">
+  <w-container size="xl">
+    <section class="atlas-hero" id="overview">
+      <div>
+        <p class="atlas-kicker">Tachyon capability atlas</p>
+        <h1>Everything Tachyon does, <span class="text-gradient">running on this page</span></h1>
+        <p class="atlas-sub">{subtitle}</p>
+        <div class="w-row ga-2 atlas-actions">
+          <w-btn variant="filled" on:click="refreshAll()">Reload live data</w-btn>
+          <w-btn variant="outlined" href="/docs">Read the docs</w-btn>
+        </div>
+      </div>
+    </section>
+
+    <nav class="atlas-jump" aria-label="Atlas sections">
+      <loop :for="section of sections">
+        <w-chip :value="section.id" on:click="scrollToSection(section.id)">{section.index} {section.label}</w-chip>
+      </loop>
+    </nav>
+
+    <stats-grid />
+
+    <section class="atlas-section" id="compose">
+      <header><span class="atlas-index">01</span><div><h2>Compose the browser experience</h2><p>Native HTML semantics, expressive CSS and reactive Tac state working together.</p></div></header>
+      <div class="panel-grid">
+        <div class="panel-wide"><panel-inputs /></div>
+        <div class="panel-wide"><panel-native /></div>
+      </div>
+    </section>
+
+    <section class="atlas-section" id="react">
+      <header><span class="atlas-index">02</span><div><h2>React to people and live signals</h2><p>Automatic rerenders, browser persistence, and live event streams from the public web and between your own tabs.</p></div></header>
+      <div class="panel-grid">
+        <panel-helpers />
+        <panel-live />
+        <div class="panel-wide"><panel-realtime /></div>
+      </div>
+    </section>
+
+    <section class="atlas-section" id="connect">
+      <header><span class="atlas-index">03</span><div><h2>Run the backend in the browser</h2><p>Tac Workers compiled in-house to WebAssembly answer fetch("tac://…") — no server round-trips anywhere on this page.</p></div></header>
+      <div class="panel-grid">
+        <panel-diagnostics />
+        <panel-polyglot />
+        <div class="panel-wide"><panel-desktop /></div>
+      </div>
+    </section>
+
+    <section class="atlas-section" id="store">
+      <header><span class="atlas-index">04</span><div><h2>Store and query application data</h2><p>FYLO document collections mirrored into your browser's origin-private file system.</p></div></header>
+      <div class="panel-grid">
+        <panel-inventory />
+        <panel-fylo />
+        <div class="panel-wide"><panel-users /></div>
+        <div class="panel-wide"><panel-showcase /></div>
+      </div>
+    </section>
+
+    <section class="atlas-section" id="observe">
+      <header><span class="atlas-index">05</span><div><h2>Observe and operate confidently</h2><p>Worker calls are timed client-side and persisted as spans into a local FYLO collection.</p></div></header>
+      <div class="panel-grid">
+        <div class="panel-wide"><panel-telemetry /></div>
+      </div>
+    </section>
+
+    <section class="atlas-section" id="extend">
+      <header><span class="atlas-index">06</span><div><h2>Compose Tac companions</h2><p>Scoped JavaScript and TypeScript companions keep one consistent Tac template model — this one loads lazily.</p></div></header>
+      <div class="panel-grid">
+        <clicker :clicks="0" label="Persistent clicks" lazy />
+      </div>
+    </section>
+  </w-container>
+</main>
+
+<site-footer />
+<site-bottomnav />

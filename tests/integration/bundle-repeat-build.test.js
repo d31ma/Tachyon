@@ -32,10 +32,10 @@ async function runBundle(cwd) {
 async function createFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-repeat-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes', 'docs'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages', 'docs'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'fixture', private: true }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), '<h1>Home</h1>');
-    await writeFile(path.join(root, 'routes', 'docs', 'tac.html'), '<h1>Docs</h1>');
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), '<h1>Home</h1>');
+    await writeFile(path.join(root, 'client', 'pages', 'docs', 'tac.html'), '<h1>Docs</h1>');
     return root;
 }
 afterEach(async () => {
@@ -44,9 +44,9 @@ afterEach(async () => {
 timedTest('successive bundle runs remove stale route output', { timeout: 20000 }, async () => {
     const cwd = await createFixture();
     await runBundle(cwd);
-    const docsIndex = path.join(cwd, 'dist', 'docs', 'index.html');
+    const docsIndex = path.join(cwd, 'dist', 'web', 'docs', 'index.html');
     expect(await readFile(docsIndex, 'utf8')).toContain('Docs');
-    await unlink(path.join(cwd, 'routes', 'docs', 'tac.html'));
+    await unlink(path.join(cwd, 'client', 'pages', 'docs', 'tac.html'));
     await runBundle(cwd);
     await expect(access(docsIndex)).rejects.toBeDefined();
 });

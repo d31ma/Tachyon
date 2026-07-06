@@ -1,0 +1,27 @@
+<w-card variant="outlined" class="panel-card">
+  <w-card-item title="Documents without a server" subtitle="Create, list and delete documents in a FYLO collection stored in your browser's origin-private file system.">
+  </w-card-item>
+  <w-card-text>
+    <form class="inv-form" on:submit="submitItem($event)">
+      <input type="text" placeholder="New item name" :value="newItem" on:input="newItem = $event.target.value" aria-label="New item name" />
+      <w-btn size="sm" variant="filled" on:click="addItem()">Add</w-btn>
+      <w-btn size="sm" variant="text" on:click="clearItems()">Clear all</w-btn>
+    </form>
+
+    <logic :if="items.length === 0">
+      <p class="inv-empty">No items yet — add one and FYLO persists it into OPFS. It will still be here after a reload.</p>
+    </logic>
+    <ul class="inv-list">
+      <loop :for="item of items">
+        <li>
+          <span class="inv-name">{item.name}</span>
+          <small>{item.source} · {formatDate(item.createdAt)}</small>
+        </li>
+      </loop>
+    </ul>
+
+    <logic :if="feedback">
+      <p class="inv-feedback">{feedback}</p>
+    </logic>
+  </w-card-text>
+</w-card>

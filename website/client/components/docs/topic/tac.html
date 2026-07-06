@@ -1,0 +1,27 @@
+<article class="topic">
+  <logic :if="topic">
+    <h1>{topic.title}</h1>
+    <p class="topic-summary">{topic.summary}</p>
+    <loop :for="section of topic.sections">
+      <section class="topic-section">
+        <h2>{section.heading}</h2>
+        <p>{section.body}</p>
+        <logic :if="section.code">
+          <pre class="code-block"><code>{section.code}</code></pre>
+        </logic>
+      </section>
+    </loop>
+    <nav class="topic-pager" aria-label="Topic pagination">
+      <logic :if="previous">
+        <w-btn variant="text" size="sm" :href="'/docs/' + previous.slug">← {previous.title}</w-btn>
+      </logic>
+      <span class="topic-spacer"></span>
+      <logic :if="next">
+        <w-btn variant="outlined" size="sm" :href="'/docs/' + next.slug">{next.title} →</w-btn>
+      </logic>
+    </nav>
+  </logic>
+  <logic :if="!topic && !loading">
+    <w-empty-state title="Topic not found" text="Pick a topic from the documentation navigation."></w-empty-state>
+  </logic>
+</article>

@@ -1,0 +1,53 @@
+<w-card variant="outlined" class="panel-card panel-wide">
+  <w-card-item title="FYLO cache policies, live" subtitle="The compiler-injected fylo client reads and mutates the users collection in the OPFS-backed local mirror, with a live same-tab subscription.">
+  </w-card-item>
+  <w-card-text>
+    <div class="w-row ga-2 users-policies">
+      <loop :for="policy of cachePolicies">
+        <w-btn size="sm" :variant="selectedPolicy === policy ? 'filled' : 'outlined'" on:click="loadWithPolicy(policy)">{policy}</w-btn>
+      </loop>
+      <w-btn size="sm" variant="text" color="secondary" on:click="runMutationDemo()">Run mutation demo</w-btn>
+    </div>
+
+    <div class="w-row ga-2 users-status">
+      <w-chip size="small">{loadingState()}</w-chip>
+      <w-chip size="small" color="success">{syncStatus}</w-chip>
+    </div>
+
+    <div class="users-grid">
+      <section aria-label="Users">
+        <h3>users collection</h3>
+        <logic :if="users.length === 0">
+          <p class="users-empty">No documents yet. The mutation demo creates and removes one through fylo.users.create() and del().</p>
+        </logic>
+        <ul class="users-list">
+          <loop :for="user of users">
+            <li>
+              <strong>{user.email}</strong>
+              <span>{user.role}</span>
+              <code>{maskedApiKey(user.apiKeyPreview)}</code>
+            </li>
+          </loop>
+        </ul>
+      </section>
+
+      <section aria-label="Cache runs">
+        <h3>Recent reads</h3>
+        <ul class="users-runs">
+          <loop :for="run of cacheRuns">
+            <li>
+              <w-chip size="x-small">{run.policy}</w-chip>
+              <span>{run.count} docs in {run.duration}</span>
+              <small>{run.note}</small>
+            </li>
+          </loop>
+        </ul>
+      </section>
+    </div>
+
+    <p class="users-log">{mutationLog}</p>
+    <logic :if="error">
+      <w-alert type="warning" density="compact" :text="error"></w-alert>
+    </logic>
+  </w-card-text>
+</w-card>

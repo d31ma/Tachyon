@@ -100,7 +100,7 @@ class PackageContractVerifier {
         const starterPackage = JSON.parse(await readFile(path.join(this.starterRoot, 'package.json'), 'utf8'));
         const envExample = await readFile(path.join(this.starterRoot, '.env.example'), 'utf8');
         const envTest = await readFile(path.join(this.starterRoot, '.env.test'), 'utf8');
-        const route = await readFile(path.join(this.starterRoot, 'browser', 'pages', 'tac.html'), 'utf8');
+        const route = await readFile(path.join(this.starterRoot, 'client', 'pages', 'tac.html'), 'utf8');
         const jsconfig = await readFile(path.join(this.starterRoot, 'jsconfig.json'), 'utf8');
         const tachyonEnv = await readFile(path.join(this.starterRoot, 'tachyon-env.d.ts'), 'utf8');
 
@@ -111,7 +111,7 @@ class PackageContractVerifier {
         this.expect(starterPackage.devDependencies?.[packageName]?.startsWith('^'), `${packageName} version should be caret-ranged`);
         this.expect(envExample.includes('TAC_FORMAT=esm'), '.env.example should include TAC_FORMAT=esm');
         this.expect(envTest.includes('TAC_FORMAT=esm'), '.env.test should include TAC_FORMAT=esm');
-        this.expect(route.includes('<hero />'), 'starter browser/pages/tac.html should include <hero />');
+        this.expect(route.includes('<hero />'), 'starter client/pages/tac.html should include <hero />');
         this.expect(jsconfig.includes('tachyon-env.d.ts'), 'starter jsconfig should include tachyon-env.d.ts');
         this.expect(tachyonEnv.includes('@d31ma/tachyon/globals'), 'starter env types should include Tachyon globals');
     }

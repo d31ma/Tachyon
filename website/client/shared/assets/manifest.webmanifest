@@ -1,0 +1,35 @@
+{
+  "name": "Tachyon — full-stack Bun framework",
+  "short_name": "Tachyon",
+  "description": "A polyglot, file-system-routed full-stack framework for Bun. This showcase runs entirely in your browser: Tac Workers are its backend and the FYLO OPFS mirror is its database.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8faf9",
+  "theme_color": "#f8faf9",
+  "icons": [
+    {
+      "src": "/shared/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/shared/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/shared/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/shared/assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

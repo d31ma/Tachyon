@@ -2,10 +2,10 @@
 import { expect, test } from 'bun:test';
 import { createLogger } from '../../src/server/observability/logger.js';
 const fixedNow = () => new Date('2026-04-10T12:00:00.000Z');
-test('pretty logger includes level, namespace, message, and structured fields', () => {
+test('pretty logger shows time, level, brand tag, message, and structured fields', () => {
     /** @type {string[]} */
     const lines = [];
-    const logger = createLogger({ service: 'tachyon', scope: 'bundle' }, {
+    const logger = createLogger({ service: 'tachyon', scope: 'cli:bundle' }, {
         level: 'debug',
         format: 'pretty',
         colorize: false,
@@ -19,14 +19,28 @@ test('pretty logger includes level, namespace, message, and structured fields', 
         durationMs: 18,
     });
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain('2026-04-10T12:00:00.000Z');
+    // Time only, no date noise.
+    expect(lines[0]).toContain('12:00:00.000');
+    expect(lines[0]).not.toContain('2026-04-10');
     expect(lines[0]).toContain('INFO ');
-    expect(lines[0]).toContain('[tachyon/bundle]');
+    // cli:bundle is grouped under the Tac product surface.
+    expect(lines[0]).toContain('[Tac]');
+    expect(lines[0]).not.toContain('tachyon/');
     expect(lines[0]).toContain('Bundle completed');
     expect(lines[0]).toContain('routeCount=7');
     expect(lines[0]).toContain('distPath=/tmp/dist');
     expect(lines[0]).toContain('durationMs=18');
     expect(lines[0]).not.toContain('pid=');
+});
+test('pretty logger falls back to the raw scope when it is not a known brand', () => {
+    /** @type {string[]} */
+    const lines = [];
+    const logger = createLogger({ service: 'tachyon', scope: 'custom-thing' }, {
+        level: 'info', format: 'pretty', colorize: false, now: fixedNow,
+        write: (line) => lines.push(line),
+    });
+    logger.info('Hello');
+    expect(lines[0]).toContain('[custom-thing]');
 });
 test('logger respects configured level filtering', () => {
     /** @type {string[]} */

@@ -7,6 +7,226 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.28.01] - 2026-07-06
+
+### Fixed
+
+- `tac.bundle` no longer clears the whole `dist/` directory: a run swaps in
+  only the `dist/<target>` directories it actually built, atomically per
+  target (stage, retire, rename). Building one target used to delete every
+  other target's output — wiping `dist/web` out from under a running dev
+  server, and hollowing out a generated macOS app running from `dist/macos`
+  so its lazily-fetched page modules silently 404'd.
+- The SPA runtime now requests dynamic-route page modules by their on-disk
+  `_slug` directory (`pages/docs/_topic/tac.js`) instead of the route-manifest
+  `:slug` form, so dynamic routes work on static hosts and native asset
+  loaders, not just the dev server.
+- The service worker registers with `type: "module"` — the built worker is an
+  ES module and previously failed to parse on every production origin.
+- The generated Android host overrides AAPT's default asset-ignore pattern,
+  which silently dropped `_slug` page-module directories from the APK.
+- The service worker cache version now folds in a content hash of the client
+  source tree alongside the route-manifest hash, so any rebuild that changed
+  inputs evicts old caches. Same-version redeploys (and native app
+  reinstalls) previously served stale JS/CSS from the Cache API until site
+  data was cleared.
+
+### Changed
+
+- The generated macOS host installs a standard menu bar (App menu with
+  About/Hide/Quit, Edit menu with clipboard actions, Window menu) — without
+  a main menu a WKWebView app has no working Cmd+C/V/Q. `buildMainMenu()` in
+  the generated `TachyonApp.swift` is the extension point for app authors'
+  custom menus.
+- The generated macOS host serves the bundle through a `WKURLSchemeHandler`
+  at `tachyon://localhost/` instead of `file://` with the file-access
+  preference hacks. The secure-context origin enables Web Workers (Tac
+  Workers running wasm) and OPFS-backed FYLO persistence, matching the iOS
+  and Android hosts, with the same directory-index and deep-link handling
+  and external links opening in the default browser.
+- The generated iOS project actually ships its app icon: the xcodegen spec
+  now includes the generated `Assets.xcassets` and sets
+  `ASSETCATALOG_COMPILER_APPICON_NAME`, so the home-screen icon shows the
+  Tachyon mark instead of the blank placeholder.
+- External links open in the system default browser on both native hosts
+  instead of navigating the WebView away from the app: the Android host
+  fires an `ACTION_VIEW` intent for any origin other than its own, and the
+  iOS host's `WKNavigationDelegate` hands http/https/mailto URLs outside the
+  `tachyon://` scheme to `UIApplication.open`.
+- The generated iOS host ships its web bundle as `WebBundle/` instead of
+  `Resources/` — a top-level folder named "Resources" makes codesign/installd
+  treat the flat iOS bundle as an old-style shallow bundle and installation
+  fails with a misleading "Missing bundle ID" error. The `.ipa` archive also
+  excludes AppleDouble sidecar files now (`ditto --norsrc`).
+- The generated iOS host serves the bundle through a `WKURLSchemeHandler` at
+  the `tachyon://localhost/` origin instead of `file://`. The secure-context
+  origin enables Web Workers (Tac Workers running wasm) and OPFS-backed FYLO
+  persistence inside WKWebView, with directory-index and extension-less
+  deep-link handling matching the Android host. Service workers remain
+  unavailable in WKWebView and the runtime degrades gracefully. The
+  prerendered shell viewport now includes `viewport-fit=cover` so
+  `env(safe-area-inset-top)` works on iOS.
+- `tac.bundle --target` accepts space-separated lists in addition to
+  comma-separated ones (`--target ios, android` and `--target ios android`
+  both work; previously everything after the first argument was silently
+  ignored).
+- The generated Android host draws behind a transparent status bar: the
+  status-bar inset is surfaced to pages as the `--tac-safe-top` CSS variable
+  (WebView cannot read `env(safe-area-inset-top)`), and a new
+  `ui.statusBarStyle` bridge capability lets pages switch the system icons
+  between `dark-content` and `light-content` when their theme changes.
+- The generated native icon set (`NativeIconAssets`) now renders the current
+  Tachyon mark (slate tile, gradient chevrons) across SVG, Android vectors,
+  and raster PNGs, so launcher icons match the PWA icons.
+- The Android host ships a proper adaptive launcher icon
+  (`mipmap-anydpi-v26/ic_launcher` with background, foreground, and
+  Android 13+ monochrome layers) instead of a plain drawable, so the icon
+  fills the launcher mask edge to edge like first-party apps.
+- The generated Android host runs without the native action bar
+  (`Theme.Material.Light.NoActionBar`) and disables WebView scrollbars for a
+  native app feel.
+
+### Added
+
+- Yon supports any and all languages — there is no "supported languages"
+  list, only the developer's machine toolchain. A `yon.<ext>` handler runs
+  by its extension: the extension names the language and an `interpreters`
+  map turns it into a run command (`.go` → `go run`, `.rb` → `ruby`, …),
+  seeded with common defaults and extensible/overridable per project under
+  `interpreters` in `.tachyonrc`. No shebang and no `chmod` needed — write
+  `server/routes/ping/yon.go`, declare its HTTP methods in an adjacent
+  `OPTIONS.schema.json`, and it runs as a process (the handler reads the
+  JSON request on stdin and writes the response on stdout). A prebuilt
+  executable or a script with its own shebang is also accepted. The built-in
+  languages are ergonomic conveniences (write `class Handler`, skip the
+  stdin/stdout glue) provided by a pluggable provider registry
+  (`src/server/process/language-providers.js`); apps add or override
+  providers from `server/yon.providers.js` — e.g. point python at a
+  virtualenv interpreter. `HandlerAdapter.supportedLanguages` /
+  `isSupportedLanguage` are gone; `HandlerAdapter.knownLanguages` lists the
+  convenience adapters for tooling, not as a gate.
+
+### Removed
+
+- Yon no longer has a compile-to-binary deployment step: `yon.build` (the
+  `yon.build` bin, `src/cli/build.js`) and the `native-binary` execution
+  backend are removed. The developer ships the `server/` source as-is and
+  every route runs as a process; compiled-language routes compile on first
+  request and cache the result, so production needs the same toolchain the
+  developer used rather than pre-built binaries.
+- Yon's in-house WASM execution backend is removed
+  (`src/server/process/backends/wasm-compiled.js`) along with the now-empty
+  backend registry: every Yon route runs as a subprocess, with no in-process
+  WASM path. (The Tac frontend worker compiler is separate and unaffected.)
+- Tac workers now support only Rust, JavaScript, and TypeScript. The C#, C++,
+  Swift, and Kotlin worker compilers/providers are removed; `yon.<ext>`
+  backend handlers in those languages are unaffected (that is Yon, not Tac).
+- The generated Android host serves the bundle through
+  `androidx.webkit` `WebViewAssetLoader` at the trusted
+  `https://appassets.androidapp.com/` origin (explicit domain, directory
+  indexes, service-worker interception) instead of `file://`. Web Workers
+  (Tac Workers running wasm), OPFS-backed FYLO persistence, and service
+  workers now all function inside the native app, and the deprecated
+  file-URL access grants are gone. The iOS host README documents the
+  equivalent `WKURLSchemeHandler` upgrade it still needs.
+- Production bundles (or `tac.bundle --package`) export distributable native
+  artifacts when the system toolchains exist, and `dist/<target>/` then
+  contains only the artifact: `dist/android/<App>-<v>.apk` via Gradle
+  (debug-keystore fallback signing, `TAC_ANDROID_KEYSTORE*` for store
+  signing), `dist/ios/<App>-<v>.ipa` via xcodegen + xcodebuild (unsigned by
+  default, `TAC_IOS_TEAM_ID` to sign), an ad-hoc-signed `dist/macos/<App>.app`
+  via swiftc, `dist/linux/<App>/` (executable + Resources) via CMake, and
+  `dist/windows/<App>/` (`.exe` + Resources) via CMake/MSVC.
+  Missing toolchains downgrade to a logged skip that keeps the buildable host
+  project; `--skip-package` opts out.
+- Prerendered shells automatically link a web app manifest when
+  `client/shared/assets/manifest.webmanifest` (or `manifest.json`) exists,
+  surfacing its `theme_color` as a `<meta name="theme-color">` tag. Together
+  with the built-in service worker, shipping a manifest beside the favicon is
+  all an app needs to become an installable PWA.
+- Desktop native Tac workers (starting with Rust on macOS, Linux, and Windows).
+  `browser/workers/<route>/tac.rs` files are compiled to native executables during
+  `tac.bundle --target <desktop>` and shipped inside the host's `Resources/workers/`
+  directory. The generated desktop native hosts expose a `tachyon.worker` bridge
+  capability that spawns the executable per request, passing a JSON envelope over
+  stdin and returning the response envelope to the frontend.
+
+- Yon backend routes for Rust/C++/C# whose handler fits Tachyon's supported
+  subset now compile to WebAssembly **in-house** (no rustc/clang/.NET) and
+  execute **in-process** through a pluggable execution backend; handlers beyond
+  the subset transparently fall back to the existing subprocess runner. Subset
+  handlers can read request fields (`request.query/path/header("k")`) and return
+  structured JSON object literals (`{ "k": value, ... }`) — both resolved/built
+  in-house with no JSON library inside the wasm module — so wasm routes return
+  validated object responses. The consolidated `/language` example route
+  exercises this: its Rust (`yon.rs`) and C++ (`yon.cpp`) handlers fit the subset
+  and compile to WebAssembly in production.
+
+### Changed
+
+- Tac workers now use five language families with explicit target scopes:
+  JavaScript/TypeScript for web, Swift for macOS/iOS, Kotlin for Android, C#
+  for Windows, and Rust across every target. C, C++, Go, Python, and Zig are no
+  longer accepted under `client/workers`.
+- The in-repo website (`website/`) has been revamped from a dense capability atlas
+  into a minimalist marketing landing page. It now features a dark hero with an
+  install command, a file-system scaffold visualization, a feature grid, tabbed
+  polyglot code examples, and a curated interactive demo using the polyglot,
+  desktop native, and canvas panels. The old atlas components have been removed.
+
+- Bundled npm dependency modules now live under `/shared/modules/` instead of `/modules/` (e.g., `/shared/modules/dayjs.js`). This is a clean break: the old `/modules/*` URLs are no longer served.
+
+### Added
+
+- The app shell now includes an inline `<script type="importmap">` that maps bare npm specifiers (e.g., `dayjs`) to their bundled `/shared/modules/` URLs. User-defined mappings can be supplied in `browser/shared/importmap.json` (with `shared/importmap.json` as a fallback); user entries override auto-generated entries.
+
+### Changed
+
+- Tac worker `OPTIONS.schema.json` now matches the Yon route schema shape but
+  collapses response schemas into three status buckets: `ok` (2xx),
+  `clientError` (4xx), and `serverError` (5xx). Per HTTP method the keys are
+  `payload` (request) plus whichever of the three response buckets are relevant.
+  2xx responses always use the `ok` schema. The old `response`/`error` keys,
+  numeric status-code keys, and the `native` capability declaration block have
+  been removed from the worker schema. Capabilities are now authorized through
+  the `TAC_NATIVE_CAPABILITIES` environment variable (a comma-separated
+  allowlist), resolved at compile time and baked into the worker runtime. Raw OS
+  capabilities (`fs.*`, `shell.*`, `process.*`) still require an additional entry
+  in `TAC_DANGEROUS_CAPABILITIES`.
+- Tac frontend messaging now uses a single signals system. `@publish` and
+  `@subscribe` replace the previous `@emit`, `@provide`, and `@inject`
+  decorators, with retained field signals for context-style values and
+  ephemeral method signals for event-style messages.
+- Tac method subscribers can now pass `{ onMount: true }` to run once after
+  mount and then react to future signal publications.
+- Bare `@subscribe` and `@publish` now use the decorated field or method name
+  as the default signal name.
+- Removed the `@render` decorator from the strict v2 Tac API. Companion state
+  now rerenders through field assignment, including `$` and `$$` persistent
+  fields.
+- Upgraded `@d31ma/fylo` to `^26.23.7`. The new version adds query caching
+  (`FYLO_CACHE_BACKEND`, `FYLO_CACHE_METHOD`, `FYLO_CACHE_TTL`), WORM mode
+  (`FYLO_WORM=strict`), RLS toggle (`FYLO_RLS`), local queue toggle
+  (`FYLO_QUEUE`), and sync-mode selection (`FYLO_SYNC_MODE`) as environment-
+  driven options in `fyloOptions()`. The Fylo browser now exposes soft-delete
+  inspection and restoration through `/_fylo/api/deleted` (GET) and
+  `/_fylo/api/restore` (POST).
+- Upgraded Tachyon website's `@d31ma/fylo` dependency from `^26.19.7` to
+  `^26.23.7`.
+- Native bundle targets now ship their webview host directly at `dist/<target>/`
+  instead of a separate `dist/<target>-native/` directory. The standalone web
+  bundle is no longer emitted for native targets (its assets are embedded under
+  the host's `Resources/`); `--skip-native-host` still emits the plain web
+  bundle at `dist/<target>/`.
+
+### Removed
+
+- Dropped Swift (`yon.swift`) and Kotlin (`yon.kt`) backend route handler
+  support. These are mobile-first languages; Yon backend routes now target
+  server languages only. Removed the compiled-runner Swift/Kotlin adapters, the
+  `/languages/swift` and `/languages/kotlin` example routes, and their
+  services/repositories.
+
 ## [26.23.01] — 2026-06-01
 
 ### Added

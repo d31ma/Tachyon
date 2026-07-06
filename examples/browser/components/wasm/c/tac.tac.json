@@ -1,9 +1,0 @@
-{
-  "abi": "tac-wasm-json@1",
-  "sourceLanguage": "C",
-  "state": {
-    "clicks": 0,
-    "label": "C!!!!"
-  },
-  "methods": ["increment"]
-}

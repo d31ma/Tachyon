@@ -4,13 +4,67 @@ import { access, readdir, stat } from 'fs/promises';
 import path from 'path';
 import Router from '../server/http/route-handler.js';
 import Compiler from '../compiler/index.js';
-import { createStaticPreviewServer, resolvePreviewFile } from '../runtime/static-preview.js';
+import { createStaticPreviewServer, resolvePreviewFile, resolveStaticPreviewRoot } from '../runtime/static-preview.js';
+import { isNativeTarget, readTargetArg, resolveSingleBundleTarget } from '../shared/native-targets.js';
+import { checkNativePreviewRequirements, formatNativePreviewCheckFailure } from '../shared/native-preview-checks.js';
 import logger from '../server/observability/logger.js';
 const distPath = path.join(process.cwd(), 'dist');
 const watchMode = process.argv.includes('--watch') || process.argv.includes('--bundle-watch');
+const skipNativeChecks = process.argv.includes('--skip-native-checks');
+let previewTarget = 'web';
+try {
+    previewTarget = resolveSingleBundleTarget(readTargetArg(process.argv) ?? process.env.TAC_PREVIEW_TARGET ?? process.env.TAC_TARGET ?? 'web');
+}
+catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+}
 const WATCH_INTERVAL_MS = 300;
 const bundleCliPath = path.join(import.meta.dir, 'bundle.js');
 const previewLogger = logger.child({ scope: 'cli:preview' });
+
+/**
+ * @param {string[]} argv
+ * @param {string} longName
+ * @returns {string | null}
+ */
+function readStringArg(argv, longName) {
+    for (let index = 0; index < argv.length; index += 1) {
+        const arg = argv[index];
+        if (arg === longName) {
+            return argv[index + 1] ?? null;
+        }
+        if (arg.startsWith(`${longName}=`)) {
+            return arg.slice(longName.length + 1);
+        }
+    }
+    return null;
+}
+
+/**
+ * @param {string[]} argv
+ * @returns {{ port?: number, hostname?: string }}
+ */
+function readPreviewServerOptions(argv) {
+    const options = /** @type {{ port?: number, hostname?: string }} */ ({});
+    const portArg = readStringArg(argv, '--port');
+    if (portArg !== null) {
+        const port = Number(portArg);
+        if (!Number.isInteger(port) || port < 0 || port > 65535) {
+            throw new Error(`Invalid preview port '${portArg}'. Expected an integer from 0 to 65535.`);
+        }
+        options.port = port;
+    }
+    const hostArg = readStringArg(argv, '--host') ?? readStringArg(argv, '--hostname');
+    if (hostArg !== null) {
+        const hostname = hostArg.trim();
+        if (!hostname) {
+            throw new Error('Invalid preview host. Expected a non-empty hostname.');
+        }
+        options.hostname = hostname;
+    }
+    return options;
+}
 /**
  * @param {string} targetPath
  * @returns {Promise<string[]>}
@@ -49,7 +103,7 @@ async function buildFingerprint() {
     return entries.flat().sort().join('|');
 }
 async function runFreshBundleBuild() {
-    const proc = Bun.spawn(['bun', bundleCliPath], {
+    const proc = Bun.spawn(['bun', bundleCliPath, '--target', previewTarget], {
         cwd: process.cwd(),
         env: process.env,
         stdout: 'inherit',
@@ -99,6 +153,17 @@ async function startPreviewBundleWatcher() {
     };
 }
 let bundleWatcher = null;
+if (isNativeTarget(previewTarget) && !skipNativeChecks) {
+    const check = await checkNativePreviewRequirements(previewTarget);
+    if (!check.ok) {
+        previewLogger.error('Native preview prerequisites failed', {
+            target: previewTarget,
+            missing: check.missing,
+        });
+        console.error(formatNativePreviewCheckFailure(previewTarget, check));
+        process.exit(1);
+    }
+}
 if (watchMode) {
     bundleWatcher = await startPreviewBundleWatcher();
 }
@@ -114,20 +179,28 @@ else {
         process.exit(1);
     }
 }
-const rootPreviewFile = await resolvePreviewFile(distPath, '/');
+const previewRoot = await resolveStaticPreviewRoot(distPath, previewTarget);
+const rootPreviewFile = await resolvePreviewFile(previewRoot, '/');
 if (!rootPreviewFile) {
     previewLogger.warn('No previewable root page found', {
-        distPath,
-        expectedRoot: path.join(distPath, 'index.html'),
+        distPath: previewRoot,
+        expectedRoot: path.join(previewRoot, 'index.html'),
         suggestion: 'Run preview from the app directory that contains your client pages before opening /.'
     });
 }
 const start = Date.now();
-const server = await createStaticPreviewServer(distPath);
-previewLogger.info('Preview server started', {
-    url: `http://${server.hostname}:${server.port}`,
-    startupMs: Date.now() - start,
-    watchMode,
+let previewOptions;
+try {
+    previewOptions = readPreviewServerOptions(process.argv);
+}
+catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+}
+const server = await createStaticPreviewServer(previewRoot, previewOptions);
+previewLogger.info(`Preview ready in ${Date.now() - start}ms → http://${server.hostname}:${server.port}`, {
+    target: previewTarget,
+    watch: watchMode,
 });
 for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {

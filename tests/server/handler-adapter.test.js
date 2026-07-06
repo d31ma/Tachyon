@@ -62,23 +62,6 @@ function commandAvailable(command) {
 }
 
 /**
- * `kotlinc` rejects `--version`, so probe it with its native `-version` flag.
- * @returns {boolean}
- */
-function kotlincAvailable() {
-    try {
-        return Bun.spawnSync({
-            cmd: ['kotlinc', '-version'],
-            stdout: 'pipe',
-            stderr: 'pipe',
-        }).exitCode === 0;
-    }
-    catch {
-        return false;
-    }
-}
-
-/**
  * @param {() => Promise<void>} callback
  * @returns {Promise<void>}
  */
@@ -112,21 +95,12 @@ async function withRunCommandSpy(spy, callback) {
     }
 }
 
-test('documents the Yon handler language targets', () => {
-    expect(HandlerAdapter.supportedLanguages).toEqual([
-        'javascript',
-        'typescript',
-        'python',
-        'ruby',
-        'php',
-        'dart',
-        'java',
-        'csharp',
-        'cpp',
-        'swift',
-        'kotlin',
-        'rust',
-    ]);
+test('knownLanguages lists the ergonomic adapters, not a supported set', () => {
+    // These are conveniences (write class Handler, skip the stdin/stdout
+    // glue), not a closed list — any executable handler in any language is
+    // a valid route through the universal path.
+    for (const language of ['javascript', 'typescript', 'python', 'ruby', 'php', 'dart', 'java', 'csharp', 'cpp', 'rust'])
+        expect(HandlerAdapter.knownLanguages).toContain(language);
 });
 
 test('runs JavaScript class-per-route handlers without user stdin/stdout code', async () => {
@@ -386,63 +360,6 @@ test('generates C++ JSON support for dependency-free compiled handlers', () => {
     expect(main).toContain('Handler::GET(request)');
 });
 
-test('runs Swift class-per-route handlers when swiftc is available', async () => {
-    if (!commandAvailable('swiftc'))
-        return;
-    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-swift-handler-'));
-    tempDirs.push(root);
-    const handlerPath = path.join(root, 'yon.swift');
-    await Bun.write(handlerPath, `import Foundation
-
-enum Handler {
-  static func GET(_ request: [String: Any]) -> Any? {
-    let context = request["context"] as? [String: Any]
-    return ["message": "ok", "requestId": (context?["requestId"] as? String) ?? "unknown"]
-  }
-}
-`);
-    const output = await YonCompiledRunner.runSwift(handlerPath, JSON.stringify({ method: 'GET', context: { requestId: 'abc' } }));
-    expect(JSON.parse(output)).toEqual({ message: 'ok', requestId: 'abc' });
-}, 60000);
-
-test('generates Swift dispatch for Foundation-backed compiled handlers', () => {
-    const main = YonCompiledRunner.swiftMainSource(['GET', 'POST']);
-    expect(main).toContain('import Foundation');
-    expect(main).toContain('JSONSerialization');
-    expect(main).toContain('case "GET": result = Handler.GET(request)');
-    expect(main).toContain('case "POST": result = Handler.POST(request)');
-});
-
-test('runs Kotlin class-per-route handlers when kotlinc is available', async () => {
-    if (!kotlincAvailable() || !commandAvailable('java'))
-        return;
-    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-kotlin-handler-'));
-    tempDirs.push(root);
-    const handlerPath = path.join(root, 'yon.kt');
-    await Bun.write(handlerPath, `class Handler {
-  companion object {
-    fun GET(request: Map<String, Any?>): Any? {
-      @Suppress("UNCHECKED_CAST")
-      val context = request["context"] as? Map<String, Any?>
-      return mapOf("message" to "ok", "requestId" to ((context?.get("requestId") as? String) ?: "unknown"))
-    }
-  }
-}
-`);
-    const output = await YonCompiledRunner.runKotlin(handlerPath, JSON.stringify({ method: 'GET', context: { requestId: 'abc' } }));
-    expect(JSON.parse(output)).toEqual({ message: 'ok', requestId: 'abc' });
-}, 120000);
-
-test('generates Kotlin JSON support for dependency-free compiled handlers', () => {
-    const support = YonCompiledRunner.kotlinJsonSupportSource();
-    const main = YonCompiledRunner.kotlinMainSource(['GET']);
-    expect(support).toContain('object YonJson');
-    expect(support).toContain('fun parse(');
-    expect(support).toContain('fun stringify(');
-    expect(main).toContain('YonJson.parseObject(input)');
-    expect(main).toContain('Handler.GET(request)');
-});
-
 test('runs Rust impl Handler routes when rustc is available', async () => {
     if (!commandAvailable('rustc'))
         return;
@@ -605,62 +522,6 @@ public:
     expect(commands.filter((command) => command.endsWith('/handler') || command.endsWith('\\handler.exe'))).toHaveLength(2);
 });
 
-test('production Swift handlers compile once and reuse the binary across methods', async () => {
-    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-swift-cache-'));
-    tempDirs.push(root);
-    const handlerPath = path.join(root, 'yon.swift');
-    await Bun.write(handlerPath, `enum Handler {
-  static func GET(_ request: [String: Any]) -> Any? { return "{\\"method\\":\\"GET\\"}" }
-  static func POST(_ request: [String: Any]) -> Any? { return "{\\"method\\":\\"POST\\"}" }
-}
-`);
-    /** @type {string[]} */
-    const commands = [];
-    await withProductionEnvironment(async () => {
-        tempDirs.push(YonCompiledRunner.workspace('swift', handlerPath));
-        await withRunCommandSpy(async (cmd, _cwd, input) => {
-            commands.push(cmd.join(' '));
-            if (cmd[0]?.endsWith('handler') || cmd[0]?.endsWith('handler.exe'))
-                return input?.includes('"POST"') ? '{"method":"POST"}' : '{"method":"GET"}';
-            return '';
-        }, async () => {
-            expect(await YonCompiledRunner.runSwift(handlerPath, JSON.stringify({ method: 'GET' }))).toBe('{"method":"GET"}');
-            expect(await YonCompiledRunner.runSwift(handlerPath, JSON.stringify({ method: 'POST' }))).toBe('{"method":"POST"}');
-        });
-    });
-    expect(commands.filter((command) => command.startsWith('swiftc '))).toHaveLength(1);
-    expect(commands.filter((command) => command.endsWith('/handler') || command.endsWith('\\handler.exe'))).toHaveLength(2);
-});
-
-test('production Kotlin handlers compile once and reuse the jar across methods', async () => {
-    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-kotlin-cache-'));
-    tempDirs.push(root);
-    const handlerPath = path.join(root, 'yon.kt');
-    await Bun.write(handlerPath, `class Handler {
-  companion object {
-    fun GET(request: Map<String, Any?>): Any? = "{\\"method\\":\\"GET\\"}"
-    fun POST(request: Map<String, Any?>): Any? = "{\\"method\\":\\"POST\\"}"
-  }
-}
-`);
-    /** @type {string[]} */
-    const commands = [];
-    await withProductionEnvironment(async () => {
-        tempDirs.push(YonCompiledRunner.workspace('kotlin', handlerPath));
-        await withRunCommandSpy(async (cmd, _cwd, input) => {
-            commands.push(cmd.join(' '));
-            if (cmd[0] === 'java' && cmd.includes('MainKt'))
-                return input?.includes('"POST"') ? '{"method":"POST"}' : '{"method":"GET"}';
-            return '';
-        }, async () => {
-            expect(await YonCompiledRunner.runKotlin(handlerPath, JSON.stringify({ method: 'GET' }))).toBe('{"method":"GET"}');
-            expect(await YonCompiledRunner.runKotlin(handlerPath, JSON.stringify({ method: 'POST' }))).toBe('{"method":"POST"}');
-        });
-    });
-    expect(commands.filter((command) => command.startsWith('kotlinc '))).toHaveLength(1);
-    expect(commands.filter((command) => command.includes('MainKt'))).toHaveLength(2);
-});
-
 test('production Rust handlers compile once and reuse the binary across methods', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-rust-cache-'));
     tempDirs.push(root);
@@ -693,4 +554,95 @@ impl Handler {
     });
     expect(commands.filter((command) => command.startsWith('rustc '))).toHaveLength(1);
     expect(commands.filter((command) => command.endsWith('/handler') || command.endsWith('\\handler.exe'))).toHaveLength(2);
+});
+
+test('custom language providers register and resolve handlers', async () => {
+    HandlerAdapter.registerProvider({
+        language: 'lua',
+        extensions: ['.lua'],
+        shebangs: ['lua*'],
+        command: (handler) => ['lua', handler],
+        hasHandlerClass: (source) => /\bHandler\s*=/.test(source),
+        hasMethod: (source, method) => new RegExp(`\\bfunction\\s+Handler\\.${method}\\b`).test(source),
+    });
+    expect(HandlerAdapter.knownLanguages).toContain('lua');
+
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-lua-provider-'));
+    tempDirs.push(root);
+    const handlerPath = path.join(root, 'yon.lua');
+    await Bun.write(handlerPath, `Handler = {}
+function Handler.GET(request)
+    return { ok = true }
+end
+`);
+    const adapter = HandlerAdapter.resolve(handlerPath, []);
+    expect(adapter).not.toBeNull();
+    expect(adapter?.language).toBe('lua');
+    expect(adapter?.command).toEqual(['lua', handlerPath]);
+    expect([...(adapter?.methods ?? [])]).toEqual(['GET']);
+});
+
+test('a prebuilt executable handler resolves via OPTIONS.schema.json', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-generic-exec-'));
+    tempDirs.push(root);
+    // An extension with no interpreter mapping — a self-runnable binary or
+    // shebang script. Runs directly, no extension→interpreter lookup.
+    const handlerPath = path.join(root, 'yon.zig-binary');
+    await Bun.write(handlerPath, '#!/bin/sh\nread body\necho "{\\"ok\\":true}"\n');
+    await chmod(handlerPath, 0o755);
+
+    // Without the sidecar the handler is rejected — methods are unknowable.
+    expect(HandlerAdapter.resolve(handlerPath, [])).toBeNull();
+
+    await Bun.write(path.join(root, 'OPTIONS.schema.json'), JSON.stringify({
+        GET: { response: { ok: '^true$' } },
+        POST: { payload: { body: '^[\\s\\S]*$' } },
+    }));
+    const adapter = HandlerAdapter.resolve(handlerPath, []);
+    expect(adapter).not.toBeNull();
+    expect(adapter?.language).toBe('executable');
+    expect(adapter?.command).toEqual([handlerPath]);
+    expect([...(adapter?.methods ?? [])].sort()).toEqual(['GET', 'POST']);
+
+    // The spawned executable speaks the stdin/stdout protocol as-is.
+    const proc = Bun.spawn({ cmd: adapter?.command ?? [], stdin: 'pipe', stdout: 'pipe' });
+    proc.stdin.write(JSON.stringify({ method: 'GET' }));
+    proc.stdin.end();
+    expect((await new Response(proc.stdout).text()).trim()).toBe('{"ok":true}');
+});
+
+test('any language runs by extension — no shebang, no chmod', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-by-ext-'));
+    tempDirs.push(root);
+    // A plain, non-executable yon.sh — no shebang, never chmod'd. Its
+    // extension resolves to the `sh` interpreter (a default), so Yon runs it.
+    const handlerPath = path.join(root, 'yon.sh');
+    await Bun.write(handlerPath, 'read body\necho "{\\"engine\\":\\"sh\\"}"\n');
+    await Bun.write(path.join(root, 'OPTIONS.schema.json'), JSON.stringify({ POST: {} }));
+
+    const adapter = HandlerAdapter.resolve(handlerPath, []);
+    expect(adapter).not.toBeNull();
+    expect(adapter?.command).toEqual(['sh', handlerPath]);
+    expect([...(adapter?.methods ?? [])]).toEqual(['POST']);
+
+    const proc = Bun.spawn({ cmd: adapter?.command ?? [], stdin: 'pipe', stdout: 'pipe' });
+    proc.stdin.write(JSON.stringify({ method: 'POST', body: 'x' }));
+    proc.stdin.end();
+    expect((await new Response(proc.stdout).text()).trim()).toBe('{"engine":"sh"}');
+});
+
+test('a known-language file may opt into the raw protocol via the universal path', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-raw-py-'));
+    tempDirs.push(root);
+    // A .py handler (python HAS an adapter) that does NOT use class Handler —
+    // it speaks the protocol itself, so it falls through to the universal
+    // path and runs via the .py interpreter (python3), no shebang needed.
+    const handlerPath = path.join(root, 'yon.py');
+    await Bun.write(handlerPath, 'import sys, json\nsys.stdin.read()\nprint(json.dumps({"raw": True}))\n');
+    await Bun.write(path.join(root, 'OPTIONS.schema.json'), JSON.stringify({ GET: {} }));
+
+    const adapter = HandlerAdapter.resolve(handlerPath, []);
+    expect(adapter).not.toBeNull();
+    expect(adapter?.command).toEqual(['python3', handlerPath]);
+    expect([...(adapter?.methods ?? [])]).toEqual(['GET']);
 });

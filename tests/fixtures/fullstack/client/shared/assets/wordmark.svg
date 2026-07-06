@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 96" role="img" aria-label="Tachyon wordmark">
+  <defs>
+    <linearGradient id="tachyon-wordmark-gradient" x1="16" y1="16" x2="80" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#14B8A6"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="96" rx="20" fill="#0F172A"/>
+  <!-- The tachyon mark: a particle outrunning its own light cone. -->
+  <path d="M20 32 L32 48 L20 64" fill="none" stroke="url(#tachyon-wordmark-gradient)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4"/>
+  <path d="M32 26 L50 48 L32 70" fill="none" stroke="url(#tachyon-wordmark-gradient)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.75"/>
+  <circle cx="64" cy="48" r="9" fill="url(#tachyon-wordmark-gradient)"/>
+  <text x="92" y="59" fill="#F8FAFC" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="30" font-weight="700" letter-spacing="4">TACHYON</text>
+</svg>

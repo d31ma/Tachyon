@@ -1,0 +1,92 @@
+<w-card variant="outlined" class="panel-card" id="input-gallery">
+  <w-card-item title="Every input, one Tac companion" subtitle="Native HTML controls pass through Tac templates while events and value bindings update component state.">
+  </w-card-item>
+  <w-card-text>
+    <div class="signal-bar" role="status" aria-live="polite">
+      <span class="signal-label">Latest signal</span>
+      <strong>{lastControl}</strong>
+      <code class="signal-value">{lastValue}</code>
+      <span class="signal-count">{$interactionCount} interactions this session</span>
+    </div>
+
+    <form class="gallery" on:submit="preventAction('submit', $event)">
+      <fieldset class="field-group">
+        <legend>Writing and discovery</legend>
+        <label>Text <input type="text" placeholder="Name" :value="$sampleText" on:input="updateText($event.target.value)" /></label>
+        <label>Search <input type="search" placeholder="Search packages" :value="fields.search" on:input="updateField('search', $event.target.value)" /></label>
+        <label>Email <input type="email" placeholder="team@example.dev" :value="fields.email" on:input="updateField('email', $event.target.value)" /></label>
+        <label>Password <input type="password" placeholder="Secret" :value="fields.password" on:input="recordSecret($event.target.value)" /></label>
+        <label>Telephone <input type="tel" placeholder="+1 416 555 0100" :value="fields.telephone" on:input="updateField('telephone', $event.target.value)" /></label>
+        <label>URL <input type="url" placeholder="https://tachyon.dev" :value="fields.link" on:input="updateField('link', $event.target.value)" /></label>
+      </fieldset>
+
+      <fieldset class="field-group">
+        <legend>Numbers and colour</legend>
+        <label>Number <input type="number" min="0" max="100" :value="fields.number" on:input="updateField('number', $event.target.value)" /></label>
+        <label>Range <strong>{$range}</strong> <input type="range" min="0" max="100" :value="$range" on:input="updateRange($event.target.value)" /></label>
+        <label>Color <input type="color" :value="$accent" on:input="updateColour($event.target.value)" /></label>
+      </fieldset>
+
+      <fieldset class="field-group">
+        <legend>Dates and schedules</legend>
+        <label>Date <input type="date" :value="fields.date" on:change="updateField('date', $event.target.value)" /></label>
+        <label>Date and time <input type="datetime-local" :value="fields.dateTime" on:change="updateField('dateTime', $event.target.value)" /></label>
+        <label>Month <input type="month" :value="fields.month" on:change="updateField('month', $event.target.value)" /></label>
+        <label>Week <input type="week" :value="fields.week" on:change="updateField('week', $event.target.value)" /></label>
+        <label>Time <input type="time" :value="fields.time" on:change="updateField('time', $event.target.value)" /></label>
+      </fieldset>
+
+      <fieldset class="field-group">
+        <legend>Selections and files</legend>
+        <label class="inline"><input type="checkbox" :checked="$subscribed" on:change="updateSubscription($event.target.checked)" /> Checkbox</label>
+        <div class="inline-row" role="group" aria-label="Plan">
+          <label class="inline"><input type="radio" name="tac-plan" value="starter" :checked="$plan === 'starter'" on:change="updatePlan($event.target.value)" /> Starter</label>
+          <label class="inline"><input type="radio" name="tac-plan" value="production" :checked="$plan === 'production'" on:change="updatePlan($event.target.value)" /> Production</label>
+        </div>
+        <input type="file" class="file-input" aria-label="Input file" on:change="recordFiles($event.target.files)" />
+        <div :class="$dragOver ? 'dropzone over' : 'dropzone'"
+          on:click="triggerFilePicker()" on:dragover="onDragOver($event)" on:dragleave="onDragLeave()" on:drop="onDrop($event)"
+          role="button" tabindex="0">
+          <logic :if="!$fileName">
+            <span>Drop a file here or <span class="link">browse</span></span>
+          </logic>
+          <logic :if="$fileName">
+            <span class="file-chip">{$fileName} — {$fileSize}</span>
+            <w-btn size="sm" variant="text" on:click="clearFile($event)">Remove</w-btn>
+          </logic>
+        </div>
+      </fieldset>
+
+      <fieldset class="field-group">
+        <legend>Beyond input</legend>
+        <label>Select
+          <select :value="fields.stack" on:change="updateField('stack', $event.target.value)">
+            <option value="frontend">Tac frontend</option>
+            <option value="backend">Yon backend</option>
+            <option value="fullstack">Full stack</option>
+          </select>
+        </label>
+        <label>Datalist
+          <input type="text" list="tac-runtime-options" placeholder="Choose a runtime" :value="fields.runtime" on:input="updateField('runtime', $event.target.value)" />
+          <datalist id="tac-runtime-options">
+            <option value="Bun"></option>
+            <option value="Browser APIs"></option>
+            <option value="FYLO"></option>
+          </datalist>
+        </label>
+        <label>Textarea <textarea rows="3" :value="fields.notes" on:input="updateField('notes', $event.target.value)"></textarea></label>
+      </fieldset>
+
+      <fieldset class="field-group">
+        <legend>Actions and hidden values</legend>
+        <input type="hidden" name="framework" value="tac" />
+        <div class="inline-row">
+          <input type="button" value="Button" on:click="record('button', 'clicked')" />
+          <input type="submit" value="Submit" />
+          <input type="reset" value="Reset" on:click="resetValues()" />
+        </div>
+        <p class="hint">A hidden <code>framework=tac</code> value is also present in this form.</p>
+      </fieldset>
+    </form>
+  </w-card-text>
+</w-card>

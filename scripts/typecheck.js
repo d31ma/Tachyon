@@ -24,15 +24,15 @@ const TIMEOUT_MS = Number(process.env.TACHYON_TYPECHECK_TIMEOUT_MS) || 120_000;
 const projectRoot = path.resolve(import.meta.dir, '..');
 const requestedConfigs = process.argv.slice(2);
 const configs = requestedConfigs.length > 0 ? requestedConfigs : ['tsconfig.src.json'];
-const includesExamples = configs.some(config => path.basename(config) === 'tsconfig.examples.json');
+const includesWebsite = configs.some(config => path.basename(config) === 'tsconfig.website.json');
 
 /** @type {Record<string, string[]>} */
 const CONFIG_ROOTS = {
     'tsconfig.src.json': ['src'],
-    // Tests import a few example modules (e.g. the realtime repository), so the
-    // staged tests project must include `examples` for those imports to resolve.
-    'tsconfig.tests.json': ['src', 'scripts', 'tests', 'examples'],
-    'tsconfig.examples.json': ['src', 'examples'],
+    // Tests import a few showcase modules (e.g. the realtime repository), so the
+    // staged tests project must include `website` for those imports to resolve.
+    'tsconfig.tests.json': ['src', 'scripts', 'tests', 'website'],
+    'tsconfig.website.json': ['src', 'website'],
 };
 
 /**
@@ -81,7 +81,7 @@ function shouldStageTypecheck() {
  */
 function rootsForConfig(config) {
     const basename = path.basename(config);
-    return CONFIG_ROOTS[basename] ?? ['src', 'scripts', 'tests', 'examples'];
+    return CONFIG_ROOTS[basename] ?? ['src', 'scripts', 'tests', 'website'];
 }
 
 /**
@@ -106,7 +106,7 @@ async function createTypecheckStage(selectedConfigs) {
         'tsconfig.base.json',
         'tsconfig.src.json',
         'tsconfig.tests.json',
-        'tsconfig.examples.json',
+        'tsconfig.website.json',
     ];
 
     for (const file of topLevelFiles) {
@@ -184,8 +184,8 @@ try {
             '--frozen-lockfile',
             '--ignore-scripts',
         ]);
-        if (includesExamples && await exists(path.join(typecheckRoot, 'examples', 'package.json'))) {
-            await runCommand('Typecheck example dependency install', path.join(typecheckRoot, 'examples'), [
+        if (includesWebsite && await exists(path.join(typecheckRoot, 'website', 'package.json'))) {
+            await runCommand('Typecheck website dependency install', path.join(typecheckRoot, 'website'), [
                 'bun',
                 'install',
                 '--frozen-lockfile',

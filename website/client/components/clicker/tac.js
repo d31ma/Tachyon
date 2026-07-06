@@ -1,0 +1,10 @@
+// @ts-check
+export default class {
+    /** @type {number} */
+    $clicks = 0
+    /** @type {string} */
+    label = 'Interactions'
+    /** @type {string | undefined} */
+    @subscribe
+    release
+}

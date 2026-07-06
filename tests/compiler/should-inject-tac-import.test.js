@@ -91,3 +91,74 @@ describe('Compiler.shouldInjectTacImport', () => {
             .toBe(false);
     });
 });
+
+describe('Compiler.injectTacBaseClass', () => {
+    test('adds extends Tac to an anonymous default companion class', () => {
+        expect(Compiler.injectTacBaseClass(`export default class {\n  count = 0\n}`))
+            .toBe(`export default class extends Tac {\n  count = 0\n}`);
+    });
+
+    test('adds extends Tac to a named default companion class', () => {
+        expect(Compiler.injectTacBaseClass(`export default class Clicker {\n  count = 0\n}`))
+            .toBe(`export default class Clicker extends Tac {\n  count = 0\n}`);
+    });
+
+    test('supports TypeScript generic class declarations', () => {
+        const source = `export default class Store<TValue> {\n  value: TValue | null = null\n}`;
+        expect(Compiler.injectTacBaseClass(source))
+            .toBe(`export default class Store<TValue> extends Tac {\n  value: TValue | null = null\n}`);
+    });
+
+    test('adds a super call when the companion constructor is author-defined', () => {
+        const source = [
+            `export default class {`,
+            `  constructor() {`,
+            `    this.count = 1`,
+            `  }`,
+            `}`,
+        ].join('\n');
+        expect(Compiler.injectTacBaseClass(source)).toBe([
+            `export default class extends Tac {`,
+            `  constructor() {`,
+            `      super(...arguments);`,
+            `    this.count = 1`,
+            `  }`,
+            `}`,
+        ].join('\n'));
+    });
+
+    test('does not duplicate an existing super call', () => {
+        const source = [
+            `export default class {`,
+            `  constructor(props) {`,
+            `    super(props)`,
+            `  }`,
+            `}`,
+        ].join('\n');
+        expect(Compiler.injectTacBaseClass(source)).toBe([
+            `export default class extends Tac {`,
+            `  constructor(props) {`,
+            `    super(props)`,
+            `  }`,
+            `}`,
+        ].join('\n'));
+    });
+
+    test('does not change classes that already extend a base class', () => {
+        const source = `export default class extends ViewModel {\n  count = 0\n}`;
+        expect(Compiler.injectTacBaseClass(source)).toBe(source);
+    });
+
+    test('ignores class-looking text in comments and strings', () => {
+        const source = [
+            `// export default class {}`,
+            `const note = "export default class {"`,
+            `export default class {}`,
+        ].join('\n');
+        expect(Compiler.injectTacBaseClass(source)).toBe([
+            `// export default class {}`,
+            `const note = "export default class {"`,
+            `export default class extends Tac {}`,
+        ].join('\n'));
+    });
+});

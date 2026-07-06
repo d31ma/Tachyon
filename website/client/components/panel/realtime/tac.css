@@ -1,0 +1,82 @@
+.rt-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+
+@container (min-width: 720px) {
+  .rt-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.rt-column {
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.rt-column h3 {
+  margin: 0;
+  font-size: var(--w-font-base);
+}
+
+.rt-column label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-xs);
+}
+
+.rt-column input,
+.rt-column select {
+  min-height: 38px;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--w-text) 25%, transparent);
+  border-radius: var(--w-radius-sm);
+  background: var(--w-surface);
+  color: var(--w-text);
+  font: inherit;
+  min-width: 0;
+  width: 100%;
+}
+
+.rt-actions {
+  flex-wrap: wrap;
+}
+
+.rt-meta {
+  margin: 0;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}
+
+.rt-messages {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.rt-messages li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--w-text) 12%, transparent);
+  border-radius: var(--w-radius-sm);
+  font-size: var(--w-font-sm);
+}
+
+.rt-messages small {
+  color: var(--w-text-very-subtle);
+}
+
+.rt-feedback {
+  margin: 0.9rem 0 0;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}

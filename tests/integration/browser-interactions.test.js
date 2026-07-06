@@ -2,7 +2,7 @@
 import { expect, test } from 'bun:test';
 import path from 'path';
 const PLAYWRIGHT_CLI = './node_modules/playwright/cli.js';
-const PLAYWRIGHT_CONFIG = './tests/playwright/examples.config.js';
+const PLAYWRIGHT_CONFIG = './tests/playwright/website.config.js';
 const PLAYWRIGHT_PROBE_TIMEOUT_MS = 2000;
 const BROWSER_RUN_TIMEOUT_MS = 120000;
 function isLegacyBunRuntime() {

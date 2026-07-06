@@ -2,6 +2,7 @@
 import { mkdir, readdir, stat, writeFile } from 'fs/promises';
 import path from 'path';
 const version = '26.20.07';
+const DEFAULT_APP_NAME = 'Tachyon App';
 const defaultEnv = `YON_PORT=8000
 YON_HOST=127.0.0.1
 YON_HOSTNAME=127.0.0.1
@@ -9,9 +10,11 @@ YON_DEV=true
 YON_LOG_LEVEL=info
 YON_LOG_FORMAT=pretty
 YON_TRUST_PROXY=
-YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'
+YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'
 TAC_FORMAT=esm
 TAC_PUBLIC_ENV=
+TAC_DANGEROUS_CAPABILITIES=
+TAC_NATIVE_CAPABILITIES=
 YON_MAX_BODY_BYTES=1048576
 YON_HANDLER_TIMEOUT_MS=30000
 YON_RATE_LIMIT_MAX=
@@ -34,15 +37,41 @@ YON_DATA_BROWSER_ENABLED=false
 YON_DATA_BROWSER_READONLY=true
 YON_DATA_BROWSER_REVEAL=false
 YON_CORS_ORIGIN=
-YON_PAGES_PATH=browser/pages
-YON_COMPONENTS_PATH=browser/components
-YON_ASSETS_PATH=browser/shared/assets
+YON_PAGES_PATH=client/pages
+YON_COMPONENTS_PATH=client/components
+YON_WORKERS_PATH=client/workers
+YON_ASSETS_PATH=client/shared/assets
 YON_ROUTES_PATH=server/routes
-YON_SHARED_SCRIPTS_PATH=browser/shared/scripts
-YON_SHARED_STYLES_PATH=browser/shared/styles
-YON_SHARED_DATA_PATH=browser/shared/data
+YON_SHARED_SCRIPTS_PATH=client/shared/scripts
+YON_SHARED_STYLES_PATH=client/shared/styles
+YON_SHARED_DATA_PATH=client/shared/data
 `;
-const files = {
+/**
+ * @param {string} value
+ * @returns {string}
+ */
+function packageNameFromAppName(value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        || 'tachyon-app';
+}
+
+/**
+ * @param {string} value
+ * @returns {string}
+ */
+function escapeJsString(value) {
+    return JSON.stringify(value);
+}
+
+/** @param {string} appName */
+function scaffoldFiles(appName = DEFAULT_APP_NAME) {
+    const safeAppName = appName.trim() || DEFAULT_APP_NAME;
+    const packageName = packageNameFromAppName(safeAppName);
+    return {
     '.gitignore': `node_modules
 dist
 .env
@@ -51,7 +80,7 @@ dist
     '.env.example': defaultEnv,
     '.env.test': defaultEnv,
     'package.json': JSON.stringify({
-        name: 'tachyon-app',
+        name: packageName,
         private: true,
         type: 'module',
         scripts: {
@@ -74,11 +103,11 @@ dist
             moduleResolution: 'NodeNext',
             types: ['bun-types', '@types/node']
         },
-        include: ['tachyon-env.d.ts', 'browser/**/*.js', 'browser/**/*.ts', 'server/**/*.js', 'server/**/*.ts']
+        include: ['tachyon-env.d.ts', 'client/**/*.js', 'client/**/*.ts', 'server/**/*.js', 'server/**/*.ts']
     }, null, 2) + '\n',
     'tachyon-env.d.ts': `/// <reference types="@d31ma/tachyon/globals" />
 `,
-    'README.md': `# Tachyon App
+    'README.md': `# ${safeAppName}
 
 ## Commands
 
@@ -89,18 +118,19 @@ bun run preview
 bun run serve
 \`\`\`
 
-The bundled output is written to \`dist/\`. \`bun run serve\` detects whether the app has \`browser/\`, \`server/\`, or both and serves the matching frontend, backend, or full-stack runtime.
+The bundled output is written to \`dist/\`. \`bun run serve\` detects whether the app has \`client/\`, \`server/\`, or both and serves the matching frontend, backend, or full-stack runtime.
 `,
-    'browser/shared/scripts/imports.js': `import "../styles/app.css"
+    'client/shared/scripts/imports.js': `import "../styles/app.css"
 
 document.documentElement.setAttribute('data-theme', 'light')
 `,
-    'browser/shared/styles/app.css': `:root {
+    'client/shared/styles/app.css': `:root {
   color-scheme: dark;
 }
 `,
-    'browser/shared/assets/.gitkeep': ``,
-    'browser/shared/data/.gitkeep': ``,
+    'client/shared/assets/.gitkeep': ``,
+    'client/shared/data/.gitkeep': ``,
+    'client/workers/.gitkeep': ``,
     'server/routes/yon.js': `export class Handler {
   static async GET() {
     return { ok: true, framework: 'Tachyon' }
@@ -162,7 +192,7 @@ FYLO_INDEX_BACKEND=local-fs
 `,
     'server/data/.gitkeep': ``,
     'server/deps/.gitkeep': ``,
-    'browser/pages/tac.html': `<div class="shell">
+    'client/pages/tac.html': `<div class="shell">
   <div class="brand">
     <strong>Tachyon</strong>
     <nav>
@@ -175,22 +205,23 @@ FYLO_INDEX_BACKEND=local-fs
   <hero />
 </div>
 `,
-    'browser/pages/tac.js': `document.title = "Tachyon App"
+    'client/pages/tac.js': `document.title = ${escapeJsString(safeAppName)}
 `,
-    'browser/pages/tac.css': `body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+    'client/pages/tac.css': `body { margin: 0; font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
 .shell { max-width: 72rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
 .brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
 .brand a { color: inherit; text-decoration: none; }
 `,
-    'browser/components/hero/tac.html': `<section class="hero">
+    'client/components/hero/tac.html': `<section class="hero">
   <h1>Build your next Bun app with Tachyon.</h1>
   <p>File-system routes, reactive Tac pages, static export, and preview tooling are already wired in.</p>
 </section>
 `,
-    'browser/components/hero/tac.css': `.hero { padding: 2rem; border-radius: 1.5rem; background: linear-gradient(135deg, #1d4ed8, #0f766e); }
+    'client/components/hero/tac.css': `.hero { padding: 2rem; border-radius: 1.5rem; background: linear-gradient(135deg, #1d4ed8, #0f766e); }
 .hero h1 { margin: 0 0 0.75rem; font-size: clamp(2rem, 6vw, 4rem); }
 .hero p { margin: 0; max-width: 42rem; line-height: 1.6; }
 `
+    };
 };
 /** @param {string} targetDir */
 async function ensureEmptyDirectory(targetDir) {
@@ -212,11 +243,14 @@ async function ensureEmptyDirectory(targetDir) {
         await mkdir(targetDir, { recursive: true });
     }
 }
-/** @param {string} targetDir */
-export async function createAppScaffold(targetDir) {
+/**
+ * @param {string} targetDir
+ * @param {{ appName?: string }} [options]
+ */
+export async function createAppScaffold(targetDir, options = {}) {
     const resolved = path.resolve(targetDir);
     await ensureEmptyDirectory(resolved);
-    for (const [relativePath, contents] of Object.entries(files)) {
+    for (const [relativePath, contents] of Object.entries(scaffoldFiles(options.appName))) {
         const outputPath = path.join(resolved, relativePath);
         await mkdir(path.dirname(outputPath), { recursive: true });
         await writeFile(outputPath, contents);

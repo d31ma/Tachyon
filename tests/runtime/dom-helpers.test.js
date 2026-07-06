@@ -18,6 +18,7 @@ beforeAll(() => {
         HTMLInputElement: globalThis.HTMLInputElement,
         HTMLTextAreaElement: globalThis.HTMLTextAreaElement,
         HTMLSelectElement: globalThis.HTMLSelectElement,
+        HTMLElement: globalThis.HTMLElement,
         SyntaxError: globalThis.SyntaxError,
     };
     Object.assign(windowInstance, {
@@ -33,6 +34,7 @@ beforeAll(() => {
         HTMLInputElement: windowInstance.HTMLInputElement,
         HTMLTextAreaElement: windowInstance.HTMLTextAreaElement,
         HTMLSelectElement: windowInstance.HTMLSelectElement,
+        HTMLElement: windowInstance.HTMLElement,
         SyntaxError,
     });
 });
@@ -41,14 +43,28 @@ afterAll(async () => {
     Object.assign(globalThis, previousGlobals);
 });
 describe('findEventTarget', () => {
-    test('finds the closest declarative event target', () => {
+    test('finds the closest declarative event target by walking up to the marker', () => {
         document.body.innerHTML = `
-          <div @click="outer()">
+          <div id="host" data-tac-on-click="">
             <button id="child"><span id="inner">Tap</span></button>
           </div>
         `;
         const target = findEventTarget(/** @type {Element} */ (document.getElementById('inner')), 'click');
-        expect(target?.getAttribute('@click')).toBe('outer()');
+        expect(target?.id).toBe('host');
+    });
+    test('finds the closest target via the compiled data-tac-on-<event> marker', () => {
+        document.body.innerHTML = `
+          <div id="host" data-tac-on-save="">
+            <w-confirm-edit><button id="inner">Save</button></w-confirm-edit>
+          </div>
+        `;
+        const target = findEventTarget(/** @type {Element} */ (document.getElementById('inner')), 'save');
+        expect(target?.id).toBe('host');
+    });
+    test('matches a Vue-style colon event via the encoded marker', () => {
+        document.body.innerHTML = `<w-data-table id="host" data-tac-on-update__selected=""></w-data-table>`;
+        const target = findEventTarget(/** @type {Element} */ (document.getElementById('host')), 'update:selected');
+        expect(target?.id).toBe('host');
     });
     test('creates DOM-compatible context for synthetic value rerenders', () => {
         const input = document.createElement('input');
@@ -110,6 +126,37 @@ describe('morphChildren', () => {
             preserveElement: (el) => el.id === 'lazy-shell'
         });
         expect(document.querySelector('#lazy-shell strong')?.textContent).toBe('Loaded content');
+    });
+    test('updates authored slots without dismantling a Light DOM web component', () => {
+        class LightCard extends HTMLElement {
+            connectedCallback() {
+                if (this.querySelector('.light-card-shell'))
+                    return;
+                const authoredContent = Array.from(this.childNodes);
+                const slot = document.createElement('slot');
+                slot.append(...authoredContent);
+                const shell = document.createElement('section');
+                shell.className = 'light-card-shell';
+                shell.append(slot);
+                this.replaceChildren(shell);
+            }
+        }
+        windowInstance.customElements.define('test-light-card', LightCard);
+        document.body.innerHTML = `
+          <div id="root">
+            <test-light-card id="card" tone="quiet">Initial label</test-light-card>
+          </div>
+        `;
+        const root = /** @type {Element} */ (document.getElementById('root'));
+        const original = document.getElementById('card');
+        morphChildren(root, parseFragment(`
+          <test-light-card id="card" tone="loud">Updated label</test-light-card>
+        `));
+        const updated = document.getElementById('card');
+        expect(updated).toBe(original);
+        expect(updated?.getAttribute('tone')).toBe('loud');
+        expect(updated?.querySelector('.light-card-shell')).not.toBeNull();
+        expect(updated?.querySelector('slot')?.textContent).toBe('Updated label');
     });
 });
 describe('routing helpers', () => {

@@ -1,0 +1,51 @@
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.docs-nav {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  background: var(--w-surface);
+}
+
+.docs-link {
+  padding: 0.45rem 0.7rem;
+  border-radius: var(--w-radius-sm);
+  color: var(--w-text-subtle);
+  text-decoration: none;
+  font-size: var(--w-font-sm);
+  white-space: nowrap;
+}
+
+.docs-link:hover {
+  background: var(--w-surface-container-low);
+  color: var(--w-text);
+}
+
+.docs-link.active {
+  background: color-mix(in srgb, var(--w-primary) 14%, transparent);
+  color: var(--w-primary);
+  font-weight: 600;
+}
+
+.docs-hint {
+  display: none;
+  margin: 1rem 0 0;
+  color: var(--w-text-very-subtle);
+  font-size: var(--w-font-xs);
+}
+
+/* Matches the wrapper page's two-column breakpoint (same .cq container). */
+@container (min-width: 900px) {
+  .docs-nav {
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .docs-hint {
+    display: block;
+  }
+}

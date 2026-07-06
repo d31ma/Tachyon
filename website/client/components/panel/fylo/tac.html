@@ -1,0 +1,26 @@
+<w-card variant="outlined" class="panel-card">
+  <w-card-item title="FYLO in your browser" subtitle="Document collections mirrored into the origin-private file system — the database that ships with the page.">
+  </w-card-item>
+  <w-card-text>
+    <div class="w-row ga-2 fylo-status">
+      <w-chip size="small" color="success">{storageBackend}</w-chip>
+      <w-chip size="small">{usageLabel}</w-chip>
+    </div>
+
+    <div class="w-row ga-2 fylo-actions">
+      <w-btn size="sm" variant="outlined" on:click="runLifecycleDemo()" :disabled="running">Run document lifecycle demo</w-btn>
+    </div>
+
+    <logic :if="steps.length > 0">
+      <ul class="fylo-collections">
+        <loop :for="step of steps">
+          <li><code>{step.op}</code> <span>{step.detail}</span></li>
+        </loop>
+      </ul>
+    </logic>
+    <logic :if="summary">
+      <p class="fylo-summary">{summary}</p>
+    </logic>
+    <p class="fylo-note">createCollection, batchPut, create, find, patch, del and dropCollection — the same document semantics Yon serves at /_fylo, with no server in sight.</p>
+  </w-card-text>
+</w-card>

@@ -32,9 +32,9 @@ let itemDataPath = '';
 /** @type {string} */
 let testDistPath = '';
 const PROJECT_ROOT = `${import.meta.dir}/../..`;
-const EXAMPLES_DIR = `${PROJECT_ROOT}/examples`;
+const WEBSITE_DIR = `${PROJECT_ROOT}/tests/fixtures/fullstack`;
 const SERVE_SCRIPT = `${PROJECT_ROOT}/src/cli/serve.js`;
-const TELEMETRY_ALERT_WORKER = `${EXAMPLES_DIR}/server/workers/telemetry-alert-worker.js`;
+const TELEMETRY_ALERT_WORKER = `${WEBSITE_DIR}/server/workers/telemetry-alert-worker.js`;
 /** @type {Set<string>} */
 const allocatedTestPorts = new Set();
 let nextEphemeralTestPort = 22_000 + Math.floor(Math.random() * 10_000);
@@ -204,7 +204,7 @@ async function waitForTelemetrySpans(requestId) {
         try {
             /** @type {Array<{ resource: Record<string, any>, scope: Record<string, any>, span: Record<string, any> }>} */
             const spans = [];
-            for await (const doc of fylo.findDocs('otel-spans', {}).collect()) {
+            for await (const doc of fylo['otel-spans'].find({}).collect()) {
                 spans.push(...extractPersistedSpans(/** @type {Record<string, any>} */ (doc)));
                 for (const traceDoc of Object.values(/** @type {Record<string, any>} */ (doc))) {
                     if (traceDoc && typeof traceDoc === 'object') {
@@ -339,7 +339,7 @@ beforeAll(async () => {
     await Bun.write(itemDataPath, '[]');
     const basicAuthHash = await Bun.password.hash(TEST_BASIC_AUTH);
     serverProcess = Bun.spawn(['bun', SERVE_SCRIPT], {
-        cwd: EXAMPLES_DIR,
+        cwd: WEBSITE_DIR,
         env: {
             ...process.env,
             YON_PORT: TEST_PORT,
@@ -384,7 +384,7 @@ afterAll(async () => {
 }, 15_000);
 const routeTestCases = [
     {
-        route: '/languages/javascript',
+        route: '/language/javascript',
         methods: [
             { method: 'GET' },
             { method: 'POST' },
@@ -392,11 +392,11 @@ const routeTestCases = [
         ],
     },
     {
-        route: '/languages/python/versions/v2',
+        route: '/language/versions/v2',
         methods: [
             { method: 'GET' },
             { method: 'DELETE' },
-            { method: 'PATCH', path: '/languages/python/versions/v2/users' },
+            { method: 'PATCH' },
         ],
     },
 ];
@@ -417,27 +417,27 @@ for (const { route, methods } of routeTestCases) {
 // ===========================================================================
 describe('Basic authentication', () => {
     test('request without auth header returns 401', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`);
+        const res = await fetch(`${BASE_URL}/language/javascript`);
         expect(res.status).toEqual(401);
         const body = await res.json();
         expect(body.detail).toBe('Unauthorized Client');
     });
     test('401 response includes WWW-Authenticate header', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`);
+        const res = await fetch(`${BASE_URL}/language/javascript`);
         expect(res.headers.get('www-authenticate')).toBe('Basic realm="Secure Area"');
     });
     test('wrong credentials return 401', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             headers: { 'Authorization': `Basic ${btoa('wrong:creds')}` },
         });
         expect(res.status).toEqual(401);
     });
     test('correct credentials return 200', async () => {
-        const res = await authFetch('/languages/javascript');
+        const res = await authFetch('/language/javascript');
         expect(res.status).toEqual(200);
     });
     test('malformed auth header returns 401', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             headers: { 'Authorization': 'Basic not-valid-base64' },
         });
         expect(res.status).toEqual(401);
@@ -448,21 +448,13 @@ describe('Basic authentication', () => {
 // ===========================================================================
 describe('Dynamic route segments', () => {
     test('dynamic :version segment resolves params', async () => {
-        const res = await authFetch('/languages/python/versions/v1');
+        const res = await authFetch('/language/versions/v1');
         expect(res.status).toEqual(200);
         const body = await res.json();
         expect(body).toBeDefined();
     });
     test('different dynamic segment values resolve', async () => {
-        const res = await authFetch('/languages/python/versions/v3');
-        expect(res.status).toEqual(200);
-    });
-    test('dynamic segment with DELETE method', async () => {
-        const res = await authFetch('/languages/python/versions/v2', { method: 'DELETE' });
-        expect(res.status).toEqual(200);
-    });
-    test('dynamic segment with PATCH and trailing path', async () => {
-        const res = await authFetch('/languages/python/versions/v1/users', { method: 'PATCH' });
+        const res = await authFetch('/language/versions/v3');
         expect(res.status).toEqual(200);
     });
 });
@@ -471,27 +463,27 @@ describe('Dynamic route segments', () => {
 // ===========================================================================
 describe('Query parameter parsing', () => {
     test('numeric query params', async () => {
-        const res = await authFetch('/languages/javascript?count=42');
+        const res = await authFetch('/language/javascript?count=42');
         expect(res.status).toEqual(200);
     });
     test('boolean query params', async () => {
-        const res = await authFetch('/languages/javascript?active=true');
+        const res = await authFetch('/language/javascript?active=true');
         expect(res.status).toEqual(200);
     });
     test('null query param', async () => {
-        const res = await authFetch('/languages/javascript?value=null');
+        const res = await authFetch('/language/javascript?value=null');
         expect(res.status).toEqual(200);
     });
     test('comma-separated values', async () => {
-        const res = await authFetch('/languages/javascript?tags=a,b,c');
+        const res = await authFetch('/language/javascript?tags=a,b,c');
         expect(res.status).toEqual(200);
     });
     test('JSON object query param', async () => {
-        const res = await authFetch(`/languages/javascript?data=${encodeURIComponent('{"key":"val"}')}`);
+        const res = await authFetch(`/language/javascript?data=${encodeURIComponent('{"key":"val"}')}`);
         expect(res.status).toEqual(200);
     });
     test('multiple query params', async () => {
-        const res = await authFetch('/languages/javascript?foo=bar&num=10&flag=false');
+        const res = await authFetch('/language/javascript?foo=bar&num=10&flag=false');
         expect(res.status).toEqual(200);
     });
 });
@@ -500,7 +492,7 @@ describe('Query parameter parsing', () => {
 // ===========================================================================
 describe('Request body parsing', () => {
     test('JSON body is parsed', async () => {
-        const res = await authFetch('/languages/javascript', {
+        const res = await authFetch('/language/javascript', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: 'hello' }),
@@ -508,7 +500,7 @@ describe('Request body parsing', () => {
         expect(res.status).toEqual(200);
     });
     test('text body is parsed as string', async () => {
-        const res = await authFetch('/languages/javascript', {
+        const res = await authFetch('/language/javascript', {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
             body: 'plain text body',
@@ -516,11 +508,11 @@ describe('Request body parsing', () => {
         expect(res.status).toEqual(200);
     });
     test('empty body is accepted', async () => {
-        const res = await authFetch('/languages/javascript', { method: 'POST' });
+        const res = await authFetch('/language/javascript', { method: 'POST' });
         expect(res.status).toEqual(200);
     });
     test('body exceeding YON_MAX_BODY_BYTES returns 413 before handler execution', async () => {
-        const res = await authFetch('/languages/javascript', {
+        const res = await authFetch('/language/javascript', {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
             body: 'x'.repeat(65),
@@ -535,12 +527,12 @@ describe('Request body parsing', () => {
 // ===========================================================================
 describe('OPTIONS route', () => {
     test('unauthenticated direct OPTIONS returns 401', async () => {
-        const res = await fetch(`${BASE_URL}/languages/typescript/items`, { method: 'OPTIONS' });
+        const res = await fetch(`${BASE_URL}/language/items`, { method: 'OPTIONS' });
         expect(res.status).toEqual(401);
     });
 
     test('authenticated direct OPTIONS returns schema JSON', async () => {
-        const res = await authFetch('/languages/typescript/items', { method: 'OPTIONS' });
+        const res = await authFetch('/language/items', { method: 'OPTIONS' });
         expect(res.status).toEqual(200);
         expect(res.headers.get('content-type')).toContain('application/schema+json');
         const body = await res.json();
@@ -549,8 +541,8 @@ describe('OPTIONS route', () => {
         expect(body).toHaveProperty('DELETE');
     });
 
-    test('authenticated OPTIONS /languages/javascript returns schema JSON', async () => {
-        const res = await authFetch('/languages/javascript', { method: 'OPTIONS' });
+    test('authenticated OPTIONS /language/javascript returns schema JSON', async () => {
+        const res = await authFetch('/language/javascript', { method: 'OPTIONS' });
         expect(res.status).toEqual(200);
         const body = await res.json();
         expect(body).toHaveProperty('GET');
@@ -558,8 +550,8 @@ describe('OPTIONS route', () => {
         expect(body).toHaveProperty('PUT');
     });
 
-    test('authenticated OPTIONS /languages/python/versions/:version returns schema JSON', async () => {
-        const res = await authFetch('/languages/python/versions/v2', { method: 'OPTIONS' });
+    test('authenticated OPTIONS /language/versions/:version returns schema JSON', async () => {
+        const res = await authFetch('/language/versions/v2', { method: 'OPTIONS' });
         expect(res.status).toEqual(200);
         const body = await res.json();
         expect(body).toHaveProperty('GET');
@@ -568,7 +560,7 @@ describe('OPTIONS route', () => {
     });
 
     test('OPTIONS schema has numeric status code keys', async () => {
-        const res = await authFetch('/languages/javascript', { method: 'OPTIONS' });
+        const res = await authFetch('/language/javascript', { method: 'OPTIONS' });
         const body = await res.json();
         expect(body.GET).toHaveProperty('200');
         expect(body.GET).toHaveProperty('500');
@@ -576,7 +568,7 @@ describe('OPTIONS route', () => {
     });
 
     test('OPTIONS preflight (CORS) returns 204 with headers, no schema body', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             method: 'OPTIONS',
             headers: {
                 Origin: 'https://app.example.com',
@@ -600,9 +592,10 @@ describe('404 Not Found', () => {
         const res = await authFetch('/nonexistent/path');
         expect(res.status).toEqual(404);
     });
-    test('unknown method on known route returns 404', async () => {
-        const res = await authFetch('/languages/javascript', { method: 'DELETE' });
-        expect(res.status).toEqual(404);
+    test('unknown method on known route is rejected by validation', async () => {
+        // YON_VALIDATE rejects methods not declared in the OPTIONS schema with 422
+        const res = await authFetch('/language/javascript', { method: 'DELETE' });
+        expect(res.status).toEqual(422);
     });
 });
 // ===========================================================================
@@ -610,17 +603,17 @@ describe('404 Not Found', () => {
 // ===========================================================================
 describe('CORS headers', () => {
     test('response includes Access-Control-Allow-Credentials header', async () => {
-        const res = await authFetch('/languages/javascript');
+        const res = await authFetch('/language/javascript');
         // YON_ALLOW_CREDENTIALS defaults to "false" when not set
         expect(res.headers.get('access-control-allow-credentials')).toBe('false');
     });
     test('401 response includes Access-Control-Allow-Credentials header', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`);
+        const res = await fetch(`${BASE_URL}/language/javascript`);
         expect(res.status).toEqual(401);
         expect(res.headers.get('access-control-allow-credentials')).toBe('false');
     });
     test('allowed cross-origin request echoes the matched origin', async () => {
-        const res = await authFetch('/languages/javascript', {
+        const res = await authFetch('/language/javascript', {
             headers: { Origin: 'https://app.example.com' },
         });
         expect(res.status).toEqual(200);
@@ -628,7 +621,7 @@ describe('CORS headers', () => {
         expect(res.headers.get('vary')).toBe('Origin');
     });
     test('same-origin request remains allowed even when not listed in YON_ALLOW_ORIGINS', async () => {
-        const res = await authFetch('/languages/javascript', {
+        const res = await authFetch('/language/javascript', {
             method: 'POST',
             headers: { Origin: BASE_URL },
         });
@@ -636,7 +629,7 @@ describe('CORS headers', () => {
         expect(res.headers.get('access-control-allow-origin')).toBe(BASE_URL);
     });
     test('disallowed cross-origin request returns 403 before handler execution', async () => {
-        const res = await authFetch('/languages/javascript', {
+        const res = await authFetch('/language/javascript', {
             headers: { Origin: 'https://evil.example.com' },
         });
         expect(res.status).toEqual(403);
@@ -645,7 +638,7 @@ describe('CORS headers', () => {
         expect(body.detail).toBe('Origin not allowed');
     });
     test('disallowed preflight request returns 403', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             method: 'OPTIONS',
             headers: {
                 Origin: 'https://evil.example.com',
@@ -662,31 +655,31 @@ describe('CORS headers', () => {
 // Response Body Content
 // ===========================================================================
 describe('Response body content', () => {
-    test('GET /languages/javascript returns a message string', async () => {
-        const res = await authFetch('/languages/javascript');
+    test('GET /language/javascript returns a message string', async () => {
+        const res = await authFetch('/language/javascript');
         const body = await res.json();
         expect(body).toHaveProperty('message');
         expect(typeof body.message).toBe('string');
     });
-    test('POST /languages/javascript returns a message field', async () => {
-        const res = await authFetch('/languages/javascript', { method: 'POST' });
+    test('POST /language/javascript returns a message field', async () => {
+        const res = await authFetch('/language/javascript', { method: 'POST' });
         const body = await res.json();
         expect(body).toHaveProperty('message');
     });
-    test('PUT /languages/javascript returns a message field', async () => {
-        const res = await authFetch('/languages/javascript', { method: 'PUT' });
+    test('PUT /language/javascript returns a message field', async () => {
+        const res = await authFetch('/language/javascript', { method: 'PUT' });
         const body = await res.json();
         expect(body).toHaveProperty('message');
     });
-    test('GET /languages/python/versions/v2 returns a message field', async () => {
-        const res = await authFetch('/languages/python/versions/v2');
+    test('GET /language/versions/v2 returns a message field', async () => {
+        const res = await authFetch('/language/versions/v2');
         const body = await res.json();
         expect(body).toHaveProperty('message');
     });
     test('handler messages vary by language', async () => {
-        const res1 = await authFetch('/languages/javascript');
+        const res1 = await authFetch('/language/javascript');
         const body1 = await res1.json();
-        const res2 = await authFetch('/languages/javascript', { method: 'POST' });
+        const res2 = await authFetch('/language/javascript', { method: 'POST' });
         const body2 = await res2.json();
         // The MVC service exposes different operations through the same route.
         expect(body1.message).not.toEqual(body2.message);
@@ -696,122 +689,35 @@ describe('Response body content', () => {
 // Polyglot Root Route Adapters
 // ===========================================================================
 describe('Polyglot root route adapters', () => {
-    test('GET /languages/python demonstrates FYLO findDocs through Python', async () => {
-        const res = await authFetch('/languages/python');
+    test('GET /language/python demonstrates FYLO findDocs through Python', async () => {
+        const res = await authFetch('/language/python');
         expect(res.status).toEqual(200);
         const body = await res.json();
         expect(body).toHaveProperty('message', 'Hello from Python!');
         expect(body.fylo.operations).toEqual(['createCollection', 'putData', 'findDocs']);
     });
-    test('GET /languages/ruby demonstrates FYLO executeSQL through Ruby', async () => {
-        const res = await authFetch('/languages/ruby');
-        expect(res.status).toEqual(200);
-        const body = await res.json();
-        expect(body).toHaveProperty('message', 'Hello from Ruby!');
-        expect(body.fylo.operations).toEqual(['createCollection', 'putData', 'executeSQL']);
-    });
-    test('GET /languages/php demonstrates FYLO batchPutData through PHP', async () => {
-        const res = await authFetch('/languages/php');
-        expect(res.status).toEqual(200);
-        const body = await res.json();
-        expect(body).toHaveProperty('message', 'Hello from PHP!');
-        expect(body.fylo.operations).toEqual(['createCollection', 'batchPutData', 'findDocs']);
-    });
-    timedTest('POST /languages/java executes the Java adapter route', { timeout: 15000 }, async () => {
-        const res = await authFetch('/languages/java', { method: 'POST' });
-        expect(res.status).toEqual(200);
-        const body = await res.json();
-        expect(body).toHaveProperty('message', 'Hello from Java!');
-        expect(body.fylo.operations).toEqual(['createCollection', 'putData', 'getLatest']);
-    });
-    timedTest('GET /languages/csharp demonstrates FYLO schemaCurrent through C#', { timeout: 60000 }, async () => {
-        if (!commandAvailable('dotnet'))
-            return;
-        const res = await authFetch('/languages/csharp');
-        expect(res.status).toEqual(200);
-        const body = await res.json();
-        expect(body).toHaveProperty('message', 'Hello from C#!');
-        expect(body.fylo.operations).toEqual(['schemaCurrent', 'schemaHistory']);
-    });
-    timedTest('GET /languages/cpp executes the C++ adapter route', { timeout: 60000 }, async () => {
-        if (!commandAvailable('clang++') && !commandAvailable('g++') && !commandAvailable('c++'))
-            return;
-        const res = await authFetch('/languages/cpp');
-        expect(res.status).toEqual(200);
-        const body = await res.json();
-        expect(body).toHaveProperty('message', 'Hello from C++!');
-        expect(body.fylo.operations).toEqual(['createCollection', 'inspectCollection', 'rebuildCollection']);
-    });
-    timedTest('GET /languages/swift executes the Swift adapter route', { timeout: 180000 }, async () => {
-        if (!commandAvailable('swiftc'))
-            return;
-        const res = await authFetch('/languages/swift');
-        expect(res.status).toEqual(200);
-        const body = await res.json();
-        expect(body).toHaveProperty('message', 'Hello from Swift!');
-        expect(body.fylo.operations).toEqual(['createCollection', 'putData', 'joinDocs']);
-    });
-    timedTest('GET /languages/kotlin executes the Kotlin adapter route', { timeout: 180000 }, async () => {
-        if (!kotlincAvailable() || !commandAvailable('java'))
-            return;
-        const res = await authFetch('/languages/kotlin');
-        expect(res.status).toEqual(200);
-        const body = await res.json();
-        expect(body).toHaveProperty('message', 'Hello from Kotlin!');
-        expect(body.fylo.operations).toEqual(['createCollection', 'batchPutData', 'patchDocs']);
-    });
-    timedTest('GET /languages/rust executes the Rust adapter route', { timeout: 60000 }, async () => {
+    timedTest('GET /language/rust executes the Rust adapter route', { timeout: 60000 }, async () => {
         if (!commandAvailable('rustc'))
             return;
-        const res = await authFetch('/languages/rust');
+        const res = await authFetch('/language/rust');
         expect(res.status).toEqual(200);
         const body = await res.json();
         expect(body).toHaveProperty('message', 'Hello from Rust!');
         expect(body.fylo.operations).toEqual(['createCollection', 'inspectCollection', 'dropCollection']);
     });
-    test('DELETE /languages/dart executes the Dart adapter route', async () => {
-        if (!commandAvailable('dart'))
-            return;
-        const res = await authFetch('/languages/dart', { method: 'DELETE' });
-        expect(res.status).toEqual(200);
-        const body = await res.json();
-        expect(body).toHaveProperty('message', 'Hello from Dart!');
-        expect(body.fylo.operations).toEqual(['createCollection', 'importBulkData']);
-    });
-    test('examples/server/routes covers every supported Yon language', async () => {
-        const HandlerAdapter = (await import('../../src/server/process/handler-adapter.js')).default;
+    test('fixture server/routes runs each language through its adapter command', async () => {
         const Pool = (await import('../../src/server/process/process-pool.js')).default;
-        const languageRoutes = new Map([
-            ['javascript', `${EXAMPLES_DIR}/server/routes/languages/javascript/yon.js`],
-            ['typescript', `${EXAMPLES_DIR}/server/routes/languages/typescript/yon.ts`],
-            ['python', `${EXAMPLES_DIR}/server/routes/languages/python/yon.py`],
-            ['ruby', `${EXAMPLES_DIR}/server/routes/languages/ruby/yon.rb`],
-            ['php', `${EXAMPLES_DIR}/server/routes/languages/php/yon.php`],
-            ['dart', `${EXAMPLES_DIR}/server/routes/languages/dart/yon.dart`],
-            ['java', `${EXAMPLES_DIR}/server/routes/languages/java/yon.java`],
-            ['csharp', `${EXAMPLES_DIR}/server/routes/languages/csharp/yon.cs`],
-            ['cpp', `${EXAMPLES_DIR}/server/routes/languages/cpp/yon.cpp`],
-            ['swift', `${EXAMPLES_DIR}/server/routes/languages/swift/yon.swift`],
-            ['kotlin', `${EXAMPLES_DIR}/server/routes/languages/kotlin/yon.kt`],
-            ['rust', `${EXAMPLES_DIR}/server/routes/languages/rust/yon.rs`],
-        ]);
-        for (const language of HandlerAdapter.supportedLanguages) {
-            const handler = languageRoutes.get(language);
-            expect(handler).toBeDefined();
-            if (!handler)
-                throw new Error(`Missing example handler for ${language}`);
+        // The multi-handler /language route (yon.js + yon.rs + yon.cpp) plus
+        // standalone JS/Python/Rust example routes demonstrate the polyglot
+        // feature; sub-routes cover items (TS), versions (Python), fylo (JS).
+        const languageRoutes = [
+            ['javascript', `${WEBSITE_DIR}/server/routes/language/javascript/yon.js`, 'yon-js-runner.js'],
+            ['python', `${WEBSITE_DIR}/server/routes/language/python/yon.py`, 'yon-python-runner.py'],
+            ['rust', `${WEBSITE_DIR}/server/routes/language/rust/yon.rs`, 'rust'],
+        ];
+        for (const [, handler, commandFragment] of languageRoutes) {
             expect(await Bun.file(handler).exists()).toBe(true);
-            expect(Pool.resolveHandlerCommand(handler).join(' ')).toContain(
-                language === 'javascript' || language === 'typescript'
-                    ? 'yon-js-runner.js'
-                    : language === 'python'
-                        ? 'yon-python-runner.py'
-                        : language === 'ruby'
-                            ? 'yon-ruby-runner.rb'
-                            : language === 'php'
-                                ? 'yon-php-runner.php'
-                                : language,
-            );
+            expect(Pool.resolveHandlerCommand(handler).join(' ')).toContain(commandFragment);
         }
     });
 });
@@ -823,8 +729,8 @@ describe('FYLO machine-interface demo route', () => {
         'schemaInspect', 'schemaCurrent', 'schemaHistory', 'schemaDoctor', 'schemaValidate',
         'schemaMaterialize',
     ];
-    timedTest('POST /languages/javascript/fylo drives the full FYLO machine-interface suite', { timeout: 60000 }, async () => {
-        const res = await authFetch('/languages/javascript/fylo', { method: 'POST' });
+    timedTest('POST /language/fylo drives the full FYLO machine-interface suite', { timeout: 60000 }, async () => {
+        const res = await authFetch('/language/fylo', { method: 'POST' });
         expect(res.status).toEqual(200);
         const body = await res.json();
         expect(body.operations).toEqual(expect.arrayContaining(machineOperations));
@@ -836,7 +742,7 @@ describe('FYLO machine-interface demo route', () => {
 // ===========================================================================
 describe('HTML route serving', () => {
     test('Accept text/html on API routes still returns the handler response', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             headers: authHeaders({ 'Accept': 'text/html' }),
         });
         expect(res.status).toEqual(200);
@@ -845,14 +751,14 @@ describe('HTML route serving', () => {
         expect(body).toContain('Hello from Yon on Bun!');
     });
     test('Accept text/html on versioned API routes still returns the handler response', async () => {
-        const res = await fetch(`${BASE_URL}/languages/python/versions/v2`, {
+        const res = await fetch(`${BASE_URL}/language/versions/v2`, {
             headers: authHeaders({ 'Accept': 'text/html' }),
         });
         expect(res.status).toEqual(200);
         expect(res.headers.get('content-type')).toContain('application/json');
     });
     test('Accept text/html still requires basic auth', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             headers: { 'Accept': 'text/html' },
         });
         expect(res.status).toEqual(401);
@@ -870,7 +776,7 @@ describe('HTML route serving', () => {
         expect(body).toContain('/spa-renderer.js');
     });
     test('navigation-style headers do not turn API routes into pages', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             headers: authHeaders({
                 'Sec-Fetch-Dest': 'document',
                 'Sec-Fetch-Mode': 'navigate',
@@ -882,7 +788,7 @@ describe('HTML route serving', () => {
         expect(body).toContain('Hello from Yon on Bun!');
     });
     test('without document headers returns non-HTML for API routes', async () => {
-        const res = await authFetch('/languages/javascript');
+        const res = await authFetch('/language/javascript');
         expect(res.headers.get('content-type')).not.toContain('text/html');
         await res.text();
     });
@@ -899,8 +805,8 @@ describe('Embedded routes manifest', () => {
         const res = await fetch(`${BASE_URL}/spa-renderer.js`);
         const body = await res.text();
         expect(body).toContain('"/"');
-        expect(body).not.toContain('/languages/javascript');
-        expect(body).not.toContain('/languages/python/versions/:version');
+        expect(body).not.toContain('/language/javascript');
+        expect(body).not.toContain('/language/versions/:version');
     });
 });
 // ===========================================================================
@@ -913,11 +819,11 @@ describe('OpenAPI docs', () => {
         expect(res.headers.get('content-type')).toContain('application/json');
         const body = await res.json();
         expect(body.openapi).toBe('3.1.0');
-        expect(body.paths).toHaveProperty('/languages/javascript');
-        expect(body.paths).toHaveProperty('/languages/python/versions/{version}');
+        expect(body.paths).toHaveProperty('/language/javascript');
+        expect(body.paths).toHaveProperty('/language/versions/{version}');
         expect(body.paths).toHaveProperty('/health');
-        expect(body.info.version).toBe('release');
-        expect(body.paths['/languages/typescript/items'].post.responses).toHaveProperty('204');
+        expect(body.info.version).toBe('26.23.01');
+        expect(body.paths['/language/items'].post.responses).toHaveProperty('204');
     });
 
     test('GET /api-docs returns the Tachyon-native docs shell', async () => {
@@ -950,7 +856,7 @@ describe('Telemetry and browser env', () => {
         const requestId = `otel-${crypto.randomUUID()}`;
         const traceId = '0123456789abcdef0123456789abcdef';
         const parentSpanId = '1111111111111111';
-        const res = await authFetch('/languages/javascript', {
+        const res = await authFetch('/language/javascript', {
             headers: {
                 'X-Request-Id': requestId,
                 'traceparent': `00-${traceId}-${parentSpanId}-01`,
@@ -963,8 +869,8 @@ describe('Telemetry and browser env', () => {
         const spans = await waitForTelemetrySpans(requestId);
         expect(spans.length).toBeGreaterThanOrEqual(2);
 
-        const requestSpan = spans.find((entry) => getAttribute(entry.span, 'http.route') === '/languages/javascript');
-        const handlerSpan = spans.find((entry) => normalizeTelemetryPath(getAttribute(entry.span, 'code.file.path')).includes('/examples/server/routes/languages/javascript/yon.js'));
+        const requestSpan = spans.find((entry) => getAttribute(entry.span, 'http.route') === '/language/javascript');
+        const handlerSpan = spans.find((entry) => normalizeTelemetryPath(getAttribute(entry.span, 'code.file.path')).includes('/fixtures/fullstack/server/routes/language/javascript/yon.js'));
 
         expect(requestSpan).toBeDefined();
         expect(handlerSpan).toBeDefined();
@@ -974,7 +880,7 @@ describe('Telemetry and browser env', () => {
         expect(requestSpan?.span.startTimeUnixNano).toMatch(/^\d+$/);
         expect(requestSpan?.span.endTimeUnixNano).toMatch(/^\d+$/);
         expect(getAttribute(requestSpan?.span ?? {}, 'http.request.method')).toBe('GET');
-        expect(getAttribute(requestSpan?.span ?? {}, 'http.route')).toBe('/languages/javascript');
+        expect(getAttribute(requestSpan?.span ?? {}, 'http.route')).toBe('/language/javascript');
         expect(getAttribute(requestSpan?.span ?? {}, 'http.response.status_code')).toBe(200);
         expect(getAttribute(requestSpan?.span ?? {}, 'tachyon.request.id')).toBe(requestId);
         expect(requestSpan?.span.status?.code).toBe(1);
@@ -984,18 +890,18 @@ describe('Telemetry and browser env', () => {
         expect(handlerSpan?.span.traceId).toBe(traceId);
         expect(handlerSpan?.span.parentSpanId).toBe(requestSpan?.span.spanId);
         expect(normalizeTelemetryPath(getAttribute(handlerSpan?.span ?? {}, 'code.file.path'))).toContain(
-            '/examples/server/routes/languages/javascript/yon.js'
+            '/fixtures/fullstack/server/routes/language/javascript/yon.js'
         );
     });
 
     test('telemetry example route reads OTLP JSON from Fylo and returns a monitoring summary', async () => {
-        await authFetch('/languages/javascript', {
+        await authFetch('/language/javascript', {
             headers: {
                 'X-Request-Id': `otel-example-${crypto.randomUUID()}`,
             },
         });
 
-        const res = await authFetch('/languages/javascript/telemetry?limit=5');
+        const res = await authFetch('/language/telemetry?limit=5');
         expect(res.status).toBe(200);
         const body = await res.json();
         expect(body.summary.enabled).toBe(true);
@@ -1004,21 +910,21 @@ describe('Telemetry and browser env', () => {
         expect(body.summary.requestCount).toBeGreaterThanOrEqual(1);
         expect(Array.isArray(body.recent)).toBe(true);
         expect(body.recent.length).toBeGreaterThan(0);
-        expect(body.recent.some((/** @type {any} */ entry) => entry.name === 'GET /languages/javascript')).toBe(true);
+        expect(body.recent.some((/** @type {any} */ entry) => entry.name === 'GET /language/javascript')).toBe(true);
     });
 
     test('telemetry alert worker flags slow routes from the telemetry endpoint', async () => {
-        await authFetch('/languages/javascript', {
+        await authFetch('/language/javascript', {
             headers: {
                 'X-Request-Id': `otel-worker-${crypto.randomUUID()}`,
             },
         });
 
         const proc = Bun.spawn(['bun', TELEMETRY_ALERT_WORKER], {
-            cwd: EXAMPLES_DIR,
+            cwd: WEBSITE_DIR,
             env: {
                 ...process.env,
-                YON_TELEMETRY_URL: `${BASE_URL}/languages/javascript/telemetry?limit=10`,
+                YON_TELEMETRY_URL: `${BASE_URL}/language/telemetry?limit=10`,
                 YON_BASIC_AUTH_HEADER: AUTH_HEADER,
                 YON_ALERT_SLOW_MS: '1',
                 YON_ALERT_STATUS_CODE: '500',
@@ -1058,7 +964,7 @@ describe('Telemetry and browser env', () => {
         expect(scriptRes.status).toBe(200);
         expect(scriptRes.headers.get('content-type')).toContain('javascript');
         const script = await scriptRes.text();
-        expect(script).toContain('window.__ty_public_env__');
+        expect(script).toContain('window.__tc_public_env__');
         expect(script).toContain('PUBLIC_API_BASE_URL');
         expect(script).toContain('https://api.example.com');
         expect(script).not.toContain('PRIVATE_BROWSER_SECRET');
@@ -1066,14 +972,14 @@ describe('Telemetry and browser env', () => {
     });
 });
 // ===========================================================================
-// Embedded Layouts Manifest
+// Embedded Wrapper-Page Manifest
 // ===========================================================================
-describe('Embedded layouts manifest', () => {
+describe('Embedded wrapper-page manifest', () => {
     test('GET /shells.json is no longer emitted', async () => {
         const res = await fetch(`${BASE_URL}/shells.json`);
         expect(res.status).toEqual(404);
     });
-    test('/spa-renderer.js contains the embedded layout manifest placeholder replacement', async () => {
+    test('/spa-renderer.js contains the embedded wrapper-page manifest placeholder replacement', async () => {
         const res = await fetch(`${BASE_URL}/spa-renderer.js`);
         const body = await res.text();
         expect(body).not.toContain('__tachyonShellPlaceholder');
@@ -1095,7 +1001,7 @@ describe('Static assets', () => {
         expect(res.headers.get('content-type')).toContain('javascript');
         expect(res.headers.get('cache-control')).toBe('no-cache, must-revalidate');
         const body = await res.text();
-        expect(body).toContain('window.__ty_public_env__');
+        expect(body).toContain('window.__tc_public_env__');
     });
 });
 // ===========================================================================
@@ -1122,7 +1028,7 @@ describe('Health endpoints', () => {
 // ===========================================================================
 describe('Cache headers', () => {
     test('API route responses are not cacheable', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             headers: authHeaders({ Accept: 'text/html' }),
         });
         expect(res.status).toBe(200);
@@ -1138,13 +1044,13 @@ describe('Cache headers', () => {
 // Component Bundling
 // ===========================================================================
 describe('Component bundling', () => {
-    test('GET /components/clicker/tac.js returns JavaScript', async () => {
-        const res = await fetch(`${BASE_URL}/components/clicker/tac.js`);
+    test('GET /components/panel/polyglot/tac.js returns JavaScript', async () => {
+        const res = await fetch(`${BASE_URL}/components/panel/polyglot/tac.js`);
         expect(res.status).toEqual(200);
         expect(res.headers.get('content-type')).toContain('javascript');
     });
-    test('GET /components/clicker/ui/tac.js returns JavaScript for nested components', async () => {
-        const res = await fetch(`${BASE_URL}/components/clicker/ui/tac.js`);
+    test('GET /components/panel/desktop/tac.js returns JavaScript for nested components', async () => {
+        const res = await fetch(`${BASE_URL}/components/panel/desktop/tac.js`);
         expect(res.status).toEqual(200);
         expect(res.headers.get('content-type')).toContain('javascript');
     });
@@ -1183,18 +1089,12 @@ describe('Client-side scripts', () => {
 // NPM Module Bundling
 // ===========================================================================
 describe('NPM module bundling', () => {
-    test('GET /modules/dayjs.js returns bundled JavaScript', async () => {
-        const res = await fetch(`${BASE_URL}/modules/dayjs.js`);
-        expect(res.status).toEqual(200);
-        expect(res.headers.get('content-type')).toContain('javascript');
+    test('GET /shared/modules/dayjs.js returns 404 when not imported by the current site', async () => {
+        const res = await fetch(`${BASE_URL}/shared/modules/dayjs.js`);
+        expect(res.status).toEqual(404);
     });
-    test('GET /modules/dayjs.js contains executable module code', async () => {
-        const res = await fetch(`${BASE_URL}/modules/dayjs.js`);
-        const body = await res.text();
-        expect(body.length).toBeGreaterThan(100);
-    });
-    test('GET /modules/nonexistent.js returns 404', async () => {
-        const res = await fetch(`${BASE_URL}/modules/nonexistent.js`);
+    test('GET /shared/modules/nonexistent.js returns 404', async () => {
+        const res = await fetch(`${BASE_URL}/shared/modules/nonexistent.js`);
         expect(res.status).toEqual(404);
     });
 });
@@ -1226,7 +1126,7 @@ describe('SSE streaming', () => {
         const controller = new AbortController();
         setTimeout(() => controller.abort(), 500);
         try {
-            const res = await fetch(`${BASE_URL}/languages/javascript`, {
+            const res = await fetch(`${BASE_URL}/language/javascript`, {
                 headers: authHeaders({ 'Accept': 'text/event-stream' }),
                 signal: controller.signal,
             });
@@ -1298,7 +1198,7 @@ describe('Yon realtime example', () => {
 // ===========================================================================
 describe('Request headers forwarding', () => {
     test('custom headers are forwarded to handler', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             headers: authHeaders({ 'X-Custom-Header': 'test-value' }),
         });
         expect(res.status).toEqual(200);
@@ -1322,36 +1222,36 @@ describe('Route validation', () => {
     });
 });
 // ===========================================================================
-// Status Code Routing — /languages/typescript/items example
+// Status Code Routing — /language/items example
 // ===========================================================================
-describe('Status code routing (/languages/typescript/items)', () => {
-    test('GET /languages/typescript/items returns 200 with items array', async () => {
-        const res = await authFetch('/languages/typescript/items');
+describe('Status code routing (/language/items)', () => {
+    test('GET /language/items returns 200 with items array', async () => {
+        const res = await authFetch('/language/items');
         expect(res.status).toEqual(200);
         const body = await res.json();
         expect(body).toHaveProperty('items');
         expect(Array.isArray(body.items)).toBe(true);
     });
-    test('GET /languages/typescript/items/:id retrieves an existing item and returns 404 for a missing item', async () => {
+    test('GET /language/items/:id retrieves an existing item and returns 404 for a missing item', async () => {
         const id = itemTestId();
-        await authFetch('/languages/typescript/items', {
+        await authFetch('/language/items', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, name: 'retrievable' }),
         });
 
-        const found = await authFetch(`/languages/typescript/items/${id}`);
+        const found = await authFetch(`/language/items/${id}`);
         expect(found.status).toEqual(200);
         const body = await found.json();
         expect(body.id).toBe(id);
 
-        const missing = await authFetch('/languages/typescript/items/not-found-item');
+        const missing = await authFetch('/language/items/not-found-item');
         expect(missing.status).toEqual(404);
         expect(await missing.json()).toEqual({ detail: 'item not found' });
     });
-    test('POST /languages/typescript/items creates an item and returns 201 with the created item', async () => {
+    test('POST /language/items creates an item and returns 201 with the created item', async () => {
         const id = itemTestId();
-        const res = await authFetch('/languages/typescript/items', {
+        const res = await authFetch('/language/items', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, name: 'sprocket' }),
@@ -1363,8 +1263,8 @@ describe('Status code routing (/languages/typescript/items)', () => {
         expect(body).toHaveProperty('source');
         expect(body).toHaveProperty('createdAt');
     });
-    test('POST /languages/typescript/items with missing name returns 400', async () => {
-        const res = await authFetch('/languages/typescript/items', {
+    test('POST /language/items with missing name returns 400', async () => {
+        const res = await authFetch('/language/items', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({}),
@@ -1373,15 +1273,15 @@ describe('Status code routing (/languages/typescript/items)', () => {
         const body = await res.json();
         expect(body).toHaveProperty('detail');
     });
-    test('PUT /languages/typescript/items/:id replaces an existing item', async () => {
+    test('PUT /language/items/:id replaces an existing item', async () => {
         const id = itemTestId();
-        await authFetch('/languages/typescript/items', {
+        await authFetch('/language/items', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, name: 'original' }),
         });
 
-        const res = await authFetch(`/languages/typescript/items/${id}`, {
+        const res = await authFetch(`/language/items/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: 'replacement' }),
@@ -1391,22 +1291,22 @@ describe('Status code routing (/languages/typescript/items)', () => {
         expect(body.id).toBe(id);
         expect(body.name).toBe('replacement');
 
-        const missing = await authFetch('/languages/typescript/items/not-found-item', {
+        const missing = await authFetch('/language/items/not-found-item', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: 'replacement' }),
         });
         expect(missing.status).toEqual(404);
     });
-    test('PATCH /languages/typescript/items/:id updates specific fields only', async () => {
+    test('PATCH /language/items/:id updates specific fields only', async () => {
         const id = itemTestId();
-        await authFetch('/languages/typescript/items', {
+        await authFetch('/language/items', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, name: 'before', source: 'api' }),
         });
 
-        const res = await authFetch(`/languages/typescript/items/${id}`, {
+        const res = await authFetch(`/language/items/${id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: 'after' }),
@@ -1417,33 +1317,33 @@ describe('Status code routing (/languages/typescript/items)', () => {
         expect(body.name).toBe('after');
         expect(body.source).toBe('api');
     });
-    test('DELETE /languages/typescript/items/:id deletes a resource and returns 200 with deletion metadata', async () => {
+    test('DELETE /language/items/:id deletes a resource and returns 200 with deletion metadata', async () => {
         const id = itemTestId();
-        await authFetch('/languages/typescript/items', {
+        await authFetch('/language/items', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, name: 'trash' }),
         });
 
-        const res = await authFetch(`/languages/typescript/items/${id}`, { method: 'DELETE' });
+        const res = await authFetch(`/language/items/${id}`, { method: 'DELETE' });
         expect(res.status).toEqual(200);
         const body = await res.json();
         expect(body.id).toBe(id);
         expect(body).toHaveProperty('deletedAt');
 
-        const missing = await authFetch(`/languages/typescript/items/${id}`);
+        const missing = await authFetch(`/language/items/${id}`);
         expect(missing.status).toEqual(404);
     });
 
-    test('GET /languages/typescript/items/gone-item returns 410 Gone', async () => {
-        const missing = await authFetch('/languages/typescript/items/gone-item');
+    test('GET /language/items/gone-item returns 410 Gone', async () => {
+        const missing = await authFetch('/language/items/gone-item');
         expect(missing.status).toEqual(410);
         const body = await missing.json();
         expect(body).toEqual({ detail: 'item was deleted' });
     });
 
-    test('POST /languages/typescript/items?simulate=error returns 500', async () => {
-        const res = await authFetch('/languages/typescript/items?simulate=error', {
+    test('POST /language/items?simulate=error returns 500', async () => {
+        const res = await authFetch('/language/items?simulate=error', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: 'will-fail' }),
@@ -1467,19 +1367,19 @@ describe('Validate.matchStatusCode', () => {
     }
     test('returns matching status code when body fits schema', async () => {
         const { Router, Validate } = await setup();
-        Router.routeConfigs['/languages/typescript/items'] = { POST: { '201': { id: '^.+$', name: '^.+$' } } };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/yon.ts`;
+        Router.routeConfigs['/language/items'] = { POST: { '201': { id: '^.+$', name: '^.+$' } } };
+        const handler = `${FAKE_ROUTES_PATH}/language/items/yon.ts`;
         expect(await Validate.matchStatusCode(handler, 'POST', JSON.stringify({ id: 'abc', name: 'widget' }))).toBe(201);
     });
     test('returns first schema match in ascending order', async () => {
         const { Router, Validate } = await setup();
-        Router.routeConfigs['/languages/typescript/items'] = {
+        Router.routeConfigs['/language/items'] = {
             POST: {
                 '200': { message: '^.+$' },
                 '201': { id: '^.+$' },
             }
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/yon.ts`;
+        const handler = `${FAKE_ROUTES_PATH}/language/items/yon.ts`;
         // body matches 200 schema first
         expect(await Validate.matchStatusCode(handler, 'POST', JSON.stringify({ message: 'ok' }))).toBe(200);
     });
@@ -1509,7 +1409,7 @@ describe('Validate.matchStatusCode', () => {
     });
     test('validates OPTIONS request body schemas with CHEX regex patterns', async () => {
         const { Router, Validate } = await setup();
-        Router.routeConfigs['/languages/typescript/items'] = {
+        Router.routeConfigs['/language/items'] = {
             POST: {
                 request: {
                     body: {
@@ -1520,7 +1420,7 @@ describe('Validate.matchStatusCode', () => {
                 '201': { ok: '^(?:true|false)$' },
             },
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/yon.ts`;
+        const handler = `${FAKE_ROUTES_PATH}/language/items/yon.ts`;
         await expect(Validate.validateData(handler, 'POST', 'req', {
             headers: { accept: 'application/json' },
             body: { name: 'widget-box', count: 2 },
@@ -1567,7 +1467,7 @@ describe('Validate.matchStatusCode', () => {
     });
     test('validates OPTIONS response schemas with CHEX regex semantics only', async () => {
         const { Router, Validate } = await setup();
-        Router.routeConfigs['/languages/typescript/items'] = {
+        Router.routeConfigs['/language/items'] = {
             GET: {
                 response: {
                     '200': {
@@ -1577,7 +1477,7 @@ describe('Validate.matchStatusCode', () => {
                 },
             },
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/yon.ts`;
+        const handler = `${FAKE_ROUTES_PATH}/language/items/yon.ts`;
         await expect(Validate.validateData(handler, 'GET', '200', JSON.stringify({
             id: 'one',
             count: 1,
@@ -1593,7 +1493,7 @@ describe('Validate.matchStatusCode', () => {
     });
     test('does not treat OPTIONS string leaves as Tachyon type shorthands', async () => {
         const { Router, Validate } = await setup();
-        Router.routeConfigs['/languages/typescript/items'] = {
+        Router.routeConfigs['/language/items'] = {
             POST: {
                 request: {
                     body: {
@@ -1602,7 +1502,7 @@ describe('Validate.matchStatusCode', () => {
                 },
             },
         };
-        const handler = `${FAKE_ROUTES_PATH}/languages/typescript/items/yon.ts`;
+        const handler = `${FAKE_ROUTES_PATH}/language/items/yon.ts`;
         await expect(Validate.validateData(handler, 'POST', 'req', {
             body: { count: 2 },
         })).rejects.toThrow('RegEx pattern fails');
@@ -1652,27 +1552,27 @@ describe('Router.parseParams', () => {
 // ===========================================================================
 describe('Security headers', () => {
     test('response includes X-Frame-Options: DENY', async () => {
-        const res = await authFetch('/languages/javascript');
+        const res = await authFetch('/language/javascript');
         expect(res.headers.get('x-frame-options')).toBe('DENY');
     });
     test('response includes X-Content-Type-Options: nosniff', async () => {
-        const res = await authFetch('/languages/javascript');
+        const res = await authFetch('/language/javascript');
         expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     });
     test('plain local HTTP responses do not include Strict-Transport-Security by default', async () => {
-        const res = await authFetch('/languages/javascript');
+        const res = await authFetch('/language/javascript');
         expect(res.headers.get('strict-transport-security')).toBeNull();
     });
     test('response includes Content-Security-Policy header', async () => {
-        const res = await authFetch('/languages/javascript');
+        const res = await authFetch('/language/javascript');
         expect(res.headers.get('content-security-policy')).not.toBeNull();
     });
     test('response includes Referrer-Policy header', async () => {
-        const res = await authFetch('/languages/javascript');
+        const res = await authFetch('/language/javascript');
         expect(res.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
     });
     test('401 response also carries security headers', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`);
+        const res = await fetch(`${BASE_URL}/language/javascript`);
         expect(res.status).toBe(401);
         expect(res.headers.get('x-frame-options')).toBe('DENY');
         expect(res.headers.get('x-content-type-options')).toBe('nosniff');
@@ -1799,7 +1699,7 @@ describe('JWT decoding', () => {
     }
     test('expired JWT (exp in the past) is rejected — context.bearer is undefined', async () => {
         const expiredToken = makeJWT({ sub: '1', exp: Math.floor(Date.now() / 1000) - 60 });
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             headers: {
                 ...authHeaders(),
                 'Authorization': AUTH_HEADER,
@@ -1812,14 +1712,14 @@ describe('JWT decoding', () => {
     });
     test('valid JWT (exp in the future) is accepted', async () => {
         const validToken = makeJWT({ sub: '1', exp: Math.floor(Date.now() / 1000) + 3600 });
-        const res = await authFetch('/languages/javascript', {
+        const res = await authFetch('/language/javascript', {
             headers: { 'Authorization': `Bearer ${validToken}` },
         });
         // Bearer auth without YON_BASIC_AUTH matching returns 401; server should not crash
         expect([200, 401]).toContain(res.status);
     });
     test('malformed JWT does not crash the server', async () => {
-        const res = await fetch(`${BASE_URL}/languages/javascript`, {
+        const res = await fetch(`${BASE_URL}/language/javascript`, {
             headers: { 'Authorization': 'Bearer not.a.valid.jwt.at.all' },
         });
         expect([200, 401, 500]).toContain(res.status);
@@ -1832,12 +1732,12 @@ describe('JWT decoding', () => {
 describe('Parameter length limits', () => {
     test('query param exceeding YON_MAX_PARAM_LENGTH returns 400', async () => {
         const long = 'a'.repeat(1001);
-        const res = await authFetch(`/languages/javascript?overflow=${long}`);
+        const res = await authFetch(`/language/javascript?overflow=${long}`);
         expect(res.status).toBe(400);
     });
     test('query param at YON_MAX_PARAM_LENGTH (1000 chars) is accepted', async () => {
         const boundary = 'a'.repeat(1000);
-        const res = await authFetch(`/languages/javascript?value=${boundary}`);
+        const res = await authFetch(`/language/javascript?value=${boundary}`);
         expect(res.status).toBe(200);
     });
 });
@@ -1847,24 +1747,10 @@ describe('Parameter length limits', () => {
 describe('Status code endpoint', () => {
     /** @type {Array<[string, string, number]>} */
     const cases = [
-        ['GET', 'javascript', 200], ['GET', 'javascript', 201], ['GET', 'javascript', 202], ['GET', 'javascript', 203],
-        ['GET', 'javascript', 205], ['GET', 'javascript', 206],
-        ['GET', 'typescript', 207], ['GET', 'typescript', 208], ['GET', 'typescript', 226],
-        ['GET', 'typescript', 300], ['GET', 'typescript', 301], ['GET', 'typescript', 302],
-        ['GET', 'python', 303], ['GET', 'python', 304], ['GET', 'python', 305], ['GET', 'python', 307],
-        ['GET', 'python', 308], ['GET', 'python', 400],
-        ['GET', 'ruby', 401], ['GET', 'ruby', 402], ['GET', 'ruby', 403], ['GET', 'ruby', 404], ['GET', 'ruby', 405],
-        ['GET', 'php', 406], ['GET', 'php', 407], ['GET', 'php', 408], ['GET', 'php', 409], ['GET', 'php', 410],
-        ['POST', 'java', 416], ['POST', 'java', 417], ['POST', 'java', 418], ['POST', 'java', 421], ['POST', 'java', 422],
-        ['GET', 'csharp', 423], ['GET', 'csharp', 424], ['GET', 'csharp', 425], ['GET', 'csharp', 426], ['GET', 'csharp', 428],
-        ['DELETE', 'dart', 429], ['DELETE', 'dart', 431], ['DELETE', 'dart', 451], ['DELETE', 'dart', 500], ['DELETE', 'dart', 501],
-        ['GET', 'cpp', 502], ['GET', 'cpp', 503], ['GET', 'cpp', 504], ['GET', 'cpp', 505], ['GET', 'cpp', 506],
-        ['GET', 'swift', 507], ['GET', 'swift', 508], ['GET', 'swift', 510], ['GET', 'swift', 511],
-        ['GET', 'rust', 512], ['GET', 'rust', 513], ['GET', 'rust', 514], ['GET', 'rust', 515],
-        // Kotlin's compiler is slow in dev (recompile per request), so the matrix
-        // exercises a single representative status to keep the suite responsive;
-        // the dedicated execution test covers the full Kotlin round-trip.
-        ['GET', 'kotlin', 411],
+        ['GET', 'javascript', 200], ['GET', 'javascript', 201],
+        ['GET', 'javascript', 202], ['GET', 'javascript', 205],
+        ['GET', 'python', 200],
+        ['GET', 'rust', 200],
     ];
 
     // Per-language runtime dependency. Skip cases whose runtime is missing
@@ -1873,16 +1759,7 @@ describe('Status code endpoint', () => {
     /** @type {Record<string, string>} */
     const requiredCommands = {
         javascript: 'bun',
-        typescript: 'bun',
         python: 'python3',
-        ruby: 'ruby',
-        php: 'php',
-        java: 'javac',
-        csharp: 'dotnet',
-        dart: 'dart',
-        cpp: 'clang++',
-        swift: 'swiftc',
-        kotlin: 'kotlinc',
         rust: 'rustc',
     };
 
@@ -1895,10 +1772,10 @@ describe('Status code endpoint', () => {
                     ? kotlincAvailable() && commandAvailable('java')
                     : !required || commandAvailable(required);
             if (!hasRuntime) {
-                console.warn(`[status-code-endpoint] Skipping ${method} /languages/${language}?code=${code}: '${required}' not available`);
+                console.warn(`[status-code-endpoint] Skipping ${method} /language/${language}?code=${code}: '${required}' not available`);
                 continue;
             }
-            const res = await authFetch(`/languages/${language}?code=${code}`, { method });
+            const res = await authFetch(`/language/${language}?code=${code}`, { method });
             expect(res.status).toEqual(code);
         }
     });
@@ -1933,7 +1810,7 @@ describe('FYLO_SCHEMA schema loading', () => {
             const fylo = new Fylo(root);
             await fylo.ready();
 
-            const inspect = await fylo.inspectCollection(collection);
+            const inspect = await fylo[collection].inspect();
             expect(inspect.exists).toBe(true);
             expect(inspect.collection).toBe(collection);
             expect(inspect.docsStored).toBe(0);
@@ -1947,7 +1824,7 @@ describe('FYLO_SCHEMA schema loading', () => {
     });
 
     test('loadCollectionSchema loads versioned schemas from FYLO_SCHEMA directory', async () => {
-        const schemasDir = path.join(EXAMPLES_DIR, 'db', 'schemas');
+        const schemasDir = path.join(WEBSITE_DIR, 'db', 'schemas');
         process.env.FYLO_SCHEMA = schemasDir;
         const { loadCollectionSchema } = await import('../../src/server/fylo-browser/fylo-browser.js');
 
@@ -1971,7 +1848,7 @@ describe('FYLO_SCHEMA schema loading', () => {
 
     test('loadCollectionSchema falls back to FYLO_SCHEMA_DIR', async () => {
         delete process.env.FYLO_SCHEMA;
-        const schemasDir = path.join(EXAMPLES_DIR, 'db', 'schemas');
+        const schemasDir = path.join(WEBSITE_DIR, 'db', 'schemas');
         process.env.FYLO_SCHEMA_DIR = schemasDir;
         const { loadCollectionSchema } = await import('../../src/server/fylo-browser/fylo-browser.js');
 

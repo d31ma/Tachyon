@@ -324,7 +324,7 @@ export default class FyloBrowser extends Tac {
                 <div class="fylo-collection"
                      aria-selected="${this.selectedCollection === c.name ? "true" : "false"}"
                      role="button" tabindex="0"
-                     @click="selectCollection('${c.name}')">
+                     on:click="selectCollection('${c.name}')">
                     <span class="fylo-collection-name md-typescale-title-medium">${c.name}</span>
                     <span class="fylo-collection-meta">
                         ${typeof c.docsStored === "number" ? `<span class="pill">${c.docsStored} docs</span>` : ""}
@@ -354,7 +354,7 @@ export default class FyloBrowser extends Tac {
                             <tr class="fylo-doc-row"
                                 aria-selected="${this.selectedDocId === d.id ? "true" : "false"}"
                                 role="button" tabindex="0"
-                                @click="selectDocument('${this.selectedCollection}', '${d.id}')">
+                                on:click="selectDocument('${this.selectedCollection}', '${d.id}')">
                                 <td class="id">${d.id}</td>
                                 <td class="preview">${this.previewOf(d.doc)}</td>
                             </tr>`).join("")}
@@ -374,7 +374,7 @@ export default class FyloBrowser extends Tac {
             : this.detailError
                 ? `<div class="fylo-error">${this.detailError}</div>`
                 : this.encryptionBannerText()
-                    ? `<div class="fylo-encryption-banner ${this.revealed || this.sessionRevealed ? "fylo-encryption-banner-revealed" : ""}">${this.encryptionBannerText()}${!this.revealed && !this.sessionRevealed ? `<div class="fylo-reveal-ui"><input class="field-control" type="password" placeholder="Reveal key" @input="revealKey = event.target.value" value="${this.revealKey ?? ""}" /> <button type="button" class="button button-primary" @click="revealFields(revealKey)">Reveal</button></div>` : ""}</div>`
+                    ? `<div class="fylo-encryption-banner ${this.revealed || this.sessionRevealed ? "fylo-encryption-banner-revealed" : ""}">${this.encryptionBannerText()}${!this.revealed && !this.sessionRevealed ? `<div class="fylo-reveal-ui"><input class="field-control" type="password" placeholder="Reveal key" on:input="revealKey = event.target.value" value="${this.revealKey ?? ""}" /> <button type="button" class="button button-primary" on:click="revealFields(revealKey)">Reveal</button></div>` : ""}</div>`
                     : ""}
             ${this.selectedDocId !== null && !this.detailLoading ? `
                 <h3 class="fylo-detail-heading">Document</h3>
@@ -397,11 +397,11 @@ export default class FyloBrowser extends Tac {
                 type="text"
                 aria-label="PostgREST query"
                 placeholder="role=eq.admin&amp;order=name.asc"
-                @input="querySource = event.target.value"
+                on:input="querySource = event.target.value"
                 value="${this.querySource}"
             />
             <div class="fylo-query-actions">
-                <button type="button" class="button button-primary" @click="runQuery">Run</button>
+                <button type="button" class="button button-primary" on:click="runQuery">Run</button>
             </div>
         </div>
         <div class="fylo-query-results">
@@ -421,8 +421,8 @@ export default class FyloBrowser extends Tac {
             <span class="chip">${this.eventsStatus}</span>
         </div>
         <div class="fylo-events-actions">
-            <button type="button" class="button button-text" @click="toggleEventsTail">${this.eventsTimer ? "Stop tail" : "Start tail"}</button>
-            <button type="button" class="button button-text" @click="clearEvents">Clear</button>
+            <button type="button" class="button button-text" on:click="toggleEventsTail">${this.eventsTimer ? "Stop tail" : "Start tail"}</button>
+            <button type="button" class="button button-text" on:click="clearEvents">Clear</button>
         </div>
         <ul class="fylo-events">
             ${this.events.length === 0

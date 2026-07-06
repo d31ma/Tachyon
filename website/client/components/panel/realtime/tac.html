@@ -1,0 +1,45 @@
+<w-card variant="outlined" class="panel-card panel-wide">
+  <w-card-item title="Realtime between tabs" subtitle="BroadcastChannel delivers messages to every open tab instantly, while the FYLO OPFS mirror keeps a durable history that new tabs replay.">
+  </w-card-item>
+  <w-card-text>
+    <div class="rt-grid">
+      <section class="rt-column" aria-label="Send a message">
+        <label>Nickname <input type="text" :value="$nickname" on:input="$nickname = $event.target.value" /></label>
+        <label>Message <input type="text" :value="messageText" on:input="messageText = $event.target.value" /></label>
+        <div class="w-row ga-2 rt-actions">
+          <w-btn size="sm" variant="filled" color="secondary" on:click="send()">Send to all tabs</w-btn>
+          <logic :if="isConnected">
+            <w-btn size="sm" variant="text" on:click="disconnect()">Disconnect</w-btn>
+          </logic>
+          <logic :if="!isConnected">
+            <w-btn size="sm" variant="outlined" on:click="connect()">Connect</w-btn>
+          </logic>
+        </div>
+        <p class="rt-meta">Channel <w-chip size="x-small" :color="isConnected ? 'success' : 'warning'">{status}</w-chip> — your nickname persists in sessionStorage.</p>
+      </section>
+
+      <section class="rt-column" aria-label="Received messages">
+        <h3>Messages (live + replayed)</h3>
+        <logic :if="messages.length === 0">
+          <p class="rt-meta">No messages yet. Open the atlas in a second tab and say hello — it arrives here without any server.</p>
+        </logic>
+        <ul class="rt-messages">
+          <loop :for="message of messages">
+            <li>
+              <w-chip size="x-small">{message.from}</w-chip>
+              <span>{message.text}</span>
+              <small>{message.sentAt}</small>
+            </li>
+          </loop>
+        </ul>
+        <div class="w-row ga-2 rt-actions">
+          <w-btn size="sm" variant="text" on:click="loadHistory()">Reload history</w-btn>
+          <w-btn size="sm" variant="text" on:click="clearHistory()">Clear history</w-btn>
+        </div>
+      </section>
+    </div>
+    <logic :if="feedback">
+      <p class="rt-feedback">{feedback}</p>
+    </logic>
+  </w-card-text>
+</w-card>

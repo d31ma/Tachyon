@@ -1,0 +1,40 @@
+.topic h1 {
+  margin: 0 0 0.6rem;
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+}
+
+.topic-summary {
+  margin: 0 0 1.5rem;
+  color: var(--w-text-subtle);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  max-width: 64ch;
+}
+
+.topic-section {
+  margin-bottom: 1.75rem;
+}
+
+.topic-section h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+}
+
+.topic-section p {
+  margin: 0 0 0.75rem;
+  line-height: 1.7;
+  max-width: 70ch;
+  color: var(--w-text);
+}
+
+.topic-pager {
+  display: flex;
+  align-items: center;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--w-text) 12%, transparent);
+}
+
+.topic-spacer {
+  flex: 1;
+}

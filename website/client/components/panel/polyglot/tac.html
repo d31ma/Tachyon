@@ -1,0 +1,23 @@
+<w-card variant="outlined" class="panel-card">
+  <w-card-item title="Polyglot workers" subtitle="Rust, JavaScript and TypeScript workers — each compiled in-house to WebAssembly — process the same local-first shared data.">
+  </w-card-item>
+  <w-card-text>
+    <div class="w-row ga-2 poly-status">
+      <w-chip size="small">{loadingState()}</w-chip>
+      <logic :if="sourceNote">
+        <w-chip size="small" color="success">{sourceNote}</w-chip>
+      </logic>
+    </div>
+
+    <ul class="poly-results">
+      <loop :for="run of workerResults">
+        <li>
+          <w-chip size="x-small">{run.language}</w-chip>
+          <code>{run.method}</code>
+          <span class="poly-result" :title="formatResult(run.result)">{formatResult(run.result)}</span>
+        </li>
+      </loop>
+    </ul>
+    <p class="poly-hint">Each row is a fetch("tac://language/…") call answered by a Web Worker running tac.wasm — no server round-trip.</p>
+  </w-card-text>
+</w-card>

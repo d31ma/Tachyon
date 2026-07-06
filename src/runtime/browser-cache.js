@@ -19,7 +19,7 @@ export class TacBrowserCache {
     /** @returns {boolean} */
     isBrowser() {
         return typeof window !== 'undefined'
-            && !/** @type {Record<string, unknown>} */ (globalThis).__ty_prerender__
+            && !/** @type {Record<string, unknown>} */ (globalThis).__tc_prerender__
             && typeof indexedDB !== 'undefined';
     }
 
@@ -28,9 +28,9 @@ export class TacBrowserCache {
         if (!this.isBrowser())
             return null;
 
-        const win = /** @type {Window & { __ty_fetch_cache_db__?: IDBDatabase | null }} */ (window);
-        if (win.__ty_fetch_cache_db__)
-            return win.__ty_fetch_cache_db__;
+        const win = /** @type {Window & { __tc_fetch_cache_db__?: IDBDatabase | null }} */ (window);
+        if (win.__tc_fetch_cache_db__)
+            return win.__tc_fetch_cache_db__;
         if (this.dbPromise)
             return this.dbPromise;
 
@@ -41,7 +41,7 @@ export class TacBrowserCache {
                     request.result.createObjectStore(STORE_NAME, { keyPath: 'key' });
             };
             request.onsuccess = () => {
-                win.__ty_fetch_cache_db__ = request.result;
+                win.__tc_fetch_cache_db__ = request.result;
                 resolve(request.result);
             };
             request.onerror = () => resolve(null);
@@ -211,7 +211,7 @@ export class TacBrowserCache {
 
         try {
             const nativeFetch = /** @type {typeof fetch} */ (
-                /** @type {Record<string, unknown>} */ (globalThis).__ty_native_fetch__ ?? fetch
+                /** @type {Record<string, unknown>} */ (globalThis).__tc_native_fetch__ ?? fetch
             );
             const response = await nativeFetch(input, init);
             if (cacheKey && response.ok && policy !== 'no-store')
@@ -245,10 +245,10 @@ export class TacBrowserCache {
  */
 export function getTacBrowserCache() {
     const g = /** @type {Record<string, unknown>} */ (globalThis);
-    if (g.__ty_browser_cache__ instanceof TacBrowserCache)
-        return g.__ty_browser_cache__;
+    if (g.__tc_browser_cache__ instanceof TacBrowserCache)
+        return g.__tc_browser_cache__;
     const cache = new TacBrowserCache();
-    g.__ty_browser_cache__ = cache;
+    g.__tc_browser_cache__ = cache;
     return cache;
 }
 

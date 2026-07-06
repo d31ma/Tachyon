@@ -1,6 +1,6 @@
 // @ts-check
 import { afterEach, describe, expect, test } from 'bun:test';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import Compiler from '../../src/compiler/index.js';
@@ -13,139 +13,107 @@ afterEach(async () => {
 });
 
 describe('Compiler companion providers', () => {
-    test('discovers companions through provider metadata', async () => {
+    test('exposes only the TS/JS and Rust Tac worker languages', () => {
+        expect(Compiler.workerProviders).toEqual([
+            { extension: '.rs', language: 'rust', targets: ['web', 'macos', 'windows', 'linux', 'ios', 'android'] },
+            { extension: '.js', language: 'javascript', targets: ['web'] },
+            { extension: '.ts', language: 'typescript', targets: ['web'] },
+        ]);
+
+        expect(Compiler.workerSubsetLanguages().sort()).toEqual([
+            'javascript',
+            'rust',
+            'typescript',
+        ]);
+        expect(Compiler.subsetLanguages().sort()).toEqual(['javascript', 'rust', 'typescript']);
+
+        // Everything else — including the previously-supported C#, C++, Swift,
+        // Kotlin — is no longer a worker language.
+        for (const extension of ['.c', '.cpp', '.cs', '.go', '.py', '.zig', '.swift', '.kt']) {
+            expect(Compiler.getWorkerProvider(`/tmp/tac${extension}`)).toBeNull();
+        }
+    });
+
+    test('discovers JavaScript companions through provider metadata', async () => {
         const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
         tempDirs.push(root);
-        await mkdir(path.join(root, 'components', 'card'), { recursive: true });
-        const templatePath = path.join(root, 'components', 'card', 'tac.html');
-        const jsCompanionPath = path.join(root, 'components', 'card', 'tac.js');
-        const tsCompanionPath = path.join(root, 'components', 'card', 'tac.ts');
+        await mkdir(path.join(root, 'client', 'components', 'card'), { recursive: true });
+        const templatePath = path.join(root, 'client', 'components', 'card', 'tac.html');
+        const companionPath = path.join(root, 'client', 'components', 'card', 'tac.js');
         await writeFile(templatePath, '<article>{title}</article>');
-        await writeFile(jsCompanionPath, 'export default class {}');
-        await writeFile(tsCompanionPath, 'export default class {}');
+        await writeFile(companionPath, 'export default class {}');
 
         const companion = await Compiler.getCompanionScript(templatePath);
 
-        expect(companion?.sourcePath).toBe(jsCompanionPath);
+        expect(companion?.sourcePath).toBe(companionPath);
         expect(companion?.importPath).toBe('./tac.js');
         expect(companion?.provider).toEqual({ extension: '.js', target: 'ecmascript' });
-        expect(await Compiler.getCompanionScriptPath(templatePath)).toBe(jsCompanionPath);
-
-        await rm(jsCompanionPath, { force: true });
-        await rm(tsCompanionPath, { force: true });
-        const wasmCompanionPath = path.join(root, 'components', 'card', 'tac.wasm');
-        await writeFile(wasmCompanionPath, new Uint8Array());
-        const wasmCompanion = await Compiler.getCompanionScript(templatePath);
-        expect(wasmCompanion?.sourcePath).toBe(wasmCompanionPath);
-        expect(wasmCompanion?.provider).toEqual({ extension: '.wasm', target: 'wasm-json' });
+        expect(await Compiler.getCompanionScriptPath(templatePath)).toBe(companionPath);
     });
 
-    test('prefers source-backed Wasm companions before prebuilt Wasm fallbacks', async () => {
+    test('falls back to TypeScript companions when JavaScript is absent', async () => {
         const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
         tempDirs.push(root);
-        await mkdir(path.join(root, 'components', 'meter'), { recursive: true });
-        const templatePath = path.join(root, 'components', 'meter', 'tac.html');
-        const rustCompanionPath = path.join(root, 'components', 'meter', 'tac.rs');
-        const wasmCompanionPath = path.join(root, 'components', 'meter', 'tac.wasm');
-        await writeFile(templatePath, '<article>{label}</article>');
-        await writeFile(rustCompanionPath, '/* rust source */');
-        await writeFile(wasmCompanionPath, new Uint8Array());
+        await mkdir(path.join(root, 'client', 'components', 'card'), { recursive: true });
+        const templatePath = path.join(root, 'client', 'components', 'card', 'tac.html');
+        const companionPath = path.join(root, 'client', 'components', 'card', 'tac.ts');
+        await writeFile(templatePath, '<article>{title}</article>');
+        await writeFile(companionPath, 'export default class {}');
 
         const companion = await Compiler.getCompanionScript(templatePath);
 
-        expect(companion?.sourcePath).toBe(rustCompanionPath);
-        expect(companion?.importPath).toBe('./tac.rs');
-        expect(companion?.provider).toEqual({ extension: '.rs', target: 'wasm-source', language: 'rust' });
+        expect(companion?.sourcePath).toBe(companionPath);
+        expect(companion?.importPath).toBe('./tac.ts');
+        expect(companion?.provider).toEqual({ extension: '.ts', target: 'ecmascript' });
     });
 
-    test('source-backed Wasm companions compile through the configured language tool', async () => {
+    test('ignores removed non-JavaScript companion formats', async () => {
         const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
         tempDirs.push(root);
-        await mkdir(path.join(root, 'components', 'chip'), { recursive: true });
-        const templatePath = path.join(root, 'components', 'chip', 'tac.html');
-        const watCompanionPath = path.join(root, 'components', 'chip', 'tac.wat');
-        const compilerScriptPath = path.join(root, process.platform === 'win32' ? 'fake-wat2wasm.js' : 'fake-wat2wasm');
+        await mkdir(path.join(root, 'client', 'components', 'raw'), { recursive: true });
+        const templatePath = path.join(root, 'client', 'components', 'raw', 'tac.html');
         await writeFile(templatePath, '<span>{label}</span>');
-        await writeFile(watCompanionPath, '(module)');
-        await writeFile(compilerScriptPath, process.platform === 'win32' ? `
-const { writeFileSync } = require('fs');
-let out = '';
-for (let i = 2; i < process.argv.length; i += 1) {
-  if (process.argv[i] === '-o') {
-    out = process.argv[i + 1];
-    i += 1;
-  }
-}
-writeFileSync(out, 'compiled-wasm');
-` : `#!/bin/sh
-out=""
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    shift
-    out="$1"
-  fi
-  shift
-done
-printf 'compiled-wasm' > "$out"
-`);
-        await chmod(compilerScriptPath, 0o755);
-        const fakeCompilerPath = process.platform === 'win32'
-            ? path.join(root, 'fake-wat2wasm.cmd')
-            : compilerScriptPath;
-        if (process.platform === 'win32')
-            await writeFile(fakeCompilerPath, '@echo off\r\nbun "%~dp0fake-wat2wasm.js" %*\r\n');
+        await writeFile(path.join(root, 'client', 'components', 'raw', 'tac.rs'), '/* rust source */');
+        await writeFile(path.join(root, 'client', 'components', 'raw', 'tac.cpp'), '/* cpp source */');
 
-        const originalCompilerPath = process.env.TACHYON_WASM_WAT2WASM;
-        process.env.TACHYON_WASM_WAT2WASM = fakeCompilerPath;
-        try {
-            const companion = await Compiler.getCompanionScript(templatePath);
-            expect(companion?.provider).toEqual({ extension: '.wat', target: 'wasm-source', language: 'wat' });
-            const bytes = await Compiler.compileWasmSourceCompanion(/** @type {NonNullable<typeof companion>} */ (companion));
-            expect(Buffer.from(bytes).toString('utf8')).toBe('compiled-wasm');
-        }
-        finally {
-            if (originalCompilerPath === undefined)
-                delete process.env.TACHYON_WASM_WAT2WASM;
-            else
-                process.env.TACHYON_WASM_WAT2WASM = originalCompilerPath;
-        }
-    });
-
-    test('source-backed Wasm companions can use a sibling prebuilt fallback', async () => {
-        const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
-        tempDirs.push(root);
-        await mkdir(path.join(root, 'components', 'fallback'), { recursive: true });
-        const templatePath = path.join(root, 'components', 'fallback', 'tac.html');
-        const watCompanionPath = path.join(root, 'components', 'fallback', 'tac.wat');
-        const wasmFallbackPath = path.join(root, 'components', 'fallback', 'tac.wasm');
-        await writeFile(templatePath, '<span>{label}</span>');
-        await writeFile(watCompanionPath, '(module)');
-        await writeFile(wasmFallbackPath, 'prebuilt-fallback');
-
-        const originalCompilerPath = process.env.TACHYON_WASM_WAT2WASM;
-        process.env.TACHYON_WASM_WAT2WASM = path.join(root, 'missing-wat2wasm');
-        try {
-            const companion = await Compiler.getCompanionScript(templatePath);
-            expect(companion?.provider).toEqual({ extension: '.wat', target: 'wasm-source', language: 'wat' });
-            const bytes = await Compiler.getTacWasmBytes(/** @type {NonNullable<typeof companion>} */ (companion));
-            expect(Buffer.from(bytes).toString('utf8')).toBe('prebuilt-fallback');
-        }
-        finally {
-            if (originalCompilerPath === undefined)
-                delete process.env.TACHYON_WASM_WAT2WASM;
-            else
-                process.env.TACHYON_WASM_WAT2WASM = originalCompilerPath;
-        }
+        expect(await Compiler.getCompanionScript(templatePath)).toBeNull();
+        expect(await Compiler.getCompanionScriptPath(templatePath)).toBeNull();
     });
 
     test('returns null when no provider matches a companion file', async () => {
         const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
         tempDirs.push(root);
-        await mkdir(path.join(root, 'components', 'panel'), { recursive: true });
-        const templatePath = path.join(root, 'components', 'panel', 'tac.html');
+        await mkdir(path.join(root, 'client', 'components', 'panel'), { recursive: true });
+        const templatePath = path.join(root, 'client', 'components', 'panel', 'tac.html');
         await writeFile(templatePath, '<section>Panel</section>');
 
         expect(await Compiler.getCompanionScript(templatePath)).toBeNull();
         expect(await Compiler.getCompanionScriptPath(templatePath)).toBeNull();
+    });
+
+    test('detects app-authored tac protocol fetch usage for automatic shadow imports', () => {
+        expect(Compiler.referencesTacFetch(`
+            export default class extends Tac {
+                async run() {
+                    return fetch('tac://language', { method: 'POST' })
+                }
+            }
+        `)).toBe(true);
+    });
+
+    test('does not inject the tac fetch shadow when fetch is app-owned or no tac url is used', () => {
+        // App-declared fetch should win over the injected shadow.
+        expect(Compiler.referencesTacFetch(`
+            import { fetch } from './custom-fetch.js'
+            export default class extends Tac {
+                async run() { return fetch('tac://language') }
+            }
+        `)).toBe(false);
+        // Plain fetch without any tac:// URL must not trigger injection.
+        expect(Compiler.referencesTacFetch(`
+            export default class extends Tac {
+                async run() { return fetch('/api/data') }
+            }
+        `)).toBe(false);
     });
 });

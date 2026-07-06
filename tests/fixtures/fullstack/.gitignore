@@ -1,0 +1,7 @@
+dist/
+node_modules/
+db/.collections/
+db/.fylo-vcs/
+db/.queue/
+.test-bundle-*
+.tachyon/

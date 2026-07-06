@@ -1,0 +1,42 @@
+.sc-status {
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.sc-summary,
+.sc-awaited {
+  margin: 0 0 0.6rem;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}
+
+details {
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}
+
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--w-text);
+}
+
+.sc-entries {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.sc-entries li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.sc-entries code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

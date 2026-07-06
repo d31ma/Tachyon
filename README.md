@@ -17,13 +17,14 @@
 
 - Polyglot backend handlers with executable files and shebangs
 - Tac pages and components with `tac.html` templates
-- Companion `*.js`, `*.ts`, `*.wasm`, source-backed Wasm (`*.as.ts`, `*.rs`, `*.c`, `*.go`, `*.zig`, `*.wat`), and `*.css` files beside templates
-- OOP-style companion classes with `export default class extends Tac`
-- Wasm-backed Tac companions through the `tac-wasm-json@1` ABI and generated adapters
+- Companion `*.js`, `*.ts`, and `*.css` files beside templates
+- OOP-style companion classes with `export default class`; Tachyon injects the Tac base class during bundling
+- Browser-local Tac Workers compiled in-house to `tac.wasm` (no external toolchain), invoked with `fetch("tac://...")`
 - Automatic persistence for `$`-prefixed (sessionStorage) and `$$`-prefixed (localStorage) instance fields
-- Local-first browser `fetch()` for Tac page/component scripts with IndexedDB-backed read caching and mutation-aware invalidation
+- Local-first browser `fetch()` plus worker-owned OPFS-backed FYLO document mirrors for Tac page/component scripts
 - Explicit browser env allowlisting through `TAC_PUBLIC_ENV` and `this.env(...)`
 - Static export with prerendered `dist/**/index.html`
+- Platform-aware Tac globals for `web`, desktop (`macos`, `windows`, `linux`), and mobile (`ios`, `android`) targets
 - Shared frontend assets under `/shared/assets/*`
 - Shared frontend data under `/shared/data/*`
 - Generated OpenAPI 3.1 docs at `/openapi.json` with a self-hosted Tachyon docs UI at `/api-docs`
@@ -61,18 +62,25 @@ bun install
 bun run serve
 ```
 
+`yon.init` prompts for an app name when run interactively. For scripts, pass it
+explicitly:
+
+```bash
+yon.init my-app --name "My App"
+```
+
 Useful commands:
 
 <table>
 <tr><th align="left">Command</th><th align="left">Description</th></tr>
 <tr><td><code>bun run serve</code></td><td>Shape-aware dev server — frontend, backend, or full-stack on one port</td></tr>
 <tr><td><code>bun run bundle</code></td><td>Build static <code>dist/</code> output</td></tr>
-<tr><td><code>bun run preview</code></td><td>Serve the built <code>dist/</code> directory</td></tr>
+<tr><td><code>bun run preview</code></td><td>Serve the built <code>dist/web</code> directory by default</td></tr>
 </table>
 
-`bun run serve` is shape-aware: `browser/` only bundles and serves the frontend,
+`bun run serve` is shape-aware: `client/` only bundles and serves the frontend,
 `server/` only serves backend routes, apps with both folders run as a full-stack
-app on one port, and `browser/` + `db/` apps mount Tachyon's built-in FYLO
+app on one port, and `client/` + `db/` apps mount Tachyon's built-in FYLO
 browser routes when `YON_DATA_BROWSER_ENABLED=true`.
 
 ---
@@ -80,7 +88,7 @@ browser routes when `YON_DATA_BROWSER_ENABLED=true`.
 ## Scaffold Layout
 
 ```text
-browser/
+client/
   pages/
     tac.html
     tac.js
@@ -94,10 +102,14 @@ browser/
     styles/
     assets/
     data/
+  workers/
+    language/
+      rust/
+        tac.rs
 
 server/
   routes/
-    GET/
+    posts/
       yon.js
   data/
   deps/
@@ -106,20 +118,28 @@ server/
 Scaffolds are JavaScript-first and use strict JSDoc rather than TypeScript source files.
 The runtime still supports TypeScript companion scripts when you want them.
 
-The example app in [examples/](examples/) demonstrates Tac and Yon working together:
+The website app in [website/](website/) is the canonical Tac showcase. It is
+frontend-only: Tac Workers mimic the backend and the in-browser FYLO client
+(OPFS) mimics the database, so the same static bundle works on every target:
 
 - a guided capability atlas joining native HTML/CSS/JavaScript surfaces with
-  working Tac, Yon, and FYLO flows rather than isolated code snippets
+  working Tac, worker, and FYLO flows rather than isolated code snippets
 - reactive page state
 - accessible native controls and a reactive canvas studio with semantic
   `progress`, `meter`, `output`, `time`, and `details` elements
 - persisted `$` (sessionStorage) and `$$` (localStorage) fields
-- local-first fetches
-- frontend-only external SSE streaming with reactive Tac updates
-- prebuilt Tac Wasm companions with source examples in WAT, AssemblyScript, Rust, C, Go, and Zig
-- backend handlers in multiple languages
-- shared data, shared assets, and a browser entry
-- middleware, OpenAPI docs, embedded route manifests, and component companions
+- local-first fetches and OPFS-backed FYLO document collections with CRUD,
+  cache policies, and live same-tab subscriptions
+- browser-local Tac Workers answering every HTTP verb from `tac.wasm`
+- frontend-only external SSE streaming and tab-to-tab realtime with durable,
+  OPFS-replayed history
+- client-side telemetry spans stored as FYLO documents
+- shared data, shared assets, a browser entry, and component companions
+
+The full-stack backend showcase — polyglot handlers in multiple languages,
+MVC routing, server FYLO, realtime mailboxes, OpenAPI docs, middleware, and
+OpenTelemetry — lives in [tests/fixtures/fullstack/](tests/fixtures/fullstack/),
+where the integration suite exercises it end-to-end.
 
 ---
 
@@ -137,6 +157,8 @@ YON_LOG_LEVEL=info
 YON_LOG_FORMAT=pretty
 YON_TRUST_PROXY=
 TAC_FORMAT=esm
+TAC_DANGEROUS_CAPABILITIES=
+TAC_NATIVE_CAPABILITIES=
 
 YON_ALLOW_HEADERS=Content-Type,Authorization
 YON_ALLOW_ORIGINS=
@@ -149,7 +171,7 @@ YON_ALLOW_METHODS=GET,POST,PUT,DELETE,PATCH,OPTIONS
 YON_BASIC_AUTH=
 YON_BASIC_AUTH_HASH=
 YON_VALIDATE=true
-YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'
+YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'
 YON_ENABLE_HSTS=false
 YON_SKIP_BUNDLE=false
 
@@ -160,12 +182,13 @@ YON_RATE_LIMIT_MAX=
 YON_RATE_LIMIT_WINDOW_MS=
 
 YON_ROUTES_PATH=server/routes
-YON_PAGES_PATH=browser/pages
-YON_COMPONENTS_PATH=browser/components
-YON_ASSETS_PATH=browser/shared/assets
-YON_SHARED_SCRIPTS_PATH=browser/shared/scripts
-YON_SHARED_STYLES_PATH=browser/shared/styles
-YON_SHARED_DATA_PATH=browser/shared/data
+YON_PAGES_PATH=client/pages
+YON_COMPONENTS_PATH=client/components
+YON_WORKERS_PATH=client/workers
+YON_ASSETS_PATH=client/shared/assets
+YON_SHARED_SCRIPTS_PATH=client/shared/scripts
+YON_SHARED_STYLES_PATH=client/shared/styles
+YON_SHARED_DATA_PATH=client/shared/data
 YON_MIDDLEWARE_PATH=./middleware
 
 FYLO_ROOT=db
@@ -205,7 +228,7 @@ bun -e "console.log(await Bun.password.hash('user:pass'))"
 <details>
 <summary><h2 style="display:inline">FYLO Storage</h2></summary>
 
-Tachyon uses `@d31ma/fylo@26.22.7`, which is filesystem-first and uses the
+Tachyon uses `@d31ma/fylo@26.25.1`, which is filesystem-first and uses the
 FYLO `local-fs` index backend by default. Set `FYLO_ROOT` to the directory that
 should contain FYLO-managed collections:
 
@@ -215,11 +238,11 @@ FYLO_SCHEMA_DIR=db/schemas
 FYLO_INDEX_BACKEND=local-fs
 ```
 
-Run the example seed and server with the normal example environment:
+Run the full-stack fixture app with its normal environment:
 
 ```bash
-cd examples
-bun --env-file=.env run serve
+cd tests/fixtures/fullstack
+bun run serve
 ```
 
 FYLO owns everything inside `FYLO_ROOT`, including document shards, local prefix
@@ -321,61 +344,71 @@ Yon backend routes live in `server/routes`.
 ```text
 server/
   routes/                         -> thin request/response controllers
-    languages/
-      javascript/yon.js           -> GET/POST/PUT /languages/javascript
-      typescript/yon.ts           -> GET /languages/typescript
-      python/yon.py               -> GET /languages/python
-      ruby/yon.rb                 -> GET /languages/ruby
-      php/yon.php                 -> GET /languages/php
-      csharp/yon.cs               -> GET /languages/csharp
-      cpp/yon.cpp                 -> GET /languages/cpp
-      swift/yon.swift             -> GET /languages/swift
-      kotlin/yon.kt               -> GET /languages/kotlin
-      rust/yon.rs                 -> GET /languages/rust
-      java/yon.java               -> POST /languages/java
-      dart/yon.dart               -> DELETE /languages/dart
-      python/versions/_version/yon.py -> GET /languages/python/versions/:version
-      typescript/items/yon.ts     -> GET/POST /languages/typescript/items
-      typescript/items/_id/yon.ts -> GET/PUT/PATCH/DELETE /languages/typescript/items/:id
-      javascript/telemetry/yon.js -> GET /languages/javascript/telemetry
-      OPTIONS.schema.json         -> route schema files
+    language/                     -> consolidated polyglot showcase (one route, several languages)
+      yon.js                      -> GET, HEAD               /language          (route map; JavaScript)
+      yon.rs                      -> POST, DELETE            /language          (Rust; generated YonJson adapter)
+      yon.cpp                     -> PUT, PATCH              /language          (C++; generated YonJson adapter)
+      javascript/yon.js           -> GET, POST, PUT          /language/javascript        (status-code diagnostics)
+      python/yon.py               -> GET                     /language/python
+      rust/yon.rs                 -> GET                     /language/rust
+      items/yon.ts                -> GET, POST, DELETE       /language/items             (RESTful CRUD, TypeScript)
+      items/_id/yon.ts            -> GET, PUT, PATCH, DELETE /language/items/:id
+      versions/_version/yon.py    -> GET, PATCH, DELETE      /language/versions/:version (dynamic path param, Python)
+      fylo/yon.js                 -> POST                    /language/fylo              (FYLO machine interface)
+      telemetry/yon.js            -> GET                     /language/telemetry         (OTLP trace summary)
+      OPTIONS.schema.json         -> per-directory route schema files
+    realtime/                     -> SSE realtime demo (clients, messages)
   services/                       -> application/business logic
   repositories/                   -> database and persistence access
   data/                           -> local example data
 ```
 
-The examples intentionally use an MVC-style backend dependency direction:
+The full-stack fixture app intentionally uses an MVC-style backend dependency direction:
 `routes -> services -> repositories`. Route files should stay small and call a
 service. Services coordinate validation, business rules, and multiple
 dependencies. Repositories are the only layer that talks directly to persistence
-or runtime data sources. The `/languages/*` example is now the single backend
-showcase: it includes polyglot handlers, CRUD item routes, dynamic routes, and a
-telemetry consumer.
+or runtime data sources. The `/language` route is the single backend showcase:
+one polyglot route whose verbs are split across JavaScript, Rust, and C++
+handlers, plus sub-routes for CRUD items, a dynamic path-param route, the FYLO
+machine interface, and a telemetry consumer.
 
-Every non-JavaScript/TypeScript language route demonstrates FYLO access through the `fylo.exec`
-machine interface bundled by `@d31ma/fylo`. These examples extend existing
-routes instead of adding separate FYLO endpoints: the route calls a service, the
+The `/language` verbs are split across three languages on the same route —
+`GET`/`HEAD` (JavaScript), `POST`/`DELETE` (Rust), and `PUT`/`PATCH` (C++) — to
+demonstrate the polyglot handler model. The Rust and C++ handlers use the
+generated dependency-free `YonJson` adapter; each route runs as a process, and
+compiled-language handlers compile on first request and cache the result — the
+`server/` source ships as-is, with no separate build step or binary-only
+deployment. The in-house WASM compiler now serves Tac frontend workers only.
+
+Yon imposes no list of supported languages. A `yon.<ext>` handler runs by its
+extension: `.go` runs via `go run`, `.rb` via `ruby`, and so on — a default
+`interpreters` map covers common languages and is extensible/overridable under
+`interpreters` in `.tachyonrc`. No shebang or `chmod` required: write
+`server/routes/ping/yon.go`, declare its HTTP methods in an adjacent
+`OPTIONS.schema.json`, and it runs as a process that reads the JSON request on
+stdin and writes the response on stdout. (A prebuilt executable or a script
+with its own shebang also works.) The built-in languages (JS/TS, Python, Ruby,
+PHP, and the compiled ones) are conveniences that let you write a
+`class Handler` and skip the stdin/stdout glue.
+
+`POST /language/fylo` drives the FYLO machine interface end-to-end through the
+`fylo.exec` binary bundled by `@d31ma/fylo`: the route calls a service, the
 service calls a repository or language-native process helper, and that layer
-sends JSON operations to the FYLO binary. During development they invoke `bunx
---bun fylo.exec`; in production, set `FYLO_EXEC_PATH=/path/to/fylo` to point
-those helpers at a compiled FYLO executable instead.
+sends JSON operations to the FYLO binary. During development it invokes `bunx
+--bun fylo.exec`; in production, set `FYLO_EXEC_PATH=/path/to/fylo` to point the
+helpers at a compiled FYLO executable instead.
 
-The language examples collectively exercise the FYLO machine interface:
-
-| Language route | Friendly collection | FYLO binary operations shown |
-| -------------- | ------------------- | ---------------------------- |
-| `GET /languages/javascript` | `fylo-operation-runs`, `fylo-related-records`, `fylo-disposable-runs` | full operation suite: `executeSQL`, `createCollection`, `dropCollection`, `inspectCollection`, `rebuildCollection`, `getDoc`, `getLatest`, `getHistory`, `findDocs`, `joinDocs`, `putData`, `batchPutData`, `patchDoc`, `patchDocs`, `delDoc`, `delDocs`, `importBulkData`, `schemaInspect`, `schemaCurrent`, `schemaHistory`, `schemaDoctor`, `schemaValidate`, `schemaMaterialize` |
-| `GET /languages/typescript` | `language-route-events` | `createCollection`, `putData`, `findDocs` |
-| `GET /languages/python` | `language-route-events` | `createCollection`, `putData`, `findDocs` |
-| `GET /languages/ruby` | `language-route-events` | `createCollection`, `putData`, `executeSQL` |
-| `GET /languages/php` | `language-route-events` | `createCollection`, `batchPutData`, `findDocs` |
-| `GET /languages/csharp` | `fylo-demo-items` | `schemaCurrent`, `schemaHistory` |
-| `GET /languages/cpp` | `language-route-events` | `createCollection`, `inspectCollection`, `rebuildCollection` |
-| `GET /languages/swift` | `language-route-events`, `language-route-relations` | `createCollection`, `putData`, `joinDocs` |
-| `GET /languages/kotlin` | `language-route-events` | `createCollection`, `batchPutData`, `patchDocs` |
-| `GET /languages/rust` | `fylo-rust-disposable` | `createCollection`, `inspectCollection`, `dropCollection` |
-| `POST /languages/java` | `language-route-events` | `createCollection`, `putData`, `getLatest` |
-| `DELETE /languages/dart` | `language-route-events` | `createCollection`, `importBulkData` |
+| Route | Demonstrates |
+| ----- | ------------ |
+| `GET, HEAD /language` | Route map and the polyglot method split (JavaScript) |
+| `POST, DELETE /language` | Echo / size-confirm handlers (Rust) |
+| `PUT, PATCH /language` | Echo / patch-summary handlers (C++) |
+| `GET, POST, PUT /language/javascript` | Status-code diagnostics and echo responses |
+| `GET /language/python`, `GET /language/rust` | Per-language GET handlers |
+| `GET, POST, DELETE /language/items`, `…/items/:id` | RESTful CRUD (TypeScript) |
+| `GET, PATCH, DELETE /language/versions/:version` | Dynamic path-param route (Python) |
+| `POST /language/fylo` | Full FYLO machine-interface showcase (JavaScript) |
+| `GET /language/telemetry` | OTLP trace-summary consumer (JavaScript) |
 
 Rules:
 
@@ -386,30 +419,28 @@ Rules:
 - the first segment cannot be dynamic
 - adjacent dynamic segments are not allowed
 
-Yon route files expose a `handler(request)` function. The HTTP method comes from
-the parent directory, so `server/routes/languages/typescript/items/GET/yon.ts`
-handles `GET /languages/typescript/items` and the function name stays consistent
-across every method and language.
+A route file at `<route>/yon.<ext>` defines a `class Handler` whose static
+methods are named after HTTP verbs. The route path is the directory path, so
+`server/routes/items/yon.ts` serves `/items`, and each static method handles the
+verb it is named for — `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, or
+`OPTIONS`.
 
 ```ts
-import ItemService from '../../../../services/item-service.ts'
+// server/routes/items/yon.ts  ->  /items
+export class Handler {
+  static GET() {
+    return { items: [] }
+  }
 
-const service = new ItemService()
-
-export async function handler() {
-  return service.listItems()
-}
-```
-
-Class-based handlers are also supported for languages that prefer that shape:
-
-```js
-export default class GET {
-  async handler(request) {
-    return { message: 'Hello from Yon' }
+  static async POST(request: { body?: unknown }) {
+    return { created: request.body }
   }
 }
 ```
+
+A single route can be split across languages: add sibling `yon.<ext>` files that
+declare non-overlapping methods — for example a `yon.ts` serving `GET`/`POST`
+beside a `yon.rs` serving `PUT`/`DELETE`.
 
 Handlers return plain data, FastAPI-style. `OPTIONS.schema.json` decides which response
 status the returned body matches. Yon serializes the returned value, validates it
@@ -442,7 +473,7 @@ wrappers that call the public static HTTP method on the class. No third-party
 adapter dependency is added; compiled handlers use the language toolchain already
 on the developer or deployment machine.
 
-When `NODE_ENV=production`, Yon caches compiled Java, C#, Dart, C++, Swift, Kotlin, and Rust
+When `NODE_ENV=production`, Yon caches compiled Java, C#, Dart, C++, and Rust
 artifacts per handler fingerprint. The fingerprint includes the route file, copied same-language
 service files, and the adapter cache version, so a later `POST` to the same
 compiled route can reuse the artifact prepared by an earlier `GET` while source
@@ -459,23 +490,15 @@ changes still invalidate the cache.
 <tr><td>Java</td><td><code>public class Handler { public static Object GET(Map&lt;String, Object&gt; request) {} }</code></td></tr>
 <tr><td>C#</td><td><code>public class Handler { public static object GET(JsonElement request) {} }</code></td></tr>
 <tr><td>C++</td><td><code>class Handler { public: static YonJson GET(const YonJson&amp; request) {} };</code></td></tr>
-<tr><td>Swift</td><td><code>enum Handler { static func GET(_ request: [String: Any]) -> Any? {} }</code></td></tr>
-<tr><td>Kotlin</td><td><code>class Handler { companion object { fun GET(request: Map&lt;String, Any?&gt;): Any? {} } }</code></td></tr>
 <tr><td>Rust</td><td><code>struct Handler; impl Handler { pub fn GET(request: &amp;YonJson) -&gt; YonJson {} }</code></td></tr>
 </table>
 
-Java, C++, Kotlin, and Rust intentionally stay dependency-free. Yon generates a tiny JSON
-adapter beside the compiled wrapper; Swift uses the JSON support already in
-`Foundation`:
+Java, C++, and Rust intentionally stay dependency-free. Yon generates a tiny JSON
+adapter beside the compiled wrapper:
 
 - Java receives a `java.util.Map<String, Object>` or `Object`.
 - C++ receives a generated `YonJson` helper with object lookup, scalar coercion,
   and JSON serialization.
-- Swift receives a `[String: Any]` decoded with `Foundation`'s `JSONSerialization`
-  and may return a `[String: Any]`, array, scalar, or `String`.
-- Kotlin receives a `Map<String, Any?>` from a generated `YonJson` helper and may
-  return a `Map`, `List`, scalar, or `String`. Handlers expose verbs through a
-  `companion object` (or a top-level `object Handler`).
 - Rust receives a generated `YonJson` helper and exposes verbs as associated
   functions on `impl Handler`, mirroring static methods without requiring a
   third-party crate.
@@ -520,16 +543,16 @@ valid schema shapes for route request/response validation.
 ```
 
 Numeric status codes may live directly under the method object, which is the
-style used by the example app.
+style used by the full-stack fixture app.
 
 ---
 
 ## Frontend Routing
 
-Tac page routes live in `browser/pages`.
+Tac page routes live in `client/pages`.
 
 ```text
-browser/pages/
+client/pages/
   tac.html             -> /
   docs/
     tac.html           -> /docs
@@ -540,10 +563,10 @@ browser/pages/
 
 If an ancestor page contains `<slot />`, it acts as a reusable shell for descendant pages.
 
-Tac components live in `browser/components`.
+Tac components live in `client/components`.
 
 ```text
-browser/components/
+client/components/
   clicker/
     tac.html
     tac.js
@@ -560,12 +583,12 @@ lowercase alphanumeric and has a `tac.html` template. The component tag is
 the folder path joined with hyphens:
 
 ```text
-browser/components/clicker/tac.html       -> <clicker />
-browser/components/panel/users/tac.html   -> <panel-users />
+client/components/clicker/tac.html       -> <clicker />
+client/components/panel/users/tac.html   -> <panel-users />
 ```
 
 Flat templates and hyphenated folder names such as
-`browser/components/clicker.html` and `browser/components/panel-users/tac.html`
+`client/components/clicker.html` and `client/components/panel-users/tac.html`
 are rejected so app structure, generated module paths, CSS scopes, and template
 tags all use the same naming rule.
 
@@ -577,7 +600,7 @@ Templates support:
 
 - `{expr}` for escaped interpolation
 - `{!expr}` for trusted raw HTML
-- `@event="handler()"` for event binding
+- `on:<event>="handler()"` for event binding
 - `:prop="expr"` for dynamic attributes
 - `:value="field"` for two-way input binding
 - `:checked="field"` for reactive checkbox and radio state
@@ -587,14 +610,121 @@ Templates support:
 - `<my-component />`
 - `<my-component lazy />`
 
+Template expressions run inside Tac's async render function, so `await` is
+available in interpolation, dynamic attributes, and control expressions. Prefer
+companion-script fields for uncached network data so rerenders do not repeatedly
+fetch the same resource.
+
+#### Literal braces in prose (`\{` / `\}`)
+
+`{ ... }` in text content is evaluated as JavaScript, so documentation prose
+that contains braces — e.g. `a JSON array of { title, value } nodes` — would be
+run as an expression and throw `ReferenceError: title is not defined` during
+prerender. Escape literal braces with a backslash:
+
+```html
+<p>a JSON array of \{ title, value, children \} nodes</p>
+```
+
+`\{` and `\}` render as literal `{` and `}` and are never interpolated. They mix
+freely with real interpolation: `{ count } items in \{ a set \}`.
+
+#### JSON in attribute values
+
+Attribute values are emitted verbatim (no `{ }` interpolation), so embedded JSON
+survives as-is — write it with single outer quotes and literal double quotes:
+
+```html
+<x-el data='[{"title":"x"}]'></x-el>
+```
+
+The compiler entity-escapes the inner `"` to `&quot;` when re-serializing, so the
+value round-trips intact in the DOM. Multiline values are fine. (Pre-existing
+entities such as `&#39;` are preserved untouched — values are read raw.)
+
+#### Event handlers (`on:<event>`)
+
+Bind events with an `on:<event>` attribute. The value must be a **single
+expression** — typically a method call:
+
+```html
+<button on:click="refresh()">Refresh</button>
+<w-data-table on:update:selected="select($event)" />
+```
+
+- The event object is available as **`$event`** (alias `__event__`).
+- Multi-statement handlers and bare blocks are not supported; move that logic
+  into a companion-script method and call it (`on:load="loadMore($event)"`). A
+  non-expression value fails at build time with a clear, attribute-named error.
+- Any event name works, including custom and colon names (`on:save`,
+  `on:update:selected`) — there is no allow-list of known DOM events.
+- **The `on:` prefix is what marks an event.** A plain attribute or component
+  prop that merely starts with `on` (e.g. `onboarding`, `online`) is left alone
+  — only the `on:` namespace is compiled to a handler. A literal native
+  `onclick="…"` (no colon) likewise passes through untouched.
+
+**Web-component interop.** Tac never leaves an `on:<event>` binding on the live
+DOM. At compile time it becomes a `data-tac-on-<event>` marker that Tac's
+delegation keys off (colons in event names are encoded as `__`), so the browser
+never executes it as a native global-scope handler — the expression resolves in
+companion scope and triggers a rerender. Light-DOM component libraries (e.g.
+DuVay) that emit standard bubbling/composed `CustomEvent`s work out of the box
+and won't double-bind Tac's generated handler — no Shadow DOM or Tac-specific
+event API required.
+
+**How delegation works (and why it's cheap).** Tac borrows the best of React,
+Svelte 5, Solid, Vue, and Angular and goes a step further:
+
+- **One listener per event type, at `document`.** Like React/Solid/Svelte, Tac
+  delegates rather than attaching a listener to every element — so the listener
+  count is bounded by the number of distinct event *types*, not by the number of
+  elements or handlers.
+- **Compile-time event set, registered once.** The compiler already knows every
+  `on:<event>` in a module, so it emits that set and the runtime registers the
+  listeners a single time when the module first renders. Tac never scans the DOM
+  to discover handlers — there is **zero per-render event-wiring work** (no
+  per-element attach/detach on updates the way Vue/Svelte/Solid do on create).
+- **`composedPath()` dispatch.** On an event, Tac walks the composed path once
+  (Solid/Svelte-style) to find the nearest element carrying the matching marker
+  — fast, and correct for `composed` events that cross shadow boundaries.
+- **No synthetic event objects.** Unlike React, Tac dispatches the native event
+  directly; there is nothing to allocate or pool per event.
+- **Deferred, replay-safe hydration (on by default).** Registering the delegated
+  listeners is held off the critical path until the browser is idle
+  (`requestIdleCallback`) — or until the user first interacts, whichever comes
+  first (Astro-style intent hydration). To make that lossless, a tiny inline
+  script in the document `<head>` runs before the runtime and **captures**
+  click/submit interactions that land on a Tac handler during the pre-hydration
+  "dead zone", neutralizing their default. The moment delegation is registered,
+  those interactions are **replayed** through it — so a click on a button or link
+  made before the page finished loading still does the right thing (Angular ships
+  this behind `withEventReplay()`; in Tac it's the default).
+
+#### Re-render scope (component-scoped by default)
+
+A handler or state change inside a component re-renders **only that component's
+subtree**, not the whole page — so update cost scales with the component, not the
+page size. This is automatic; components are the re-render boundary.
+
+- **Cross-component updates go through `publish` / `subscribe`.** A component does
+  not implicitly re-render content owned by its parent or siblings; publish a
+  signal and let the other component subscribe (its own subtree then re-renders).
+- **Page-level state** (a companion on the page root) still re-renders the page.
+- **Escape hatch:** call `rerender({ global: true })` to force a full-page
+  re-render for the rare case a component must refresh content outside itself.
+  Plain `rerender()` stays scoped to the calling component.
+- **Looped/repeated components** fall back to a full re-render of their container
+  (they share an internal id space, so isolated re-render isn't safe) — correct,
+  just not individually optimized.
+
 Example page:
 
 ```html
-<!-- browser/pages/tac.html -->
+<!-- client/pages/tac.html -->
 <section class="hero">
   <h1>{headline}</h1>
   <p>{subtitle}</p>
-  <button @click="refresh()">Refresh</button>
+  <button on:click="refresh()">Refresh</button>
 </section>
 
 <clicker label="Visits" />
@@ -613,14 +743,14 @@ Example page:
 ```
 
 ```js
-// browser/pages/tac.js
+// client/pages/tac.js
 const Status = {
   Loading: 'loading',
   Pending: 'pending',
   Ready: 'ready'
 }
 
-export default class extends Tac {
+export default class {
   /** @type {number} */
   $visits = 0
   Status = Status
@@ -630,24 +760,23 @@ export default class extends Tac {
   /** @type {string} */
   subtitle = 'Reactive frontend, polyglot backend.'
 
-  constructor(props = {}, tac = undefined) {
-    super(props, tac)
+  constructor() {
     this.$visits += 1
-    if (this.isBrowser) document.title = 'Home'
+    if (typeof document !== 'undefined') document.title = 'Home'
   }
 
   async refresh() {
-    const response = await this.fetch('/languages/javascript')
+    const response = await this.fetch('/language/javascript')
     const payload = await response.json()
     this.subtitle = String(payload.message ?? this.subtitle)
   }
 }
 ```
 
-Anonymous companion classes are fully supported:
+Anonymous companion classes are fully supported and do not need to write `extends Tac`:
 
 ```js
-export default class extends Tac {}
+export default class {}
 ```
 
 ---
@@ -656,122 +785,25 @@ export default class extends Tac {}
 
 Companion scripts are instantiated automatically during render. Their fields and methods are visible in the matching HTML template without the developer manually referencing the class instance.
 
-Companion authors only need to think about `Tac` itself. Internal runtime helper plumbing is attached by the framework and does not need to be imported, typed, or threaded through user code.
+For JavaScript and TypeScript page/component companions, write `export default class { ... }`.
+During bundling, Tachyon injects the Tac base class for default-exported
+companion classes that do not already declare an `extends` clause.
+
+Companion authors only need to think about their class state and methods.
+Internal runtime helper plumbing is attached by the framework and does not need
+to be imported, typed, or threaded through user code.
 
 Available helpers through `Tac`:
 
 - `this.env(key, fallback?)`
 - `this.fetch(input, init)`
-- `this.emit(name, detail)`
-- `this.inject(key, fallback?)`
-- `this.provide(key, value)`
 - `this.onMount(fn)`
+- `this.publish(name, value, options?)`
 - `this.rerender()`
+- `this.subscribe(name, callbackOrFallback?, options?)`
 - `this.isBrowser`
 - `this.isServer`
 - `this.props`
-
-### Wasm Companions
-
-Tac can also load prebuilt WebAssembly companions. The browser still receives a generated JavaScript adapter that extends `Tac`, so templates keep the same shape:
-
-```html
-<!-- browser/components/clicker/tac.html -->
-<button @click="increment()">{label}: {clicks}</button>
-```
-
-Place the Wasm module and manifest beside the template:
-
-```text
-browser/components/clicker/
-  tac.html
-  tac.wasm
-  tac.tac.json
-```
-
-Or give Tachyon source and let `bun serve` / `bun run bundle` compile it before generating the Tac adapter:
-
-```text
-browser/components/clicker/
-  tac.html
-  tac.rs
-  tac.tac.json
-```
-
-Source-backed companions are selected before a sibling `tac.wasm`, so app authors can keep a checked-in fallback while local development still compiles from source when the compiler is available. If source compilation fails and a sibling `.wasm` exists, Tachyon logs a warning and uses the prebuilt fallback; without a fallback, the bundle fails with the compiler error.
-
-`tac.tac.json` declares the stable Tac ABI:
-
-```json
-{
-  "abi": "tac-wasm-json@1",
-  "state": {
-    "clicks": 0,
-    "label": "Ready"
-  },
-  "methods": ["increment"]
-}
-```
-
-The Wasm module must export:
-
-- `memory`
-- `alloc(size) -> ptr`
-- `dealloc(ptr, len)`
-- `init(ptr, len)`
-- `call(methodPtr, methodLen, payloadPtr, payloadLen)`
-- `output_ptr() -> ptr`
-- `output_len() -> len`
-
-`init` receives JSON shaped as `{ "props": { ... } }`. `call` receives the method name as JSON plus a payload shaped as `{ "args": [...], "props": { ... }, "state": { ... } }`. Both functions report their response through `output_ptr` / `output_len`; the response JSON can contain `{ "state": { ... }, "result": ..., "effects": [...] }`.
-
-Supported effects:
-
-- `{ "type": "emit", "name": "saved", "detail": { ... } }`
-- `{ "type": "provide", "key": "theme", "value": "dark" }`
-- `{ "type": "rerender" }`
-
-Any language can participate by compiling to a `.wasm` module that follows this ABI. Tachyon keeps rendering, event binding, persistence, local-first fetch, and DOM access in the generated adapter rather than exposing the DOM directly to Wasm.
-
-<details>
-<summary><h3 style="display:inline">Compiler Support</h3></summary>
-
-Tachyon currently knows how to compile these source companions when the matching compiler is installed on the app author's machine:
-
-<table>
-<tr><th align="left">Extension</th><th align="left">Compiler</th><th align="left">Install</th></tr>
-<tr><td><code>tac.as.ts</code></td><td><code>asc</code></td><td><code>bun add -d assemblyscript</code></td></tr>
-<tr><td><code>tac.rs</code></td><td><code>rustc</code></td><td>Install Rust + <code>rustup target add wasm32-unknown-unknown</code></td></tr>
-<tr><td><code>tac.c</code></td><td><code>clang</code></td><td>Install LLVM/Clang with WebAssembly target support</td></tr>
-<tr><td><code>tac.go</code></td><td><code>tinygo</code></td><td>Standard Go browser Wasm target uses a Go runtime shim, not the Tac ABI shape</td></tr>
-<tr><td><code>tac.zig</code></td><td><code>zig</code></td><td></td></tr>
-<tr><td><code>tac.wat</code></td><td><code>wat2wasm</code></td><td>Install WABT</td></tr>
-</table>
-
-Compiler path overrides are available for CI or non-standard installs:
-
-<table>
-<tr><th align="left">Variable</th><th align="left">Compiler</th></tr>
-<tr><td><code>TACHYON_WASM_ASC</code></td><td>AssemblyScript</td></tr>
-<tr><td><code>TACHYON_WASM_RUSTC</code></td><td>Rust</td></tr>
-<tr><td><code>TACHYON_WASM_CLANG</code></td><td>C (Clang)</td></tr>
-<tr><td><code>TACHYON_WASM_TINYGO</code></td><td>Go (TinyGo)</td></tr>
-<tr><td><code>TACHYON_WASM_ZIG</code></td><td>Zig</td></tr>
-<tr><td><code>TACHYON_WASM_WAT2WASM</code></td><td>WAT (wabt)</td></tr>
-</table>
-
-</details>
-
-The checked-in examples under `examples/browser/components/wasm/` use real source-backed companion filenames plus sibling `.wasm` fallbacks, so the example app runs without requiring every language compiler to be installed:
-
-- `clicker/tac.wat` for raw WebAssembly text
-- `assemblyscript/tac.as.ts`
-- `rust/tac.rs`
-- `c/tac.c`
-- `go/tac.go`
-- `zig/tac.zig`
-
-Tachyon intentionally treats language compilers as optional; plain `.wasm` works without adding a framework dependency. For strict CSP deployments, keep `script-src 'wasm-unsafe-eval'` in `YON_CONTENT_SECURITY_POLICY` so browsers can instantiate Wasm modules.
 
 ### Decorator Form
 
@@ -785,8 +817,8 @@ globals once in the app:
 ```
 
 The `yon.init` scaffold writes this to `tachyon-env.d.ts` automatically. It
-lets app-authored page and component scripts use bare `Tac`, `inject`,
-`provide`, `env`, `onMount`, `emit`, `render`, and `fylo` without local imports
+lets app-authored page and component scripts use bare `Tac`, `publish`,
+`subscribe`, `env`, `onMount`, `fylo`, and `Worker` without local imports
 or `Cannot find name` diagnostics from TypeScript-aware tooling.
 
 If the app also uses plain ESLint `no-undef`, import Tachyon's globals map in
@@ -796,33 +828,33 @@ the app's flat config:
 import tachyonGlobals from '@d31ma/tachyon/eslint-globals'
 
 export default [{
-  files: ['browser/**/*.{js,ts}'],
+  files: ['client/**/*.{js,ts}'],
   languageOptions: { globals: tachyonGlobals }
 }]
 ```
 
 ```js
-export default class extends Tac {
+export default class {
   /** @type {string} */
   label = 'Interactions'
 
   /** @type {string | undefined} */
-  @inject('demo-release', 'Tac')
+  @subscribe
   release
 
   /** @type {string} */
-  @provide('demo-release')
+  @publish('release')
   appVersion = 'TACHYON'
 
   /** @type {number | undefined} */
   @env('PUBLIC_PORT', 3000)
   port
 
-  @onMount
-  refresh() { /* runs once after the component is attached */ }
+  @subscribe('demo-refresh', { onMount: true })
+  refresh() { /* runs once after mount and again when demo-refresh publishes */ }
 
-  @emit('saved')
-  async save(payload) { return await this.fetch('/languages/typescript/items', { method: 'POST', body: JSON.stringify(payload) }) }
+  @publish('saved')
+  async save(payload) { return await this.fetch('/language/items', { method: 'POST', body: JSON.stringify(payload) }) }
 }
 ```
 
@@ -830,19 +862,20 @@ Decorator semantics:
 
 <table>
 <tr><th align="left">Decorator</th><th align="left">Kind</th><th align="left">Behavior</th></tr>
-<tr><td><code>@inject(key, fallback?)</code></td><td>field</td><td>Field initialized from <code>tac.inject(key, fallback)</code></td></tr>
-<tr><td><code>@provide(key)</code></td><td>field</td><td>Initial value registered with <code>tac.provide(key, value)</code> after construction</td></tr>
+<tr><td><code>@subscribe</code> or <code>@subscribe(name, fallback?)</code></td><td>field</td><td>Field initialized from the retained signal value, falls back when the signal has not been published, and updates when the signal changes. Bare <code>@subscribe</code> uses the field name as the signal name.</td></tr>
+<tr><td><code>@subscribe</code>, <code>@subscribe(name, options?)</code>, or <code>@subscribe(options)</code></td><td>method</td><td>Method receives every future publication for the signal. Bare <code>@subscribe</code> uses the method name as the signal name. Pass <code>{ onMount: true }</code> to also run once after the component/page mounts.</td></tr>
+<tr><td><code>@publish</code> or <code>@publish(name)</code></td><td>field</td><td>Initial field value is retained as the signal value and future assignments publish retained updates. Bare <code>@publish</code> uses the field name as the signal name.</td></tr>
+<tr><td><code>@publish</code>, <code>@publish(name, options?)</code>, or <code>@publish(options)</code></td><td>method</td><td>Return value (or resolved value for async) is published as <code>name</code>. Bare <code>@publish</code> uses the method name as the signal name. Rejections propagate without publishing.</td></tr>
 <tr><td><code>@env(key, fallback?)</code></td><td>field</td><td>Field initialized from <code>tac.env(key, fallback)</code></td></tr>
 <tr><td><code>@onMount</code></td><td>method</td><td>Method registered as an <code>onMount</code> handler bound to the instance</td></tr>
-<tr><td><code>@emit(name)</code></td><td>method</td><td>Return value (or resolved value for async) emitted as <code>name</code>. Rejections propagate without emitting.</td></tr>
 </table>
 
-`@inject` and `@env` mirror the underlying `tac.inject` / `tac.env` types and may return `undefined` when no fallback is supplied; declare the field's JSDoc type accordingly.
+`@subscribe` and `@env` mirror the underlying `tac.subscribe` / `tac.env` types and may return `undefined` when no fallback is supplied; declare the field's JSDoc type accordingly.
 
 Outside of companion scripts (tests, library code), import the decorators explicitly:
 
 ```js
-import { inject, provide, env, onMount, emit } from '@d31ma/tachyon/decorators'
+import { subscribe, publish, env, onMount } from '@d31ma/tachyon/decorators'
 ```
 
 ### Reactive Fields
@@ -850,7 +883,7 @@ import { inject, provide, env, onMount, emit } from '@d31ma/tachyon/decorators'
 Tac companion fields are reactive in the browser. Assigning to a declared instance field schedules one batched rerender automatically, so app code does not need to call `this.rerender()` after normal state changes:
 
 ```js
-export default class extends Tac {
+export default class {
   count = 0
 
   increment() {
@@ -859,14 +892,14 @@ export default class extends Tac {
 }
 ```
 
-`$`-prefixed and `$$`-prefixed persistent fields are reactive too, and still write through to `sessionStorage` / `localStorage`. `this.rerender()` remains available for rare cases where code mutates nested object/array contents in place instead of assigning a new field value.
+`$`-prefixed and `$$`-prefixed persistent fields are reactive too, and still write through to `sessionStorage` / `localStorage`. Strict v2 reactivity is assignment-based: mutate nested object/array contents by assigning a new field value rather than relying on a manual render escape hatch.
 
 ### Prop Auto-Binding
 
 `Tac` automatically copies values from `this.props` onto any same-named instance field declared on the subclass. A leading `$` or `$$` on the field name is stripped when matching, so a `$`-prefixed or `$$`-prefixed persistent field automatically pairs with the unprefixed prop key:
 
 ```js
-export default class extends Tac {
+export default class {
   /** @type {string} */
   label = 'Default'           // populated from props.label, falls back to 'Default'
 
@@ -887,8 +920,8 @@ The binding runs after child class fields initialize, so the prop value wins ove
 Tac can expose explicitly public browser config through `this.env(key, fallback)`.
 
 ```js
-export default class extends Tac {
-  apiBase = this.env('PUBLIC_API_BASE_URL', '/languages/javascript')
+export default class {
+  apiBase = this.env('PUBLIC_API_BASE_URL', '/language/javascript')
 }
 ```
 
@@ -906,6 +939,260 @@ Important boundary:
 - private secrets must stay in Yon and be used through server routes, middleware, or upstream API calls made on the server
 
 There is no secure way to give a browser script a secret and also keep that secret hidden from the browser.
+
+### Tac Workers
+
+Tac Workers let page and component scripts call a browser-local worker backend
+with the same authoring feel as Yon routes:
+
+```text
+client/workers/
+  language/
+    rust/
+      tac.rs
+    javascript/
+      tac.js
+    typescript/
+      tac.ts
+    apple/
+      tac.swift
+    android/
+      tac.kt
+    windows/
+      tac.cs
+```
+
+The worker is shaped exactly like a Yon route handler - `impl Handler` with
+methods named after HTTP verbs:
+
+```rust
+// client/workers/language/rust/tac.rs
+impl Handler {
+    pub fn GET(request: Request) -> i32 { request.len() }
+    pub fn POST(request: Request) -> String { /* ... */ }
+    pub fn PATCH(request: Request) -> Json { json(request.body()) }
+}
+```
+
+Page and component scripts invoke it with the native `fetch` API - the request
+verb selects the handler method (default `GET`):
+
+```js
+export default class {
+  summary = ''
+
+  async summarize(text) {
+    const response = await fetch('tac://language/rust', { method: 'POST', body: { text } })
+    const payload = await response.json()
+    this.summary = payload.body.result
+  }
+}
+```
+
+At bundle time, Tachyon compiles each worker source into sibling runtime assets
+under each selected target directory. For the default web target, that means
+`dist/web/workers/**`:
+
+```text
+dist/web/workers/language/rust/tac.worker.js
+dist/web/workers/language/rust/rs.wasm
+dist/web/workers/language/javascript/tac.worker.js
+dist/web/workers/language/javascript/js.wasm
+dist/web/workers/language/typescript/tac.worker.js
+dist/web/workers/language/typescript/ts.wasm
+```
+
+`fetch('tac://language/rust', init)` resolves to the generated
+`/workers/language/rust/tac.worker.js` module, runs the matching verb method in
+a Web Worker, and returns a normal browser `Response`. Every non-`tac://` URL is
+delegated to the platform `fetch`, so local-first caching is unaffected.
+
+Tac caches one browser Worker per route by default. Heavy compute paths can opt
+into a Tachyon-managed route pool without changing the worker source:
+
+```js
+await fetch('tac://language/rust?pool=4', { method: 'POST', body })
+await fetch('tac://language/rust', {
+  method: 'POST',
+  headers: { 'X-Tac-Workers': '4' },
+  body,
+})
+await fetch('tac://language/rust', {
+  method: 'POST',
+  tac: { poolSize: 4 },
+  body,
+})
+```
+
+Pool sizes are clamped between `1` and `16`. Tachyon reuses the route pool and
+dispatches calls to the least-busy worker with round-robin tie breaking, which
+keeps concurrent Wasm work off the UI thread and spreads bursts before Tachyon
+adds true shared-memory Wasm threading.
+
+Browser worker compilation is fully in-house. Tachyon parses the supported
+handler subset directly and emits Wasm exposing the worker ABI
+(`memory`, `alloc`, optional `dealloc`, `call`, `output_ptr`, `output_len`).
+Tac supports five worker language families with strict target scopes:
+
+- **Rust** (`tac.rs`): web, macOS, Windows, Linux, iOS, and Android
+- **JavaScript/TypeScript** (`tac.js`, `tac.ts`): web
+- **Swift** (`tac.swift`): macOS and iOS
+- **Kotlin** (`tac.kt`): Android
+- **C#** (`tac.cs`): Windows
+
+Native WebView bundles may use the browser/Wasm path for web-scoped workers.
+Files whose language does not support the selected target are not bundled.
+
+How the in-house compiler works:
+
+1. Tachyon finds `client/workers/**/tac.<language>` during `bun run bundle`.
+2. The applicable language frontend tokenizes/parses only Tachyon's documented
+   handler subset, not the full language.
+3. That parser emits a shared handler AST: methods named after HTTP verbs,
+   typed expressions, local bindings, loops, conditionals, and request helpers.
+4. `tac-handler-codegen.js` type-checks the AST, rejects unsupported methods or
+   type mismatches, and emits Wasm through Tachyon's own encoder.
+5. The generated `tac.worker.js` loads `tac.wasm`, dispatches the fetch method
+   to the matching handler method, and returns a normal `Response`.
+
+Worker contracts may also live beside the source as `OPTIONS.schema.json`, just
+like Yon backend routes:
+
+```text
+client/workers/language/rust/
+  tac.rs
+  OPTIONS.schema.json
+```
+
+When present, Tachyon emits the schema to
+`dist/<target>/workers/<route>/OPTIONS.schema.json`, embeds it in the generated
+worker runtime, validates declared request sections before calling Wasm, and
+validates the response body for the matching status code before resolving the
+`fetch`.
+The browser worker validator follows Tachyon's strict CHEX-style contract
+shape: string leaves are regex patterns, data values are coerced to strings for
+matching, objects reject unknown properties, keys may be nullable with `?`,
+arrays must contain exactly one scalar or object template, and record
+descriptors are single-key objects whose key starts with `^`.
+
+Worker methods can return i32-backed integer aliases, `bool`,
+`String`/`string`/`str`, or `Json`/`json`. Boolean responses are emitted as
+real JSON `true`/`false` values. String responses are JSON-escaped
+automatically. Json responses are copied into `body.result` as raw JSON, so
+`json(request.body())` can echo a JSON object or array as a real structured
+value. `request.json()` returns the whole request envelope as raw JSON for
+handlers that need the method/body metadata together.
+
+Handlers can read request fields by key with `request.query("k")`,
+`request.path("k")`, and `request.header("k")` (each returns a `String`, empty
+when the key is absent). These resolve through a host-provided runtime import —
+the host does the JSON lookup, so the wasm carries no JSON parser. A JSON object
+literal `{ "key": value, ... }` builds a structured `Json` response directly to
+JSON text (values rendered by type: integers as numbers, `bool` as
+`true`/`false`, `String` quoted and escaped, `Json` embedded raw), so wasm
+routes can return validated object responses without a JSON library inside the
+module.
+
+Tac Workers also expose a deliberately small platform boundary through
+`request.platform("key")`. This is the only OS-like surface available to
+browser-local Wasm workers; page and component scripts do not get a separate
+Tac OS API. The generated worker host resolves curated, non-secret facts such as
+`"os"`, `"arch"`, `"runtime"`, `"target"`, `"targets"`, `"cpuCores"`,
+`"language"`, `"timezone"`, `"online"`, and `"touch"`. In browsers this is
+backed by standard Web Worker globals and therefore works across macOS,
+Windows, Linux, Android, and iOS within each browser's sandbox. It does not
+grant arbitrary filesystem, process, device, or network system calls.
+
+```rust
+impl Handler {
+    pub fn GET(request: Request) -> String {
+        "running on " + request.platform("os")
+    }
+}
+```
+
+For native OS capabilities, Tac workers use a fail-closed bridge modeled after
+Electron/Tauri's privileged-host pattern. A worker does not receive raw OS
+access. Instead it returns a `$tacNative` envelope, and the generated worker
+runtime brokers that request to the page/native host only if the capability is
+listed in the `TAC_NATIVE_CAPABILITIES` environment variable at compile time.
+
+```bash
+TAC_NATIVE_CAPABILITIES=app.info,clipboard.readText
+```
+
+```rust
+impl Handler {
+    pub fn PATCH(request: Request) -> Json {
+        json(request.body())
+    }
+}
+```
+
+```js
+await fetch('tac://native', {
+  method: 'PATCH',
+  body: JSON.stringify({
+    $tacNative: {
+      capability: 'app.info',
+      payload: {}
+    }
+  })
+})
+```
+
+The brokered capability set includes `app.info`, `clipboard.readText`,
+`clipboard.writeText`, `openUrl`, and `file.openText`. Browser builds use
+web-platform fallbacks where available; native WebView builds can route the
+same request through `window.__tcNativeBridge__.invoke(...)`.
+
+Raw OS capabilities (`fs.*`, `shell.*`, `process.*`) require two independent
+authorizations at compile time: they must appear in both
+`TAC_NATIVE_CAPABILITIES` and `TAC_DANGEROUS_CAPABILITIES`:
+
+```bash
+TAC_NATIVE_CAPABILITIES=fs.readText
+TAC_DANGEROUS_CAPABILITIES=fs.readText
+```
+
+A raw OS capability invoked without both allowlist entries is rejected at runtime.
+Both lists are resolved at compile time and baked into the worker, since browser
+workers have no `process.env`.
+
+Initial raw capabilities are `fs.readText`, `fs.writeText`, `fs.readDir`, and
+`shell.exec`. They are intended for trusted native hosts only. The browser
+sandbox cannot execute these directly; it must either run in a host that exposes
+Bun/Node-style OS APIs or delegate through a native WebView bridge. Raw sockets,
+secrets, and process management beyond `shell.exec` remain disabled.
+`shell.exec` accepts `{ "command": "...", "args": ["..."], "cwd": "..." }`
+and returns `{ command, args, cwd, exitCode, stdout, stderr }`.
+
+Integer aliases are intentionally backed by the same signed 32-bit Wasm lane
+today. Use them for familiar authoring syntax, not native-width overflow
+semantics. Float/double primitives are not exposed yet; they need a dedicated
+f64 arithmetic and JSON formatting path before Tachyon can claim production
+support for them.
+
+Supported in-house Wasm subset by language:
+
+- Rust: `impl Handler`, `pub fn VERB(request: Request) -> i8|i16|i32|u8|u16|u32|isize|usize|bool|String|Json`,
+  `let`/`let mut`, assignment, arithmetic, comparisons, logical `! && ||`,
+  `if/else` expressions, `while`, string literals + `+`, `request.len()`,
+  `request.body()`, `request.json()`, and `json(...)`.
+- C#: `class Handler` static methods returning integer aliases, `bool`,
+  `string`/`String`, or `Json`, declarations, assignment, arithmetic,
+  comparisons, logical `! && ||`, ternary `?:`, `while`, string literals + `+`,
+  `request.len()`, `request.body()`, `request.json()`, and `json(...)`.
+- JavaScript: `class Handler` methods named after HTTP verbs, optional
+  `static`, JSDoc `@returns {number|boolean|string|json}` when inference is not
+  enough, `const`/`let`/`var`, assignment, arithmetic, comparisons, logical
+  `! && ||`, ternary `?:`, `while`, string literals + `+`, `request.len()`,
+  `request.body()`, `request.json()`, and `json(...)`.
+- TypeScript: `class Handler` or `export default class Handler`, methods named
+  after HTTP verbs with a `TacWorkerRequest` parameter and return annotations
+  `number|boolean|string|Json|json`, typed locals, assignment, arithmetic,
+  comparisons, logical `! && ||`, ternary `?:`, `while`, string literals + `+`,
+  `request.len()`, `request.body()`, `request.json()`, and `json(...)`.
 
 ---
 
@@ -953,12 +1240,12 @@ bun test tests/integration/api-routes.test.js
 For a manual smoke test:
 
 ```bash
-cd examples
+cd tests/fixtures/fullstack
 YON_OTEL_ENABLED=true \
 YON_OTEL_ROOT=.tachyon-otel \
 YON_OTEL_SERVICE_NAME=tachyon-dev \
 YON_BASIC_AUTH_HASH="$(bun -e "console.log(await Bun.password.hash('admin:pass'))")" \
-bun ../src/cli/serve.js
+bun ../../../src/cli/serve.js
 ```
 
 Then send a traced request:
@@ -968,7 +1255,7 @@ curl -i \
   -H 'Authorization: Basic YWRtaW46cGFzcw==' \
   -H 'X-Request-Id: manual-otel-test' \
   -H 'traceparent: 00-0123456789abcdef0123456789abcdef-1111111111111111-01' \
-  http://127.0.0.1:8000/languages/javascript
+  http://127.0.0.1:8000/language/javascript
 ```
 
 You should see:
@@ -979,25 +1266,25 @@ You should see:
 
 ### Consuming Telemetry From FYLO
 
-The example app includes a Yon telemetry consumer at `/languages/javascript/telemetry`.
+The full-stack fixture app includes a Yon telemetry consumer at `/language/telemetry`.
 
 - it reads `otel-spans` from FYLO
 - parses the stored `otlpJson` payload back into OTLP JSON `TracesData`
 - returns a monitoring-friendly summary plus recent spans
 
-That route is implemented in [examples/server/routes/languages/javascript/telemetry/GET/yon.js](examples/server/routes/languages/javascript/telemetry/GET/yon.js), and the example dashboard uses it to render a live telemetry panel.
+That route is implemented in [tests/fixtures/fullstack/server/routes/language/telemetry/yon.js](tests/fixtures/fullstack/server/routes/language/telemetry/yon.js).
 
-The examples also include a tiny alerting worker at [examples/server/workers/telemetry-alert-worker.js](examples/server/workers/telemetry-alert-worker.js).
+The fixture also includes a tiny alerting worker at [tests/fixtures/fullstack/server/workers/telemetry-alert-worker.js](tests/fixtures/fullstack/server/workers/telemetry-alert-worker.js).
 
-Run it against the example app with:
+Run it against the fixture app with:
 
 ```bash
-cd examples
-YON_TELEMETRY_URL=http://127.0.0.1:8000/languages/javascript/telemetry?limit=25 \
+cd tests/fixtures/fullstack
+YON_TELEMETRY_URL=http://127.0.0.1:8000/language/telemetry?limit=25 \
 YON_BASIC_AUTH_HEADER='Basic YWRtaW46cGFzcw==' \
 YON_ALERT_SLOW_MS=500 \
 YON_ALERT_STATUS_CODE=500 \
-bun run telemetry:alerts
+bun ./server/workers/telemetry-alert-worker.js
 ```
 
 It polls the telemetry endpoint, flags slow routes and server errors, and prints structured JSON that can be shipped to another service or cron job.
@@ -1010,7 +1297,7 @@ It polls the telemetry endpoint, flags slow routes and server errors, and prints
 `$$`-prefixed instance fields are automatically persisted to `localStorage`.
 
 ```js
-export default class extends Tac {
+export default class {
   /** @type {number} */
   $count = 0         // sessionStorage
   /** @type {string} */
@@ -1045,10 +1332,15 @@ Inside Tac page/component scripts only, `fetch()` is wrapped with a local-first 
 
 This does not override the global browser `fetch` outside Tac page/component execution.
 
-The compiler-injected `fylo` browser client uses the same IndexedDB-backed cache for FYLO REST reads:
+The compiler-injected `fylo` browser client is backed by
+`@d31ma/fylo/browser`. FYLO stores browser-local documents in OPFS when the
+browser supports it, falls back to memory when OPFS is unavailable, and prefers
+a `SharedWorker`/`Worker` boundary so reads, writes, query filtering, and
+collection events stay off the UI thread. Tachyon keeps the older IndexedDB
+response cache as the network fallback layer for plain `fetch()` calls.
 
 ```js
-export default class extends Tac {
+export default class {
   users = []
 
   async refresh() {
@@ -1068,17 +1360,44 @@ export default class extends Tac {
 
 FYLO read cache policies are:
 
-- `cache-first`: default; return a cached `find`, `list`, or `get` response first, then cache successful network reads
-- `network-first`: try the network first, falling back to the cached response if the browser is offline
-- `reload`: bypass the cached read and refresh the cache from the network
-- `no-store`: skip reading and writing the cache
+- `cache-first`: default; return locally mirrored `find`, `list`, or `get` data first when present, then hydrate from the network
+- `network-first`: try the network first, write successful results into the local mirror, and fall back to local data when offline
+- `reload`: bypass local reads and refresh local data from the network
+- `no-store`: skip local reads/writes and use the network path only
 
-Successful FYLO mutations (`create`, `put`, `patch`, and `del`) invalidate cached reads for that collection. Authenticated FYLO requests are cached in a credential-scoped namespace so one user's cached data is not reused for another user's credentials.
+FYLO mutations update the browser-local mirror on a best-effort basis and then
+sync through Yon's `/_fylo` boundary when available:
+
+- `create`, `put`, `patch`, and `del` cover single-document writes.
+- `batchPut`, `patchMany`, and `deleteMany` call FYLO's machine protocol for bulk operations.
+- `restore`, `latest`, `inspect`, and `rebuild` expose FYLO maintenance and history helpers.
+- `createCollection` and `dropCollection` are available on both `fylo.<collection>` and the root `fylo` object.
+
+Authenticated FYLO data is stored in a credential-scoped namespace so one user's
+local documents are not reused for another user's credentials.
+
+```js
+export default class {
+  async importUsers(rows) {
+    await fylo.createCollection('users')
+    await fylo.users.batchPut(rows)
+    await fylo.users.patchMany({
+      query: { role: 'eq.admin' },
+      patch: { reviewed: true }
+    })
+  }
+
+  async recoverUser(id) {
+    await fylo.users.restore(id)
+    return fylo.users.latest(id)
+  }
+}
+```
 
 FYLO reads can also run in a sync-first style from Tac scripts:
 
 ```js
-export default class extends Tac {
+export default class {
   users = []
 
   initUsers() {
@@ -1093,7 +1412,13 @@ export default class extends Tac {
 }
 ```
 
-`subscribe(query, callback, options)` performs an initial `find()`, opens `/_fylo/api/events/stream` as a server-sent event stream, invalidates the collection's IndexedDB read cache after FYLO journal changes, and re-runs the query with `cache: 'reload'`. If `EventSource` cannot be used, such as when the wrapper is sending explicit Basic auth headers, the same API falls back to polling `fylo.<collection>.events()` with the configured `pollMs`.
+`subscribe(query, callback, options)` performs an initial `find()`, subscribes to
+the browser-local FYLO mirror for same-tab mutations, opens
+`/_fylo/api/events/stream` as a server-sent event stream for remote changes, and
+re-runs the query after each local or remote event. If `EventSource` cannot be
+used, such as when the wrapper is sending explicit Basic auth headers, the same
+API falls back to polling `fylo.<collection>.events()` with the configured
+`pollMs`.
 
 On the Yon side, handler responses are also given an inferred content type now:
 
@@ -1114,21 +1439,132 @@ That scope is applied to the generated wrapper around each component instance.
 
 ## Shared Frontend Files
 
-- `browser/shared/assets/*` is served at `/shared/assets/*`
-- `browser/shared/data/*` is served at `/shared/data/*`
-- `browser/shared/scripts/imports.js` is the optional browser entry
-- `browser/shared/styles/*` is available for imports from `imports.js`
+- `client/shared/assets/*` is served at `/shared/assets/*`
+- `client/shared/data/*` is served at `/shared/data/*`
+- `client/shared/scripts/imports.js` is the optional browser entry
+- `client/shared/styles/*` is available for imports from `imports.js`
 
 If `imports.js` imports CSS, Tachyon emits `/imports.css` and links it from generated HTML shells.
 
-The example app uses a local `imports.js` plus shared assets/data. Keep demo-only browser helpers out of published runtime code; shared production styles should live under `browser/shared/assets` or `browser/shared/styles`.
+Two shared-asset filenames get special treatment in generated shells:
+
+- `client/shared/assets/favicon.svg` (or `app-icon.svg`) is linked as the
+  favicon and Apple touch icon.
+- `client/shared/assets/manifest.webmanifest` (or `manifest.json`) is linked
+  as the web app manifest, and its `theme_color` becomes a
+  `<meta name="theme-color">` tag. Combined with the built-in service worker,
+  this makes the app an installable PWA.
+
+The website showcase uses a local `imports.js` plus shared assets/data. Keep
+demo-only browser helpers out of published runtime code; shared production
+styles should live under `client/shared/assets` or `client/shared/styles`.
 
 ---
 
 <details>
 <summary><h2 style="display:inline">Build Output</h2></summary>
 
-`tac.bundle` writes a static-ready `dist/` directory.
+`tac.bundle` writes a static-ready `dist/` directory. The default bundle target
+is `web`. To prepare the same Tac output for native shell packaging, pass
+`--target`:
+
+```bash
+tac.bundle --target MacOS
+tac.bundle --target windows
+tac.bundle --target linux
+tac.bundle --target android
+tac.bundle --target ios
+tac.bundle --target all
+```
+
+Targets are case-insensitive. Supported values are `web`, `macos`, `windows`,
+`linux`, `android`, `ios`, and `all`. `all` expands to every supported target.
+Each target is emitted as a self-contained app under `dist/<target>/`, so a
+multi-target build creates directories such as `dist/web`, `dist/ios`,
+`dist/android`, `dist/macos`, `dist/windows`, and `dist/linux`.
+Wasm workers can read the selected target with `request.platform("target")` or
+the full comma list with `request.platform("targets")`.
+
+Tac page and component scripts can read the same bundle context through
+`this.tac.platform`, and templates can use the string globals `environment`,
+`platform`, `target`, and `os` without imports:
+
+```html
+<logic :if="environment === 'desktop'">
+  <p>Running the {platform} desktop bundle.</p>
+</logic>
+<logic :else-if="environment === 'mobile'">
+  <p>Running the {platform} mobile bundle.</p>
+</logic>
+<logic else>
+  <p>Running the {platform} bundle in a browser environment.</p>
+</logic>
+```
+
+```js
+// client/pages/tac.js
+export default class {
+  get layoutClass() {
+    return `shell-${this.tac.platform.environment}`
+  }
+}
+```
+
+The `platform` value is one of `web`, `macos`, `windows`, `linux`, `ios`, or
+`android`. The `environment` value is `browser`, `desktop`, or `mobile`.
+`macos`, `windows`, and `linux` use the `desktop` environment; `ios` and
+`android` use the `mobile` environment; `web` uses the `browser` environment.
+The web platform also detects the visitor OS at runtime when the browser
+exposes enough user-agent information.
+
+For native targets, `tac.bundle` produces a native webview host at
+`dist/<target>/`:
+
+```text
+dist/macos/      (macOS WKWebView host)
+dist/windows/    (Windows WebView2 host)
+dist/linux/      (Linux WebKitGTK host)
+dist/ios/        (iOS WKWebView host)
+dist/android/    (Android WebView host)
+```
+
+These hosts are frontend-only shells: they load the static Tac files (embedded
+under `Resources/`) through the operating system's webview (`WKWebView`,
+WebView2, WebKitGTK, iOS `WKWebView`, or Android `WebView`). They do not embed
+or spawn a Yon backend. Pass `--skip-native-host` to emit the plain web bundle
+at `dist/<target>/` instead, or run `tac.native-bundle --target <target>` later
+to turn an existing `dist/<target>/` web bundle into the native host in place.
+
+### Native artifact export (`.apk` / `.ipa` / `.app` / Linux binary)
+
+Production bundles (`NODE_ENV=production`, or any bundle run with `--package`)
+build distributable artifacts for native targets when the toolchains exist on
+the machine, and `dist/<target>/` then contains **only the artifact** — no
+project scaffolding. Pass `--skip-package` to opt out. Missing toolchains
+downgrade to a logged skip, in which case the generated host project is kept
+and remains buildable by hand.
+
+- **Android** — requires a JDK, Gradle (`brew install gradle@8`), and an
+  Android SDK (`brew install --cask android-commandlinetools`, or Android
+  Studio, with `ANDROID_HOME` set). Emits `dist/android/<App>-<version>.apk`.
+  Release builds are signed with the debug keystore by default so they
+  install out of the box; provide `TAC_ANDROID_KEYSTORE`,
+  `TAC_ANDROID_KEYSTORE_PASSWORD`, `TAC_ANDROID_KEY_ALIAS`, and
+  `TAC_ANDROID_KEY_PASSWORD` for store signing.
+- **iOS** — requires full Xcode plus `xcodegen` (`brew install xcodegen`).
+  The generated host ships a `project.yml`; the packager runs
+  `xcodegen generate` and `xcodebuild` to emit
+  `dist/ios/<App>-<version>-unsigned.ipa`. Set `TAC_IOS_TEAM_ID` to produce a
+  signed build through your Apple Developer team instead.
+- **macOS** — requires the Xcode Command Line Tools (`swiftc`). Emits an
+  ad-hoc-signed `dist/macos/<App>.app`.
+- **Linux** — requires CMake plus GTK/WebKitGTK development packages
+  (`apt-get install cmake libgtk-3-dev libwebkit2gtk-4.1-dev`), building on
+  Linux. Emits `dist/linux/<App>/` containing the executable and its
+  `Resources/`.
+- **Windows** — requires Visual Studio 2022 with the C++ workload, CMake,
+  and the WebView2 SDK, building on Windows. Emits `dist/windows/<App>/`
+  containing `<App>.exe` and its `Resources/`.
 
 `yon.serve --no-bundle` or `YON_SKIP_BUNDLE=true` starts the server without
 regenerating `dist/`, which is useful when another build pipeline owns frontend
@@ -1137,8 +1573,8 @@ output. For post-processing that should run after every Tachyon bundle, export a
 
 ```js
 export default {
-  async postBundle({ distRoot }) {
-    // patch distRoot/index.html, write runtime config, copy deployment assets, etc.
+  async postBundle({ distRoot, targetRoots }) {
+    // patch targetRoots.web/index.html, write runtime config, copy deployment assets, etc.
   }
 }
 ```
@@ -1147,24 +1583,36 @@ Typical output:
 
 ```text
 dist/
-  index.html
-  docs/index.html
-  pages/tac.js
-  pages/docs/tac.js
-  components/clicker/tac.js
-  modules/*.js
-  shared/assets/*
-  shared/data/*
-  spa-renderer.js
-  imports.js
-  imports.css
+  web/
+    index.html
+    docs/index.html
+    pages/tac.js
+    pages/docs/tac.js
+    components/clicker/tac.js
+    shared/modules/*.js
+    shared/assets/*
+    shared/data/*
+    workers/language/rust/tac.worker.js
+    workers/language/rust/tac.wasm
+    fylo-browser-worker.js
+    spa-renderer.js
+    imports.js
+    imports.css
+  ios/
+    Resources/*
+    Sources/*
+    tachyon.host.json
+  android/
+    Resources/*
+    app/*
+    tachyon.host.json
 ```
 
 > **Notes:**
 >
 > - there is no `dist/layouts/` output
 > - page shells are embedded into `spa-renderer.js`
-> - static assets are emitted under `dist/shared/assets/`
+> - static assets are emitted under `dist/<target>/shared/assets/`
 > - the runtime now uses one app shell template and injects the HMR client only in development
 
 </details>
@@ -1175,12 +1623,27 @@ dist/
 
 <table>
 <tr><th align="left">Command</th><th align="left">Description</th></tr>
-<tr><td><code>yon.serve</code></td><td>Detects <code>browser/</code> and <code>server/</code> contents, serves frontend, backend, or full-stack app</td></tr>
+<tr><td><code>yon.serve</code></td><td>Detects <code>client/</code> and <code>server/</code> contents, serves frontend, backend, or full-stack app</td></tr>
 <tr><td><code>tac.bundle</code></td><td>Builds <code>dist/</code></td></tr>
+<tr><td><code>tac.bundle --target MacOS</code></td><td>Builds a macOS <code>WKWebView</code> host at <code>dist/macos</code></td></tr>
+<tr><td><code>tac.bundle --target linux</code></td><td>Builds a Linux WebKitGTK host at <code>dist/linux</code></td></tr>
+<tr><td><code>tac.bundle --target android</code></td><td>Builds an Android WebView host at <code>dist/android</code></td></tr>
+<tr><td><code>tac.bundle --target ios</code></td><td>Builds an iOS <code>WKWebView</code> host at <code>dist/ios</code></td></tr>
+<tr><td><code>tac.bundle --target all</code></td><td>Builds the web bundle and native webview hosts for web, macOS, Windows, Linux, Android, and iOS</td></tr>
+<tr><td><code>tac.bundle --target macos --skip-native-host</code></td><td>Builds the plain web bundle at <code>dist/macos</code> without generating the native host</td></tr>
+<tr><td><code>tac.native-bundle --target macos</code></td><td>Turns an existing <code>dist/macos</code> web bundle into the native host in place</td></tr>
 <tr><td><code>tac.bundle --watch</code></td><td>Keeps <code>dist/</code> fresh</td></tr>
-<tr><td><code>tac.preview</code></td><td>Serves <code>dist/</code></td></tr>
-<tr><td><code>tac.preview --watch</code></td><td>Rebuilds and previews frontend output together</td></tr>
+<tr><td><code>tac.preview</code></td><td>Serves <code>dist/web</code></td></tr>
+<tr><td><code>tac.preview --target macos</code></td><td>Serves the selected target's previewable web assets, usually <code>dist/&lt;target&gt;/Resources</code> for native hosts</td></tr>
+<tr><td><code>tac.preview --watch --target web</code></td><td>Rebuilds and previews the selected target together</td></tr>
 </table>
+
+`tac.preview --target <native>` checks local prerequisites before starting. For
+example, macOS preview requires macOS plus `swiftc`, iOS requires Xcode,
+Linux requires GTK/WebKitGTK development packages, Windows requires WebView2,
+and Android requires an Android SDK plus JDK. Use `--skip-native-checks` only
+when you intentionally want to serve the generated web assets without verifying
+the native host toolchain.
 
 ---
 

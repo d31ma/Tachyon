@@ -1,7 +1,9 @@
 // @ts-check
-import { readdir, stat } from 'fs/promises';
+import { readFile, readdir, stat } from 'fs/promises';
 import path from 'path';
 import Router from '../server/http/route-handler.js';
+
+const PREVIEW_TARGET_ORDER = /** @type {const} */ (['web', 'macos', 'windows', 'linux', 'android', 'ios']);
 /**
  * @typedef {object} StaticPreviewOptions
  * @property {boolean} [allowRootFallback]
@@ -14,6 +16,16 @@ async function pathExists(filePath) {
     try {
         const info = await stat(filePath);
         return info.isFile();
+    }
+    catch {
+        return false;
+    }
+}
+/** @param {string} dirPath */
+async function directoryExists(dirPath) {
+    try {
+        const info = await stat(dirPath);
+        return info.isDirectory();
     }
     catch {
         return false;
@@ -46,9 +58,49 @@ async function collectRoutes(distPath, currentDir, routes) {
     }
 
     await Promise.all(entries
-        .filter((entry) => entry.isDirectory() && !['pages', 'components', 'modules', 'shared'].includes(entry.name))
+        .filter((entry) => entry.isDirectory() && !['pages', 'components', 'shared'].includes(entry.name))
         .map((entry) => collectRoutes(distPath, path.posix.join(currentDir, entry.name), routes)));
     return routes;
+}
+/**
+ * @param {string} distPath
+ * @param {string} [target]
+ * @returns {Promise<string>}
+ */
+export async function resolveStaticPreviewRoot(distPath, target) {
+    if (target) {
+        const targetRoot = path.join(distPath, target);
+        if (await pathExists(path.join(targetRoot, 'index.html')))
+            return targetRoot;
+        if (await pathExists(path.join(targetRoot, 'Resources', 'index.html')))
+            return path.join(targetRoot, 'Resources');
+        return targetRoot;
+    }
+    if (await pathExists(path.join(distPath, 'index.html')))
+        return distPath;
+    /** @type {string[]} */
+    let directoryTargets = [];
+    try {
+        const entries = await readdir(distPath, { withFileTypes: true });
+        directoryTargets = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    }
+    catch {
+        return distPath;
+    }
+    const targets = [...PREVIEW_TARGET_ORDER, ...directoryTargets]
+        .filter((target, index, list) => target && list.indexOf(target) === index);
+    for (const target of new Set(targets)) {
+        const targetRoot = path.join(distPath, target);
+        if (!(await directoryExists(targetRoot)))
+            continue;
+        if (await pathExists(path.join(targetRoot, 'index.html')))
+            return targetRoot;
+        // Native-host targets ship at dist/<target>/ with their web assets
+        // embedded under Resources/.
+        if (await pathExists(path.join(targetRoot, 'Resources', 'index.html')))
+            return path.join(targetRoot, 'Resources');
+    }
+    return distPath;
 }
 /** @param {string} distPath */
 async function loadRoutes(distPath) {

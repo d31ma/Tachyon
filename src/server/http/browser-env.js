@@ -36,7 +36,7 @@ export function getPublicBrowserEnv() {
 /** @returns {string} */
 export function createPublicBrowserEnvScript() {
     const payload = JSON.stringify(getPublicBrowserEnv()).replace(/</g, '\\u003c');
-    return `window.__ty_public_env__ = Object.freeze(${payload});\n`;
+    return `window.__tc_public_env__ = Object.freeze(${payload});\n`;
 }
 
 /** @returns {Response} */
@@ -51,14 +51,16 @@ export function createPublicBrowserEnvResponse() {
 
 /**
  * @param {string} shellHTML
+ * @param {string} [assetPrefix]
  * @returns {string}
  */
-export function withPublicBrowserEnv(shellHTML) {
+export function withPublicBrowserEnv(shellHTML, assetPrefix = '/') {
     const publicEnv = getPublicBrowserEnv();
     const keys = Object.keys(publicEnv);
     if (keys.length === 0 || shellHTML.includes(PUBLIC_BROWSER_ENV_PATH)) {
         return shellHTML;
     }
-    const script = `    <script type="module" src="${PUBLIC_BROWSER_ENV_PATH}"></script>\n`;
+    const src = assetPrefix === '/' ? PUBLIC_BROWSER_ENV_PATH : `${assetPrefix}browser-env.js`;
+    const script = `    <script type="module" src="${src}"></script>\n`;
     return shellHTML.replace('</head>', `${script}</head>`);
 }
