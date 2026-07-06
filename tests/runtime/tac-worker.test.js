@@ -247,7 +247,10 @@ describe('Tac-aware fetch', () => {
                 source: 'language/native',
             },
         });
-        await flush();
+        // fs.readText awaits a dynamic import plus real file I/O, spanning
+        // several async ticks — poll for the response rather than one flush.
+        for (let i = 0; i < 200 && /** @type {any} */ (nativeWorker.messages.at(-1))?.type !== 'tac:native-response'; i++)
+            await flush();
 
         expect(nativeWorker.messages.at(-1)).toEqual({
             type: 'tac:native-response',
