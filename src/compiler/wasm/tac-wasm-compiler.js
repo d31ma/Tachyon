@@ -19,9 +19,9 @@ export const DATA_BASE = 16;
 /**
  * @typedef {object} WorkerRuntimeContext
  * @property {WasmModule} module
- * @property {{ heap: number, outPtr: number, outLen: number, bodyPtr: number, bodyLen: number }} globals Global indices.
- * @property {{ copy: number, itoa: number, alloc: number, mkStr: number, intToStr: number, strCat: number, jsonEscape: number, idiv: number, imod: number }} fns Internal helper function indices. String values are pointers to an `{ dataPtr@0, byteLen@4 }` header.
- * @property {{ query: number, path: number, header: number } | null} imports Host-provided request-field import indices (`req_query`/`req_path`/`req_header`), or null when the handler does not read request fields. Each takes `(keyPtr, keyLen)` and returns a string-header pointer.
+ * @property {{ heap?: number, outPtr: number, outLen: number, bodyPtr: number, bodyLen: number }} globals Global indices.
+ * @property {{ copy: number, itoa: number, alloc: number, mkStr: number, intToStr: number, strCat: number, jsonEscape: number, quoteStr: number, idiv: number, imod: number }} fns Internal helper function indices. String values are pointers to an `{ dataPtr@0, byteLen@4 }` header.
+ * @property {{ query: number, path: number, header: number, platform: number } | null} imports Host-provided request-field import indices (`req_query`/`req_path`/`req_header`/`req_platform`), or null when the handler does not read request fields. Each takes `(keyPtr, keyLen)` and returns a string-header pointer.
  * @property {(text: string) => { offset: number, length: number }} intern Place a UTF-8 constant in memory.
  */
 
@@ -47,6 +47,7 @@ export function buildWorkerModule(emitCall, options = {}) {
             query: module.addImportFunction({ module: 'env', name: 'req_query', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
             path: module.addImportFunction({ module: 'env', name: 'req_path', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
             header: module.addImportFunction({ module: 'env', name: 'req_header', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+            platform: module.addImportFunction({ module: 'env', name: 'req_platform', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
         }
         : null;
 
@@ -227,6 +228,23 @@ export function buildWorkerModule(emitCall, options = {}) {
             .localGet(5).localGet(1).i32Sub(),
     });
 
+    // quoteStr(strHeader) -> header : render a string as a JSON string value -
+    // a leading `"`, the JSON-escaped bytes, and a trailing `"`. Used when an
+    // object literal embeds a String value. jsonEscape expands each byte to at
+    // most 2, so `2*len + 2` scratch always suffices.
+    const quoteStr = module.addFunction({
+        params: [VAL.i32],
+        results: [VAL.i32],
+        locals: [VAL.i32, VAL.i32, VAL.i32], // len=1, buf=2, n=3
+        body: new Emitter()
+            .localGet(0).i32Load(4).localSet(1)
+            .localGet(1).i32Const(2).i32Mul().i32Const(2).i32Add().call(alloc).localSet(2)
+            .localGet(2).i32Const(34).i32Store8() // buf[0] = '"'
+            .localGet(0).localGet(2).i32Const(1).i32Add().call(jsonEscape).localSet(3) // n = jsonEscape(s, buf+1)
+            .localGet(2).i32Const(1).i32Add().localGet(3).i32Add().i32Const(34).i32Store8() // buf[1+n] = '"'
+            .localGet(2).localGet(3).i32Const(2).i32Add().call(mkStr),
+    });
+
     // idiv(a, b) -> i32 : signed division that yields 0 on /0 instead of trapping
     // (a hostile or empty request must not be able to kill the worker module).
     const idiv = module.addFunction({
@@ -269,7 +287,7 @@ export function buildWorkerModule(emitCall, options = {}) {
         return { offset, length: bytes.length };
     };
 
-    const callResult = emitCall({ module, globals, fns: { copy, itoa, alloc, mkStr, intToStr, strCat, jsonEscape, idiv, imod }, imports, intern });
+    const callResult = emitCall({ module, globals, fns: { copy, itoa, alloc, mkStr, intToStr, strCat, jsonEscape, quoteStr, idiv, imod }, imports, intern });
     const callBody = callResult instanceof Emitter ? callResult : callResult.body;
     const callLocals = callResult instanceof Emitter ? [VAL.i32, VAL.i32, VAL.i32] : callResult.locals;
 
@@ -299,6 +317,317 @@ export function buildWorkerModule(emitCall, options = {}) {
         locals: callLocals, // default out=6, pos=7, n=8 (after the 6 params; frontends may add more)
         body: callWithReset,
     });
+
+    return module;
+}
+
+/**
+ * Build the shared Tac Worker runtime module.
+ * Exports `memory`, `heap` (global), and all utility functions so that
+ * per-handler modules can import them instead of duplicating the runtime.
+ * @returns {Uint8Array}
+ */
+export function buildRuntimeModule() {
+    const module = new WasmModule();
+    module.setMemory(2); // 2 pages (128 KiB)
+
+    const globals = {
+        heap: module.addGlobal({ type: VAL.i32, mutable: true, init: HEAP_BASE }),
+    };
+
+    // copy(dst, src, len) -> len
+    const copy = module.addFunction({
+        name: 'copy',
+        params: [VAL.i32, VAL.i32, VAL.i32],
+        results: [VAL.i32],
+        locals: [VAL.i32],
+        body: new Emitter()
+            .block().loop()
+            .localGet(3).localGet(2).i32GeS().brIf(1)
+            .localGet(0).localGet(3).i32Add()
+            .localGet(1).localGet(3).i32Add().i32Load8U()
+            .i32Store8()
+            .localGet(3).i32Const(1).i32Add().localSet(3)
+            .br(0)
+            .end().end()
+            .localGet(2),
+    });
+
+    // itoa(value, dst) -> bytesWritten
+    const itoa = module.addFunction({
+        name: 'itoa',
+        params: [VAL.i32, VAL.i32],
+        results: [VAL.i32],
+        locals: [VAL.i32, VAL.i32, VAL.i32, VAL.i32],
+        body: new Emitter()
+            .localGet(0).i32Eqz().if()
+            .localGet(1).i32Const(48).i32Store8()
+            .i32Const(1).return()
+            .end()
+            .localGet(1).localSet(5)
+            .localGet(0).i32Const(0).i32LtS().if()
+            .localGet(1).i32Const(45).i32Store8()
+            .localGet(1).i32Const(1).i32Add().localSet(5)
+            .i32Const(0).localGet(0).i32Sub().localSet(0)
+            .end()
+            .localGet(0).localSet(3)
+            .i32Const(0).localSet(2)
+            .block().loop()
+            .localGet(3).i32Eqz().brIf(1)
+            .localGet(2).i32Const(1).i32Add().localSet(2)
+            .localGet(3).i32Const(10).i32DivU().localSet(3)
+            .br(0)
+            .end().end()
+            .localGet(0).localSet(3)
+            .localGet(2).localSet(4)
+            .block().loop()
+            .localGet(3).i32Eqz().brIf(1)
+            .localGet(4).i32Const(1).i32Sub().localSet(4)
+            .localGet(5).localGet(4).i32Add()
+            .localGet(3).i32Const(10).i32RemU().i32Const(48).i32Add()
+            .i32Store8()
+            .localGet(3).i32Const(10).i32DivU().localSet(3)
+            .br(0)
+            .end().end()
+            .localGet(5).localGet(2).i32Add().localGet(1).i32Sub(),
+    });
+
+    // alloc(size) -> ptr
+    const alloc = module.addFunction({
+        name: 'alloc',
+        params: [VAL.i32],
+        results: [VAL.i32],
+        locals: [VAL.i32, VAL.i32],
+        body: new Emitter()
+            .globalGet(globals.heap).localSet(1)
+            .globalGet(globals.heap).localGet(0).i32Add().i32Const(7).i32Add().i32Const(-8).i32And()
+            .globalSet(globals.heap)
+            .globalGet(globals.heap).i32Const(65535).i32Add().i32Const(16).i32ShrU().localSet(2)
+            .localGet(2).memorySize().i32GtS().if()
+            .localGet(2).memorySize().i32Sub().memoryGrow().drop()
+            .end()
+            .localGet(1),
+    });
+
+    // mkStr(dataPtr, len) -> header
+    const mkStr = module.addFunction({
+        name: 'mkStr',
+        params: [VAL.i32, VAL.i32],
+        results: [VAL.i32],
+        locals: [VAL.i32],
+        body: new Emitter()
+            .i32Const(8).call(alloc).localSet(2)
+            .localGet(2).localGet(0).i32Store(0)
+            .localGet(2).localGet(1).i32Store(4)
+            .localGet(2),
+    });
+
+    // intToStr(value) -> header
+    const intToStr = module.addFunction({
+        name: 'intToStr',
+        params: [VAL.i32],
+        results: [VAL.i32],
+        locals: [VAL.i32, VAL.i32],
+        body: new Emitter()
+            .i32Const(12).call(alloc).localSet(1)
+            .localGet(0).localGet(1).call(itoa).localSet(2)
+            .localGet(1).localGet(2).call(mkStr),
+    });
+
+    // strCat(a, b) -> header
+    const strCat = module.addFunction({
+        name: 'strCat',
+        params: [VAL.i32, VAL.i32],
+        results: [VAL.i32],
+        locals: [VAL.i32, VAL.i32, VAL.i32, VAL.i32, VAL.i32],
+        body: new Emitter()
+            .localGet(0).i32Load(0).localSet(2)
+            .localGet(0).i32Load(4).localSet(3)
+            .localGet(1).i32Load(0).localSet(4)
+            .localGet(1).i32Load(4).localSet(5)
+            .localGet(3).localGet(5).i32Add().call(alloc).localSet(6)
+            .localGet(6).localGet(2).localGet(3).call(copy).drop()
+            .localGet(6).localGet(3).i32Add().localGet(4).localGet(5).call(copy).drop()
+            .localGet(6).localGet(3).localGet(5).i32Add().call(mkStr),
+    });
+
+    // jsonEscape(strHeader, dest) -> bytesWritten
+    const jsonEscape = module.addFunction({
+        name: 'jsonEscape',
+        params: [VAL.i32, VAL.i32],
+        results: [VAL.i32],
+        locals: [VAL.i32, VAL.i32, VAL.i32, VAL.i32, VAL.i32, VAL.i32],
+        body: new Emitter()
+            .localGet(0).i32Load(0).localSet(2)
+            .localGet(0).i32Load(4).localSet(3)
+            .i32Const(0).localSet(4)
+            .localGet(1).localSet(5)
+            .block().loop()
+            .localGet(4).localGet(3).i32GeS().brIf(1)
+            .localGet(2).localGet(4).i32Add().i32Load8U().localSet(6)
+            .i32Const(0).localSet(7)
+            .localGet(6).i32Const(34).i32Eq().if().i32Const(34).localSet(7).end()
+            .localGet(6).i32Const(92).i32Eq().if().i32Const(92).localSet(7).end()
+            .localGet(6).i32Const(8).i32Eq().if().i32Const(98).localSet(7).end()
+            .localGet(6).i32Const(9).i32Eq().if().i32Const(116).localSet(7).end()
+            .localGet(6).i32Const(10).i32Eq().if().i32Const(110).localSet(7).end()
+            .localGet(6).i32Const(12).i32Eq().if().i32Const(102).localSet(7).end()
+            .localGet(6).i32Const(13).i32Eq().if().i32Const(114).localSet(7).end()
+            .localGet(7).if()
+            .localGet(5).i32Const(92).i32Store8()
+            .localGet(5).i32Const(1).i32Add().localGet(7).i32Store8()
+            .localGet(5).i32Const(2).i32Add().localSet(5)
+            .else()
+            .localGet(6).i32Const(32).i32LtS().if()
+            .localGet(5).i32Const(32).i32Store8()
+            .localGet(5).i32Const(1).i32Add().localSet(5)
+            .else()
+            .localGet(5).localGet(6).i32Store8()
+            .localGet(5).i32Const(1).i32Add().localSet(5)
+            .end()
+            .end()
+            .localGet(4).i32Const(1).i32Add().localSet(4)
+            .br(0)
+            .end().end()
+            .localGet(5).localGet(1).i32Sub(),
+    });
+
+    // quoteStr(strHeader) -> header
+    const quoteStr = module.addFunction({
+        name: 'quoteStr',
+        params: [VAL.i32],
+        results: [VAL.i32],
+        locals: [VAL.i32, VAL.i32, VAL.i32],
+        body: new Emitter()
+            .localGet(0).i32Load(4).localSet(1)
+            .localGet(1).i32Const(2).i32Mul().i32Const(2).i32Add().call(alloc).localSet(2)
+            .localGet(2).i32Const(34).i32Store8()
+            .localGet(0).localGet(2).i32Const(1).i32Add().call(jsonEscape).localSet(3)
+            .localGet(2).i32Const(1).i32Add().localGet(3).i32Add().i32Const(34).i32Store8()
+            .localGet(2).localGet(3).i32Const(2).i32Add().call(mkStr),
+    });
+
+    // idiv(a, b) -> i32
+    const idiv = module.addFunction({
+        name: 'idiv',
+        params: [VAL.i32, VAL.i32],
+        results: [VAL.i32],
+        body: new Emitter()
+            .localGet(1).i32Eqz().if(VAL.i32)
+            .i32Const(0)
+            .else()
+            .localGet(0).localGet(1).i32DivS()
+            .end(),
+    });
+
+    // imod(a, b) -> i32
+    const imod = module.addFunction({
+        name: 'imod',
+        params: [VAL.i32, VAL.i32],
+        results: [VAL.i32],
+        body: new Emitter()
+            .localGet(1).i32Eqz().if(VAL.i32)
+            .i32Const(0)
+            .else()
+            .localGet(0).localGet(1).i32RemS()
+            .end(),
+    });
+
+    // dealloc(ptr, len)
+    module.addFunction({ name: 'dealloc', params: [VAL.i32, VAL.i32], results: [], body: new Emitter() });
+
+    // getHeap() -> i32
+    module.addFunction({ name: 'getHeap', results: [VAL.i32], body: new Emitter().globalGet(globals.heap) });
+
+    // setHeap(value)
+    module.addFunction({ name: 'setHeap', params: [VAL.i32], results: [], body: new Emitter().localGet(0).globalSet(globals.heap) });
+
+    return module.toBytes();
+}
+
+/**
+ * Build a handler-only wasm module that imports the shared runtime.
+ * The resulting module is much smaller than a monolithic build because it
+ * does not embed the allocator, string utils, or JSON helpers.
+ * @param {(context: WorkerRuntimeContext) => (Emitter | { body: Emitter, locals: number[] })} emitCall
+ * @param {{ requestFields?: boolean }} [options]
+ * @returns {WasmModule}
+ */
+export function buildHandlerModule(emitCall, options = {}) {
+    const module = new WasmModule();
+
+    // Import runtime memory
+    module.addImportMemory({ module: 'env', name: 'memory', min: 2 });
+
+    // Import runtime functions in a stable order
+    const fns = {
+        alloc: module.addImportFunction({ module: 'env', name: 'alloc', params: [VAL.i32], results: [VAL.i32] }),
+        dealloc: module.addImportFunction({ module: 'env', name: 'dealloc', params: [VAL.i32, VAL.i32], results: [] }),
+        copy: module.addImportFunction({ module: 'env', name: 'copy', params: [VAL.i32, VAL.i32, VAL.i32], results: [VAL.i32] }),
+        itoa: module.addImportFunction({ module: 'env', name: 'itoa', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+        mkStr: module.addImportFunction({ module: 'env', name: 'mkStr', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+        intToStr: module.addImportFunction({ module: 'env', name: 'intToStr', params: [VAL.i32], results: [VAL.i32] }),
+        strCat: module.addImportFunction({ module: 'env', name: 'strCat', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+        jsonEscape: module.addImportFunction({ module: 'env', name: 'jsonEscape', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+        quoteStr: module.addImportFunction({ module: 'env', name: 'quoteStr', params: [VAL.i32], results: [VAL.i32] }),
+        idiv: module.addImportFunction({ module: 'env', name: 'idiv', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+        imod: module.addImportFunction({ module: 'env', name: 'imod', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+        setHeap: module.addImportFunction({ module: 'env', name: 'setHeap', params: [VAL.i32], results: [] }),
+    };
+
+    // Host-provided request-field accessors
+    const imports = options.requestFields
+        ? {
+            query: module.addImportFunction({ module: 'env', name: 'req_query', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+            path: module.addImportFunction({ module: 'env', name: 'req_path', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+            header: module.addImportFunction({ module: 'env', name: 'req_header', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+            platform: module.addImportFunction({ module: 'env', name: 'req_platform', params: [VAL.i32, VAL.i32], results: [VAL.i32] }),
+        }
+        : null;
+
+    // Handler-specific globals
+    const globals = {
+        outPtr: module.addGlobal({ type: VAL.i32, mutable: true, init: 0 }),
+        outLen: module.addGlobal({ type: VAL.i32, mutable: true, init: 0 }),
+        bodyPtr: module.addGlobal({ type: VAL.i32, mutable: true, init: 0 }),
+        bodyLen: module.addGlobal({ type: VAL.i32, mutable: true, init: 0 }),
+    };
+
+    // Intern string constants into a single data segment placed at DATA_BASE.
+    /** @type {number[]} */
+    const dataBytes = [];
+    /** @param {string} text */
+    const intern = (text) => {
+        const bytes = Array.from(new TextEncoder().encode(text));
+        const offset = DATA_BASE + dataBytes.length;
+        dataBytes.push(...bytes);
+        return { offset, length: bytes.length };
+    };
+
+    const callResult = emitCall({ module, globals, fns, imports, intern });
+    const callBody = callResult instanceof Emitter ? callResult : callResult.body;
+    const callLocals = callResult instanceof Emitter ? [VAL.i32, VAL.i32, VAL.i32] : callResult.locals;
+
+    // Reset the bump allocator via the imported setHeap at the end of every call.
+    const callWithReset = new Emitter()
+        .raw(callBody.bytes)
+        .i32Const(HEAP_BASE).call(fns.setHeap);
+
+    if (DATA_BASE + dataBytes.length > HEAP_BASE)
+        throw new Error(`Tac worker constant data (${dataBytes.length} bytes) overflows the heap base (${HEAP_BASE})`);
+    if (dataBytes.length > 0)
+        module.addData(DATA_BASE, dataBytes);
+
+    module.addFunction({
+        name: 'call',
+        params: [VAL.i32, VAL.i32, VAL.i32, VAL.i32, VAL.i32, VAL.i32],
+        results: [],
+        locals: callLocals,
+        body: callWithReset,
+    });
+
+    module.addFunction({ name: 'output_ptr', results: [VAL.i32], body: new Emitter().globalGet(globals.outPtr) });
+    module.addFunction({ name: 'output_len', results: [VAL.i32], body: new Emitter().globalGet(globals.outLen) });
 
     return module;
 }

@@ -6,10 +6,15 @@ import { tmpdir } from 'os';
 import { pathToFileURL } from 'url';
 import { Window } from 'happy-dom';
 import { createValueEventDetail } from '../../src/runtime/dom-helpers.js';
+import { TacWasmHost } from '../../src/runtime/tac-wasm-host.js';
 const timedTest = /** @type {any} */ (test);
 /** @type {string[]} */
 const tempDirs = [];
 const bundleEntrypoint = path.join(process.cwd(), 'src/cli/bundle.js');
+/** @param {string} root @param {...string} segments */
+function webDistPath(root, ...segments) {
+    return path.join(root, 'dist', 'web', ...segments);
+}
 /**
  * @param {string} source
  * @returns {Record<string, unknown>}
@@ -32,77 +37,77 @@ function readEmbeddedRoutes(source) {
 async function createFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bundle-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes', 'docs'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages', 'docs'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-bundle-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>document.title = "Fixture Home"</script><style>.hero { color: tomato; }</style><h1>Fixture Home</h1>`);
-    await writeFile(path.join(root, 'routes', 'docs', 'tac.html'), `<script>document.title = "Fixture Docs"</script><p>Docs page</p>`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>document.title = "Fixture Home"</script><style>.hero { color: tomato; }</style><h1>Fixture Home</h1>`);
+    await writeFile(path.join(root, 'client', 'pages', 'docs', 'tac.html'), `<script>document.title = "Fixture Docs"</script><p>Docs page</p>`);
     return root;
 }
 async function createHtmlShellFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-html-shell-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes', 'docs'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages', 'docs'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-html-shell-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>document.title = "Fixture Shell"</script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>document.title = "Fixture Shell"</script>
 <style>.shell { padding: 1rem; }</style>
 <div class="shell">
   <p>Shell frame</p>
   <slot />
 </div>`);
-    await writeFile(path.join(root, 'routes', 'docs', 'tac.html'), `<script>document.title = "Fixture Docs"</script><p>Docs page</p>`);
+    await writeFile(path.join(root, 'client', 'pages', 'docs', 'tac.html'), `<script>document.title = "Fixture Docs"</script><p>Docs page</p>`);
     return root;
 }
 async function createSeparatedStructureFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-separated-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'browser', 'pages', 'docs'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'components', 'hero'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'shared', 'scripts'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'shared', 'styles'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages', 'docs'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'hero'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'shared', 'scripts'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'shared', 'styles'), { recursive: true });
     await mkdir(path.join(root, 'server', 'routes'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-separated-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'imports.js'), 'import "../styles/app.css";\n');
-    await writeFile(path.join(root, 'browser', 'shared', 'styles', 'app.css'), 'body { background: rgb(1, 2, 3); }\n');
+    await writeFile(path.join(root, 'client', 'shared', 'scripts', 'imports.js'), 'import "../styles/app.css";\n');
+    await writeFile(path.join(root, 'client', 'shared', 'styles', 'app.css'), 'body { background: rgb(1, 2, 3); }\n');
     await mkdir(path.join(root, 'server', 'routes', 'GET'), { recursive: true });
     await writeFile(path.join(root, 'server', 'routes', 'GET', 'yon.js'), 'export async function handler() {\n  return { ok: true }\n}\n');
-    await writeFile(path.join(root, 'browser', 'components', 'hero', 'tac.html'), '<section class="hero">Hero</section>');
-    await writeFile(path.join(root, 'browser', 'pages', 'tac.html'), `<script>document.title = "Separated Home"</script><div class="shell"><slot /><hero /></div>`);
-    await writeFile(path.join(root, 'browser', 'pages', 'docs', 'tac.html'), `<script>document.title = "Separated Docs"</script><p>Docs from pages</p>`);
+    await writeFile(path.join(root, 'client', 'components', 'hero', 'tac.html'), '<section class="hero">Hero</section>');
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>document.title = "Separated Home"</script><div class="shell"><slot /><hero /></div>`);
+    await writeFile(path.join(root, 'client', 'pages', 'docs', 'tac.html'), `<script>document.title = "Separated Docs"</script><p>Docs from pages</p>`);
     return root;
 }
 async function createDynamicRouteFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-dynamic-prerender-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'browser', 'pages', 'email', '_id'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'pages', 'folder', '_name'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages', 'email', '_id'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages', 'folder', '_name'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-dynamic-prerender-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'browser', 'pages', 'tac.html'), '<main>Inbox shell</main>');
-    await writeFile(path.join(root, 'browser', 'pages', 'email', '_id', 'tac.html'), '<script>document.title = "Email"</script><article>Email route</article>');
-    await writeFile(path.join(root, 'browser', 'pages', 'folder', '_name', 'tac.html'), '<script>document.title = "Folder"</script><article>Folder route</article>');
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), '<main>Inbox shell</main>');
+    await writeFile(path.join(root, 'client', 'pages', 'email', '_id', 'tac.html'), '<script>document.title = "Email"</script><article>Email route</article>');
+    await writeFile(path.join(root, 'client', 'pages', 'folder', '_name', 'tac.html'), '<script>document.title = "Folder"</script><article>Folder route</article>');
     return root;
 }
 async function createLiteralReplacementTokenFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-literal-token-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'browser', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-literal-token-fixture',
         private: true,
     }, null, 2));
     await writeFile(
-        path.join(root, 'browser', 'pages', 'tac.html'),
+        path.join(root, 'client', 'pages', 'tac.html'),
         '<main><p>Session field `$` and local field `$$` remain literal.</p></main>',
     );
     return root;
@@ -110,12 +115,12 @@ async function createLiteralReplacementTokenFixture() {
 async function createAwaitTemplateFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-await-template-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'browser', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-await-template-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'browser', 'pages', 'tac.html'), `
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `
 <main>
   <p>{await message()}</p>
   <div :data-status="await status()">Status</div>
@@ -123,7 +128,7 @@ async function createAwaitTemplateFixture() {
     <strong>Ready branch</strong>
   </logic>
 </main>`);
-    await writeFile(path.join(root, 'browser', 'pages', 'tac.js'), `
+    await writeFile(path.join(root, 'client', 'pages', 'tac.js'), `
 export default class extends Tac {
   async message() {
     await Promise.resolve()
@@ -146,29 +151,29 @@ export default class extends Tac {
 async function createFailingBundleWithExistingDistFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bundle-fail-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'bad-card'), { recursive: true });
-    await mkdir(path.join(root, 'dist', 'inbox'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'bad-card'), { recursive: true });
+    await mkdir(webDistPath(root, 'inbox'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-bundle-fail-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'dist', 'inbox', 'index.html'), '<!doctype html><p>previous dist survives</p>');
-    await writeFile(path.join(root, 'routes', 'tac.html'), '<bad-card />');
-    await writeFile(path.join(root, 'components', 'bad-card', 'tac.html'), '<p>Invalid component path — hyphenated folder name</p>');
+    await writeFile(webDistPath(root, 'inbox', 'index.html'), '<!doctype html><p>previous dist survives</p>');
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), '<bad-card />');
+    await writeFile(path.join(root, 'client', 'components', 'bad-card', 'tac.html'), '<p>Invalid component path — hyphenated folder name</p>');
     return root;
 }
 async function createTagClassificationFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-tag-classification-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'hero', 'card'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'hero', 'card'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-tag-classification-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'hero', 'card', 'tac.html'), `<article class="hero-card">Tachyon component wins</article>`);
-    await writeFile(path.join(root, 'routes', 'tac.html'), [
+    await writeFile(path.join(root, 'client', 'components', 'hero', 'card', 'tac.html'), `<article class="hero-card">Tachyon component wins</article>`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), [
         '<hero-card />',
         '<user-card data-kind="web-component"></user-card>',
         '<mystery>Unknown tag survives with warning</mystery>',
@@ -178,12 +183,12 @@ async function createTagClassificationFixture() {
 async function createLoopEventFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-loop-event-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-loop-event-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 let tasks = [{ text: "One", done: false }];
 function toggle(index) {
     tasks = tasks.map((task, i) => i === index ? { ...task, done: !task.done } : task);
@@ -193,19 +198,19 @@ function status() {
 }
 </script>
 <loop :for="let i = 0; i < tasks.length; i++">
-  <button @click="toggle(i)">{status()}</button>
+  <button on:click="toggle(i)">{status()}</button>
 </loop>`);
     return root;
 }
 async function createBareLoopEventFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-bare-loop-event-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-bare-loop-event-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 let folder = 'inbox';
 let folders = ['inbox', 'sent', 'trash'];
 let selected = 'none';
@@ -217,7 +222,7 @@ function currentFolder() {
 }
 </script>
 <loop :for="folder of folders">
-  <button @click="select(folder)">{folder}</button>
+  <button on:click="select(folder)">{folder}</button>
 </loop>
 <p>Selected {selected}</p>
 <p>Prop {currentFolder()}</p>`);
@@ -226,12 +231,12 @@ function currentFolder() {
 async function createLoopValueBindingFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-loop-value-binding-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-loop-value-binding-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 let options = ['alpha', 'beta'];
 </script>
 <loop :for="option of options">
@@ -242,44 +247,44 @@ let options = ['alpha', 'beta'];
 async function createValueEventFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-value-event-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-value-event-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 let selected = 'alpha';
 function choose(next) { selected = next; }
 </script>
-<input :value="selected" @input="choose($event.target.value)" />
+<input :value="selected" on:input="choose($event.target.value)" />
 <p>Selected {selected}</p>`);
     return root;
 }
 async function createCheckedBindingFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-checked-binding-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-checked-binding-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 let accepted = false;
 function accept() { accepted = true; }
 </script>
-<input type="checkbox" :checked="accepted" @change="accept()" />
+<input type="checkbox" :checked="accepted" on:change="accept()" />
 <p>Accepted {accepted}</p>`);
     return root;
 }
 async function createMultiEventLoopFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-multi-event-loop-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-multi-event-loop-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 let rows = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 let selected = 'none';
 let dragged = 'none';
@@ -287,7 +292,7 @@ function select(id) { selected = id; }
 function drag(id) { dragged = id; }
 </script>
 <loop :for="row of rows">
-  <button @click="select(row.id)" @dragstart="drag(row.id)">{row.id}</button>
+  <button on:click="select(row.id)" on:dragstart="drag(row.id)">{row.id}</button>
 </loop>
 <p>Selected {selected}</p>
 <p>Dragged {dragged}</p>`);
@@ -296,19 +301,19 @@ function drag(id) { dragged = id; }
 async function createSwitchFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-switch-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-switch-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 const Status = { Loading: 'loading', Pending: 'pending', Ready: 'ready', Error: 'error' };
 let status = Status.Loading;
 function setStatus(next) { status = next; }
 </script>
 <switch :value="status">
   <case :when="[Status.Loading, Status.Pending]">
-    <button @click="setStatus(Status.Ready)">Working</button>
+    <button on:click="setStatus(Status.Ready)">Working</button>
   </case>
   <case :when="Status.Error">
     <p>Error</p>
@@ -323,24 +328,24 @@ function setStatus(next) { status = next; }
 async function createInvalidSwitchFixture(template) {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-invalid-switch-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-invalid-switch-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), template);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), template);
     return root;
 }
 async function createPropRefreshFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-prop-refresh-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'data', 'loader'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'data', 'loader'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-prop-refresh-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'data', 'loader', 'tac.js'), `export default class extends Tac {
+    await writeFile(path.join(root, 'client', 'components', 'data', 'loader', 'tac.js'), `export default class extends Tac {
     loaded = 'missing'
     constructor(props = {}) {
         super(props)
@@ -348,25 +353,25 @@ async function createPropRefreshFixture() {
     }
 }
 `);
-    await writeFile(path.join(root, 'components', 'data', 'loader', 'tac.html'), `<p>Loaded {loaded}</p>`);
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'components', 'data', 'loader', 'tac.html'), `<p>Loaded {loaded}</p>`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 let selected = 'a';
 function choose(id) { selected = id; }
 </script>
-<button @click="choose('b')">Choose B</button>
+<button on:click="choose('b')">Choose B</button>
 <data-loader :id="selected" />`);
     return root;
 }
 async function createKebabPropFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-kebab-prop-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'email', 'detail'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'email', 'detail'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-kebab-prop-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'email', 'detail', 'tac.js'), `export default class extends Tac {
+    await writeFile(path.join(root, 'client', 'components', 'email', 'detail', 'tac.js'), `export default class extends Tac {
     emailId = 'missing'
     legacy = 'missing'
     constructor(props = {}) {
@@ -376,19 +381,19 @@ async function createKebabPropFixture() {
     }
 }
 `);
-    await writeFile(path.join(root, 'components', 'email', 'detail', 'tac.html'), `<p>Email {emailId}</p><p>Legacy {legacy}</p>`);
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>let selectedMail = 'm-123'</script><email-detail :email-id="selectedMail" />`);
+    await writeFile(path.join(root, 'client', 'components', 'email', 'detail', 'tac.html'), `<p>Email {emailId}</p><p>Legacy {legacy}</p>`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>let selectedMail = 'm-123'</script><email-detail :email-id="selectedMail" />`);
     return root;
 }
 async function createEscapingFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-escaping-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-escaping-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 let message = '<img src=x onerror=alert(1)>';
 let title = '" onfocus="alert(1)';
 let trusted = '<strong>Trusted raw HTML</strong>';
@@ -401,17 +406,17 @@ let trusted = '<strong>Trusted raw HTML</strong>';
 async function createTemplateImportFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-template-import-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-template-import-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 const { formatLabel } = await import("./template-support");
 let message = formatLabel("plugin-powered");
 </script>
 <p>{message}</p>`);
-    await writeFile(path.join(root, 'routes', 'template-support.js'), `export function formatLabel(value) {
+    await writeFile(path.join(root, 'client', 'pages', 'template-support.js'), `export function formatLabel(value) {
     return value.toUpperCase();
 }
 `);
@@ -420,7 +425,8 @@ let message = formatLabel("plugin-powered");
 async function createPackageExportsFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-package-exports-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'shared', 'scripts'), { recursive: true });
     await mkdir(path.join(root, 'node_modules', 'fixture-exports', 'src'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-package-exports-fixture',
@@ -429,7 +435,8 @@ async function createPackageExportsFixture() {
             'fixture-exports': '1.0.0',
         },
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>document.title = "Exports Fixture"</script><h1>Exports Fixture</h1>`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>document.title = "Exports Fixture"</script><h1>Exports Fixture</h1>`);
+    await writeFile(path.join(root, 'client', 'shared', 'scripts', 'imports.js'), `import { flavor } from 'fixture-exports';\nconsole.log(flavor);\n`);
     await writeFile(path.join(root, 'node_modules', 'fixture-exports', 'package.json'), JSON.stringify({
         name: 'fixture-exports',
         version: '1.0.0',
@@ -442,12 +449,12 @@ async function createPackageExportsFixture() {
 async function createMainEntrypointFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-main-entry-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-main-entry-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>document.title = "Main Entry Fixture"</script><main><h1>Main Entry Fixture</h1></main>`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>document.title = "Main Entry Fixture"</script><main><h1>Main Entry Fixture</h1></main>`);
     await writeFile(path.join(root, 'imports.js'), `import { bootMessage } from "./import-support.js";
 import "./imports.css";
 
@@ -461,14 +468,14 @@ document.documentElement.dataset.boot = bootMessage;
 async function createCompanionScriptFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-script-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'clicker'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'clicker'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-companion-script-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.html'), `<button class="clicker" @click="increment()">{label}: {clicks}</button>`);
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.ts'), `export default class extends Tac {
+    await writeFile(path.join(root, 'client', 'components', 'clicker', 'tac.html'), `<button class="clicker" on:click="increment()">{label}: {clicks}</button>`);
+    await writeFile(path.join(root, 'client', 'components', 'clicker', 'tac.ts'), `export default class extends Tac {
     clicks: number = 0
     label = 'Ready'
 
@@ -483,48 +490,42 @@ async function createCompanionScriptFixture() {
     }
 }
 `);
-    await writeFile(path.join(root, 'components', 'clicker', 'tac.css'), `.clicker {
+    await writeFile(path.join(root, 'client', 'components', 'clicker', 'tac.css'), `.clicker {
     /* \`display: grid\` and \${theme} are author text, not JavaScript. */
     border: 2px solid tomato;
     font-weight: 700;
 }`);
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<clicker label="Companion" />`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<clicker label="Companion" />`);
     return root;
 }
 async function createTacWorkerFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-tac-worker-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'browser', 'pages'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'workers', 'language', 'rust'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'workers', 'language', 'c'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'workers', 'language', 'cpp'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'workers', 'language', 'zig'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'workers', 'language', 'python'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'workers', 'language', 'csharp'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'workers', 'language', 'go'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'workers', 'language', 'javascript'), { recursive: true });
-    await mkdir(path.join(root, 'browser', 'workers', 'language', 'typescript'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'workers', 'language', 'rust'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'workers', 'language', 'javascript'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'workers', 'language', 'typescript'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-tac-worker-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'browser', 'pages', 'tac.html'), `
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `
 <main>
-  <button @click="summarize()">Summarize</button>
+  <button on:click="summarize()">Summarize</button>
   <p>{summary}</p>
 </main>`);
-    await writeFile(path.join(root, 'browser', 'pages', 'tac.ts'), `
+    await writeFile(path.join(root, 'client', 'pages', 'tac.ts'), `
 export default class extends Tac {
     summary = 'pending'
 
     async summarize() {
-        const response = await fetch('tac://language/rust', { method: 'POST', body: { text: 'hello' } })
+        const response = await fetch('tac://language', { method: 'POST', body: { text: 'hello' } })
         const payload = await response.json()
         this.summary = String(payload.body.result)
     }
 }
 `);
-    await writeFile(path.join(root, 'browser', 'workers', 'language', 'rust', 'tac.rs'), `
+    await writeFile(path.join(root, 'client', 'workers', 'language', 'rust', 'tac.rs'), `
 // Handler-shaped worker compiled in-house to wasm (no external toolchain).
 impl Handler {
     pub fn POST(request: Request) -> i32 {
@@ -532,62 +533,22 @@ impl Handler {
     }
 }
 `);
-    await writeFile(path.join(root, 'browser', 'workers', 'language', 'rust', 'OPTIONS.schema.json'), JSON.stringify({
+    await writeFile(path.join(root, 'client', 'workers', 'language', 'rust', 'OPTIONS.schema.json'), JSON.stringify({
         POST: {
-            request: { body: '^[\\s\\S]*$' },
-            200: { method: '^POST$', result: '^[0-9]+$' },
+            payload: { body: '^[\\s\\S]*$' },
+            ok: { method: '^POST$', result: '^[0-9]+$' },
         },
     }, null, 2));
-    await writeFile(path.join(root, 'browser', 'workers', 'language', 'c', 'tac.c'), `
-int POST(Request request) {
-    return request.len();
-}
-`);
-    await writeFile(path.join(root, 'browser', 'workers', 'language', 'cpp', 'tac.cpp'), `
-class Handler {
-public:
-    static int POST(Request request) {
-        return request.len();
-    }
-};
-`);
-    await writeFile(path.join(root, 'browser', 'workers', 'language', 'zig', 'tac.zig'), `
-const Handler = struct {
-    pub fn POST(request: Request) i32 {
-        return request.len();
-    }
-};
-`);
-    await writeFile(path.join(root, 'browser', 'workers', 'language', 'python', 'tac.py'), `
-class Handler:
-    @staticmethod
-    def POST(request) -> int:
-        return request.len()
-`);
-    await writeFile(path.join(root, 'browser', 'workers', 'language', 'csharp', 'tac.cs'), `
-class Handler {
-    public static int POST(Request request) {
-        return request.len();
-    }
-}
-`);
-    await writeFile(path.join(root, 'browser', 'workers', 'language', 'go', 'tac.go'), `
-package main
-type Handler struct{}
-func (Handler) POST(request Request) int {
-    return request.len();
-}
-`);
-    await writeFile(path.join(root, 'browser', 'workers', 'language', 'javascript', 'tac.js'), `
-class Handler {
+    await writeFile(path.join(root, 'client', 'workers', 'language', 'javascript', 'tac.js'), `
+export default class Handler {
     POST(request) {
         return request.len();
     }
 }
 `);
-    await writeFile(path.join(root, 'browser', 'workers', 'language', 'typescript', 'tac.ts'), `
+    await writeFile(path.join(root, 'client', 'workers', 'language', 'typescript', 'tac.ts'), `
 export default class Handler {
-    POST(request: TacWorkerRequest): number {
+    POST(request: Request): number {
         return request.len();
     }
 }
@@ -597,25 +558,25 @@ export default class Handler {
 async function createGlobalTacFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-global-tac-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'badge'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'badge'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-global-tac-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'badge', 'tac.html'), `<script>let label = ''</script><strong class="badge">Badge: {label}</strong>`);
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>let title = 'Global Tac'</script><badge :label="title" />`);
+    await writeFile(path.join(root, 'client', 'components', 'badge', 'tac.html'), `<script>let label = ''</script><strong class="badge">Badge: {label}</strong>`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>let title = 'Global Tac'</script><badge :label="title" />`);
     return root;
 }
 async function createAsyncEventFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-async-event-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-async-event-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 let status = 'idle';
 async function requestMfa() {
     status = 'loading';
@@ -623,27 +584,27 @@ async function requestMfa() {
     status = 'phone-input';
 }
 </script>
-<button @click="requestMfa()">Continue</button>
+<button on:click="requestMfa()">Continue</button>
 <p>{status}</p>`);
     return root;
 }
 async function createComponentSignalFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-component-signal-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'child', 'picker'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'child', 'picker'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-component-signal-fixture',
         private: true
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'child', 'picker', 'tac.html'), `<script>
+    await writeFile(path.join(root, 'client', 'components', 'child', 'picker', 'tac.html'), `<script>
 let label = 'fallback';
 function choose() {
     publish('selected', { label, source: 'child-picker' });
 }
 </script>
-<button @click="choose()">Choose {label}</button>`);
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<script>
+<button on:click="choose()">Choose {label}</button>`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
 let selected = 'none';
 subscribe('selected', (event) => {
     selected = event.label + ':' + event.source;
@@ -681,8 +642,8 @@ timedTest('tac.bundle prerenders HTML routes into static documents', { timeout: 
         throw new Error(stderr);
     expect(stderr).toBe('');
     expect(stdout).toContain('Bundle completed');
-    const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
-    const docs = await readFile(path.join(cwd, 'dist', 'docs', 'index.html'), 'utf8');
+    const home = await readFile(webDistPath(cwd, 'index.html'), 'utf8');
+    const docs = await readFile(webDistPath(cwd, 'docs', 'index.html'), 'utf8');
     expect(home).toContain('<title>Fixture Home</title>');
     expect(home).toContain('>Fixture Home</h1>');
     expect(home).not.toContain('@scope');
@@ -690,6 +651,94 @@ timedTest('tac.bundle prerenders HTML routes into static documents', { timeout: 
     expect(docs).toContain('<title>Fixture Docs</title>');
     expect(docs).toContain('>Docs page</p>');
     expect(docs).not.toContain('class="shell"');
+});
+timedTest('tac.bundle defaults to the web target without emitting target manifests', { timeout: 20000 }, async () => {
+    const cwd = await createFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const html = await readFile(webDistPath(cwd, 'index.html'), 'utf8');
+    const spaRenderer = await readFile(webDistPath(cwd, 'spa-renderer.js'), 'utf8');
+    expect(html).toContain('<meta name="tachyon-target" content="web">');
+    expect(html).toContain('<meta name="tachyon-platform" content="web">');
+    expect(html).toContain('<meta name="tachyon-environment" content="browser">');
+    expect(html).toContain('<meta name="tachyon-os" content="unknown">');
+    expect(spaRenderer).toContain('tachyon-target');
+    expect(spaRenderer).toContain('tachyon-platform');
+    expect(spaRenderer).toContain('tachyon-environment');
+    expect(spaRenderer).toContain('browserOS');
+    await expect(Bun.file(path.join(cwd, 'dist', 'tachyon.targets.json')).exists()).resolves.toBe(false);
+    await expect(Bun.file(webDistPath(cwd, 'tachyon.target.json')).exists()).resolves.toBe(false);
+});
+timedTest('tac.bundle accepts OS and all targets', { timeout: 60000 }, async () => {
+    const cwd = await createFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint, '--targets', 'MacOS,linux,Android,iOS'], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    for (const target of ['macos', 'linux', 'android', 'ios']) {
+        // iOS ships the web bundle as WebBundle/ (a top-level "Resources"
+        // folder breaks flat iOS bundle detection at install time).
+        const assets = target === 'ios' ? 'WebBundle' : 'Resources';
+        await expect(Bun.file(path.join(cwd, 'dist', target, assets, 'index.html')).exists()).resolves.toBe(true);
+        await expect(Bun.file(path.join(cwd, 'dist', target, assets, 'tachyon.target.json')).exists()).resolves.toBe(false);
+    }
+    await expect(Bun.file(path.join(cwd, 'dist', 'tachyon.targets.json')).exists()).resolves.toBe(false);
+
+    const allCwd = await createFixture();
+    const allProc = Bun.spawn(['bun', bundleEntrypoint, '--target=all'], {
+        cwd: allCwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_allStdout, allStderr, allExitCode] = await Promise.all([
+        decode(allProc.stdout),
+        decode(allProc.stderr),
+        allProc.exited
+    ]);
+    if (allExitCode !== 0)
+        throw new Error(allStderr);
+    for (const target of ['web', 'macos', 'windows', 'linux', 'android', 'ios']) {
+        const entry = target === 'web'
+            ? path.join(allCwd, 'dist', target, 'index.html')
+            : path.join(allCwd, 'dist', target, target === 'ios' ? 'WebBundle' : 'Resources', 'index.html');
+        await expect(Bun.file(entry).exists()).resolves.toBe(true);
+    }
+    await expect(Bun.file(path.join(allCwd, 'dist', 'tachyon.targets.json')).exists()).resolves.toBe(false);
+    await expect(Bun.file(path.join(allCwd, 'dist', 'ios', 'WebBundle', 'tachyon.target.json')).exists()).resolves.toBe(false);
+});
+timedTest('tac.bundle rejects unsupported targets before writing dist', { timeout: 20000 }, async () => {
+    const cwd = await createFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint, '--target', 'beos'], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ]);
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain("Unsupported bundle target 'beos'");
+    await expect(Bun.file(path.join(cwd, 'dist', 'tachyon.targets.json')).exists()).resolves.toBe(false);
 });
 timedTest('ancestor HTML files with <slot /> act as shells for descendant HTML routes', { timeout: 20000 }, async () => {
     const cwd = await createHtmlShellFixture();
@@ -707,17 +756,17 @@ timedTest('ancestor HTML files with <slot /> act as shells for descendant HTML r
         throw new Error(stderr);
     expect(stdout).toContain('Bundle completed');
     expect(stderr).toBe('');
-    const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
-    const docs = await readFile(path.join(cwd, 'dist', 'docs', 'index.html'), 'utf8');
-    await expect(Bun.file(path.join(cwd, 'dist', 'shells.json')).exists()).resolves.toBe(false);
+    const home = await readFile(webDistPath(cwd, 'index.html'), 'utf8');
+    const docs = await readFile(webDistPath(cwd, 'docs', 'index.html'), 'utf8');
+    await expect(Bun.file(webDistPath(cwd, 'shells.json')).exists()).resolves.toBe(false);
     expect(home).toContain('<title>Fixture Shell</title>');
     expect(home).toContain('Shell frame');
-    expect(home).toContain('id="ty-layout-slot"');
+    expect(home).toContain('id="tc-page-slot"');
     expect(docs).toContain('<title>Fixture Docs</title>');
     expect(docs).toContain('Shell frame');
     expect(docs).toContain('>Docs page</p>');
 });
-timedTest('tac.bundle supports separated browser/pages and browser/components roots', { timeout: 20000 }, async () => {
+timedTest('tac.bundle supports separated client/pages and client/components roots', { timeout: 20000 }, async () => {
     const cwd = await createSeparatedStructureFixture();
     const proc = Bun.spawn(['bun', bundleEntrypoint], {
         cwd,
@@ -733,9 +782,9 @@ timedTest('tac.bundle supports separated browser/pages and browser/components ro
         throw new Error(stderr);
     expect(stdout).toContain('Bundle completed');
     expect(stderr).toBe('');
-    const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
-    const docs = await readFile(path.join(cwd, 'dist', 'docs', 'index.html'), 'utf8');
-    const mainCss = await readFile(path.join(cwd, 'dist', 'imports.css'), 'utf8');
+    const home = await readFile(webDistPath(cwd, 'index.html'), 'utf8');
+    const docs = await readFile(webDistPath(cwd, 'docs', 'index.html'), 'utf8');
+    const mainCss = await readFile(webDistPath(cwd, 'imports.css'), 'utf8');
     expect(home).toContain('Separated Home');
     expect(home).toContain('Hero');
     expect(docs).toContain('Separated Docs');
@@ -758,14 +807,14 @@ timedTest('tac.bundle prerenders dynamic routes into Windows-safe dist paths', {
         throw new Error(stderr);
     expect(stdout).toContain('Bundle completed');
     expect(stderr).toBe('');
-    const routes = readEmbeddedRoutes(await readFile(path.join(cwd, 'dist', 'spa-renderer.js'), 'utf8'));
-    const email = await readFile(path.join(cwd, 'dist', 'email', '_id', 'index.html'), 'utf8');
-    const folder = await readFile(path.join(cwd, 'dist', 'folder', '_name', 'index.html'), 'utf8');
-    const emailEntries = await readdir(path.join(cwd, 'dist', 'email'));
-    const folderEntries = await readdir(path.join(cwd, 'dist', 'folder'));
+    const routes = readEmbeddedRoutes(await readFile(webDistPath(cwd, 'spa-renderer.js'), 'utf8'));
+    const email = await readFile(webDistPath(cwd, 'email', '_id', 'index.html'), 'utf8');
+    const folder = await readFile(webDistPath(cwd, 'folder', '_name', 'index.html'), 'utf8');
+    const emailEntries = await readdir(webDistPath(cwd, 'email'));
+    const folderEntries = await readdir(webDistPath(cwd, 'folder'));
     expect(routes).toHaveProperty('/email/:id');
     expect(routes).toHaveProperty('/folder/:name');
-    await expect(Bun.file(path.join(cwd, 'dist', 'routes.json')).exists()).resolves.toBe(false);
+    await expect(Bun.file(webDistPath(cwd, 'routes.json')).exists()).resolves.toBe(false);
     expect(email).toContain('Email route');
     expect(folder).toContain('Folder route');
     expect(emailEntries).toEqual(['_id']);
@@ -777,7 +826,7 @@ timedTest('static prerender preserves literal dollar replacement tokens in templ
     const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
     if (exitCode !== 0)
         throw new Error(stderr);
-    const document = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
+    const document = await readFile(webDistPath(cwd, 'index.html'), 'utf8');
     expect(document).toContain('Session field `$` and local field `$$` remain literal.');
     expect(document.match(/<!DOCTYPE html>/g)).toHaveLength(1);
 });
@@ -788,7 +837,7 @@ timedTest('Tac HTML expressions can await companion methods during render', { ti
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const document = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
+    const document = await readFile(webDistPath(cwd, 'index.html'), 'utf8');
     expect(document).toContain('Async &lt;ready&gt;');
     expect(document).toContain('data-status="online"');
     expect(document).toContain('Ready branch');
@@ -807,7 +856,7 @@ timedTest('tac.bundle leaves the previous dist intact when a full build fails', 
     ]);
     expect(exitCode).not.toBe(0);
     expect(stderr).toContain('Invalid Tac component path');
-    const existing = await readFile(path.join(cwd, 'dist', 'inbox', 'index.html'), 'utf8');
+    const existing = await readFile(webDistPath(cwd, 'inbox', 'index.html'), 'utf8');
     expect(existing).toContain('previous dist survives');
 });
 timedTest('tac.bundle classifies component, web component, native, and unknown tags by priority', { timeout: 20000 }, async () => {
@@ -827,7 +876,7 @@ timedTest('tac.bundle classifies component, web component, native, and unknown t
     expect(stdout).toContain('Bundle completed');
     expect(stderr).toContain('Unknown element tag');
     expect(stderr).toContain('mystery');
-    const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
+    const home = await readFile(webDistPath(cwd, 'index.html'), 'utf8');
     expect(home).toContain('Tachyon component wins');
     expect(home).toContain('<user-card');
     expect(home).toContain('data-kind="web-component"');
@@ -837,15 +886,15 @@ timedTest('tac.bundle classifies component, web component, native, and unknown t
 timedTest('tac.bundle rejects flat component template filenames', { timeout: 20000 }, async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-flat-component-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-flat-component-fixture',
         private: true,
     }, null, 2));
     // tac.html directly under components/ (no folder segment) is rejected.
-    await writeFile(path.join(root, 'components', 'tac.html'), '<article>Legacy</article>');
-    await writeFile(path.join(root, 'routes', 'tac.html'), '<legacy-card />');
+    await writeFile(path.join(root, 'client', 'components', 'tac.html'), '<article>Legacy</article>');
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), '<legacy-card />');
 
     const proc = Bun.spawn(['bun', bundleEntrypoint], {
         cwd: root,
@@ -865,14 +914,14 @@ timedTest('tac.bundle rejects flat component template filenames', { timeout: 200
 timedTest('tac.bundle rejects hyphenated component folder names', { timeout: 20000 }, async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-hyphen-component-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'panel-users'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'panel-users'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-hyphen-component-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'panel-users', 'tac.html'), '<article>Panel users</article>');
-    await writeFile(path.join(root, 'routes', 'tac.html'), '<panel-users />');
+    await writeFile(path.join(root, 'client', 'components', 'panel-users', 'tac.html'), '<article>Panel users</article>');
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), '<panel-users />');
 
     const proc = Bun.spawn(['bun', bundleEntrypoint], {
         cwd: root,
@@ -904,7 +953,7 @@ timedTest('loop-scoped event handlers can access loop variables when rerendered'
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
+    const pageModulePath = webDistPath(cwd, 'pages', 'tac.js');
     const pageModule = await import(`${pathToFileURL(pageModulePath).href}?loop-event=${Date.now()}`);
     const render = await pageModule.default();
     const initial = await render();
@@ -930,7 +979,7 @@ timedTest('bare loop variables are block scoped and do not overwrite template sc
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
+    const pageModulePath = webDistPath(cwd, 'pages', 'tac.js');
     const pageModule = await import(`${pathToFileURL(pageModulePath).href}?bare-loop-event=${Date.now()}`);
     const render = await pageModule.default();
     const initial = await render();
@@ -948,7 +997,7 @@ timedTest('loop values can be used by value bindings without escaping their lexi
     const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
     if (exitCode !== 0)
         throw new Error(stderr);
-    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?loop-value=${Date.now()}`);
+    const pageModule = await import(`${pathToFileURL(webDistPath(cwd, 'pages', 'tac.js')).href}?loop-value=${Date.now()}`);
     const render = await pageModule.default();
     const initial = await render();
     expect(initial).toContain('value="alpha"');
@@ -960,7 +1009,7 @@ timedTest('value-bound handlers retain DOM-style target access on synthetic upda
     const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
     if (exitCode !== 0)
         throw new Error(stderr);
-    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?value-event=${Date.now()}`);
+    const pageModule = await import(`${pathToFileURL(webDistPath(cwd, 'pages', 'tac.js')).href}?value-event=${Date.now()}`);
     const render = await pageModule.default();
     const initial = await render();
     const inputId = initial.match(/<input[^>]* id="([^"]+)"/)?.[1];
@@ -978,7 +1027,7 @@ timedTest('checked bindings retain checkbox state across reactive rerenders', { 
     const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
     if (exitCode !== 0)
         throw new Error(stderr);
-    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?checked=${Date.now()}`);
+    const pageModule = await import(`${pathToFileURL(webDistPath(cwd, 'pages', 'tac.js')).href}?checked=${Date.now()}`);
     const render = await pageModule.default();
     const initial = await render();
     const inputId = initial.match(/<input[^>]* id="([^"]+)"/)?.[1];
@@ -996,7 +1045,7 @@ timedTest('multiple event handlers on one loop element keep handler counters ali
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?multi-event=${Date.now()}`);
+    const pageModule = await import(`${pathToFileURL(webDistPath(cwd, 'pages', 'tac.js')).href}?multi-event=${Date.now()}`);
     const render = await pageModule.default();
     const initial = await render();
     const buttonIds = [...initial.matchAll(/<button[^>]* id="([^"]+)"/g)].map((match) => match[1]);
@@ -1011,7 +1060,7 @@ timedTest('switch cases render grouped values and default branches', { timeout: 
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?switch=${Date.now()}`);
+    const pageModule = await import(`${pathToFileURL(webDistPath(cwd, 'pages', 'tac.js')).href}?switch=${Date.now()}`);
     const render = await pageModule.default();
     const initial = await render();
     const buttonId = initial.match(/<button[^>]* id="([^"]+)"/)?.[1];
@@ -1044,7 +1093,7 @@ timedTest('component factories refresh when parent props change', { timeout: 200
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModule = await import(`${pathToFileURL(path.join(cwd, 'dist', 'pages', 'tac.js')).href}?prop-refresh=${Date.now()}`);
+    const pageModule = await import(`${pathToFileURL(webDistPath(cwd, 'pages', 'tac.js')).href}?prop-refresh=${Date.now()}`);
     const render = await pageModule.default();
     const initial = await render();
     const buttonId = initial.match(/<button[^>]* id="([^"]+)"/)?.[1];
@@ -1068,7 +1117,7 @@ timedTest('component props expose kebab-case attributes as camelCase aliases', {
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
+    const pageModulePath = webDistPath(cwd, 'pages', 'tac.js');
     const pageModule = await import(`${pathToFileURL(pageModulePath).href}?kebab-prop=${Date.now()}`);
     const render = await pageModule.default();
     const html = await render();
@@ -1090,7 +1139,7 @@ timedTest('template interpolation and dynamic attributes are escaped by default'
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
+    const pageModulePath = webDistPath(cwd, 'pages', 'tac.js');
     const pageModule = await import(`${pathToFileURL(pageModulePath).href}?escaping=${Date.now()}`);
     const render = await pageModule.default();
     const html = await render();
@@ -1115,7 +1164,7 @@ timedTest('Tac template scripts can bundle relative imports from their source di
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
+    const pageModulePath = webDistPath(cwd, 'pages', 'tac.js');
     const pageModule = await import(`${pathToFileURL(pageModulePath).href}?template-import=${Date.now()}`);
     const render = await pageModule.default();
     expect(await render()).toContain('PLUGIN-POWERED');
@@ -1136,7 +1185,7 @@ timedTest('tac.bundle resolves dependency entrypoints via package exports', { ti
         throw new Error(stderr);
     expect(stdout).toContain('Bundle completed');
     expect(stderr).toBe('');
-    const modulePath = path.join(cwd, 'dist', 'modules', 'fixture-exports.js');
+    const modulePath = webDistPath(cwd, 'shared', 'modules', 'fixture-exports.js');
     const bundledModule = await readFile(modulePath, 'utf8');
     expect(bundledModule).toContain('exports-aware');
     const loaded = await import(`${pathToFileURL(modulePath).href}?exports=${Date.now()}`);
@@ -1159,9 +1208,9 @@ timedTest('tac.bundle bundles typed import entrypoints and emits imports.css whe
         throw new Error(stderr);
     expect(stdout).toContain('Bundle completed');
     expect(stderr).toBe('');
-    const html = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
-    const bundledMain = await readFile(path.join(cwd, 'dist', 'imports.js'), 'utf8');
-    const bundledCss = await readFile(path.join(cwd, 'dist', 'imports.css'), 'utf8');
+    const html = await readFile(webDistPath(cwd, 'index.html'), 'utf8');
+    const bundledMain = await readFile(webDistPath(cwd, 'imports.js'), 'utf8');
+    const bundledCss = await readFile(webDistPath(cwd, 'imports.css'), 'utf8');
     expect(html).toContain('<link rel="stylesheet" href="/imports.css">');
     expect(html).toContain('<script type="module" src="/spa-renderer.js"></script>');
     expect(html).toContain('<script type="module" src="/imports.js"></script>');
@@ -1189,9 +1238,9 @@ timedTest('TAC_FORMAT=global emits registry modules that prerender successfully'
         throw new Error(stderr);
     expect(stdout).toContain('Bundle completed');
     expect(stderr).toBe('');
-    const home = await readFile(path.join(cwd, 'dist', 'index.html'), 'utf8');
-    const pageModule = await readFile(path.join(cwd, 'dist', 'pages', 'tac.js'), 'utf8');
-    const componentModule = await readFile(path.join(cwd, 'dist', 'components', 'badge', 'tac.js'), 'utf8');
+    const home = await readFile(webDistPath(cwd, 'index.html'), 'utf8');
+    const pageModule = await readFile(webDistPath(cwd, 'pages', 'tac.js'), 'utf8');
+    const componentModule = await readFile(webDistPath(cwd, 'components', 'badge', 'tac.js'), 'utf8');
     expect(home).toContain('Badge: Global Tac');
     expect(pageModule).toContain('register("/pages/tac.js"');
     expect(componentModule).toContain('register("/components/badge/tac.js"');
@@ -1213,7 +1262,7 @@ timedTest('async event handlers are awaited before Tac rerenders', { timeout: 20
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
+    const pageModulePath = webDistPath(cwd, 'pages', 'tac.js');
     const pageModule = await import(`${pathToFileURL(pageModulePath).href}?async-event=${Date.now()}`);
     const render = await pageModule.default();
     const initial = await render();
@@ -1239,7 +1288,7 @@ timedTest('component companion scripts in JavaScript or TypeScript and scoped cs
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
+    const pageModulePath = webDistPath(cwd, 'pages', 'tac.js');
     const pageModule = await import(`${pathToFileURL(pageModulePath).href}?companion-script=${Date.now()}`);
     const render = await pageModule.default();
     const initial = await render();
@@ -1254,7 +1303,7 @@ timedTest('component companion scripts in JavaScript or TypeScript and scoped cs
     const updated = await render(buttonId);
     expect(updated).toContain('Clicked: 1');
 });
-timedTest('tac.bundle compiles browser tac protocol workers into bundled worker assets', { timeout: 20000 }, async () => {
+timedTest('tac.bundle compiles client tac protocol workers into bundled worker assets', { timeout: 20000 }, async () => {
     const cwd = await createTacWorkerFixture();
     // No external toolchain: the in-house compiler turns the handler source into wasm.
     const proc = Bun.spawn(['bun', bundleEntrypoint], {
@@ -1270,28 +1319,32 @@ timedTest('tac.bundle compiles browser tac protocol workers into bundled worker 
     if (exitCode !== 0)
         throw new Error(stderr);
     expect(stderr).toBe('');
-    const pageScript = await readFile(path.join(cwd, 'dist', 'pages', 'tac.js'), 'utf8');
+    const pageScript = await readFile(webDistPath(cwd, 'pages', 'tac.js'), 'utf8');
 
-    expect(pageScript).toContain('tac://language/rust');
+    expect(pageScript).toContain('tac://language');
     expect(pageScript).toContain('Tac workers require the browser Worker API');
-    const fyloLocalWorker = await readFile(path.join(cwd, 'dist', 'fylo-local-worker.js'), 'utf8');
-    expect(fyloLocalWorker).toContain('tachyon-fylo');
+    const fyloLocalWorker = await readFile(webDistPath(cwd, 'fylo-browser-worker.js'), 'utf8');
+    expect(fyloLocalWorker).toContain('tachyon');
 
-    for (const language of ['rust', 'c', 'cpp', 'zig', 'python', 'csharp', 'go', 'javascript', 'typescript']) {
-        const workerScript = await readFile(path.join(cwd, 'dist', 'workers', 'language', language, 'tac.worker.js'), 'utf8');
-        const wasmBytes = await readFile(path.join(cwd, 'dist', 'workers', 'language', language, 'tac.wasm'));
-        expect(workerScript).toContain("new URL('./tac.wasm', import.meta.url)");
+    for (const language of ['rust', 'javascript', 'typescript']) {
+        // Worker wasm files are named <ext>.wasm where ext is the source file extension
+        const extMap = { rust: 'rs', javascript: 'js', typescript: 'ts' };
+        const ext = extMap[language] || language;
+        const wasmName = `${ext}.wasm`;
+        const workerScript = await readFile(webDistPath(cwd, 'workers', 'language', language, 'tac.worker.js'), 'utf8');
+        const wasmBytes = await readFile(webDistPath(cwd, 'workers', 'language', language, wasmName));
+        expect(workerScript).toContain(`new URL("./${wasmName}", import.meta.url)`);
         expect(workerScript).toContain('class TacWorkerRuntime');
         expect([...wasmBytes.subarray(0, 4)]).toEqual([0, 97, 115, 109]);
 
-        // The in-house output is genuinely runnable wasm exposing the worker ABI.
-        const { instance } = await WebAssembly.instantiate(new Uint8Array(wasmBytes), {});
-        expect(instance.exports.memory).toBeInstanceOf(WebAssembly.Memory);
-        for (const name of ['alloc', 'call', 'output_ptr', 'output_len'])
-            expect(typeof (/** @type {Record<string, unknown>} */ (instance.exports))[name]).toBe('function');
+        // The in-house output is genuinely runnable split wasm. TacWasmHost
+        // supplies the shared runtime memory/functions that generated browser
+        // workers load from /workers/tac-runtime.wasm.
+        const host = TacWasmHost.instantiateSync(new Uint8Array(wasmBytes), language);
+        expect(host.call('POST', { body: 'hello' }).status).toBe(200);
     }
-    const optionsSchema = await readFile(path.join(cwd, 'dist', 'workers', 'language', 'rust', 'OPTIONS.schema.json'), 'utf8');
-    expect(JSON.parse(optionsSchema).POST.request.body).toBe('^[\\s\\S]*$');
+    const optionsSchema = await readFile(webDistPath(cwd, 'workers', 'language', 'rust', 'OPTIONS.schema.json'), 'utf8');
+    expect(JSON.parse(optionsSchema).POST.payload.body).toBe('^[\\s\\S]*$');
 });
 timedTest('components can publish signals handled by their parent page', { timeout: 20000 }, async () => {
     const cwd = await createComponentSignalFixture();
@@ -1323,7 +1376,7 @@ timedTest('components can publish signals handled by their parent page', { timeo
             document: windowInstance.document,
             CustomEvent: windowInstance.CustomEvent,
         });
-        const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
+        const pageModulePath = webDistPath(cwd, 'pages', 'tac.js');
         const pageModule = await import(`${pathToFileURL(pageModulePath).href}?component-signal=${Date.now()}`);
         const render = await pageModule.default();
         const initial = await render();
@@ -1354,7 +1407,11 @@ timedTest('spa prehydration skips malformed persisted fields without blocking va
     const prehydrateModulePath = path.join(root, 'prehydrate.js');
     await writeFile(prehydrateModulePath, runtimeSource
         .slice(0, prehydrateEnd)
-        .replace("import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';\n", ''));
+        .replace("import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';\n", '')
+        .replace("import { cacheModuleResponse, clearStaticCache, precacheModules } from './static-cache.js';\n", '')
+        .replace("import { createDeferredDelegation } from './event-hydration.js';\n", '')
+        .replace("import { createComponentRegistry } from './component-registry.js';\n", '')
+        .replace("import { ServiceWorkerPolicy } from './service-worker-policy.js';\n", ''));
     const windowInstance = new Window();
     /** @type {Record<string, unknown>} */
     const previousGlobals = {
@@ -1415,16 +1472,16 @@ timedTest('spa prehydration skips malformed persisted fields without blocking va
 async function createLargeCompanionFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-large-companion-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'big'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'big'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-large-companion-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'big', 'tac.html'), `<strong class="big-widget">{label}</strong>`);
+    await writeFile(path.join(root, 'client', 'components', 'big', 'tac.html'), `<strong class="big-widget">{label}</strong>`);
     // Companion script exceeding ~1.3 KB to trigger the bundler size threshold
     const padding = '// ' + 'x'.repeat(1500);
-    await writeFile(path.join(root, 'components', 'big', 'tac.js'), `${padding}
+    await writeFile(path.join(root, 'client', 'components', 'big', 'tac.js'), `${padding}
 export default class extends Tac {
     label = 'BigWidget'
 
@@ -1433,7 +1490,7 @@ export default class extends Tac {
     }
 }
 `);
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<big />`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<big />`);
     return root;
 }
 
@@ -1451,7 +1508,7 @@ timedTest('large companion scripts over 1.3KB include class Tac definition', { t
     ]);
     if (exitCode !== 0)
         throw new Error(stderr);
-    const distComponentPath = path.join(cwd, 'dist', 'components', 'big', 'tac.js');
+    const distComponentPath = webDistPath(cwd, 'components', 'big', 'tac.js');
     const componentSource = await readFile(distComponentPath, 'utf8');
     expect(componentSource).toContain('class Tac{');
     expect(componentSource).toContain('extends Tac');
@@ -1461,14 +1518,14 @@ timedTest('large companion scripts over 1.3KB include class Tac definition', { t
 async function createComponentImportBindingFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-import-binding-'));
     tempDirs.push(root);
-    await mkdir(path.join(root, 'routes'), { recursive: true });
-    await mkdir(path.join(root, 'components', 'greeting'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'greeting'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'tachyon-import-binding-fixture',
         private: true,
     }, null, 2));
-    await writeFile(path.join(root, 'components', 'greeting', 'tac.html'), `<span class="greeting">Hello {name}</span>`);
-    await writeFile(path.join(root, 'components', 'greeting', 'tac.js'), `export default class extends Tac {
+    await writeFile(path.join(root, 'client', 'components', 'greeting', 'tac.html'), `<span class="greeting">Hello {name}</span>`);
+    await writeFile(path.join(root, 'client', 'components', 'greeting', 'tac.js'), `export default class extends Tac {
     name = 'World'
     constructor(props = {}) {
         super(props)
@@ -1476,7 +1533,7 @@ async function createComponentImportBindingFixture() {
     }
 }
 `);
-    await writeFile(path.join(root, 'routes', 'tac.html'), `<greeting name="Tachyon" />`);
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<greeting name="Tachyon" />`);
     return root;
 }
 
@@ -1495,7 +1552,7 @@ timedTest('page-level component import bindings accept props and call the factor
     if (exitCode !== 0)
         throw new Error(stderr);
     // Verify the generated page module has the fixed binding pattern: (p) => import(...).then(async (m) => { const f = m.default || m; return await f(p) })
-    const pageModulePath = path.join(cwd, 'dist', 'pages', 'tac.js');
+    const pageModulePath = webDistPath(cwd, 'pages', 'tac.js');
     const pageSource = await readFile(pageModulePath, 'utf8');
     expect(pageSource).toMatch(/\(\w\)=>import\("[^"]+"\)\.then\(async\(\w\)=>\{/);
     // Functional test: import and render to verify the factory is called correctly

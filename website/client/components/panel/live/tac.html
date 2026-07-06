@@ -1,0 +1,18 @@
+<w-card variant="outlined" class="panel-card">
+  <w-card-item title="Live web stream" subtitle="A frontend-only Server-Sent Events client counts public Wikimedia edits with reactive Tac updates.">
+  </w-card-item>
+  <w-card-text>
+    <div class="live-row">
+      <w-chip size="small" :color="isStreaming ? 'success' : 'warning'">{statusLabel()}</w-chip>
+      <strong class="live-count">{editsLastHour}</strong>
+      <span class="live-label">Wikimedia edits observed this hour</span>
+    </div>
+    <div class="w-row ga-2 live-actions">
+      <w-btn size="sm" variant="outlined" on:click="start()">Listen</w-btn>
+      <w-btn size="sm" variant="text" on:click="stop()">Stop</w-btn>
+    </div>
+    <logic :if="lastError">
+      <w-alert type="warning" density="compact" :text="lastError"></w-alert>
+    </logic>
+  </w-card-text>
+</w-card>

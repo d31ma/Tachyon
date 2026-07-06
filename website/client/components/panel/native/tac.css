@@ -1,0 +1,95 @@
+.studio {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@container (min-width: 720px) {
+  .studio {
+    grid-template-columns: minmax(280px, 1.3fr) minmax(240px, 0.8fr);
+    align-items: start;
+  }
+}
+
+.studio-stage {
+  margin: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.studio-stage canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  aspect-ratio: 720 / 330;
+  background: #101c3d;
+  border-radius: var(--w-radius);
+}
+
+.studio-caption {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.studio-caption output {
+  font-weight: 600;
+}
+
+.studio-caption time {
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-xs);
+}
+
+.studio-controls {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--w-text) 14%, transparent);
+  border-radius: var(--w-radius);
+}
+
+.energy {
+  display: grid;
+  gap: 0.4rem;
+  font-size: var(--w-font-sm);
+}
+
+.gauges {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gauges label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-xs);
+}
+
+.gauges progress,
+.gauges meter {
+  width: 100%;
+}
+
+details {
+  border-top: 1px solid color-mix(in srgb, var(--w-text) 14%, transparent);
+  padding-top: 0.6rem;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}
+
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--w-text);
+}
+
+details ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  line-height: 1.6;
+}

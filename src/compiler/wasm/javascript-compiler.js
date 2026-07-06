@@ -4,9 +4,9 @@
 //
 // This is not a general-purpose JS engine. It lets JS/TS authors write the same
 // handler-shaped Tac Worker subset as the other language frontends, then lowers
-// that subset through the shared C++ parser/codegen path to real worker-ABI Wasm.
+// that subset through the shared normalized parser/codegen path to worker-ABI Wasm.
 
-import { compileCppWorker } from './cpp-compiler.js';
+import { compileTacSubsetWorker } from './subset-compiler.js';
 
 /** @typedef {{ name: string, param: string, returnType: string, body: string }} Method */
 
@@ -200,7 +200,7 @@ function parseMethods(source) {
 }
 
 /** @param {string} source */
-function normalizeToCpp(source) {
+function normalizeToSubset(source) {
     const methods = parseMethods(source);
     return `class Handler { public:\n${methods.map((method) => `static ${method.returnType} ${method.name}(Request ${method.param}) {${method.body}\n}`).join('\n')}\n};`;
 }
@@ -211,7 +211,7 @@ function normalizeToCpp(source) {
  * @returns {Uint8Array}
  */
 export function compileJavaScriptWorker(source) {
-    return compileCppWorker(normalizeToCpp(source));
+    return compileTacSubsetWorker(normalizeToSubset(source));
 }
 
 /**
@@ -222,4 +222,3 @@ export function compileJavaScriptWorker(source) {
 export function compileTypeScriptWorker(source) {
     return compileJavaScriptWorker(source);
 }
-

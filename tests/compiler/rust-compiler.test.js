@@ -1,37 +1,16 @@
 // @ts-check
 import { expect, test } from 'bun:test';
 import { compileRustWorker, tokenize, Parser } from '../../src/compiler/wasm/rust-compiler.js';
+import { TacWasmHost } from '../../src/runtime/tac-wasm-host.js';
 
 /**
- * Drive generated wasm through the exact Tac Worker ABI. `method` is the HTTP
- * request verb (as the fetch shadow sends it), which selects the handler.
+ * Drive generated wasm through the exact Tac Worker ABI.
  * @param {Uint8Array} bytes
  */
-async function loadWorker(bytes) {
-    const { instance } = await WebAssembly.instantiate(bytes, {});
-    const exports = /** @type {Record<string, any>} */ (/** @type {unknown} */ (instance.exports));
+function loadWorker(bytes) {
+    const host = TacWasmHost.instantiateSync(bytes, 'rust-test');
     const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-    const view = () => new Uint8Array(exports.memory.buffer);
-    /** @param {string} text */
-    const writeText = (text) => {
-        const bytesToWrite = encoder.encode(String(text));
-        const ptr = exports.alloc(bytesToWrite.length || 1);
-        view().set(bytesToWrite, ptr);
-        return { ptr, len: bytesToWrite.length };
-    };
-    /** @param {unknown} value */
-    const writeJson = (value) => writeText(JSON.stringify(value ?? null));
-    /** @param {string} verb @param {unknown} request */
-    const call = (verb, request) => {
-        const m = writeJson(verb);
-        const r = writeJson(request);
-        const rawBody = request && typeof request === 'object' ? /** @type {{ body?: unknown }} */ (request).body : undefined;
-        const b = writeText(typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody ?? null));
-        exports.call(m.ptr, m.len, r.ptr, r.len, b.ptr, b.len);
-        return JSON.parse(decoder.decode(view().subarray(exports.output_ptr(), exports.output_ptr() + exports.output_len())));
-    };
-    return { call, byteLen: (/** @type {unknown} */ v) => encoder.encode(JSON.stringify(v ?? null)).length };
+    return { call: host.call.bind(host), byteLen: (/** @type {unknown} */ v) => encoder.encode(JSON.stringify(v ?? null)).length };
 }
 
 const SOURCE = `
@@ -107,7 +86,7 @@ test('reports clear errors for unsupported syntax', () => {
     expect(() => compileRustWorker('impl Handler { pub fn GET(request: Request) -> i32 { let a = 1; } }'))
         .toThrow(/must end with an expression/);
     expect(() => compileRustWorker('impl Handler { pub fn GET(request: Request) -> i32 { request.bytes() } }'))
-        .toThrow(/request\.len\(\), request\.body\(\), and request\.json\(\) are available/);
+        .toThrow(/request\.query\("k"\), request\.path\("k"\), request\.header\("k"\), request\.platform\("key"\) are available/);
 });
 
 const STRING_SOURCE = `
@@ -138,6 +117,23 @@ test('compiles String return types with concatenation and int coercion', async (
 
     expect(worker.call('POST', { a: 1 }).body.result).toBe('size is small');
     expect(worker.call('POST', { hello: 'world wide web' }).body.result).toBe('size is big');
+});
+
+test('compiles borrowed string return types', async () => {
+    const worker = await loadWorker(compileRustWorker(`
+        impl Handler {
+            pub fn GET(request: Request) -> &str {
+                "borrowed"
+            }
+
+            pub fn POST(request: Request) -> &'static str {
+                "static borrowed"
+            }
+        }
+    `));
+
+    expect(worker.call('GET', {}).body.result).toBe('borrowed');
+    expect(worker.call('POST', {}).body.result).toBe('static borrowed');
 });
 
 test('JSON-escapes string results so the response stays parseable', async () => {

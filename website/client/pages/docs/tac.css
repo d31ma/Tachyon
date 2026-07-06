@@ -1,0 +1,42 @@
+.docs-shell {
+  min-height: 60vh;
+}
+
+.docs-layout {
+  display: grid;
+  gap: 2rem;
+  grid-template-columns: 1fr;
+  padding-block: 2rem 3rem;
+}
+
+/* The grid items are Tac scope wrappers, not the aside/content elements
+   themselves. Without a zero minimum the nowrap topic-link row's min-content
+   (~646px) becomes the item minimum and the whole page overflows on phones. */
+.docs-layout > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.docs-content {
+  min-width: 0;
+}
+
+.docs-sidebar {
+  min-width: 0;
+}
+
+@container (min-width: 900px) {
+  .docs-layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  /* Sticky only in the two-column layout, where the sidebar has spare
+     column height to pin in. In the single-column mobile flow it scrolls
+     away with the page like regular content. */
+  .docs-sidebar {
+    position: sticky;
+    top: 4.5rem;
+    align-self: start;
+    z-index: 5;
+  }
+}

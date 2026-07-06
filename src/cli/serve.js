@@ -2,6 +2,7 @@
 // @ts-check
 import Yon from "../server/yon.js";
 import Pool from "../server/process/process-pool.js";
+import HandlerAdapter from "../server/process/handler-adapter.js";
 import { clearHandlerBackends, registerHandlerBackends } from "../server/process/backends/resolve.js";
 import Router from "../server/http/route-handler.js";
 import logger from "../server/observability/logger.js";
@@ -9,7 +10,7 @@ import { watch } from "fs";
 import { access, readdir, stat } from "fs/promises";
 import path from "path";
 import { pathToFileURL } from "url";
-import { serveStaticPreviewRequest } from "../runtime/static-preview.js";
+import { resolveStaticPreviewRoot, serveStaticPreviewRequest } from "../runtime/static-preview.js";
 
 /**
  * @typedef {import("bun").Server<any>} BunServer
@@ -26,6 +27,7 @@ const skipBundle = process.argv.includes('--no-bundle')
 const start = Date.now();
 let bundleWatcher = null;
 const distPath = path.resolve(process.env.YON_DIST_PATH ?? path.join(process.cwd(), 'dist'));
+let frontendDistPath = distPath;
 const bundleCliPath = `${import.meta.dir}/bundle.js`;
 const hotReloadClientPath = path.join(import.meta.dir, '../runtime/hot-reload-client.js');
 const serveLogger = logger.child({ scope: 'cli:serve' });
@@ -89,7 +91,7 @@ function isTruthy(value) {
  * @returns {Promise<{ frontend: boolean, backend: boolean, data: boolean, builtInBackend: boolean, mode: 'frontend' | 'backend' | 'full' | 'empty' }>}
  */
 async function detectAppShape() {
-    const frontend = await directoryHasFiles(path.join(process.cwd(), 'browser'));
+    const frontend = await directoryHasFiles(path.join(process.cwd(), 'client'));
     const backend = await directoryHasFiles(path.join(process.cwd(), 'server'));
     const data = await directoryHasFiles(path.join(process.cwd(), 'db'));
     const builtInBackend = data && isTruthy(process.env.YON_DATA_BROWSER_ENABLED);
@@ -143,6 +145,7 @@ async function configureRoutes(isReload = false) {
     if (isReload)
         Pool.clearWarmedProcesses();
     if (userBackendEnabled) {
+        await HandlerAdapter.loadUserProviders();
         await loadMiddleware();
         await Router.validateRoutes();
         registerHandlerBackends();
@@ -166,10 +169,15 @@ if (frontendEnabled) {
             process.exit(1);
         }
     } else if (!skipBundle) {
+        // The HTTP dev server only serves the web bundle; pin the build (and the
+        // watcher subprocess that inherits this env) to 'web' so a multi-target
+        // TAC_BUNDLE_TARGET doesn't spend startup compiling native targets.
+        process.env.TAC_BUNDLE_TARGET = 'web';
         const { runBuild } = await import('./bundle.js');
         await runBuild();
         Router.resetStaticState();
     }
+    frontendDistPath = await resolveStaticPreviewRoot(distPath);
 }
 await configureRoutes();
 if (hmrEnabled && !skipBundle) {
@@ -183,7 +191,7 @@ if (hmrEnabled && !skipBundle) {
     });
 }
 if (frontendEnabled) {
-    Yon.setFrontendRequestHandler((request) => serveStaticPreviewRequest(distPath, request, { allowRootFallback: false }));
+    Yon.setFrontendRequestHandler((request) => serveStaticPreviewRequest(frontendDistPath, request, { allowRootFallback: false }));
 }
 else {
     Yon.setFrontendRequestHandler(null);
@@ -215,15 +223,47 @@ async function startHmrWatchers(server) {
     if (hmrWatchersStarted)
         return;
     hmrWatchersStarted = true;
-    const onFileChange = () => {
+    /** @type {Set<string>} */
+    const hmrChangedPaths = new Set();
+    /**
+     * Map a changed source file to its browser module path.
+     * pages/tac.html → /pages/tac.js, components/hero/tac.html → /components/hero/tac.js
+     * @param {string} filename
+     * @returns {string | null}
+     */
+    function hmrModulePath(filename) {
+        const normalized = filename.replaceAll('\\', '/');
+        const relPage = path.relative(Router.pagesPath, normalized);
+        if (!relPage.startsWith('..') && !path.isAbsolute(relPage))
+            return `/pages/${relPage.replace(/\.html$/, '.js')}`;
+        const relComp = path.relative(Router.componentsPath, normalized);
+        if (!relComp.startsWith('..') && !path.isAbsolute(relComp))
+            return `/components/${relComp.replace(/\.html$/, '.js')}`;
+        return null;
+    }
+
+    /**
+     * @param {string} _event
+     * @param {string | null} [filename]
+     */
+    const onFileChange = (_event, filename) => {
+        if (typeof filename === 'string') {
+            const modulePath = hmrModulePath(filename);
+            if (modulePath) hmrChangedPaths.add(modulePath);
+        }
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(async () => {
+            const paths = [...hmrChangedPaths];
+            hmrChangedPaths.clear();
             try {
-                serveLogger.info('HMR reload started');
+                serveLogger.info('HMR reload started', { paths: paths.length ? paths : undefined });
                 await configureRoutes(true);
                 server.reload({ routes: Router.reqRoutes });
+                const payload = paths.length > 0
+                    ? `event: update\ndata: ${JSON.stringify({ paths })}\n\n`
+                    : "event: reload\ndata: reload\n\n";
                 for (const client of hmrClients)
-                    client.enqueue("event: reload\ndata: reload\n\n");
+                    client.enqueue(payload);
             }
             catch (error) {
                 serveLogger.error('HMR reload failed', { err: error });
@@ -307,7 +347,7 @@ const server = Bun.serve({
         }
         if (frontendEnabled) {
             const allowRootFallback = wantsHtmlDocument(req) && !isAssetRequest(pathname);
-            return serveStaticPreviewRequest(distPath, req, { allowRootFallback })
+            return serveStaticPreviewRequest(frontendDistPath, req, { allowRootFallback })
                 .then((response) => response ?? new Response("Not Found", { status: 404 }));
         }
         return new Response("Not Found", { status: 404 });
@@ -317,13 +357,9 @@ const server = Bun.serve({
     hostname: serverHostname,
     development: !isProduction && !!process.env.YON_DEV,
 });
-serveLogger.info('Server started', {
-    url: `http://${server.hostname}:${server.port}`,
-    startupMs: Date.now() - start,
+serveLogger.info(`Server ready in ${Date.now() - start}ms → http://${server.hostname}:${server.port}`, {
+    mode: appShape.mode,
     production: isProduction,
-    appMode: appShape.mode,
-    frontendEnabled,
-    backendEnabled,
 });
 process.on('SIGINT', () => {
     clearTimeout(debounceTimer);

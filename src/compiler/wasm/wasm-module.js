@@ -255,8 +255,10 @@ export class WasmModule {
     constructor() {
         /** @type {{ params: number[], results: number[] }[]} */
         this.types = [];
-        /** @type {{ module: string, name: string, typeIndex: number }[]} */
+        /** @type {{ module: string, name: string, kind: number, typeIndex?: number, min?: number, max?: number }[]} */
         this.imports = [];
+        /** @type {number} Count of function imports (used for function index calculation). */
+        this.funcImportCount = 0;
         /** @type {{ typeIndex: number, locals: number[], body: number[], name?: string }[]} */
         this.functions = [];
         /** @type {{ name: string, index: number, kind: number }[]} */
@@ -319,8 +321,21 @@ export class WasmModule {
      */
     addImportFunction(spec) {
         const typeIndex = this.internType(spec.params ?? [], spec.results ?? []);
+        const index = this.funcImportCount;
+        this.imports.push({ module: spec.module, name: spec.name, kind: 0x00, typeIndex });
+        this.funcImportCount += 1;
+        return index;
+    }
+
+    /**
+     * Declare an imported memory. Must be called before any `addFunction` that
+     * depends on the import count.
+     * @param {{ module: string, name: string, min: number, max?: number }} spec
+     * @returns {number} The import's memory index (always 0 in MVP).
+     */
+    addImportMemory(spec) {
         const index = this.imports.length;
-        this.imports.push({ module: spec.module, name: spec.name, typeIndex });
+        this.imports.push({ module: spec.module, name: spec.name, kind: 0x02, min: spec.min, max: spec.max });
         return index;
     }
 
@@ -336,7 +351,7 @@ export class WasmModule {
         const locals = spec.locals ?? [];
         const body = spec.body instanceof Emitter ? spec.body.finish() : spec.body;
         const typeIndex = this.internType(params, results);
-        const funcIndex = this.imports.length + this.functions.length;
+        const funcIndex = this.funcImportCount + this.functions.length;
         this.functions.push({ typeIndex, locals, body, name: spec.name });
         if (spec.name)
             this.exports.push({ name: spec.name, index: funcIndex, kind: 0x00 });
@@ -384,15 +399,28 @@ export class WasmModule {
             this.types.map((type) => [0x60, ...vector(type.params.map((p) => [p])), ...vector(type.results.map((r) => [r]))]),
         )));
 
-        // Import section (imported functions occupy the lowest function indices)
+        // Import section (functions, memory, globals)
         if (this.imports.length > 0) {
             out.push(...section(SECTION.import, vector(
-                this.imports.map((imp) => [
-                    ...encodeName(imp.module),
-                    ...encodeName(imp.name),
-                    0x00, // import kind: function
-                    ...unsignedLEB(imp.typeIndex),
-                ]),
+                this.imports.map((imp) => {
+                    const base = [...encodeName(imp.module), ...encodeName(imp.name), imp.kind];
+                    if (imp.kind === 0x00) {
+                        // Function import
+                        if (imp.typeIndex === undefined)
+                            throw new Error(`Function import ${imp.module}.${imp.name} is missing a type index`);
+                        return [...base, ...unsignedLEB(imp.typeIndex)];
+                    }
+                    if (imp.kind === 0x02) {
+                        // Memory import
+                        if (imp.min === undefined)
+                            throw new Error(`Memory import ${imp.module}.${imp.name} is missing a minimum page count`);
+                        const limits = imp.max === undefined
+                            ? [0x00, ...unsignedLEB(imp.min)]
+                            : [0x01, ...unsignedLEB(imp.min), ...unsignedLEB(imp.max)];
+                        return [...base, ...limits];
+                    }
+                    throw new Error(`Unsupported import kind: ${imp.kind}`);
+                }),
             )));
         }
 
@@ -401,8 +429,9 @@ export class WasmModule {
             this.functions.map((fn) => unsignedLEB(fn.typeIndex)),
         )));
 
-        // Memory section
-        if (this.memory) {
+        // Memory section — only emit for locally-defined memory
+        const hasImportedMemory = this.imports.some((imp) => imp.kind === 0x02);
+        if (this.memory && !hasImportedMemory) {
             const limits = this.memory.max === undefined
                 ? [0x00, ...unsignedLEB(this.memory.min)]
                 : [0x01, ...unsignedLEB(this.memory.min), ...unsignedLEB(this.memory.max)];
@@ -423,10 +452,10 @@ export class WasmModule {
             )));
         }
 
-        // Export section (functions + memory)
+        // Export section (functions + locally-defined memory)
         /** @type {number[][]} */
         const exportEntries = this.exports.map((entry) => [...encodeName(entry.name), entry.kind, ...unsignedLEB(entry.index)]);
-        if (this.memory?.exportName)
+        if (this.memory?.exportName && !hasImportedMemory)
             exportEntries.push([...encodeName(this.memory.exportName), 0x02, ...unsignedLEB(0)]);
         out.push(...section(SECTION.export, vector(exportEntries)));
 

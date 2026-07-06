@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "website/**/*.d.ts",
+    "website/**/*.js",
+    "website/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "node_modules*",
+    "dist",
+    "website/dist",
+    "website/dist*",
+    "website/dist-debug",
+    "website/node_modules",
+    "website/node_modules*",
+    "website/client/shared/assets/duvay/**/*.js",
+    "**/*conflicted copy*",
+    "**/*.as.ts"
+  ]
+}

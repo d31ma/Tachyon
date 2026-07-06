@@ -1,45 +1,46 @@
 // @ts-check
 import Router from "../server/http/route-handler.js";
 import { createPublicBrowserEnvResponse, PUBLIC_BROWSER_ENV_PATH, withPublicBrowserEnv } from "../server/http/browser-env.js";
+import { isNativeTarget, targetContext } from "../shared/native-targets.js";
 import logger from "../server/observability/logger.js";
 import { existsSync } from 'fs';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from "path";
 import { pathToFileURL } from "url";
 import { compileRustWorker } from "./wasm/rust-compiler.js";
-import { compileCWorker } from "./wasm/c-compiler.js";
-import { compileCppWorker } from "./wasm/cpp-compiler.js";
-import { compilePythonWorker } from "./wasm/python-compiler.js";
-import { compileCSharpWorker } from "./wasm/csharp-compiler.js";
-import { compileGoWorker } from "./wasm/go-compiler.js";
-import { compileZigWorker } from "./wasm/zig-compiler.js";
 import { compileJavaScriptWorker, compileTypeScriptWorker } from "./wasm/javascript-compiler.js";
+import { buildRuntimeModule } from "./wasm/tac-wasm-compiler.js";
+import { EVENT_CAPTURE_SCRIPT } from "../runtime/event-hydration.js";
+import { compileNativeWorkerExecutable } from "./native/worker-compiler.js";
 /**
  * @typedef {import("bun").BunRequest} BunRequest
  * @typedef {import("bun").BunPlugin} BunPlugin
- * @typedef {{ path: string, allowSelf: boolean }} LayoutEntry
- * @typedef {Record<string, LayoutEntry>} LayoutMap
+ * @typedef {{ path: string, allowSelf: boolean }} WrapperPageEntry
+ * @typedef {Record<string, WrapperPageEntry>} WrapperPageMap
  * @typedef {'esm' | 'global'} OutputFormat
  * @typedef {'ecmascript'} CompanionTarget
- * @typedef {'rust' | 'c' | 'cpp' | 'zig' | 'python' | 'csharp' | 'go' | 'javascript' | 'typescript'} TacWorkerLanguage
+ * @typedef {'rust' | 'javascript' | 'typescript'} TacWorkerLanguage
  * @typedef {{ extension: string, target: 'ecmascript' }} CompanionProvider
  * @typedef {{ sourcePath: string, importPath: string, provider: CompanionProvider }} CompanionScript
- * @typedef {{ extension: string, language: TacWorkerLanguage }} TacWorkerProvider
+ * @typedef {{ extension: string, language: TacWorkerLanguage, targets: import('../shared/native-targets.js').BundleTarget[] }} TacWorkerProvider
  * @typedef {{ sourcePath: string, route: string, provider: TacWorkerProvider }} TacWorkerScript
  * @typedef {{ html: string, hasSlot: boolean, script?: string, scriptLang: string, companion?: CompanionScript, companionImportPath?: string }} TemplateData
  * @typedef {{ static?: string, element?: string }} TemplateNode
  * @typedef {Record<string, string>} AttributeMap
- * @typedef {{ version: string, modules: Map<string, Function>, register: (id: string, factory: Function) => Function, load: (id: string) => Promise<Function> }} TacRegistry
+ * @typedef {{ target: string, platform: string, environment: string, os: string, native: boolean, browser: boolean, web: boolean, desktop: boolean, mobile: boolean }} TacPlatformContext
+ * @typedef {{ version: string, modules: Map<string, Function>, platform: TacPlatformContext, register: (id: string, factory: Function) => Function, load: (id: string) => Promise<Function> }} TacRegistry
  */
 const TEMPLATE_PATH = `${import.meta.dir}/render-template.js`;
 const SPA_RENDERER_PATH = `${import.meta.dir}/../runtime/spa-renderer.js`;
-const FYLO_LOCAL_WORKER_PATH = `${import.meta.dir}/../runtime/fylo-local-worker.js`;
+const FYLO_LOCAL_WORKER_PATH = `${import.meta.dir}/../runtime/fylo-browser-worker.js`;
 const ROUTE_MANIFEST_PLACEHOLDER = '{"__tachyonPlaceholder":true}';
-const LAYOUT_MANIFEST_PLACEHOLDER = '{"__tachyonShellPlaceholder":true}';
+const WRAPPER_MANIFEST_PLACEHOLDER = '{"__tachyonShellPlaceholder":true}';
 const NOT_FOUND_PATH = `${import.meta.dir}/../runtime/shells/not-found.html`;
 const APP_SHELL_PATH = `${import.meta.dir}/../runtime/shells/app.html`;
 const PRERENDER_WORKER_PATH = `${import.meta.dir}/../runtime/prerender-worker.js`;
+const MODULES_ROUTE_PREFIX = '/shared/modules';
+const IMPORT_MAP_PLACEHOLDER = '<!--__TACHYON_IMPORT_MAP__-->';
 /**
  * @param {string} routePath
  * @param {BodyInit} body
@@ -72,6 +73,7 @@ export default class Compiler {
     static pageFileName = Router.pageFileName;
     static prerenderRenderConcurrency = 4;
     static prerenderWriteConcurrency = 8;
+    static compileConcurrency = 8;
     /** @type {OutputFormat} */
     static outputFormat = Compiler.resolveOutputFormat();
     /** @type {string[]} */
@@ -83,15 +85,9 @@ export default class Compiler {
     ];
     /** @type {TacWorkerProvider[]} */
     static workerProviders = [
-        { extension: '.rs', language: 'rust' },
-        { extension: '.c', language: 'c' },
-        { extension: '.cpp', language: 'cpp' },
-        { extension: '.zig', language: 'zig' },
-        { extension: '.py', language: 'python' },
-        { extension: '.cs', language: 'csharp' },
-        { extension: '.go', language: 'go' },
-        { extension: '.js', language: 'javascript' },
-        { extension: '.ts', language: 'typescript' },
+        { extension: '.rs', language: 'rust', targets: ['web', 'macos', 'windows', 'linux', 'ios', 'android'] },
+        { extension: '.js', language: 'javascript', targets: ['web'] },
+        { extension: '.ts', language: 'typescript', targets: ['web'] },
     ];
     /** @type {string[]} */
     static companionScriptExtensions = Compiler.companionProviders.map((provider) => provider.extension);
@@ -103,10 +99,12 @@ export default class Compiler {
     static browserRuntimeRoutes = new Set();
     /** @type {Map<string, string>} */
     static compMapping = new Map();
-    /** @type {LayoutMap} */
-    static layoutMapping = {};
+    /** @type {WrapperPageMap} */
+    static wrapperPages = {};
     /** @type {Set<string>} */
     static warnedUnknownTags = new Set();
+    /** @type {Set<string>} */
+    static bundledDependencyModules = new Set();
     static nativeTags = new Set([
         'a', 'abbr', 'address', 'area', 'article', 'aside', 'audio', 'b', 'base', 'bdi', 'bdo',
         'blockquote', 'body', 'br', 'button', 'canvas', 'caption', 'cite', 'code', 'col',
@@ -140,6 +138,8 @@ export default class Compiler {
         'missing-glyph',
     ]);
     static routeTitleFallback = "Tachyon";
+    /** @type {Set<string>} Routes for native worker binaries that need executable permissions after static export. */
+    static nativeWorkerBinaryRoutes = new Set();
 
     /** @param {string} value */
     static escapeRegExp(value) {
@@ -160,6 +160,169 @@ export default class Compiler {
     static resolveOutputFormat() {
         const value = (process.env.TAC_FORMAT || 'esm').toLowerCase();
         return value === 'global' || value === 'umd' || value === 'iife' ? 'global' : 'esm';
+    }
+    /**
+     * @returns {import('../shared/native-targets.js').BundleTarget[]}
+     */
+    static bundleTargets() {
+        return /** @type {import('../shared/native-targets.js').BundleTarget[]} */ ((process.env.TAC_BUNDLE_TARGETS || 'web')
+            .split(',')
+            .map((target) => target.trim())
+            .filter(Boolean));
+    }
+    /**
+     * Raw OS worker capabilities (`fs.*`, `shell.*`, `process.*`) the build is
+     * authorized to invoke. This is deployment policy — not a request/response
+     * contract — so it lives in the `TAC_DANGEROUS_CAPABILITIES` env var rather
+     * than in `OPTIONS.schema.json`. The resolved list is baked into the worker
+     * runtime at compile time (browser workers have no `process.env`).
+     * @returns {string[]}
+     */
+    static dangerousCapabilities() {
+        return (process.env.TAC_DANGEROUS_CAPABILITIES || '')
+            .split(',')
+            .map((capability) => capability.trim())
+            .filter(Boolean);
+    }
+    /**
+     * Native capabilities the build authorizes Tac workers to invoke. This is
+     * deployment policy, not a request/response contract, so it lives in the
+     * `TAC_NATIVE_CAPABILITIES` env var rather than in `OPTIONS.schema.json`.
+     * The resolved list is baked into the worker runtime at compile time
+     * (browser workers have no `process.env`).
+     * @returns {string[]}
+     */
+    static nativeCapabilities() {
+        return (process.env.TAC_NATIVE_CAPABILITIES || '')
+            .split(',')
+            .map((capability) => capability.trim())
+            .filter(Boolean);
+    }
+    /**
+     * Returns the Tac worker response-schema bucket for an HTTP status code.
+     * Workers only need three buckets: `ok` (2xx), `clientError` (4xx), and
+     * `serverError` (5xx). 1xx and 3xx responses are not validated.
+     * @param {number} status
+     * @returns {'ok' | 'clientError' | 'serverError' | undefined}
+     */
+    static httpStatusName(status) {
+        if (status >= 200 && status < 300) return 'ok';
+        if (status >= 400 && status < 500) return 'clientError';
+        if (status >= 500 && status < 600) return 'serverError';
+        return undefined;
+    }
+    /**
+     * Returns true when the current bundle target is a native platform.
+     * @returns {boolean}
+     */
+    static isNativeBundle() {
+        const targets = Compiler.bundleTargets();
+        return targets.length === 1 && isNativeTarget(targets[0]);
+    }
+    /**
+     * The single bundle target currently being built. During `tac.bundle` each
+     * target is built in its own pass with `TAC_BUNDLE_TARGETS` set to one
+     * value, so this returns that value. Falls back to 'web'.
+     * @returns {import('../shared/native-targets.js').BundleTarget}
+     */
+    static currentBundleTarget() {
+        return Compiler.bundleTargets()[0] ?? 'web';
+    }
+    /**
+     * Runtime target context for the bundle currently being emitted.
+     * @returns {import('../shared/native-targets.js').BundleTargetContext}
+     */
+    static currentTargetContext() {
+        return targetContext(Compiler.currentBundleTarget());
+    }
+    /**
+     * Native WebView bundles can still run browser/WASM workers. A provider is
+     * therefore available to native targets when it supports either that native
+     * target directly or the browser fallback target.
+     * @param {TacWorkerProvider} provider
+     * @param {import('../shared/native-targets.js').BundleTarget} [target]
+     * @returns {boolean}
+     */
+    static workerProviderAvailableForTarget(provider, target = Compiler.currentBundleTarget()) {
+        return provider.targets.includes(target) || (isNativeTarget(target) && provider.targets.includes('web'));
+    }
+    /**
+     * Returns true when a worker provider supports the given bundle target.
+     * @param {TacWorkerProvider} provider
+     * @param {import('../shared/native-targets.js').BundleTarget} [target]
+     * @returns {boolean}
+     */
+    static workerProviderSupportsTarget(provider, target = Compiler.currentBundleTarget()) {
+        return provider.targets.includes(target);
+    }
+    /** @param {string} workerRoute */
+    static workerRuntimeModulePath(workerRoute) {
+        const depth = workerRoute.split('/').filter(Boolean).length;
+        return `${'../'.repeat(depth)}tac-runtime.wasm`;
+    }
+    /** @param {string} binaryRoute */
+    static nativeWorkerRouteFromBinaryRoute(binaryRoute) {
+        return binaryRoute
+            .replace(/^\/workers\//, '')
+            .replace(/\/[^/]+$/, '');
+    }
+    static nativeWorkerRoutes() {
+        return [...new Set([...Compiler.nativeWorkerBinaryRoutes].map((route) => Compiler.nativeWorkerRouteFromBinaryRoute(route)))].sort();
+    }
+    /**
+     * Asset base prefix for the current target. Native apps load from the
+     * local file system, so assets must be relative to index.html. Web targets
+     * keep absolute paths so they work from any route.
+     * @returns {string}
+     */
+    static assetBasePath() {
+        return Compiler.isNativeBundle() ? './' : '/';
+    }
+    /**
+     * Converts an absolute public path (e.g. /components/foo.js) into the
+     * correct form for the current target.
+     * @param {string} publicPath
+     * @returns {string}
+     */
+    static assetPath(publicPath) {
+        if (!publicPath.startsWith('/'))
+            return publicPath;
+        const base = Compiler.assetBasePath();
+        return `${base}${publicPath.slice(1)}`;
+    }
+    /**
+     * Escapes a package name so it can be used as a single URL path segment.
+     * Scoped packages such as `@scope/name` become `scope+name`.
+     * @param {string} moduleName
+     * @returns {string}
+     */
+    static moduleRouteKey(moduleName) {
+        return moduleName.replace('/', '+');
+    }
+    /**
+     * Public URL path for a bundled npm dependency module.
+     * @param {string} moduleName
+     * @returns {string}
+     */
+    static moduleRoutePath(moduleName) {
+        return `${MODULES_ROUTE_PREFIX}/${Compiler.moduleRouteKey(moduleName)}.js`;
+    }
+    /**
+     * Returns a relative import path from one module to another. ES module
+     * imports are resolved relative to the importing module file, so this is
+     * required for both web and native bundles. It also lets the generated
+     * modules work when imported directly from the filesystem (e.g. tests).
+     * @param {string} fromPublicPath
+     * @param {string} toPublicPath
+     * @returns {string}
+     */
+    static relativeModuleImportPath(fromPublicPath, toPublicPath) {
+        const from = fromPublicPath.startsWith('/') ? fromPublicPath.slice(1) : fromPublicPath;
+        const to = toPublicPath.startsWith('/') ? toPublicPath.slice(1) : toPublicPath;
+        let relative = path.posix.relative(path.posix.dirname(from), to);
+        if (!relative.startsWith('.'))
+            relative = `./${relative}`;
+        return relative;
     }
     static isGlobalOutput() {
         return Compiler.outputFormat === 'global';
@@ -197,7 +360,7 @@ export default class Compiler {
         throw new Error([
             `Invalid Tac component path '${route}'.`,
             `Components must use lowercase alphanumeric folders with a ${Router.pageFileName} template.`,
-            `Example: browser/components/user/card/${Router.pageFileName} is used as <user-card />.`,
+            `Example: client/components/user/card/${Router.pageFileName} is used as <user-card />.`,
         ].join(' '));
     }
 
@@ -276,8 +439,8 @@ export default class Compiler {
             if (switchExpr !== undefined) {
                 const id = index++;
                 const frame = {
-                    valueVar: `__ty_switch_value_${id}`,
-                    matchedVar: `__ty_switch_matched_${id}`,
+                    valueVar: `__tc_switch_value_${id}`,
+                    matchedVar: `__tc_switch_matched_${id}`,
                     defaultSeen: false,
                     staticCases: new Set(),
                     caseClosers: [],
@@ -302,7 +465,7 @@ export default class Compiler {
                     frame.staticCases.add(staticKey);
                 }
                 frame.caseClosers.push('}}');
-                return `{ const __ty_case_value=(${caseExpr}); if(!${frame.matchedVar} && __ty_helpers__.matchSwitchCase(${frame.valueVar}, __ty_case_value)) { ${frame.matchedVar}=true;`;
+                return `{ const __tc_case_value=(${caseExpr}); if(!${frame.matchedVar} && __tc_helpers__.matchSwitchCase(${frame.valueVar}, __tc_case_value)) { ${frame.matchedVar}=true;`;
             }
             if (match === '`<case default="">`') {
                 if (frame.defaultSeen)
@@ -339,14 +502,20 @@ export default class Compiler {
     }
     static async createStaticRoutes() {
         Compiler.compMapping.clear();
-        Compiler.layoutMapping = {};
+        Compiler.wrapperPages = {};
         Compiler.warnedUnknownTags.clear();
+        Compiler.nativeWorkerBinaryRoutes.clear();
         await Router.validatePageRoutes();
-        // Components must be registered before pages/layouts compile so that
+        // Components must be registered before pages compile so that
         // compMapping is fully populated when import statements are generated.
         await Compiler.bundleComponents();
         await Compiler.bundlePages();
         await Compiler.bundleWorkers();
+        // Register shared Tac runtime module (split WASM compilation)
+        const runtimeBytes = buildRuntimeModule();
+        Router.reqRoutes['/workers/tac-runtime.wasm'] = {
+            GET: () => staticRouteResponse('/workers/tac-runtime.wasm', runtimeBytes, 'application/wasm')
+        };
         await Compiler.bundleBrowserRuntimeAssets();
         await Promise.all([
             Compiler.bundleDependencies(),
@@ -384,17 +553,17 @@ export default class Compiler {
      * @param {string} pathname
      * @returns {string | null}
      */
-    static resolveLayout(pathname) {
+    static resolveWrapperPage(pathname) {
         if (pathname !== '/') {
             const segments = pathname.split('/').filter(Boolean);
             for (let count = segments.length; count > 0; count -= 1) {
                 const prefix = `/${segments.slice(0, count).join('/')}`;
-                const entry = Compiler.layoutMapping[prefix];
+                const entry = Compiler.wrapperPages[prefix];
                 if (entry && (entry.allowSelf || prefix !== pathname))
                     return entry.path;
             }
         }
-        const rootEntry = Compiler.layoutMapping['/'];
+        const rootEntry = Compiler.wrapperPages['/'];
         if (rootEntry && (rootEntry.allowSelf || pathname !== '/'))
             return rootEntry.path;
         return null;
@@ -408,7 +577,7 @@ export default class Compiler {
     static async rewriteAbsoluteImports(filePath, distPath) {
         const source = await readFile(filePath, 'utf8');
         const fileDir = path.dirname(filePath);
-        const rewritten = source.replace(/import\("(?<spec>\/(?:components|modules)\/[^"]+)"\)/g, (_match, spec) => {
+        const rewritten = source.replace(/import\("(?<spec>\/(?:components|shared\/modules)\/[^"]+)"\)/g, (_match, spec) => {
             const relative = path.relative(fileDir, path.join(distPath, spec.slice(1))).replaceAll(path.sep, '/');
             const normalized = relative.startsWith('.') ? relative : `./${relative}`;
             return `import("${normalized}")`;
@@ -427,7 +596,7 @@ export default class Compiler {
             ? path.isAbsolute(configuredSharedScriptsPath)
                 ? configuredSharedScriptsPath
                 : path.join(cwd, configuredSharedScriptsPath)
-            : path.join(cwd, 'browser', 'shared', 'scripts');
+            : path.join(cwd, 'client', 'shared', 'scripts');
         const candidates = [
             ...Compiler.mainEntryCandidates.map((entry) => path.join(cwd, entry)),
             ...Compiler.mainEntryCandidates.map((entry) => path.join(sharedScriptsBase, entry)),
@@ -466,8 +635,8 @@ export default class Compiler {
      */
     static pageModulePublicPath(pathname) {
         return pathname === '/'
-            ? '/pages/tac.js'
-            : `/pages${Router.routeToFilesystemPath(pathname)}/tac.js`;
+            ? Compiler.assetPath('/pages/tac.js')
+            : Compiler.assetPath(`/pages${Router.routeToFilesystemPath(pathname)}/tac.js`);
     }
 
     /**
@@ -551,13 +720,58 @@ export default class Compiler {
         return relative.startsWith('.') ? relative : `./${relative}`;
     }
     /** @param {string} source */
+    static maskCommentsAndStrings(source) {
+        return source
+            .replace(/\/\*[\s\S]*?\*\//g, (match) => ' '.repeat(match.length))
+            .replace(/\/\/.*$/gm, (match) => ' '.repeat(match.length))
+            .replace(/(['"`])(?:\\.|(?!\1).)*\1/g, (match) => ' '.repeat(match.length));
+    }
+    /** @param {string} source */
     static shouldInjectTacImport(source) {
-        const stripped = source
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/.*$/gm, '')
-            .replace(/(['"`])(?:\\.|(?!\1).)*\1/g, '');
+        const stripped = Compiler.maskCommentsAndStrings(source);
         return !(/^\s*import\s+(?:type\s+)?(?:\{[^}]*\bTac\b[^}]*\}|\bTac\b)/m.test(stripped)
             || /^\s*(?:const|let|var|class|function)\s+Tac\b/m.test(stripped));
+    }
+    /** @param {string} source */
+    static injectTacBaseClass(source) {
+        const masked = Compiler.maskCommentsAndStrings(source);
+        const match = /(^|\n)([ \t]*export\s+default\s+class\b[^\n{]*)(\{)/m.exec(masked);
+        if (!match || /\bextends\b/.test(match[2])) return source;
+        const insertAt = match.index + match[1].length + match[2].length;
+        const before = source.slice(0, insertAt).replace(/[ \t]*$/, '');
+        return Compiler.injectTacConstructorSuper(`${before} extends Tac ${source.slice(insertAt)}`);
+    }
+    /** @param {string} source @param {number} openBraceIndex */
+    static findMatchingBrace(source, openBraceIndex) {
+        let depth = 0;
+        for (let index = openBraceIndex; index < source.length; index += 1) {
+            const char = source[index];
+            if (char === '{') depth += 1;
+            if (char === '}') {
+                depth -= 1;
+                if (depth === 0) return index;
+            }
+        }
+        return -1;
+    }
+    /** @param {string} source */
+    static injectTacConstructorSuper(source) {
+        const masked = Compiler.maskCommentsAndStrings(source);
+        const classMatch = /(^|\n)[ \t]*export\s+default\s+class\b[^\n{]*\bextends\s+Tac\b[^\n{]*(\{)/m.exec(masked);
+        if (!classMatch) return source;
+        const classOpen = classMatch.index + classMatch[0].lastIndexOf('{');
+        const classClose = Compiler.findMatchingBrace(masked, classOpen);
+        if (classClose === -1) return source;
+        const classBody = masked.slice(classOpen + 1, classClose);
+        const constructorMatch = /(^|\n)([ \t]*)constructor\s*\([^)]*\)\s*\{/m.exec(classBody);
+        if (!constructorMatch) return source;
+        const constructorOpen = classOpen + 1 + constructorMatch.index + constructorMatch[0].lastIndexOf('{');
+        const constructorClose = Compiler.findMatchingBrace(masked, constructorOpen);
+        if (constructorClose === -1) return source;
+        const constructorBody = masked.slice(constructorOpen + 1, constructorClose);
+        if (/\bsuper\s*\(/.test(constructorBody)) return source;
+        const indent = `${constructorMatch[2]}    `;
+        return `${source.slice(0, constructorOpen + 1)}\n${indent}super(...arguments);${source.slice(constructorOpen + 1)}`;
     }
     /**
      * Returns the subset of supported decorator names that the source uses as
@@ -567,10 +781,7 @@ export default class Compiler {
      * @returns {string[]}
      */
     static findReferencedDecorators(source) {
-        const stripped = source
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/.*$/gm, '')
-            .replace(/(['"`])(?:\\.|(?!\1).)*\1/g, '');
+        const stripped = Compiler.maskCommentsAndStrings(source);
         const referenced = [];
         for (const name of Compiler.companionDecoratorNames) {
             const usagePattern = new RegExp(`(?:^|[^@\\w])@${name}\\b`, 'm');
@@ -590,10 +801,7 @@ export default class Compiler {
      * @param {string} sourcePath
      */
     static assertNoRemovedDecorators(source, sourcePath) {
-        const stripped = source
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/.*$/gm, '')
-            .replace(/(['"`])(?:\\.|(?!\1).)*\1/g, '');
+        const stripped = Compiler.maskCommentsAndStrings(source);
         for (const name of Compiler.removedCompanionDecoratorNames) {
             const usagePattern = new RegExp(`(?:^|[^@\\w])@${name}\\b`, 'm');
             if (!usagePattern.test(stripped)) continue;
@@ -613,10 +821,7 @@ export default class Compiler {
      * @returns {boolean}
      */
     static referencesFyloGlobal(source) {
-        const stripped = source
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/.*$/gm, '')
-            .replace(/(['"`])(?:\\.|(?!\1).)*\1/g, '');
+        const stripped = Compiler.maskCommentsAndStrings(source);
         const usagePattern = /(?:^|[^.\w@])fylo\b/m;
         if (!usagePattern.test(stripped)) return false;
         const importPattern = /^\s*import\s+[\s\S]*?\bfylo\b[\s\S]*?\bfrom\b/m;
@@ -669,7 +874,7 @@ export default class Compiler {
         /** @type {string[]} */
         const bindingNames = [];
         const transformed = scriptContent.replace(/import\((['"][^'"]+['"])\)/g, (_match, specifier) => {
-            const helperName = `__ty_dynamic_import_${index++}__`;
+            const helperName = `__tc_dynamic_import_${index++}__`;
             moduleImports.push(`${helperName}: () => import(${specifier})`);
             bindingNames.push(helperName);
             return `${helperName}()`;
@@ -680,11 +885,115 @@ export default class Compiler {
             scriptContent: transformed,
         };
     }
-    /** @param {string} shellHTML */
-    static withMainStylesheet(shellHTML) {
-        if (!Router.reqRoutes['/imports.css'] || shellHTML.includes('/imports.css'))
+    /**
+     * @param {string} shellHTML
+     * @param {string} [assetPrefix]
+     */
+    static withMainStylesheet(shellHTML, assetPrefix = Compiler.assetBasePath()) {
+        const href = `${assetPrefix}imports.css`;
+        if (!Router.reqRoutes['/imports.css'] || shellHTML.includes(href))
             return shellHTML;
-        return shellHTML.replace('</head>', '    <link rel="stylesheet" href="/imports.css">\n</head>');
+        return shellHTML.replace('</head>', `    <link rel="stylesheet" href="${href}">\n</head>`);
+    }
+    /** @returns {Promise<string>} */
+    static async faviconPath() {
+        const candidates = ['favicon.svg', 'app-icon.svg'];
+        for (const candidate of candidates) {
+            if (await pathExists(path.join(Router.assetsPath, candidate)))
+                return `/shared/assets/${candidate}`;
+        }
+        if (Compiler.isNativeBundle())
+            return '/shared/assets/favicon.svg';
+        return '';
+    }
+    /**
+     * @param {string} shellHTML
+     * @param {string} [assetPrefix]
+     */
+    static async withFavicon(shellHTML, assetPrefix = Compiler.assetBasePath()) {
+        if (shellHTML.includes('rel="icon"'))
+            return shellHTML;
+        const favicon = await Compiler.faviconPath();
+        if (!favicon)
+            return shellHTML;
+        const href = `${assetPrefix}${favicon.slice(1)}`;
+        return shellHTML.replace('</head>', `    <link rel="icon" type="image/svg+xml" href="${href}">\n    <link rel="apple-touch-icon" href="${href}">\n</head>`);
+    }
+    /**
+     * Locate an app-provided web app manifest in the shared assets folder.
+     * @returns {Promise<string>} Public path, or '' when the app ships none.
+     */
+    static async webAppManifestPath() {
+        const candidates = ['manifest.webmanifest', 'manifest.json'];
+        for (const candidate of candidates) {
+            if (await pathExists(path.join(Router.assetsPath, candidate)))
+                return `/shared/assets/${candidate}`;
+        }
+        return '';
+    }
+    /**
+     * Link the app's web app manifest (PWA) when one exists under
+     * `client/shared/assets/`, mirroring the favicon convention. The
+     * manifest's `theme_color` is surfaced as a `<meta name="theme-color">`.
+     * @param {string} shellHTML
+     * @param {string} [assetPrefix]
+     */
+    static async withWebAppManifest(shellHTML, assetPrefix = Compiler.assetBasePath()) {
+        if (shellHTML.includes('rel="manifest"'))
+            return shellHTML;
+        const manifest = await Compiler.webAppManifestPath();
+        if (!manifest)
+            return shellHTML;
+        const href = `${assetPrefix}${manifest.slice(1)}`;
+        let themeColorMeta = '';
+        try {
+            const parsed = JSON.parse(await Bun.file(path.join(Router.assetsPath, path.basename(manifest))).text());
+            if (typeof parsed.theme_color === 'string' && /^[#a-zA-Z0-9(),.% -]+$/.test(parsed.theme_color))
+                themeColorMeta = `    <meta name="theme-color" content="${parsed.theme_color}">\n`;
+        }
+        catch {
+            // Malformed manifest: still link it, skip the theme-color meta.
+        }
+        return shellHTML.replace('</head>', `    <link rel="manifest" href="${href}">\n${themeColorMeta}</head>`);
+    }
+    /** @type {Promise<string> | null} */
+    static #clientContentHashPromise = null;
+    /**
+     * Content hash of the client source tree. Folded into the cache version so
+     * the service worker evicts old caches on any rebuild whose inputs
+     * changed — not just when routes or the app version change (same-version
+     * redeploys used to serve stale assets from the Cache API indefinitely).
+     * Cached per process: one bundle run hashes once, and the dev server
+     * (where sources change live) never registers the service worker.
+     * @returns {Promise<string>}
+     */
+    static clientContentHash() {
+        return Compiler.#clientContentHashPromise ??= (async () => {
+            const roots = [
+                Router.pagesPath,
+                Router.componentsPath,
+                Router.workersPath,
+                Router.assetsPath,
+                Router.sharedDataPath,
+                Router.sharedScriptsPath,
+                Router.sharedStylesPath,
+            ];
+            /** @type {string[]} */
+            const files = [];
+            for (const root of roots) {
+                if (!existsSync(root))
+                    continue;
+                for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+                    if (entry.isFile())
+                        files.push(path.join(entry.parentPath, entry.name));
+                }
+            }
+            files.sort();
+            let digest = '';
+            for (const file of files)
+                digest += `${file}:${Bun.hash(await Bun.file(file).arrayBuffer()).toString(36)};`;
+            return Bun.hash(digest).toString(36).slice(0, 10) || '0';
+        })();
     }
     /**
      * @param {{ includeHotReloadClient?: boolean }} [options]
@@ -693,21 +1002,56 @@ export default class Compiler {
     static async renderShellHTML(options = {}) {
         const includeHotReloadClient = options.includeHotReloadClient === true;
         const fyloBrowserPath = process.env.YON_DATA_BROWSER_PATH || '/_fylo';
+        const assetPrefix = Compiler.assetBasePath();
+        // Cache version — routes hash plus a client-source content hash, so
+        // the service worker evicts old caches on any rebuild that changed
+        // inputs, not only when routes change.
+        const version = `${Router.routeManifestHash()}-${await Compiler.clientContentHash()}`;
+        const importMap = await Compiler.generateImportMap();
+        const targetInfo = Compiler.currentTargetContext();
+        const importMapScript = Object.keys(importMap).length > 0
+            ? `    <script type="importmap">${JSON.stringify({ imports: importMap })}</script>\n`
+            : '';
+        const nativeCapabilities = Compiler.nativeCapabilities()
+            .join(',')
+            .replaceAll('&', '&amp;')
+            .replaceAll('"', '&quot;')
+            .replaceAll('<', '&lt;');
         let shellHTML = await Bun.file(APP_SHELL_PATH).text();
         shellHTML = shellHTML
+            // Pre-hydration capture: classic inline script runs before the deferred
+            // runtime module, recording dead-zone click/submit interactions for replay.
+            .replace('<head>', `<head>\n    <script>${EVENT_CAPTURE_SCRIPT}</script>`)
+            .replace(IMPORT_MAP_PLACEHOLDER, importMapScript)
             .replace('<!--__TACHYON_DEV_HEAD__-->', includeHotReloadClient
-                ? '    <script type="module" src="/hot-reload-client.js"></script>'
+                ? `    <script type="module" src="${assetPrefix}hot-reload-client.js"></script>`
                 : '')
-            .replace('__FYLO_BROWSER_PATH__', fyloBrowserPath);
-        return withPublicBrowserEnv(Compiler.withMainStylesheet(shellHTML));
+            .replace('src="/spa-renderer.js"', `src="${assetPrefix}spa-renderer.js"`)
+            .replace('src="/imports.js"', `src="${assetPrefix}imports.js"`)
+            .replace('__FYLO_BROWSER_PATH__', fyloBrowserPath)
+            .replace('</head>', [
+                `    <meta name="tachyon-version" content="${version}">`,
+                `    <meta name="tachyon-target" content="${targetInfo.target}">`,
+                `    <meta name="tachyon-platform" content="${targetInfo.platform}">`,
+                `    <meta name="tachyon-environment" content="${targetInfo.environment}">`,
+                `    <meta name="tachyon-os" content="${targetInfo.os}">`,
+                `    <meta name="tachyon-native-workers" content="${Compiler.nativeWorkerRoutes().join(',')}">`,
+                `    <meta name="tachyon-native-capabilities" content="${nativeCapabilities}">`,
+                '</head>',
+            ].join('\n'));
+        shellHTML = Compiler.withMainStylesheet(shellHTML, assetPrefix);
+        shellHTML = await Compiler.withFavicon(shellHTML, assetPrefix);
+        shellHTML = await Compiler.withWebAppManifest(shellHTML, assetPrefix);
+        return withPublicBrowserEnv(shellHTML, assetPrefix);
     }
     static createSpaRendererManifestPlugin() {
         const routeManifestJSON = JSON.stringify(Router.routeSlugs);
-        const layoutManifestJSON = JSON.stringify(Compiler.layoutMapping);
+        const wrapperManifestJSON = JSON.stringify(Compiler.wrapperPages);
+        const assetPrefixLiteral = Compiler.isNativeBundle() ? './' : '/';
         const escapedRouteManifestJSON = routeManifestJSON
             .replaceAll('\\', '\\\\')
             .replaceAll("'", "\\'");
-        const escapedLayoutManifestJSON = layoutManifestJSON
+        const escapedWrapperManifestJSON = wrapperManifestJSON
             .replaceAll('\\', '\\\\')
             .replaceAll("'", "\\'");
         return /** @type {BunPlugin} */ ({
@@ -719,12 +1063,15 @@ export default class Compiler {
                     const source = await Bun.file(filePath).text();
                     if (!source.includes(ROUTE_MANIFEST_PLACEHOLDER))
                         throw new Error('Tac SPA renderer route manifest placeholder is missing');
-                    if (!source.includes(LAYOUT_MANIFEST_PLACEHOLDER))
-                        throw new Error('Tac SPA renderer layout manifest placeholder is missing');
+                    if (!source.includes(WRAPPER_MANIFEST_PLACEHOLDER))
+                        throw new Error('Tac SPA renderer wrapper manifest placeholder is missing');
+                    if (!source.includes('__TACHYON_ASSET_PREFIX__'))
+                        throw new Error('Tac SPA renderer asset prefix placeholder is missing');
                     return {
                         contents: source
                             .replace(ROUTE_MANIFEST_PLACEHOLDER, escapedRouteManifestJSON)
-                            .replace(LAYOUT_MANIFEST_PLACEHOLDER, escapedLayoutManifestJSON),
+                            .replace(WRAPPER_MANIFEST_PLACEHOLDER, escapedWrapperManifestJSON)
+                            .replaceAll('__TACHYON_ASSET_PREFIX__', assetPrefixLiteral),
                         loader: 'js',
                     };
                 });
@@ -736,6 +1083,7 @@ export default class Compiler {
             SPA_RENDERER_PATH,
             FYLO_LOCAL_WORKER_PATH,
             `${import.meta.dir}/../runtime/hot-reload-client.js`,
+            `${import.meta.dir}/../runtime/tachyon-sw.js`,
         ];
         const mainEntrypoint = await Compiler.getMainEntrypointPath();
         if (mainEntrypoint)
@@ -774,6 +1122,11 @@ export default class Compiler {
         const previousDocument = globalThis.document;
         const previousWindow = globalThis.window;
         const previousTac = /** @type {{ Tac?: TacRegistry }} */ (globalThis).Tac;
+        const previousPlatform = /** @type {{ platform?: unknown }} */ (globalThis).platform;
+        const previousEnvironment = /** @type {{ environment?: unknown }} */ (globalThis).environment;
+        const previousOS = /** @type {{ os?: unknown }} */ (globalThis).os;
+        const previousTarget = /** @type {{ target?: unknown }} */ (globalThis).target;
+        const targetInfo = Object.freeze(Compiler.currentTargetContext());
         /** @type {Map<string, Function>} */
         const modules = new Map();
         const titleState = { value: '' };
@@ -825,10 +1178,15 @@ export default class Compiler {
         Object.assign(globalThis, {
             document: documentStub,
             window: globalThis,
-            __ty_prerender__: true,
+            __tc_prerender__: true,
+            platform: targetInfo.platform,
+            environment: targetInfo.environment,
+            os: targetInfo.os,
+            target: targetInfo.target,
             Tac: /** @type {TacRegistry} */ ({
                 version: '1',
                 modules,
+                platform: targetInfo,
                 register(id, factory) {
                     modules.set(id, factory);
                     return factory;
@@ -866,7 +1224,23 @@ export default class Compiler {
                     Reflect.deleteProperty(globalThis, 'Tac');
                 else
                     Object.assign(globalThis, { Tac: previousTac });
-                Reflect.deleteProperty(globalThis, '__ty_prerender__');
+                if (previousPlatform === undefined)
+                    Reflect.deleteProperty(globalThis, 'platform');
+                else
+                    Object.assign(globalThis, { platform: previousPlatform });
+                if (previousEnvironment === undefined)
+                    Reflect.deleteProperty(globalThis, 'environment');
+                else
+                    Object.assign(globalThis, { environment: previousEnvironment });
+                if (previousOS === undefined)
+                    Reflect.deleteProperty(globalThis, 'os');
+                else
+                    Object.assign(globalThis, { os: previousOS });
+                if (previousTarget === undefined)
+                    Reflect.deleteProperty(globalThis, 'target');
+                else
+                    Object.assign(globalThis, { target: previousTarget });
+                Reflect.deleteProperty(globalThis, '__tc_prerender__');
             }
         };
     }
@@ -886,25 +1260,25 @@ export default class Compiler {
         const pageFile = Compiler.pageModuleFilePath(distPath, pathname);
         const pagePublicPath = Compiler.pageModulePublicPath(pathname);
         await Compiler.rewriteAbsoluteImports(pageFile, distPath);
-        const layoutRoute = Compiler.resolveLayout(pathname);
-        const layoutFile = layoutRoute
-            ? path.join(distPath, layoutRoute.slice(1))
+        const wrapperRoute = Compiler.resolveWrapperPage(pathname);
+        const wrapperFile = wrapperRoute
+            ? path.join(distPath, wrapperRoute.slice(1))
             : null;
-        if (layoutFile)
-            await Compiler.rewriteAbsoluteImports(layoutFile, distPath);
+        if (wrapperFile)
+            await Compiler.rewriteAbsoluteImports(wrapperFile, distPath);
         const prerender = Compiler.installPrerenderGlobals(distPath);
         try {
-            let layoutHTML = '';
-            if (layoutFile) {
-                const layoutModule = await Compiler.loadRenderFactoryForPrerender(layoutFile, /** @type {string} */ (layoutRoute));
-                const layoutFactory = await layoutModule();
-                layoutHTML = await layoutFactory();
+            let wrapperHTML = '';
+            if (wrapperFile) {
+                const wrapperModule = await Compiler.loadRenderFactoryForPrerender(wrapperFile, /** @type {string} */ (wrapperRoute));
+                const wrapperFactory = await wrapperModule();
+                wrapperHTML = await wrapperFactory();
             }
             const pageModule = await Compiler.loadRenderFactoryForPrerender(pageFile, pagePublicPath);
             const pageFactory = await pageModule();
             const pageHTML = await pageFactory();
-            const bodyHTML = layoutHTML
-                ? layoutHTML.replace('<div id="ty-layout-slot"></div>', () => `<div id="ty-layout-slot">${pageHTML}</div>`)
+            const bodyHTML = wrapperHTML
+                ? wrapperHTML.replace('<div id="tc-page-slot"></div>', () => `<div id="tc-page-slot">${pageHTML}</div>`)
                 : pageHTML;
             const title = Compiler.escapeHTML(prerender.title || Compiler.routeTitleFallback);
             const withTitle = shellHTML.replace(/<title>.*?<\/title>/, () => `<title>${title}</title>`);
@@ -915,15 +1289,15 @@ export default class Compiler {
             prerender.restore();
         }
     }
-    /** @param {string} distPath @param {string} pathname @param {string} shellHTML @param {LayoutMap} layoutMapping */
-    static async renderPageDocumentForWorker(distPath, pathname, shellHTML, layoutMapping) {
-        const previousLayoutMapping = Compiler.layoutMapping;
-        Compiler.layoutMapping = { ...layoutMapping };
+    /** @param {string} distPath @param {string} pathname @param {string} shellHTML @param {WrapperPageMap} wrapperPages */
+    static async renderPageDocumentForWorker(distPath, pathname, shellHTML, wrapperPages) {
+        const previousWrapperPages = Compiler.wrapperPages;
+        Compiler.wrapperPages = { ...wrapperPages };
         try {
             return await Compiler.renderPageDocument(distPath, pathname, shellHTML);
         }
         finally {
-            Compiler.layoutMapping = previousLayoutMapping;
+            Compiler.wrapperPages = previousWrapperPages;
         }
     }
     /** @param {string} distPath @param {string} pathname @param {string} shellHTML */
@@ -938,7 +1312,7 @@ export default class Compiler {
             distPath,
             pathname,
             shellHTML,
-            layoutMapping: Compiler.layoutMapping,
+            wrapperPages: Compiler.wrapperPages,
         }));
         proc.stdin.end();
         const [stdout, stderr, exitCode] = await Promise.all([
@@ -998,24 +1372,33 @@ export default class Compiler {
         const routePath = Compiler.routePathFromPageSource(route);
         const publicPath = `/pages/${moduleRoute}`;
         await Compiler.registerModule(templateData, moduleRoute, 'pages', sourcePath);
-        if (templateData.hasSlot && !Compiler.layoutMapping[routePath]?.allowSelf) {
-            Compiler.layoutMapping[routePath] = {
+        if (templateData.hasSlot && !Compiler.wrapperPages[routePath]?.allowSelf) {
+            Compiler.wrapperPages[routePath] = {
                 path: publicPath,
                 allowSelf: false,
             };
         }
     }
-    /** @param {string} comp */
-    static async bundleComponentFile(comp) {
+    /**
+     * Registers a component's name → module path in compMapping (with duplicate
+     * detection). Cheap and side-effect-free apart from the map, so it runs as a
+     * serial pre-pass before the parallel compile in {@link bundleComponents}.
+     * @param {string} comp
+     */
+    static registerComponentName(comp) {
         comp = comp.replaceAll('\\', '/');
         Compiler.validateComponentRoute(comp);
         const componentName = Compiler.normalizeComponentName(comp);
         const modulePath = comp.replace('.html', '.js');
-        const sourcePath = `${Router.componentsPath}/${comp}`;
         if (Compiler.compMapping.has(componentName) && Compiler.compMapping.get(componentName) !== modulePath) {
             throw new Error(`Duplicate component name '${componentName}' for '${comp}' and '${Compiler.compMapping.get(componentName)}'`);
         }
         Compiler.compMapping.set(componentName, modulePath);
+    }
+    /** @param {string} comp */
+    static async bundleComponentFile(comp) {
+        comp = comp.replaceAll('\\', '/');
+        const sourcePath = `${Router.componentsPath}/${comp}`;
         const templateData = await Compiler.extractComponents(await Bun.file(sourcePath).text(), sourcePath, 'components', comp);
         await Compiler.registerModule(templateData, comp, 'components', sourcePath);
     }
@@ -1076,10 +1459,11 @@ export default class Compiler {
      * @param {string} htmlContent
      * @param {string} [sourceName]
      * @param {Map<string, Set<string>>} [imports]
+     * @param {string} [modulePublicPath]
      * @returns {Promise<TemplateNode[]>}
      */
-    static parseHTML(htmlContent, sourceName = 'template', imports = new Map()) {
-        return new Promise((resolve) => {
+    static parseHTML(htmlContent, sourceName = 'template', imports = new Map(), modulePublicPath = '') {
+        return new Promise((resolve, reject) => {
             /** @type {TemplateNode[]} */
             const parsed = [];
             /** @type {string[]} */
@@ -1092,17 +1476,48 @@ export default class Compiler {
                 .replaceAll('\\', '\\\\')
                 .replaceAll('`', '\\`')
                 .replaceAll('${', '\\${');
+            // Attribute values may carry raw `"` (e.g. single-quoted JSON like
+            // items='[{"k":"v"}]'). We always re-serialize attributes with double
+            // quotes, so any raw `"` must become `&quot;` or it closes the attribute
+            // early and truncates the value in the DOM. HTMLRewriter hands us values
+            // RAW (existing entities such as &amp;/&#39; are NOT decoded), so we only
+            // touch `"` — re-encoding `&` would double-escape author-written entities.
+            /** @param {string} value */
+            const escapeAttrValue = (value) => escapeTemplateLiteral(value.replaceAll('"', '&quot;'));
+            // DuVay (and other Light-DOM web components) re-interpret raw `on*`
+            // attributes as native handlers, double-binding Tac's generated handler.
+            // So Tac never leaves an `on:<event>` binding in the DOM: it compiles to a
+            // DuVay-safe marker (`data-tac-on-<event>`) that the runtime delegation
+            // keys off. The `on:` prefix (vs bare `on`) keeps real attributes/props
+            // like `onboarding` from being mistaken for events. Colons in component
+            // event names (`update:selected`) are encoded to `__` so they don't
+            // collide with the `:binding` rewrite or HTML attr parsing.
+            /** @param {string} eventName */
+            const eventMarkerAttr = (eventName) => `data-tac-on-${eventName.replaceAll(':', '__')}`;
             /** @param {string} name @param {string} value @param {string} hash @param {string} tagName */
             const formatAttr = (name, value, hash, tagName) => {
-                if (name.startsWith('@')) {
+                if (name.startsWith('on:')) {
+                    const eventName = name.slice(3);
+                    // Handler values must be a single expression (typically a method
+                    // call). Validate at compile time so authors get a clear error
+                    // instead of a raw JS parse failure surfacing from the prerender
+                    // worker. Only syntax is checked; free identifiers (methods,
+                    // state) resolve at render time.
+                    try {
+                        // eslint-disable-next-line no-new-func
+                        new Function('$event', `"use strict"; return (\n${value}\n);`);
+                    }
+                    catch {
+                        throw new Error(`Tac: the ${name} handler must be a single expression — typically a method call like ${name}="handler($event)". Multi-statement handlers or blocks are not supported. Received: ${JSON.stringify(value)}`);
+                    }
                     const eventHash = genHash();
-                    return `${name}="\${await ty_invokeEvent('${eventHash}', async ($event) => { const __event__ = $event; return ${value} }, '${hash}')}"`;
+                    return `${eventMarkerAttr(eventName)}="\${await tc_invokeEvent('${eventHash}', async ($event) => { const __event__ = $event; return (${value}); }, '${hash}')}"`;
                 }
                 if (name === ':value' && tagName !== 'switch')
-                    return `value="\${ty_escapeAttr(ty_assignValue('${hash}', '${value}', ${value}))}"`;
+                    return `value="\${tc_escapeAttr(tc_assignValue('${hash}', '${value}', ${value}))}"`;
                 if (name === ':checked')
                     return `\${${value} ? 'checked' : ''}`;
-                return `${name}="${escapeTemplateLiteral(value)}"`;
+                return `${name}="${escapeAttrValue(value)}"`;
             };
             /** @param {string} text */
             const interpolate = (text) => {
@@ -1110,7 +1525,17 @@ export default class Compiler {
                 const rawExpressions = [];
                 /** @type {string[]} */
                 const escapedExpressions = [];
+                /** @type {string[]} */
+                const literalBraces = [];
                 const templated = text
+                    // Backslash-escaped braces are literal prose, not interpolation:
+                    // `\{` → `{`, `\}` → `}`. Pulled out first so the scanners below
+                    // never see them. Lets authors write `a JSON array of \{ title,
+                    // value \} nodes` without entity-encoding every brace.
+                    .replace(/\\([{}])/g, (_match, brace) => {
+                        literalBraces.push(brace);
+                        return `__TY_BRACE_${literalBraces.length - 1}__`;
+                    })
                     .replace(/\{!\s*([^{}]+?)\s*\}/g, (_match, expr) => {
                     rawExpressions.push(expr);
                     return `__TY_RAW_${rawExpressions.length - 1}__`;
@@ -1123,11 +1548,14 @@ export default class Compiler {
                     .replace(/__TY_EXPR_(\d+)__/g, (_match, index) => {
                     const expr = escapedExpressions[Number(index)];
                     if (/^\$[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(expr)) {
-                        return `<span data-tac-persist-field="${expr}">\${ty_escapeText(${expr})}</span>`;
+                        return `<span data-tac-persist-field="${expr}">\${tc_escapeText(${expr})}</span>`;
                     }
-                    return `\${ty_escapeText(${expr})}`;
+                    return `\${tc_escapeText(${expr})}`;
                 })
-                    .replace(/__TY_RAW_(\d+)__/g, (_match, index) => `\${${rawExpressions[Number(index)]}}`);
+                    .replace(/__TY_RAW_(\d+)__/g, (_match, index) => `\${${rawExpressions[Number(index)]}}`)
+                    // Restore literal braces last — `{`/`}` are inert in a template
+                    // literal (only `${` and backtick are special), so this is safe.
+                    .replace(/__TY_BRACE_(\d+)__/g, (_match, index) => literalBraces[Number(index)]);
             };
             const rewriter = new HTMLRewriter()
                 .on('script', {
@@ -1151,7 +1579,7 @@ export default class Compiler {
                     if (tag === 'SCRIPT' || tag === 'STYLE')
                         return;
                     if (tag === 'SLOT') {
-                        parsed.push({ element: '`<div id="ty-layout-slot"></div>`' });
+                        parsed.push({ element: '`<div id="tc-page-slot"></div>`' });
                         element.remove();
                         return;
                     }
@@ -1174,7 +1602,11 @@ export default class Compiler {
                             const existing = imports.get(filepath);
                             if (!existing || !existing.has(resolvedComponent)) {
                                 const keyword = existing ? 'const' : 'const';
-                                parsed.push({ static: `${keyword} ${resolvedComponent.replaceAll('-', '_')} = await __ty_helpers__.loadTacModule('/components/${filepath}')` });
+                                const componentPublicPath = `/components/${filepath}`;
+                                const importPath = Compiler.isNativeBundle() && modulePublicPath
+                                    ? Compiler.relativeModuleImportPath(modulePublicPath, componentPublicPath)
+                                    : componentPublicPath;
+                                parsed.push({ static: `${keyword} ${resolvedComponent.replaceAll('-', '_')} = await __tc_helpers__.loadTacModule('${importPath}')` });
                                 if (existing)
                                     existing.add(resolvedComponent);
                                 else
@@ -1184,7 +1616,7 @@ export default class Compiler {
                     }
                     // Auto-generate id for non-control, non-component elements
                     if (!attrs.id && !resolvedComponent && !Compiler.controlTags.has(tagLower)) {
-                        attrs[':id'] = `ty_generateId('${hash}', 'id')`;
+                        attrs[':id'] = `tc_generateId('${hash}', 'id')`;
                     }
                     const attrStr = Object.entries(attrs).map(([n, v]) => formatAttr(n, v, hash, tagLower)).join(' ');
                     tagStack.push(tagLower);
@@ -1217,7 +1649,7 @@ export default class Compiler {
                     });
                 }
             });
-            rewriter.transform(new Response(htmlContent)).text().then(() => resolve(parsed));
+            rewriter.transform(new Response(htmlContent)).text().then(() => resolve(parsed)).catch(reject);
         });
     }
     // ── JS code generation ─────────────────────────────────────────────────────
@@ -1253,10 +1685,10 @@ export default class Compiler {
             .replaceAll(/(`<logic else="">`)|(`<\/logic>`)/g, (_, expr) => expr ? `else {` : '}');
         renderSource = Compiler.compileSwitchExpressions(renderSource, publicPath);
         // Bind dynamic attributes :attr="expr" → attr="${escaped expr}"
-        renderSource = renderSource.replaceAll(/:(\w[\w-]*)="([^"]*)"/g, '$1="${ty_escapeAttr($2)}"');
+        renderSource = renderSource.replaceAll(/:(\w[\w-]*)="([^"]*)"/g, '$1="${tc_escapeAttr($2)}"');
         // Transform component invocations
         renderSource = renderSource.replaceAll(/`<([A-Za-z0-9-]+)_\s*([\s\S]*?)\/>`/g, (_, component, attrStr) => {
-            const matches = attrStr.matchAll(/([a-zA-Z0-9-@]+)="([^"]*)"/g);
+            const matches = attrStr.matchAll(/([a-zA-Z0-9-@_]+)="([^"]*)"/g);
             const props = [];
             const events = [];
             const hash = genHash();
@@ -1265,100 +1697,135 @@ export default class Compiler {
             for (const [, key, value] of matches) {
                 if (key === 'lazy')
                     continue;
-                if (key.startsWith('@')) {
-                    events.push(`${key}="${value.replace(/ty_invokeEvent\('([^']+)',([\s\S]*?),\s*'([^']+)'\)/g, `ty_invokeEvent('$1',$2,'${hash}')`)}"`);
+                // Event handlers have already been compiled to `data-tac-on-*`
+                // markers by formatAttr; carry them onto the component's host div.
+                if (key.startsWith('data-tac-on-')) {
+                    events.push(`${key}="${value.replace(/tc_invokeEvent\('([^']+)',([\s\S]*?),\s*'([^']+)'\)/g, `tc_invokeEvent('$1',$2,'${hash}')`)}"`);
                 }
                 else {
-                    // Convert template-literal expr "${foo()}" → foo(), static value → JSON literal
-                    const expr = value.startsWith('${') && value.endsWith('}')
-                        ? value.slice(2, -1)
-                        : JSON.stringify(value);
+                    // Component props carry the LIVE value, not a stringified
+                    // attribute. A dynamic `:prop="expr"` reaches here as
+                    // `${tc_escapeAttr(expr)}` (from the generic :binding rewrite
+                    // above) — unwrap the escape so the raw expression is passed,
+                    // letting objects/arrays through as real values. A static
+                    // `prop="text"` stays a JSON string literal.
+                    let expr;
+                    if (value.startsWith('${') && value.endsWith('}')) {
+                        const inner = value.slice(2, -1);
+                        const escaped = inner.match(/^tc_escapeAttr\(([\s\S]*)\)$/);
+                        expr = escaped ? escaped[1] : inner;
+                    }
+                    else {
+                        expr = JSON.stringify(value);
+                    }
                     props.push(`"${key}": ${expr}`);
                 }
             }
-            props.push(`"__ty_persist_id__": ty_generateId('${hash}', 'persist')`);
-            const genId = "${ty_generateId('" + hash + "', 'id')}";
+            props.push(`"__tc_persist_id__": tc_generateId('${hash}', 'persist')`);
+            const genId = "${tc_generateId('" + hash + "', 'id')}";
             const propsObj = props.length ? `{${props.join(', ')}}` : 'null';
             if (isLazy) {
                 const filepath = Compiler.compMapping.get(component);
+                const runtimeModulePath = Compiler.assetPath(`/components/${filepath}`);
                 return `
-                elements += \`<div id="${genId}" data-tac-scope="${component}" data-tac-module="/components/${filepath}" data-lazy-component="${component}" data-lazy-path="/components/${filepath}" data-lazy-props="\${${props.length ? `encodeURIComponent(JSON.stringify(${propsObj}))` : "''"}}\" ${events.join(' ')}></div>\`
+                elements += \`<div id="${genId}" data-tac-scope="${component}" data-tac-module="${runtimeModulePath}" data-lazy-component="${component}" data-lazy-path="${runtimeModulePath}" data-lazy-props="\${${props.length ? `encodeURIComponent(JSON.stringify(${propsObj}))` : "''"}}\" ${events.join(' ')}></div>\`
                 `;
             }
             const filepath = Compiler.compMapping.get(component);
+            const runtimeModulePath = Compiler.assetPath(`/components/${filepath}`);
+            // Hoist the host id so it can be both the div id and the key under which
+            // this component's render closure is registered for scoped re-render.
+            const hostVar = `__tc_host_${hash}`;
             return `
-                elements += \`<div id="${genId}" data-tac-scope="${component}" data-tac-module="/components/${filepath}" ${events.join(' ')}>\`
-                const __ty_child_props_${hash} = ${propsObj}
-                const __ty_child_props_sig_${hash} = JSON.stringify(__ty_child_props_${hash})
-                if(!compRenders.has('${hash}') || compRenderProps.get('${hash}') !== __ty_child_props_sig_${hash}) {
-                    render = await ${renderName}(__ty_child_props_${hash})
-                    elements += await render(elemId, event, '${hash}')
+                const ${hostVar} = tc_generateId('${hash}', 'id')
+                elements += \`<div id="\${${hostVar}}" data-tac-scope="${component}" data-tac-module="${runtimeModulePath}" ${events.join(' ')}>\`
+                const __tc_child_props_${hash} = ${propsObj}
+                const __tc_child_props_sig_${hash} = JSON.stringify(__tc_child_props_${hash})
+                if(!compRenders.has('${hash}') || compRenderProps.get('${hash}') !== __tc_child_props_sig_${hash}) {
+                    render = await ${renderName}(__tc_child_props_${hash})
                     compRenders.set('${hash}', render)
-                    compRenderProps.set('${hash}', __ty_child_props_sig_${hash})
+                    compRenderProps.set('${hash}', __tc_child_props_sig_${hash})
                 } else {
                     render = compRenders.get('${hash}')
-                    elements += await render(elemId, event, '${hash}')
                 }
+                __tc_helpers__.registerComponentRender(${hostVar}, render, '${hash}')
+                elements += await render(elemId, event, '${hash}')
                 elements += '</div>'
             `;
         });
+        // Compile-time event set: every `on:<event>` in this template became a
+        // `data-tac-on-<event>` marker above. Collect the distinct event types so
+        // the runtime can register one delegated document listener per type at
+        // setup — no per-render DOM scan to discover handlers (see delegateEvents).
+        const delegatedEventNames = [...new Set(
+            [...renderSource.matchAll(/data-tac-on-([A-Za-z0-9_-]+)=/g)].map((match) => match[1].replaceAll('__', ':'))
+        )];
         const rawScriptContent = await Compiler.transpileInlineScript(templateData.script ?? '', templateData.scriptLang);
         const { bindingNames: dynamicImportBindings, moduleImports: dynamicModuleImports, scriptContent, } = Compiler.liftDynamicImports(rawScriptContent);
         const moduleImports = [...dynamicModuleImports];
         const factoryBindings = [...dynamicImportBindings];
         // Add component module imports referenced by HTML template component tags
         const seenBindings = new Set(factoryBindings);
-        for (const match of renderSource.matchAll(/data-tac-module="\/components\/([^"]+)"/g)) {
-            const componentPath = match[1];
-            const componentName = Compiler.normalizeComponentName(componentPath.replace(/\.js$/, '.html'));
+        for (const match of renderSource.matchAll(/data-tac-scope="([^"]+)"/g)) {
+            const componentName = match[1];
+            const filepath = Compiler.compMapping.get(componentName);
+            if (!filepath) continue;
             const bindingName = componentName.replaceAll('-', '_');
-            if (!seenBindings.has(bindingName)) {
-                seenBindings.add(bindingName);
-                moduleImports.push(`${bindingName}: (p) => import(${JSON.stringify(`/components/${componentPath}`)}).then(async (m) => { const f = m.default || m; return await f(p) })`);
-                factoryBindings.push(bindingName);
-            }
+            if (seenBindings.has(bindingName)) continue;
+            seenBindings.add(bindingName);
+            const componentPublicPath = `/components/${filepath}`;
+            const importPath = Compiler.isNativeBundle()
+                ? Compiler.relativeModuleImportPath(publicPath, componentPublicPath)
+                : componentPublicPath;
+            moduleImports.push(`${bindingName}: (p) => import(${JSON.stringify(importPath)}).then(async (m) => { const f = m.default || m; return await f(p) })`);
+            factoryBindings.push(bindingName);
         }
         const companionImportPath = templateData.companion?.importPath ?? templateData.companionImportPath;
         const companionLoader = companionImportPath
             ? `
-const __ty_companion__ = await (async () => {
-    const __ty_companion_module__ = await __ty_companion_import__();
-    const __ty_Companion__ = __ty_companion_module__?.default;
-    if (typeof __ty_Companion__ !== 'function') return null;
-    const __ty_runtime_bindings__ = __ty_helpers__.createTacHelpers(__ty_props__);
-    const __ty_instance__ = new __ty_Companion__(__ty_props__, __ty_runtime_bindings__);
-    if (__ty_instance__) __ty_helpers__.bindCompanion(__ty_instance__, __ty_props__, __ty_runtime_bindings__);
-    return __ty_instance__;
+const __tc_companion__ = await (async () => {
+    const __tc_companion_module__ = await __tc_companion_import__();
+    const __tc_Companion__ = __tc_companion_module__?.default;
+    if (typeof __tc_Companion__ !== 'function') return null;
+    const __tc_runtime_bindings__ = __tc_helpers__.createTacHelpers(__tc_props__);
+    const __tc_instance__ = new __tc_Companion__(__tc_props__, __tc_runtime_bindings__);
+    if (__tc_instance__) __tc_helpers__.bindCompanion(__tc_instance__, __tc_props__, __tc_runtime_bindings__);
+    return __tc_instance__;
 })();`
-            : `const __ty_companion__ = null;`;
+            : `const __tc_companion__ = null;`;
         if (companionImportPath) {
-            moduleImports.push(`__ty_companion_import__: () => import(${JSON.stringify(companionImportPath)})`);
-            factoryBindings.push('__ty_companion_import__');
+            moduleImports.push(`__tc_companion_import__: () => import(${JSON.stringify(companionImportPath)})`);
+            factoryBindings.push('__tc_companion_import__');
         }
         const factorySource = `
-const __ty_props__ = __ty_helpers__.decodeProps(props);
-${factoryBindings.length > 0 ? `const { ${factoryBindings.join(', ')} } = __ty_module_imports__;` : ''}
+const __tc_props__ = __tc_helpers__.decodeProps(props);
+${factoryBindings.length > 0 ? `const { ${factoryBindings.join(', ')} } = __tc_module_imports__;` : ''}
 ${companionLoader}
-const __ty_scope__ = __ty_helpers__.createScope(__ty_companion__, __ty_props__);
+const __tc_scope__ = __tc_helpers__.createScope(__tc_companion__, __tc_props__);
 
-with (__ty_scope__) {
-    const fetch = __ty_helpers__.fetch;
-    const isBrowser = __ty_helpers__.isBrowser;
-    const isServer = __ty_helpers__.isServer;
-    const onMount = __ty_helpers__.onMount;
-    const publish = __ty_helpers__.publish;
-    const rerender = __ty_helpers__.rerender;
-    const subscribe = __ty_helpers__.subscribe;
-    const env = __ty_helpers__.env;
-    const fylo = __ty_helpers__.fylo;
+with (__tc_scope__) {
+    const fetch = __tc_helpers__.fetch;
+    const isBrowser = __tc_helpers__.isBrowser;
+    const isServer = __tc_helpers__.isServer;
+    const platform = __tc_helpers__.platform.platform;
+    const environment = __tc_helpers__.platform.environment;
+    const os = __tc_helpers__.platform.os;
+    const target = __tc_helpers__.platform.target;
+    const onMount = __tc_helpers__.onMount;
+    const publish = __tc_helpers__.publish;
+    const rerender = __tc_helpers__.rerender;
+    const subscribe = __tc_helpers__.subscribe;
+    const env = __tc_helpers__.env;
+    const fylo = __tc_helpers__.fylo;
 
+    ${delegatedEventNames.length ? `__tc_helpers__.delegateEvents(${JSON.stringify(delegatedEventNames)});` : ''}
     ${statics.join('\n')}
     ${scriptContent}
 
-    if (__ty_props__) {
-        for (const __k__ of Object.keys(__ty_props__)) {
-            if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(__k__) && !__k__.startsWith('__ty_')) {
-                const __v__ = __ty_props__[__k__];
+    if (__tc_props__) {
+        for (const __k__ of Object.keys(__tc_props__)) {
+            if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(__k__) && !__k__.startsWith('__tc_')) {
+                const __v__ = __tc_props__[__k__];
                 try { eval(\`\${__k__} = __v__\`) } catch {}
             }
         }
@@ -1369,27 +1836,27 @@ with (__ty_scope__) {
 
     return async function(elemId, event, compId) {
         const counters = { id: {}, ev: {}, bind: {}, persist: {} };
-        const ty_componentRootId = compId
-            ? (String(compId).startsWith('ty-') ? String(compId) : 'ty-' + compId + '-0')
+        const tc_componentRootId = compId
+            ? (String(compId).startsWith('tc-') ? String(compId) : 'tc-' + compId + '-0')
             : null;
 
-        __ty_helpers__.setRenderContext({ componentRootId: ty_componentRootId, elemId, event });
+        __tc_helpers__.setRenderContext({ componentRootId: tc_componentRootId, elemId, event });
 
-        const ty_generateId = (hash, source, displayHash = hash) => {
+        const tc_generateId = (hash, source, displayHash = hash) => {
             const key = compId ? hash + '-' + compId : hash;
             const map = counters[source];
             const displayKey = compId ? displayHash + '-' + compId : displayHash;
 
             if (key in map) {
-                return 'ty-' + displayKey + '-' + map[key]++;
+                return 'tc-' + displayKey + '-' + map[key]++;
             }
 
             map[key] = 1;
-            return 'ty-' + displayKey + '-0';
+            return 'tc-' + displayKey + '-0';
         };
 
-        const ty_invokeEvent = async (hash, action, targetHash = hash) => {
-            if (elemId === ty_generateId(hash, 'ev', targetHash)) {
+        const tc_invokeEvent = async (hash, action, targetHash = hash) => {
+            if (elemId === tc_generateId(hash, 'ev', targetHash)) {
                 if (typeof action === 'function') await action(event);
                 else {
                     const toCall = (event && !action.endsWith(')')) ? action + "('" + event + "')" : action;
@@ -1399,9 +1866,9 @@ with (__ty_scope__) {
             return '';
         };
 
-        const ty_assignValue = (hash, variable, currentValue) => {
+        const tc_assignValue = (hash, variable, currentValue) => {
             let nextValue = currentValue;
-            if (elemId === ty_generateId(hash, 'bind') && event) {
+            if (elemId === tc_generateId(hash, 'bind') && event) {
                 if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(variable)) {
                     const __val__ = event.value;
                     try { eval(\`\${variable} = __val__\`) } catch {}
@@ -1411,7 +1878,7 @@ with (__ty_scope__) {
             return nextValue ?? '';
         };
 
-        const ty_escapeHtml = (value) => {
+        const tc_escapeHtml = (value) => {
             if (value === null || value === undefined) return '';
             return String(value)
                 .replaceAll('&', '&amp;')
@@ -1421,8 +1888,8 @@ with (__ty_scope__) {
                 .replaceAll("'", '&#39;');
         };
 
-        const ty_escapeText = ty_escapeHtml;
-        const ty_escapeAttr = ty_escapeHtml;
+        const tc_escapeText = tc_escapeHtml;
+        const tc_escapeAttr = tc_escapeHtml;
 
         let elements = '';
         let render;
@@ -1440,7 +1907,7 @@ with (__ty_scope__) {
     }
     /** @param {string} code @param {string} publicPath */
     static wrapGlobalModule(code, publicPath) {
-        const transformed = code.replace(/export default\s+async function\s*\(/, 'const __ty_default_export__ = async function(');
+        const transformed = code.replace(/export default\s+async function\s*\(/, 'const __tc_default_export__ = async function(');
         return `
 (function(root) {
     function ensureTac() {
@@ -1471,7 +1938,7 @@ with (__ty_scope__) {
     }
 
 ${transformed}
-    ensureTac().register(${JSON.stringify(publicPath)}, __ty_default_export__);
+    ensureTac().register(${JSON.stringify(publicPath)}, __tc_default_export__);
 })(globalThis);
 `;
     }
@@ -1488,7 +1955,7 @@ ${transformed}
             target: /** @type {import("bun").Target} */ ('browser'),
             setup(build) {
                 build.onLoad({ filter }, async () => {
-                    const parsed = await Compiler.parseHTML(templateData.html, `${dir}/${route} (${sourceLabel})`);
+                    const parsed = await Compiler.parseHTML(templateData.html, `${dir}/${route} (${sourceLabel})`, new Map(), publicPath);
                     const baseCode = await Compiler.createJSData(templateData, parsed, publicPath);
                     const jsCode = Compiler.isGlobalOutput()
                         ? Compiler.wrapGlobalModule(baseCode, publicPath)
@@ -1507,7 +1974,7 @@ ${transformed}
      */
     static createCompanionScriptPlugin(sourcePath) {
         const filter = Compiler.createFilePathFilter(sourcePath);
-        const tacInline = `var __ty_noopHelpers__={isBrowser:!1,isServer:!0,bindPersistentFields:()=>{},env:(_,f)=>f,props:{},fetch:(i,n)=>fetch(i,n),onMount:()=>{},publish:()=>!1,rerender:()=>{},subscribe:(_,c)=>typeof c=="function"?()=>{}:c};class Tac{props;tac;constructor(props={},tac=__ty_noopHelpers__){this.props=props,this.tac=tac}}`;
+        const tacInline = `var __tc_noopPlatform__=Object.freeze({target:"web",platform:"web",environment:"browser",os:"unknown",browserOS:"unknown",native:!1,browser:!0,web:!0,desktop:!1,mobile:!1});var __tc_noopHelpers__={isBrowser:!1,isServer:!0,bindPersistentFields:()=>{},env:(_,f)=>f,platform:__tc_noopPlatform__,props:{},fetch:(i,n)=>fetch(i,n),onMount:()=>{},publish:()=>!1,rerender:()=>{},subscribe:(_,c)=>typeof c=="function"?()=>{}:c};class Tac{props;tac;constructor(props={},tac=__tc_noopHelpers__){this.props=props,this.tac=tac}}`;
         const decoratorsEntryPath = `${import.meta.dir}/../runtime/decorators.js`;
         const fyloGlobalEntryPath = `${import.meta.dir}/../runtime/fylo-global.js`;
         const tacWorkerEntryPath = `${import.meta.dir}/../runtime/tac-worker.js`;
@@ -1531,6 +1998,7 @@ ${transformed}
                         const importPath = Compiler.toRelativeImportPath(sourcePath, tacWorkerEntryPath);
                         contents = `import { fetch } from ${JSON.stringify(importPath)};\n${contents}`;
                     }
+                    contents = Compiler.injectTacBaseClass(contents);
                     if (Compiler.shouldInjectTacImport(contents)) {
                         contents = `${tacInline}\n${contents}`;
                     }
@@ -1563,7 +2031,7 @@ ${transformed}
         const normalized = route.replaceAll('\\', '/');
         const segments = normalized.split('/');
         if (segments.length < 2 || segments.at(-1)?.startsWith('tac.') !== true) {
-            throw new Error(`Invalid Tac worker path '${route}'. Workers must live under browser/workers/**/tac.<language>.`);
+            throw new Error(`Invalid Tac worker path '${route}'. Workers must live under client/workers/**/tac.<language>.`);
         }
         const validSegment = /^[a-z][a-z0-9-]*$/;
         if (!segments.slice(0, -1).every((segment) => validSegment.test(segment))) {
@@ -1588,19 +2056,12 @@ ${transformed}
     /**
      * In-house Tac→Wasm frontends keyed by language. Each lowers handler-shaped
      * source (a `class Handler` with HTTP-verb methods, within the supported
-     * subset) to worker-ABI wasm with no external toolchain (no rustc/clang/emcc).
-     * Shared by the browser worker pipeline and the server `wasm-compiled`
-     * execution backend.
+     * subset) to worker-ABI wasm with no external toolchain (no rustc/clang).
+     * Tac workers support Rust, JavaScript, and TypeScript.
      * @type {Partial<Record<string, (source: string) => Uint8Array>>}
      */
     static subsetFrontends = {
         rust: compileRustWorker,
-        c: compileCWorker,
-        cpp: compileCppWorker,
-        zig: compileZigWorker,
-        python: compilePythonWorker,
-        csharp: compileCSharpWorker,
-        go: compileGoWorker,
         javascript: compileJavaScriptWorker,
         typescript: compileTypeScriptWorker,
     };
@@ -1608,6 +2069,13 @@ ${transformed}
     /** @returns {string[]} Languages that have an in-house subset frontend. */
     static subsetLanguages() {
         return Object.keys(Compiler.subsetFrontends);
+    }
+
+    /** @returns {string[]} In-house subset frontends exposed to Tac workers. */
+    static workerSubsetLanguages() {
+        return Compiler.workerProviders
+            .map((provider) => provider.language)
+            .filter((language) => Compiler.subsetFrontends[language]);
     }
 
     /**
@@ -1636,7 +2104,7 @@ ${transformed}
         if (!compile) {
             throw new Error([
                 `Tac worker '${Compiler.toSourceLabel(worker.sourcePath)}' uses '${worker.provider.language}',`,
-                `but the in-house Tac Worker compiler currently supports: ${Compiler.subsetLanguages().join(', ')}.`,
+                `but the in-house Tac Worker compiler currently supports: ${Compiler.workerSubsetLanguages().join(', ')}.`,
                 `The route is reserved for a future ${worker.provider.language} frontend.`,
             ].join(' '));
         }
@@ -1651,13 +2119,52 @@ ${transformed}
     }
 
     /** @param {string} route @param {unknown} [schema] */
-    static createWorkerRuntimeSource(route, schema = null) {
+    static createWorkerRuntimeSource(route, wasmName = 'tac.wasm', schema = null) {
         const sourceLabel = JSON.stringify(route);
         const schemaSource = JSON.stringify(schema);
+        const wasmUrlLiteral = JSON.stringify(`./${wasmName}`);
+        const runtimeUrlLiteral = JSON.stringify(Compiler.workerRuntimeModulePath(route));
+        const targetsSource = JSON.stringify(Compiler.bundleTargets());
+        const dangerousSource = JSON.stringify(Compiler.dangerousCapabilities());
+        const nativeSource = JSON.stringify(Compiler.nativeCapabilities());
         return `const __tac_worker_source__ = ${sourceLabel};
 const __tac_worker_schema__ = ${schemaSource};
+const __tac_dangerous_caps__ = ${dangerousSource};
+const __tac_native_caps__ = ${nativeSource};
+const __tac_bundle_targets__ = ${targetsSource};
 const __tac_text_encoder__ = new TextEncoder();
 const __tac_text_decoder__ = new TextDecoder();
+
+function __tac_platform_value__(key) {
+    const nav = typeof navigator !== 'undefined' ? navigator : null;
+    const ua = String(nav?.userAgent || '').toLowerCase();
+    const navigatorPlatform = String(nav?.userAgentData?.platform || nav?.platform || '').toLowerCase();
+    const os = navigatorPlatform.includes('mac') || ua.includes('mac os') ? 'macos'
+        : navigatorPlatform.includes('win') || ua.includes('windows') ? 'windows'
+        : navigatorPlatform.includes('linux') || ua.includes('linux') ? 'linux'
+        : ua.includes('android') ? 'android'
+        : ua.includes('iphone') || ua.includes('ipad') || ua.includes('ios') ? 'ios'
+        : navigatorPlatform || 'unknown';
+    const platform = __tac_bundle_targets__[0] || 'web';
+    const environment = ['macos', 'windows', 'linux'].includes(platform) ? 'desktop'
+        : ['ios', 'android'].includes(platform) ? 'mobile'
+        : 'browser';
+    const values = {
+        os,
+        arch: 'wasm32',
+        runtime: 'browser-worker',
+        platform,
+        environment,
+        target: platform,
+        targets: __tac_bundle_targets__.join(','),
+        cpuCores: String(nav?.hardwareConcurrency ?? ''),
+        language: String(nav?.language ?? ''),
+        timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })(),
+        online: nav && 'onLine' in nav ? String(nav.onLine) : '',
+        touch: nav && 'maxTouchPoints' in nav ? String(nav.maxTouchPoints > 0) : '',
+    };
+    return values[key] ?? '';
+}
 
 function __tac_is_plain_object__(value) {
     return value && typeof value === 'object' && !Array.isArray(value);
@@ -1780,19 +2287,35 @@ function __tac_declared_request_sections__(request, schema) {
 
 function __tac_validate_request__(method, request) {
     const methodSchema = __tac_worker_schema__ && __tac_worker_schema__[method];
-    const requestSchema = methodSchema && methodSchema.request;
-    if (!requestSchema) return;
-    __tac_validate_value__(__tac_declared_request_sections__(request, requestSchema), requestSchema, 'request');
+    const payloadSchema = methodSchema && methodSchema.payload;
+    if (!payloadSchema) return;
+    __tac_validate_value__(__tac_declared_request_sections__(request, payloadSchema), payloadSchema, 'payload');
+}
+
+function __tac_status_name__(status) {
+    if (status >= 200 && status < 300) return 'ok';
+    if (status >= 400 && status < 500) return 'clientError';
+    if (status >= 500 && status < 600) return 'serverError';
+    return undefined;
 }
 
 function __tac_validate_response__(method, response) {
     const methodSchema = __tac_worker_schema__ && __tac_worker_schema__[method];
     if (!methodSchema) return;
-    const status = String(response && response.status ? response.status : 200);
-    const responseSchema = methodSchema[status] || (methodSchema.response && methodSchema.response[status]);
+    const status = response && typeof response === 'object' ? response.status : undefined;
+    const statusNumber = typeof status === 'number' ? status : 200;
+    const name = __tac_status_name__(statusNumber);
+    let responseSchema;
+    if (statusNumber >= 200 && statusNumber < 300) {
+        responseSchema = methodSchema[name] || methodSchema.ok;
+    } else if (name) {
+        responseSchema = methodSchema[name];
+    }
     if (!responseSchema) return;
-    __tac_validate_value__(response && response.body !== undefined ? response.body : response, responseSchema, 'response.' + status);
+    __tac_validate_value__(response && response.body !== undefined ? response.body : response, responseSchema, name || 'response');
 }
+
+${Compiler._workerNativeCapabilitySource()}
 
 class TacWorkerRuntime {
     constructor() {
@@ -1808,66 +2331,131 @@ class TacWorkerRuntime {
             }
             return new Uint8Array(wasmMemory.buffer);
         };
-        const imports = {
-            env: {
-                abort(_messagePtr, _filePtr, line, column) {
-                    throw new Error('Tac worker ' + __tac_worker_source__ + ' aborted at ' + line + ':' + column);
-                },
-                memcpy(dest, src, len) {
-                    memoryView().copyWithin(dest, src, src + len);
-                    return dest;
-                },
-                memmove(dest, src, len) {
-                    memoryView().copyWithin(dest, src, src + len);
-                    return dest;
-                },
-                memset(dest, value, len) {
-                    memoryView().fill(value & 255, dest, dest + len);
-                    return dest;
-                },
+        const runtime = this;
+        const lookupField = (kind, keyPtr, keyLen) => {
+            const key = __tac_text_decoder__.decode(memoryView().subarray(keyPtr, keyPtr + keyLen));
+            const source = runtime.currentRequest && typeof runtime.currentRequest === 'object' ? runtime.currentRequest[kind] : undefined;
+            const value = source && typeof source === 'object' ? source[key] : undefined;
+            const text = value == null ? '' : (typeof value === 'string' ? value : String(value));
+            const bytes = __tac_text_encoder__.encode(text);
+            const exports = runtime.requireRuntime();
+            const dataPtr = exports.alloc(bytes.length || 1);
+            const header = exports.alloc(8);
+            new Uint8Array(exports.memory.buffer).set(bytes, dataPtr);
+            const view = new DataView(exports.memory.buffer);
+            view.setInt32(header, dataPtr, true);
+            view.setInt32(header + 4, bytes.length, true);
+            return header;
+        };
+        const envImports = {
+            req_query: (keyPtr, keyLen) => lookupField('query', keyPtr, keyLen),
+            req_path: (keyPtr, keyLen) => lookupField('paths', keyPtr, keyLen),
+            req_header: (keyPtr, keyLen) => lookupField('headers', keyPtr, keyLen),
+            req_platform: (keyPtr, keyLen) => {
+                const key = __tac_text_decoder__.decode(memoryView().subarray(keyPtr, keyPtr + keyLen));
+                const text = __tac_platform_value__(key);
+                const bytes = __tac_text_encoder__.encode(text);
+                const exports = runtime.requireRuntime();
+                const dataPtr = exports.alloc(bytes.length || 1);
+                const header = exports.alloc(8);
+                new Uint8Array(exports.memory.buffer).set(bytes, dataPtr);
+                const view = new DataView(exports.memory.buffer);
+                view.setInt32(header, dataPtr, true);
+                view.setInt32(header + 4, bytes.length, true);
+                return header;
             },
-            wasi_snapshot_preview1: {
-                args_get() { return 0; },
-                args_sizes_get() { return 0; },
-                clock_time_get() { return 0; },
-                environ_get() { return 0; },
-                environ_sizes_get() { return 0; },
-                fd_close() { return 0; },
-                fd_fdstat_get() { return 0; },
-                fd_seek() { return 0; },
-                fd_write() { return 0; },
-                poll_oneoff() { return 0; },
-                proc_exit(code) {
-                    throw new Error('Tac worker ' + __tac_worker_source__ + ' exited with code ' + code);
-                },
-                random_get() { return 0; },
+            abort(_messagePtr, _filePtr, line, column) {
+                throw new Error('Tac worker ' + __tac_worker_source__ + ' aborted at ' + line + ':' + column);
+            },
+            memcpy(dest, src, len) {
+                memoryView().copyWithin(dest, src, src + len);
+                return dest;
+            },
+            memmove(dest, src, len) {
+                memoryView().copyWithin(dest, src, src + len);
+                return dest;
+            },
+            memset(dest, value, len) {
+                memoryView().fill(value & 255, dest, dest + len);
+                return dest;
             },
         };
-        const wasmUrl = new URL('./tac.wasm', import.meta.url);
+        const wasiImports = {
+            args_get() { return 0; },
+            args_sizes_get() { return 0; },
+            clock_time_get() { return 0; },
+            environ_get() { return 0; },
+            environ_sizes_get() { return 0; },
+            fd_close() { return 0; },
+            fd_fdstat_get() { return 0; },
+            fd_seek() { return 0; },
+            fd_write() { return 0; },
+            poll_oneoff() { return 0; },
+            proc_exit(code) {
+                throw new Error('Tac worker ' + __tac_worker_source__ + ' exited with code ' + code);
+            },
+            random_get() { return 0; },
+        };
+        // Load shared runtime module first
+        const runtimeUrl = new URL(${runtimeUrlLiteral}, import.meta.url);
+        const runtimeResponse = await fetch(runtimeUrl);
+        let runtimeResult;
+        if (WebAssembly.instantiateStreaming && runtimeResponse.headers.get('Content-Type')?.includes('application/wasm')) {
+            runtimeResult = await WebAssembly.instantiateStreaming(runtimeResponse, { wasi_snapshot_preview1: wasiImports });
+        } else {
+            runtimeResult = await WebAssembly.instantiate(await runtimeResponse.arrayBuffer(), { wasi_snapshot_preview1: wasiImports });
+        }
+        const runtimeExports = runtimeResult.instance.exports;
+        if (!(runtimeExports.memory instanceof WebAssembly.Memory)) {
+            throw new Error('Tac worker ' + __tac_worker_source__ + ' runtime must export memory');
+        }
+        wasmMemory = runtimeExports.memory;
+        // Load handler module with runtime imports
+        const wasmUrl = new URL(${wasmUrlLiteral}, import.meta.url);
         const response = await fetch(wasmUrl);
         let result;
+        const handlerImports = {
+            env: {
+                memory: runtimeExports.memory,
+                alloc: runtimeExports.alloc,
+                dealloc: runtimeExports.dealloc,
+                copy: runtimeExports.copy,
+                itoa: runtimeExports.itoa,
+                mkStr: runtimeExports.mkStr,
+                intToStr: runtimeExports.intToStr,
+                strCat: runtimeExports.strCat,
+                jsonEscape: runtimeExports.jsonEscape,
+                quoteStr: runtimeExports.quoteStr,
+                idiv: runtimeExports.idiv,
+                imod: runtimeExports.imod,
+                setHeap: runtimeExports.setHeap,
+                ...envImports,
+            },
+        };
         if (WebAssembly.instantiateStreaming && response.headers.get('Content-Type')?.includes('application/wasm')) {
-            result = await WebAssembly.instantiateStreaming(response, imports);
+            result = await WebAssembly.instantiateStreaming(response, handlerImports);
         }
         else {
-            result = await WebAssembly.instantiate(await response.arrayBuffer(), imports);
+            result = await WebAssembly.instantiate(await response.arrayBuffer(), handlerImports);
         }
         const instance = result.instance ?? result;
-        this.exports = instance.exports;
-        if (!(this.exports.memory instanceof WebAssembly.Memory)) {
-            throw new Error('Tac worker ' + __tac_worker_source__ + ' must export memory');
-        }
-        wasmMemory = this.exports.memory;
-        for (const name of ['alloc', 'call', 'output_ptr', 'output_len']) {
-            if (typeof this.exports[name] !== 'function') {
+        this.runtimeExports = runtimeExports;
+        this.handlerExports = instance.exports;
+        for (const name of ['call', 'output_ptr', 'output_len']) {
+            if (typeof this.handlerExports[name] !== 'function') {
                 throw new Error('Tac worker ' + __tac_worker_source__ + ' must export ' + name + '()');
             }
         }
     }
 
-    requireExports() {
-        if (!this.exports) throw new Error('Tac worker ' + __tac_worker_source__ + ' has not finished loading');
-        return this.exports;
+    requireRuntime() {
+        if (!this.runtimeExports) throw new Error('Tac worker ' + __tac_worker_source__ + ' runtime has not finished loading');
+        return this.runtimeExports;
+    }
+
+    requireHandler() {
+        if (!this.handlerExports) throw new Error('Tac worker ' + __tac_worker_source__ + ' has not finished loading');
+        return this.handlerExports;
     }
 
     writeJson(value) {
@@ -1875,25 +2463,26 @@ class TacWorkerRuntime {
     }
 
     writeText(text) {
-        const exports = this.requireExports();
+        const runtime = this.requireRuntime();
         const bytes = __tac_text_encoder__.encode(String(text));
-        const ptr = exports.alloc(bytes.length || 1);
+        const ptr = runtime.alloc(bytes.length || 1);
         if (!ptr) throw new Error('Tac worker ' + __tac_worker_source__ + ' failed to allocate ' + bytes.length + ' bytes');
-        new Uint8Array(exports.memory.buffer).set(bytes, ptr);
+        new Uint8Array(runtime.memory.buffer).set(bytes, ptr);
         return { ptr, len: bytes.length };
     }
 
     dealloc(input) {
-        const exports = this.requireExports();
-        if (input && typeof exports.dealloc === 'function') exports.dealloc(input.ptr, input.len);
+        const runtime = this.requireRuntime();
+        if (input && typeof runtime.dealloc === 'function') runtime.dealloc(input.ptr, input.len);
     }
 
     readOutput() {
-        const exports = this.requireExports();
-        const ptr = exports.output_ptr();
-        const len = exports.output_len();
+        const handler = this.requireHandler();
+        const runtime = this.requireRuntime();
+        const ptr = handler.output_ptr();
+        const len = handler.output_len();
         if (!len) return {};
-        const memory = new Uint8Array(exports.memory.buffer);
+        const memory = new Uint8Array(runtime.memory.buffer);
         const text = __tac_text_decoder__.decode(memory.subarray(ptr, ptr + len));
         try {
             return JSON.parse(text);
@@ -1904,15 +2493,16 @@ class TacWorkerRuntime {
     }
 
     call(method, request) {
-        const exports = this.requireExports();
+        const handler = this.requireHandler();
         __tac_validate_request__(method, request ?? {});
+        this.currentRequest = request; // backs req_query/req_path/req_header imports
         const rawBody = request && typeof request === 'object' ? request.body : undefined;
         const bodyText = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody ?? null);
         const methodInput = this.writeJson(method);
         const requestInput = this.writeJson(request);
         const bodyInput = this.writeText(bodyText);
         try {
-            exports.call(methodInput.ptr, methodInput.len, requestInput.ptr, requestInput.len, bodyInput.ptr, bodyInput.len);
+            handler.call(methodInput.ptr, methodInput.len, requestInput.ptr, requestInput.len, bodyInput.ptr, bodyInput.len);
             const response = this.readOutput();
             __tac_validate_response__(method, response);
             return response;
@@ -1921,6 +2511,7 @@ class TacWorkerRuntime {
             this.dealloc(methodInput);
             this.dealloc(requestInput);
             this.dealloc(bodyInput);
+            this.currentRequest = null;
         }
     }
 }
@@ -1928,10 +2519,13 @@ class TacWorkerRuntime {
 const runtime = new TacWorkerRuntime();
 
 self.onmessage = async (event) => {
-    const { id, method, request } = event.data ?? {};
+    const data = event.data ?? {};
+    if (__tac_handle_native_response__(data)) return;
+    const { id, method, request } = data;
     try {
         await runtime.ready;
-        const response = runtime.call(String(method || ''), request ?? {});
+        const response = await __tac_resolve_native_response__(runtime.call(String(method || ''), request ?? {}));
+        __tac_validate_response__(String(method || ''), response);
         self.postMessage({ id, ok: true, response });
     }
     catch (error) {
@@ -1945,26 +2539,48 @@ self.onmessage = async (event) => {
 `;
     }
 
-    /** @param {string} route */
-    static async bundleWorkerFile(route) {
+    /** @param {string} route @param {{ preferNative?: boolean }} [options] */
+    static async bundleWorkerFile(route, options = {}) {
         route = route.replaceAll('\\', '/');
         Compiler.validateWorkerRoute(route);
         const sourcePath = path.join(Router.workersPath, route);
         const provider = Compiler.getWorkerProvider(sourcePath);
         if (!provider)
             return;
+        if (Compiler.isNativeBundle() && options.preferNative !== false) {
+            const didBundleNative = await Compiler.bundleNativeWorkerFile(route);
+            if (didBundleNative)
+                return;
+            Compiler.compilerLogger.info('Using browser/WASM Tac worker fallback for native target', {
+                target: Compiler.currentBundleTarget(),
+                worker: route,
+                language: provider.language,
+            });
+            try {
+                await Compiler.bundleWorkerFile(route, { preferNative: false });
+            } catch (error) {
+                Compiler.compilerLogger.warn('Skipping Tac worker because native and browser/WASM compilation are both unavailable', {
+                    target: Compiler.currentBundleTarget(),
+                    worker: route,
+                    language: provider.language,
+                    reason: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return;
+        }
         const workerRoute = Compiler.workerRouteName(route);
         /** @type {TacWorkerScript} */
         const worker = { sourcePath, route: workerRoute, provider };
         const wasmBytes = await Compiler.compileWorkerSource(worker);
         const publicBase = `/workers/${workerRoute}`;
-        const wasmRoute = `${publicBase}/tac.wasm`;
+        const wasmName = `${provider.extension.slice(1)}.wasm`;
+        const wasmRoute = `${publicBase}/${wasmName}`;
         const workerScriptRoute = `${publicBase}/tac.worker.js`;
         const schemaPath = path.join(path.dirname(sourcePath), Router.optionsFileName);
         const schema = await pathExists(schemaPath)
             ? JSON.parse(await readFile(schemaPath, 'utf8'))
             : null;
-        const workerScript = Compiler.createWorkerRuntimeSource(workerRoute, schema);
+        const workerScript = Compiler.createWorkerRuntimeSource(workerRoute, wasmName, schema);
         Router.reqRoutes[wasmRoute] = {
             GET: () => staticRouteResponse(wasmRoute, wasmBytes, 'application/wasm')
         };
@@ -1979,16 +2595,692 @@ self.onmessage = async (event) => {
         }
     }
 
+    /**
+     * Bundle a Tac worker source file for a native target. The implementation is
+     * target-specific: desktop targets compile to a native subprocess, while
+     * mobile targets embed the source into the native host project.
+     *
+     * Mobile host-native compilation is implemented by the native host generator.
+     * @param {string} route
+     * @returns {Promise<boolean>} true when a native worker executable was emitted
+     */
+    static async bundleNativeWorkerFile(route) {
+        route = route.replaceAll('\\', '/');
+        const target = Compiler.currentBundleTarget();
+        const sourcePath = path.join(Router.workersPath, route);
+        const provider = Compiler.getWorkerProvider(sourcePath);
+        if (!provider)
+            return false;
+
+        /** @type {TacWorkerScript} */
+        const worker = { sourcePath, route: Compiler.workerRouteName(route), provider };
+
+        if (['macos', 'windows', 'linux'].includes(target)) {
+            if (!Compiler.workerProviderSupportsTarget(provider, target))
+                return false;
+            const workerRoute = worker.route;
+            const publicBase = `/workers/${workerRoute}`;
+            const ext = provider.extension.slice(1);
+            const binaryName = process.platform === 'win32' ? `${ext}.exe` : ext;
+            const binaryRoute = `${publicBase}/${binaryName}`;
+            const schemaPath = path.join(path.dirname(sourcePath), Router.optionsFileName);
+            const schema = await pathExists(schemaPath)
+                ? JSON.parse(await readFile(schemaPath, 'utf8'))
+                : null;
+
+            const outputPath = path.join(tmpdir(), `tachyon-native-worker-${workerRoute.replace(/\//g, '-')}-${ext}`);
+            try {
+                await compileNativeWorkerExecutable(worker, outputPath, { target });
+            } catch (error) {
+                if (error instanceof Error && error.message.startsWith('Native executable workers for '))
+                    return false;
+                throw error;
+            }
+            const bytes = await readFile(outputPath);
+
+            Router.reqRoutes[binaryRoute] = {
+                GET: () => staticRouteResponse(binaryRoute, bytes, 'application/octet-stream')
+            };
+            Compiler.nativeWorkerBinaryRoutes.add(binaryRoute);
+            if (schema) {
+                const optionsRoute = `${publicBase}/${Router.optionsFileName}`;
+                Router.reqRoutes[optionsRoute] = {
+                    GET: () => staticRouteResponse(optionsRoute, JSON.stringify(schema, null, 2), 'application/json')
+                };
+            }
+            return true;
+        }
+
+        // Mobile hosts currently execute Tac workers through their browser/WASM runtime.
+        return false;
+    }
+
     static async bundleWorkers() {
         if (!await pathExists(Router.workersPath))
             return;
-        const extensions = new Set(Compiler.workerProviders.map((provider) => provider.extension));
+        const target = Compiler.currentBundleTarget();
+        const providersByExtension = new Map(Compiler.workerProviders.map((provider) => [provider.extension, provider]));
+        // Group tac.* files by directory so siblings can share a route.
+        /** @type {Map<string, string[]>} */
+        const groups = new Map();
         for (const route of new Bun.Glob('**/tac.*').scanSync({ cwd: Router.workersPath })) {
-            if (!extensions.has(path.extname(route).toLowerCase()))
+            const ext = path.extname(route).toLowerCase();
+            const provider = providersByExtension.get(ext);
+            if (!provider || !Compiler.workerProviderAvailableForTarget(provider, target))
                 continue;
-            await Compiler.bundleWorkerFile(route);
+            const dir = path.posix.dirname(route);
+            if (!groups.has(dir)) groups.set(dir, []);
+            groups.get(dir)?.push(route);
+        }
+        for (const [, files] of groups) {
+            if (files.length === 1) {
+                await Compiler.bundleWorkerFile(files[0]);
+            } else {
+                await Compiler.bundleWorkerGroup(files);
+            }
         }
     }
+
+    /**
+     * Bundle multiple tac.<ext> files from the same directory into one worker
+     * route. Each file compiles to its own WASM module; the runtime dispatches
+     * by HTTP method to the correct module. Method overlap across files is
+     * rejected.
+     * @param {string[]} files — relative paths from workersPath (e.g. ['api/tac.rs', 'api/tac.ts'])
+     */
+    static async bundleWorkerGroup(files) {
+        if (Compiler.isNativeBundle()) {
+            Compiler.compilerLogger.info('Using browser/WASM fallback for mixed Tac worker group on native target', {
+                target: Compiler.currentBundleTarget(),
+                workers: files,
+            });
+        }
+        const dir = path.posix.dirname(files[0].replaceAll('\\', '/'));
+        const workerRoute = Compiler.workerRouteName(dir === '.' ? files[0] : `${dir}/tac.x`);
+        const publicBase = `/workers/${workerRoute}`;
+        const schemaPath = path.join(Router.workersPath, dir, Router.optionsFileName);
+        const schema = await pathExists(schemaPath)
+            ? JSON.parse(await readFile(schemaPath, 'utf8'))
+            : null;
+
+        // Compile each file and detect its declared HTTP methods.
+        /** @type {Array<{ file: string, ext: string, bytes: Uint8Array, methods: Set<string> }>} */
+        const modules = [];
+        /** @type {Set<string>} */
+        const seenMethods = new Set();
+
+        for (const file of files) {
+            const ext = path.extname(file).toLowerCase();
+            const sourcePath = path.join(Router.workersPath, file);
+            const provider = Compiler.getWorkerProvider(sourcePath);
+            if (!provider) continue;
+
+            /** @type {TacWorkerScript} */
+            const worker = { sourcePath, route: workerRoute, provider };
+            const bytes = await Compiler.compileWorkerSource(worker);
+
+            // Detect methods from source (same class Handler convention as server handlers).
+            const source = await readFile(sourcePath, 'utf8');
+            const methods = Compiler.detectWorkerMethods(source, provider.language);
+
+            // Check for method overlap with previously-seen files.
+            const overlapping = [...methods].filter((m) => seenMethods.has(m));
+            if (overlapping.length > 0) {
+                throw new Error(
+                    `Method conflict for worker '${dir}' — ` +
+                    `'${path.basename(file)}' declares [${overlapping.join(', ')}] ` +
+                    `which are already declared by another tac.* file in the same directory. ` +
+                    `Each HTTP method may only appear in one worker file per route.`
+                );
+            }
+            for (const m of methods) seenMethods.add(m);
+
+            const wasmRoute = `${publicBase}/${ext.slice(1)}.wasm`;
+            Router.reqRoutes[wasmRoute] = {
+                GET: () => staticRouteResponse(wasmRoute, bytes, 'application/wasm')
+            };
+
+            modules.push({ file, ext, bytes, methods });
+        }
+
+        if (modules.length === 0) return;
+
+        // Generate multi-module runtime
+        const workerScript = Compiler.createMultiModuleWorkerRuntime(workerRoute, modules, schema);
+        const workerScriptRoute = `${publicBase}/tac.worker.js`;
+        Router.reqRoutes[workerScriptRoute] = {
+            GET: () => jsResponse(workerScriptRoute, workerScript)
+        };
+
+        if (schema) {
+            const optionsRoute = `${publicBase}/${Router.optionsFileName}`;
+            Router.reqRoutes[optionsRoute] = {
+                GET: () => staticRouteResponse(optionsRoute, JSON.stringify(schema, null, 2), 'application/json')
+            };
+        }
+    }
+
+    /**
+     * Bundle multiple Tac worker source files for a native target.
+     *
+     * Currently a no-op that warns once per group; native worker compilation
+     * will be wired in a follow-up change.
+     * @param {string[]} files
+     */
+    static async bundleNativeWorkerGroup(files) {
+        const target = Compiler.currentBundleTarget();
+        Compiler.compilerLogger.warn('Native Tac worker groups are not yet implemented; skipping workers for native target', {
+            target,
+            workers: files,
+        });
+    }
+
+    /**
+     * Detect HTTP methods declared by a Tac worker source file using the same
+     * `class Handler` convention as server handlers.
+     * @param {string} source
+     * @param {string} language
+     * @returns {Set<string>}
+     */
+    static detectWorkerMethods(source, language) {
+        const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
+        /** @type {Set<string>} */
+        const methods = new Set();
+        for (const method of HTTP_METHODS) {
+            let pattern;
+            if (language === 'rust') {
+                pattern = new RegExp(`\\b(?:pub\\s+)?fn\\s+${method}\\s*\\(`);
+            } else {
+                // Tac worker JS/TS: `METHOD(request)` or `METHOD(request) {` inside
+                // `class Handler` — no `static` keyword, unlike server handlers.
+                pattern = new RegExp(`(?:^|\\n)\\s*${method}\\s*\\(`);
+            }
+            if (pattern.test(source)) methods.add(method);
+        }
+        return methods;
+    }
+
+    /**
+     * Generate the tac.worker.js runtime for a multi-module worker (multiple
+     * tac.<ext> files in the same directory). Each module is loaded separately;
+     * the runtime dispatches by HTTP method to the correct module.
+     * @param {string} route
+     * @param {Array<{ file: string, ext: string, bytes: Uint8Array, methods: Set<string> }>} modules
+     * @param {Record<string, unknown> | null} schema
+     * @returns {string}
+     */
+    static createMultiModuleWorkerRuntime(route, modules, schema = null) {
+        const sourceLabel = JSON.stringify(route);
+        const schemaSource = JSON.stringify(schema);
+        const runtimeUrlLiteral = JSON.stringify(Compiler.workerRuntimeModulePath(route));
+        const targetsSource = JSON.stringify(Compiler.bundleTargets());
+        const dangerousSource = JSON.stringify(Compiler.dangerousCapabilities());
+        const nativeSource = JSON.stringify(Compiler.nativeCapabilities());
+        // Build a method → module index lookup table.
+        const methodMap = /** @type {Record<string, number>} */ ({});
+        const moduleUrls = modules.map((mod, i) => {
+            for (const method of mod.methods) methodMap[method] = i;
+            return `./${mod.ext.slice(1)}.wasm`;
+        });
+        const methodTableJson = JSON.stringify(methodMap);
+        const urlsJson = JSON.stringify(moduleUrls);
+
+        return `const __tac_worker_source__ = ${sourceLabel};
+const __tac_worker_schema__ = ${schemaSource};
+const __tac_dangerous_caps__ = ${dangerousSource};
+const __tac_native_caps__ = ${nativeSource};
+const __tac_bundle_targets__ = ${targetsSource};
+const __tac_text_encoder__ = new TextEncoder();
+const __tac_text_decoder__ = new TextDecoder();
+const __tac_method_table__ = ${methodTableJson};
+const __tac_module_urls__ = ${urlsJson};
+
+function __tac_platform_value__(key) {
+    const nav = typeof navigator !== 'undefined' ? navigator : null;
+    const ua = String(nav?.userAgent || '').toLowerCase();
+    const navigatorPlatform = String(nav?.userAgentData?.platform || nav?.platform || '').toLowerCase();
+    const os = navigatorPlatform.includes('mac') || ua.includes('mac os') ? 'macos'
+        : navigatorPlatform.includes('win') || ua.includes('windows') ? 'windows'
+        : navigatorPlatform.includes('linux') || ua.includes('linux') ? 'linux'
+        : ua.includes('android') ? 'android'
+        : ua.includes('iphone') || ua.includes('ipad') || ua.includes('ios') ? 'ios'
+        : navigatorPlatform || 'unknown';
+    const platform = __tac_bundle_targets__[0] || 'web';
+    const environment = ['macos', 'windows', 'linux'].includes(platform) ? 'desktop'
+        : ['ios', 'android'].includes(platform) ? 'mobile'
+        : 'browser';
+    const values = {
+        os,
+        arch: 'wasm32',
+        runtime: 'browser-worker',
+        platform,
+        environment,
+        target: platform,
+        targets: __tac_bundle_targets__.join(','),
+        cpuCores: String(nav?.hardwareConcurrency ?? ''),
+        language: String(nav?.language ?? ''),
+        timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })(),
+        online: nav && 'onLine' in nav ? String(nav.onLine) : '',
+        touch: nav && 'maxTouchPoints' in nav ? String(nav.maxTouchPoints > 0) : '',
+    };
+    return values[key] ?? '';
+}
+
+// ── Schema validation (shared) ───────────────────────────────────────
+${Compiler._workerSchemaValidationSource()}
+
+// ── Status name mapping (shared) ─────────────────────────────────────
+${Compiler._workerStatusNameSource()}
+
+// ── Native capability broker (shared) ────────────────────────────────
+${Compiler._workerNativeCapabilitySource()}
+
+// ── Multi-module worker runtime ──────────────────────────────────────
+class TacWorkerRuntime {
+    constructor() {
+        /** @type {Array<{ runtimeExports: WebAssembly.Exports, handlerExports: WebAssembly.Exports } | null>} */
+        this.modules = [];
+        this.ready = this.init();
+        this.currentRequest = null;
+    }
+
+    async init() {
+        const wasiImports = {
+            args_get() { return 0; },
+            args_sizes_get() { return 0; },
+            clock_time_get() { return 0; },
+            environ_get() { return 0; },
+            environ_sizes_get() { return 0; },
+            fd_close() { return 0; },
+            fd_fdstat_get() { return 0; },
+            fd_seek() { return 0; },
+            fd_write() { return 0; },
+            poll_oneoff() { return 0; },
+            proc_exit(code) {
+                throw new Error('Tac worker ' + __tac_worker_source__ + ' exited with code ' + code);
+            },
+            random_get() { return 0; },
+        };
+        const runtimeUrl = new URL(${runtimeUrlLiteral}, import.meta.url);
+        const runtimeResponse = await fetch(runtimeUrl);
+        let compiledRuntime;
+        if (WebAssembly.instantiateStreaming && runtimeResponse.headers.get('Content-Type')?.includes('application/wasm')) {
+            const runtimeBytes = await runtimeResponse.arrayBuffer();
+            compiledRuntime = await WebAssembly.compile(runtimeBytes);
+        } else {
+            compiledRuntime = await WebAssembly.compile(await runtimeResponse.arrayBuffer());
+        }
+        for (const url of __tac_module_urls__) {
+            const runtimeInstance = await WebAssembly.instantiate(compiledRuntime, { wasi_snapshot_preview1: wasiImports });
+            const runtimeExports = runtimeInstance.exports;
+            if (!(runtimeExports.memory instanceof WebAssembly.Memory)) {
+                throw new Error('Tac worker ' + __tac_worker_source__ + ' runtime must export memory');
+            }
+            const envImports = {
+                req_query: (keyPtr, keyLen) => this.lookupField(runtimeExports, 'query', keyPtr, keyLen),
+                req_path: (keyPtr, keyLen) => this.lookupField(runtimeExports, 'paths', keyPtr, keyLen),
+                req_header: (keyPtr, keyLen) => this.lookupField(runtimeExports, 'headers', keyPtr, keyLen),
+                req_platform: (keyPtr, keyLen) => this.writeStringValue(runtimeExports, __tac_platform_value__(this.readString(runtimeExports, keyPtr, keyLen))),
+                abort(_msg, _file, _line, _column) {
+                    throw new Error('Tac worker ' + __tac_worker_source__ + ' abort');
+                },
+            };
+            const wasmUrl = new URL(url, import.meta.url);
+            const response = await fetch(wasmUrl);
+            let result;
+            const handlerImports = {
+                env: {
+                    memory: runtimeExports.memory,
+                    alloc: runtimeExports.alloc,
+                    dealloc: runtimeExports.dealloc,
+                    copy: runtimeExports.copy,
+                    itoa: runtimeExports.itoa,
+                    mkStr: runtimeExports.mkStr,
+                    intToStr: runtimeExports.intToStr,
+                    strCat: runtimeExports.strCat,
+                    jsonEscape: runtimeExports.jsonEscape,
+                    quoteStr: runtimeExports.quoteStr,
+                    idiv: runtimeExports.idiv,
+                    imod: runtimeExports.imod,
+                    setHeap: runtimeExports.setHeap,
+                    ...envImports,
+                },
+            };
+            if (WebAssembly.instantiateStreaming && response.headers.get('Content-Type')?.includes('application/wasm')) {
+                result = await WebAssembly.instantiateStreaming(response, handlerImports);
+            } else {
+                result = await WebAssembly.instantiate(await response.arrayBuffer(), handlerImports);
+            }
+            const instance = result.instance ?? result;
+            for (const name of ['call', 'output_ptr', 'output_len']) {
+                if (typeof instance.exports[name] !== 'function') {
+                    throw new Error('Tac worker ' + __tac_worker_source__ + ' must export ' + name + '()');
+                }
+            }
+            this.modules.push({ runtimeExports, handlerExports: instance.exports });
+        }
+    }
+
+    requireModule(method) {
+        const idx = __tac_method_table__[method];
+        if (idx === undefined) return null;
+        const module = this.modules[idx];
+        if (!module) throw new Error('Tac worker ' + __tac_worker_source__ + ' module ' + idx + ' has not finished loading');
+        return module;
+    }
+
+    writeJson(runtimeExports, value) {
+        return this.writeText(runtimeExports, JSON.stringify(value ?? null));
+    }
+
+    writeText(runtimeExports, text) {
+        const bytes = __tac_text_encoder__.encode(String(text));
+        const ptr = runtimeExports.alloc(bytes.length || 1);
+        if (!ptr) throw new Error('Tac worker ' + __tac_worker_source__ + ' failed to allocate ' + bytes.length + ' bytes');
+        new Uint8Array(runtimeExports.memory.buffer).set(bytes, ptr);
+        return { ptr, len: bytes.length };
+    }
+
+    readString(runtimeExports, ptr, len) {
+        return __tac_text_decoder__.decode(new Uint8Array(runtimeExports.memory.buffer).subarray(ptr, ptr + len));
+    }
+
+    writeStringValue(runtimeExports, text) {
+        const bytes = __tac_text_encoder__.encode(String(text));
+        const dataPtr = runtimeExports.alloc(bytes.length || 1);
+        const header = runtimeExports.alloc(8);
+        new Uint8Array(runtimeExports.memory.buffer).set(bytes, dataPtr);
+        const view = new DataView(runtimeExports.memory.buffer);
+        view.setInt32(header, dataPtr, true);
+        view.setInt32(header + 4, bytes.length, true);
+        return header;
+    }
+
+    lookupField(runtimeExports, kind, keyPtr, keyLen) {
+        const key = this.readString(runtimeExports, keyPtr, keyLen);
+        const source = this.currentRequest && typeof this.currentRequest === 'object' ? this.currentRequest[kind] : undefined;
+        const value = source && typeof source === 'object' ? source[key] : undefined;
+        return this.writeStringValue(runtimeExports, value == null ? '' : String(value));
+    }
+
+    dealloc(runtimeExports, input) {
+        if (input && typeof runtimeExports.dealloc === 'function') runtimeExports.dealloc(input.ptr, input.len);
+    }
+
+    readOutput(module) {
+        const ptr = module.handlerExports.output_ptr();
+        const len = module.handlerExports.output_len();
+        if (!len) return {};
+        const memory = new Uint8Array(module.runtimeExports.memory.buffer);
+        const text = __tac_text_decoder__.decode(memory.subarray(ptr, ptr + len));
+        try { return JSON.parse(text); } catch { return {}; }
+    }
+
+    call(method, request) {
+        __tac_validate_request__(method, request ?? {});
+        const module = this.requireModule(method);
+        if (!module) return { status: 404, body: { method, ok: false, error: { message: 'Unknown method: ' + method } } };
+        const { runtimeExports, handlerExports } = module;
+        const methodInput = this.writeJson(runtimeExports, method);
+        const requestInput = this.writeJson(runtimeExports, request);
+        const rawBody = request && typeof request === 'object' ? request.body : undefined;
+        const bodyText = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody ?? null);
+        const bodyInput = this.writeText(runtimeExports, bodyText);
+        try {
+            this.currentRequest = request;
+            handlerExports.call(methodInput.ptr, methodInput.len, requestInput.ptr, requestInput.len, bodyInput.ptr, bodyInput.len);
+            const output = this.readOutput(module);
+            __tac_validate_response__(method, output);
+            return output;
+        } finally {
+            this.dealloc(runtimeExports, methodInput);
+            this.dealloc(runtimeExports, requestInput);
+            this.dealloc(runtimeExports, bodyInput);
+            this.currentRequest = null;
+        }
+    }
+}
+
+const runtime = new TacWorkerRuntime();
+
+self.onmessage = async (event) => {
+    const data = event.data ?? {};
+    if (__tac_handle_native_response__(data)) return;
+    const { id, method, request } = data;
+    try {
+        await runtime.ready;
+        const response = await __tac_resolve_native_response__(runtime.call(String(method || ''), request ?? {}));
+        __tac_validate_response__(String(method || ''), response);
+        self.postMessage({ id, ok: true, response });
+    } catch (error) {
+        self.postMessage({
+            id,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
+};
+`;
+    }
+
+    /**
+     * Extracted schema validation helpers shared by single and multi-module
+     * worker runtimes. Returns the JavaScript source string.
+     * @returns {string}
+     */
+    static _workerSchemaValidationSource() {
+        return `function __tac_is_plain_object__(value) {
+    return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function __tac_schema_key_is_regex__(key) {
+    return key.startsWith('^');
+}
+
+function __tac_has_value__(value) {
+    return value !== null && value !== undefined;
+}
+
+function __tac_schema_data_key__(key) {
+    return key.endsWith('?') ? key.slice(0, -1) : key;
+}
+
+function __tac_schema_key_is_nullable__(key) {
+    return key.endsWith('?');
+}
+
+function __tac_is_record_schema__(schema) {
+    const keys = Object.keys(schema);
+    return keys.length === 1 && __tac_schema_key_is_regex__(keys[0]);
+}
+
+function __tac_regex__(pattern, path) {
+    if (typeof pattern !== 'string' || pattern.length === 0) {
+        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema value at ' + path + ' must be a non-empty CHEX regex string');
+    }
+    if (pattern.length > 500) {
+        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema regex at ' + path + ' exceeds 500 characters');
+    }
+    try { return new RegExp(pattern); }
+    catch { throw new Error('Tac worker ' + __tac_worker_source__ + ' schema regex at ' + path + ' is invalid'); }
+}
+
+function __tac_validate_leaf__(value, pattern, path) {
+    if (!__tac_regex__(pattern, path).test(String(value))) {
+        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema mismatch at ' + path);
+    }
+}
+
+function __tac_validate_value__(value, schema, path) {
+    if (typeof schema === 'string') { __tac_validate_leaf__(value, schema, path); return; }
+    if (Array.isArray(schema)) {
+        if (schema.length !== 1) throw new Error('Tac worker ' + __tac_worker_source__ + ' array schema at ' + path + ' must contain exactly one item template');
+        if (!Array.isArray(value)) throw new Error('Tac worker ' + __tac_worker_source__ + ' expected an array at ' + path);
+        for (let i = 0; i < value.length; i += 1) __tac_validate_value__(value[i], schema[0], path + '[' + i + ']');
+        return;
+    }
+    if (__tac_is_plain_object__(schema)) { __tac_validate_object__(value, schema, path); return; }
+    throw new Error('Tac worker ' + __tac_worker_source__ + ' schema value at ' + path + ' must be a CHEX regex string, array, or object');
+}
+
+function __tac_validate_record__(value, schema, path) {
+    if (!__tac_is_plain_object__(value)) throw new Error('Tac worker ' + __tac_worker_source__ + ' expected an object at ' + path);
+    const [[keyPattern, valueSchema]] = Object.entries(schema);
+    const keyRegex = __tac_regex__(String(keyPattern), path + ' keys');
+    for (const [key, entry] of Object.entries(value)) {
+        if (!keyRegex.test(key)) throw new Error('Tac worker ' + __tac_worker_source__ + ' schema mismatch at ' + path + '.' + key + ' (key does not match ' + String(keyPattern) + ')');
+        if (valueSchema === 'any') continue;
+        __tac_validate_value__(entry, valueSchema, path + '.' + key);
+    }
+}
+
+function __tac_validate_object__(value, schema, path) {
+    if (!__tac_is_plain_object__(value)) throw new Error('Tac worker ' + __tac_worker_source__ + ' expected an object at ' + path);
+    for (const key of Object.keys(schema)) {
+        if (__tac_is_record_schema__(schema)) { __tac_validate_record__(value, schema, path); return; }
+        const dataKey = __tac_schema_data_key__(key);
+        const fieldValue = value[dataKey];
+        if (__tac_has_value__(fieldValue)) {
+            __tac_validate_value__(fieldValue, schema[key], path + '.' + dataKey);
+        } else if (!__tac_schema_key_is_nullable__(key)) {
+            throw new Error('Tac worker ' + __tac_worker_source__ + ' missing required field ' + dataKey + ' at ' + path);
+        }
+    }
+}
+
+function __tac_declared_request_sections__(request, schema) {
+    const subset = {};
+    for (const rawKey of Object.keys(schema || {})) {
+        const key = __tac_schema_data_key__(rawKey);
+        if (Object.prototype.hasOwnProperty.call(request, key)) subset[key] = request[key];
+    }
+    return subset;
+}
+
+function __tac_validate_request__(method, request) {
+    const methodSchema = __tac_worker_schema__ && __tac_worker_schema__[method];
+    const payloadSchema = methodSchema && methodSchema.payload;
+    if (!payloadSchema) return;
+    __tac_validate_value__(__tac_declared_request_sections__(request, payloadSchema), payloadSchema, 'payload');
+}
+
+function __tac_validate_response__(method, response) {
+    const methodSchema = __tac_worker_schema__ && __tac_worker_schema__[method];
+    if (!methodSchema) return;
+    const status = response && typeof response === 'object' ? response.status : undefined;
+    const statusNumber = typeof status === 'number' ? status : 200;
+    const name = __tac_status_name__(statusNumber);
+    let responseSchema;
+    if (statusNumber >= 200 && statusNumber < 300) {
+        responseSchema = methodSchema[name] || methodSchema.ok;
+    } else if (name) {
+        responseSchema = methodSchema[name];
+    }
+    if (!responseSchema) return;
+    __tac_validate_value__(response && response.body !== undefined ? response.body : response, responseSchema, name || 'response');
+}`;
+    }
+
+    /**
+     * Status-code-to-name helper injected into generated Tac worker runtimes.
+     * Workers validate responses against three buckets: `ok` (2xx),
+     * `clientError` (4xx), and `serverError` (5xx). 1xx and 3xx responses are
+     * not validated.
+     * @returns {string}
+     */
+    static _workerStatusNameSource() {
+        return `function __tac_status_name__(status) {
+    if (status >= 200 && status < 300) return 'ok';
+    if (status >= 400 && status < 500) return 'clientError';
+    if (status >= 500 && status < 600) return 'serverError';
+    return undefined;
+}`;
+    }
+
+    /**
+     * Native capability helpers injected into generated Tac worker runtimes.
+     * @returns {string}
+     */
+    static _workerNativeCapabilitySource() {
+        return `const __tac_native_pending__ = new Map();
+let __tac_native_sequence__ = 0;
+
+function __tac_assert_native_capability__(capability) {
+    if (!capability || typeof capability !== 'string') {
+        throw new Error('Tac worker ' + __tac_worker_source__ + ' native request requires a string capability');
+    }
+    const authorized = __tac_native_caps__.some((entry) => {
+        if (entry === capability) return true;
+        return entry.endsWith('.*') && capability.startsWith(entry.slice(0, -1));
+    });
+    if (!authorized) {
+        throw new Error('Tac worker ' + __tac_worker_source__ + ' native capability ' + capability + ' is not authorized; add it to TAC_NATIVE_CAPABILITIES');
+    }
+    if (/^(fs\\.|shell\\.|process\\.)/.test(capability) && !__tac_dangerous_caps__.includes(capability)) {
+        throw new Error('Tac worker ' + __tac_worker_source__ + ' raw OS capability ' + capability + ' is not authorized; add it to TAC_DANGEROUS_CAPABILITIES');
+    }
+}
+
+function __tac_native_request_from_response__(response) {
+    const body = response && typeof response === 'object' ? response.body : undefined;
+    const result = body && typeof body === 'object' ? body.result : undefined;
+    const candidate = body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, '$tacNative')
+        ? body.$tacNative
+        : result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, '$tacNative')
+            ? result.$tacNative
+        : response && typeof response === 'object' && Object.prototype.hasOwnProperty.call(response, '$tacNative')
+            ? response.$tacNative
+            : null;
+    if (!candidate || typeof candidate !== 'object') return null;
+    return {
+        capability: String(candidate.capability || ''),
+        payload: candidate.payload === undefined ? {} : candidate.payload,
+        status: Number(candidate.status || response.status || 200),
+        headers: candidate.headers && typeof candidate.headers === 'object' ? candidate.headers : {},
+    };
+}
+
+function __tac_handle_native_response__(message) {
+    if (!message || typeof message !== 'object' || message.type !== 'tac:native-response') return false;
+    const nativeId = Number(message.nativeId);
+    const pending = __tac_native_pending__.get(nativeId);
+    if (!pending) return true;
+    __tac_native_pending__.delete(nativeId);
+    if (message.ok) pending.resolve(message.value);
+    else pending.reject(new Error(String(message.error || 'Tac native capability failed')));
+    return true;
+}
+
+function __tac_call_native__(capability, payload) {
+    __tac_assert_native_capability__(capability);
+    const nativeId = ++__tac_native_sequence__;
+    return new Promise((resolve, reject) => {
+        __tac_native_pending__.set(nativeId, { resolve, reject });
+        self.postMessage({
+            type: 'tac:native-request',
+            nativeId,
+            source: __tac_worker_source__,
+            capability,
+            payload,
+        });
+    });
+}
+
+async function __tac_resolve_native_response__(response) {
+    const nativeRequest = __tac_native_request_from_response__(response);
+    if (!nativeRequest) return response;
+    const value = await __tac_call_native__(nativeRequest.capability, nativeRequest.payload);
+    return {
+        status: nativeRequest.status || 200,
+        headers: {
+            'Content-Type': 'application/json',
+            ...nativeRequest.headers,
+        },
+        body: value,
+    };
+}`;
+    }
+
     // ── Build & register a single template module ──────────────────────────────
     /**
      * @param {TemplateData} templateData
@@ -1999,7 +3291,7 @@ self.onmessage = async (event) => {
     static async registerModule(templateData, route, dir, sourcePath) {
         const publicPath = `/${dir}/${Compiler.toModuleOutputRoute(route)}`;
         if (Compiler.isGlobalOutput()) {
-            const parsed = await Compiler.parseHTML(templateData.html, `${dir}/${route} (${Compiler.toSourceLabel(sourcePath)})`);
+            const parsed = await Compiler.parseHTML(templateData.html, `${dir}/${route} (${Compiler.toSourceLabel(sourcePath)})`, new Map(), publicPath);
             const baseCode = await Compiler.createJSData(templateData, parsed, publicPath);
             const output = new Bun.Transpiler({ loader: 'js' })
                 .transformSync(Compiler.wrapGlobalModule(baseCode, publicPath));
@@ -2010,7 +3302,7 @@ self.onmessage = async (event) => {
         }
         const result = await Bun.build({
             entrypoints: [sourcePath],
-            external: ['/components/*', '/modules/*'],
+            external: ['/components/*', `${MODULES_ROUTE_PREFIX}/*`],
             minify: { whitespace: true, syntax: true },
             splitting: false,
             plugins: [
@@ -2056,9 +3348,15 @@ self.onmessage = async (event) => {
             const routes = Array.from(new Bun.Glob(`**/${Compiler.pageFileName}`).scanSync({ cwd: Router.pagesPath }));
             if (await Bun.file(path.join(Router.pagesPath, Compiler.pageFileName)).exists() && !routes.includes(Compiler.pageFileName))
                 routes.unshift(Compiler.pageFileName);
-            for (const route of routes) {
-                await Compiler.bundlePageFile(route);
-            }
+            // Pages compile independently: each reads the now-stable compMapping
+            // and writes a distinct wrapperPages key, so they parallelize safely.
+            let pageIndex = 0;
+            const pageWorkers = Array.from({ length: Math.min(Compiler.compileConcurrency, routes.length) }, async () => {
+                while (pageIndex < routes.length) {
+                    await Compiler.bundlePageFile(routes[pageIndex++]);
+                }
+            });
+            await Promise.all(pageWorkers);
         }
         // 404 page
         const nfFile = Bun.file(`${process.cwd()}/404.html`);
@@ -2072,20 +3370,140 @@ self.onmessage = async (event) => {
     static async bundleComponents() {
         if (!await pathExists(Router.componentsPath))
             return;
-        for (const comp of new Bun.Glob(`**/${Router.pageFileName}`).scanSync({ cwd: Router.componentsPath })) {
-            await Compiler.bundleComponentFile(comp);
+        const comps = Array.from(new Bun.Glob(`**/${Router.pageFileName}`).scanSync({ cwd: Router.componentsPath }));
+        // Phase 1 (serial, cheap): populate compMapping for every component so
+        // sibling-component references resolve during the parallel compile.
+        for (const comp of comps)
+            Compiler.registerComponentName(comp);
+        // Phase 2 (parallel): the heavy extract + Bun.build per component.
+        let compIndex = 0;
+        const compWorkers = Array.from({ length: Math.min(Compiler.compileConcurrency, comps.length) }, async () => {
+            while (compIndex < comps.length) {
+                await Compiler.bundleComponentFile(comps[compIndex++]);
+            }
+        });
+        await Promise.all(compWorkers);
+    }
+    /**
+     * @param {string} specifier
+     * @returns {string}
+     */
+    static packageNameFromSpecifier(specifier) {
+        if (!specifier || specifier.startsWith('.') || specifier.startsWith('/') || specifier.includes('://'))
+            return '';
+        const parts = specifier.split('/');
+        if (specifier.startsWith('@'))
+            return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : '';
+        return parts[0] ?? '';
+    }
+    /**
+     * @param {string} source
+     * @returns {string[]}
+     */
+    static importedPackageNames(source) {
+        const names = new Set();
+        const patterns = [
+            /\bimport\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g,
+            /\bexport\s+[^'"]*?\s+from\s+['"]([^'"]+)['"]/g,
+            /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+        ];
+        for (const pattern of patterns) {
+            for (const match of source.matchAll(pattern)) {
+                const name = Compiler.packageNameFromSpecifier(String(match[1] ?? ''));
+                if (name)
+                    names.add(name);
+            }
         }
+        return [...names];
+    }
+    /**
+     * @returns {Promise<Set<string>>}
+     */
+    static async collectBrowserDependencyNames() {
+        const sourceRoots = [
+            Router.pagesPath,
+            Router.componentsPath,
+            Router.sharedScriptsPath,
+        ];
+        const dependencies = new Set();
+        for (const root of sourceRoots) {
+            if (!await pathExists(root))
+                continue;
+            for (const route of new Bun.Glob('**/*.{js,ts,mjs,mts}').scanSync({ cwd: root })) {
+                const source = await Bun.file(path.join(root, route)).text();
+                for (const name of Compiler.importedPackageNames(source))
+                    dependencies.add(name);
+            }
+        }
+        return dependencies;
+    }
+    /**
+     * Loads a user-provided import map from the shared directory.
+     * Prefers `client/shared/importmap.json`, then falls back to
+     * `shared/importmap.json`. Returns an empty object if neither exists.
+     * @returns {Promise<Record<string, string>>}
+     */
+    static async loadUserImportMap() {
+        const candidates = [
+            path.join(Router.sharedScriptsPath, '..', 'importmap.json'),
+            path.join(process.cwd(), 'shared', 'importmap.json'),
+        ];
+        for (const candidate of candidates) {
+            const file = Bun.file(candidate);
+            if (!await file.exists())
+                continue;
+            try {
+                const map = await file.json();
+                if (map && typeof map.imports === 'object' && map.imports !== null)
+                    return /** @type {Record<string, string>} */ (map.imports);
+                Compiler.compilerLogger.warn('Import map file is missing a valid "imports" object', { path: candidate });
+                return {};
+            }
+            catch (error) {
+                Compiler.compilerLogger.error('Failed to parse import map file', { path: candidate, err: error });
+                throw new Error(`Invalid import map: ${candidate}`);
+            }
+        }
+        return {};
+    }
+    /**
+     * Generates the inline import map for the current app. Combines
+     * auto-generated entries for bundled npm dependencies with user-defined
+     * entries from `client/shared/importmap.json`. User entries take
+     * precedence. Paths are adjusted for native bundles.
+     * @returns {Promise<Record<string, string>>}
+     */
+    static async generateImportMap() {
+        const imports = await Compiler.loadUserImportMap();
+        const packageFile = Bun.file(`${process.cwd()}/package.json`);
+        const dependencies = await (async () => {
+            if (Compiler.bundledDependencyModules.size > 0)
+                return Compiler.bundledDependencyModules;
+            if (!await packageFile.exists())
+                return new Set();
+            const packages = await packageFile.json();
+            const browserDependencies = await Compiler.collectBrowserDependencyNames();
+            return new Set(Object.keys(packages.dependencies ?? {}).filter((moduleName) => browserDependencies.has(moduleName)));
+        })();
+        for (const moduleName of dependencies) {
+            if (Object.prototype.hasOwnProperty.call(imports, moduleName))
+                continue;
+            imports[moduleName] = Compiler.assetPath(Compiler.moduleRoutePath(moduleName));
+        }
+        return imports;
     }
     static async bundleDependencies() {
         const packageFile = Bun.file(`${process.cwd()}/package.json`);
         if (!await packageFile.exists())
             return;
         const packages = await packageFile.json();
-        const modules = Object.keys(packages.dependencies ?? {});
+        const browserDependencies = await Compiler.collectBrowserDependencyNames();
+        const modules = Object.keys(packages.dependencies ?? {}).filter((moduleName) => browserDependencies.has(moduleName));
+        Compiler.bundledDependencyModules = new Set();
         for (const moduleName of modules) {
             // Scoped packages use a + separator in route paths so the /
             // in @scope/name is not treated as a path segment delimiter.
-            const routeKey = moduleName.replace('/', '+');
+            const routeKey = Compiler.moduleRouteKey(moduleName);
             // Resolve to a file path so Bun.build handles scoped packages
             // without trying to open @scope as a root directory.
             let entry = moduleName;
@@ -2102,11 +3520,13 @@ self.onmessage = async (event) => {
                     entrypoints: [entry],
                     minify: true
                 });
+                const routePath = Compiler.moduleRoutePath(moduleName);
                 for (const output of result.outputs) {
-                    Router.reqRoutes[`/modules/${routeKey}.js`] = {
-                        GET: () => jsResponse(`/modules/${routeKey}.js`, output)
+                    Router.reqRoutes[routePath] = {
+                        GET: () => jsResponse(routePath, output)
                     };
                 }
+                Compiler.bundledDependencyModules.add(moduleName);
             }
             catch (error) {
                 Compiler.compilerLogger.warn('Failed to bundle dependency module', { module: moduleName, err: error });

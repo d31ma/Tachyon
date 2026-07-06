@@ -54,7 +54,7 @@ class TacDomStressSuite {
             return `<article id="row-${id}" class="row${selected ? ' selected' : ''}" data-value="${id}">
             <h2>Item ${id}</h2>
             <p>${label} value ${id}</p>
-            <button id="select-${id}" @click="select(${id})">Select ${id}</button>
+            <button id="select-${id}" on:click="select(${id})">Select ${id}</button>
         </article>`;
         }).join('');
     }

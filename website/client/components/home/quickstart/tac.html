@@ -1,0 +1,29 @@
+<section class="quickstart" aria-label="Code at a glance">
+  <h2>One convention, every layer</h2>
+  <p class="quickstart-sub">Templates, companions, backend routes and browser workers all follow the same file-beside-file shape.</p>
+
+  <div class="w-row ga-1 quickstart-tabs" role="tablist" aria-label="Code samples">
+    <loop :for="tab of tabs">
+      <w-btn size="sm" :variant="active === tab.id ? 'filled' : 'text'" on:click="select(tab.id)">{tab.label}</w-btn>
+    </loop>
+  </div>
+
+  <switch :value="active">
+    <case :when="'template'">
+      <pre class="code-block"><code>{samples.template}</code></pre>
+      <p class="quickstart-note">client/pages/tac.html — interpolation, events and control flow in plain HTML.</p>
+    </case>
+    <case :when="'companion'">
+      <pre class="code-block"><code>{samples.companion}</code></pre>
+      <p class="quickstart-note">client/pages/tac.js — a plain class; assignments rerender, prefixes persist.</p>
+    </case>
+    <case :when="'route'">
+      <pre class="code-block"><code>{samples.route}</code></pre>
+      <p class="quickstart-note">server/routes/posts/yon.js — verbs are static methods; return plain data.</p>
+    </case>
+    <case default>
+      <pre class="code-block"><code>{samples.worker}</code></pre>
+      <p class="quickstart-note">client/workers/language/rust/tac.rs — compiled to Wasm by Tachyon, no rustc.</p>
+    </case>
+  </switch>
+</section>

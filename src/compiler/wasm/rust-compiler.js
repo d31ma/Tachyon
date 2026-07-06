@@ -3,23 +3,23 @@
 // In-house Rust (handler subset) -> Wasm frontend.
 //
 // Parses a `yon`-shaped worker source - `impl Handler { pub fn VERB(request:
-// Request) -> i32|bool|String|Json { ... } }` - into the shared handler AST. Type
+// Request) -> i32|bool|String|&str|Json { ... } }` - into the shared handler AST. Type
 // checking, Wasm codegen, and the verb dispatcher all live in
 // `tac-handler-codegen.js`, so this file is purely a lexer + parser. No
 // rustc/LLVM is involved.
 //
-// Supported subset: i32-compatible integer aliases + bool + String/Json
+// Supported subset: i32-compatible integer aliases + bool + String/&str/Json
 // params/locals, `let`/`let mut`, assignment, arithmetic (`+ - * / %`),
 // comparisons (`== != < <= > >=`), logical operators (`! && ||`), `if/else`
 // expressions, `while` loops, string literals + concatenation,
-// `request.len()` / `request.body()` / `request.json()`, `json(stringExpr)`,
+// `request.len()` / `request.body()` / `request.json()` / `request.platform("key")`, `json(stringExpr)`,
 // and a trailing expression (or final `return`) as the method result. Anything
 // outside the subset raises a clear compile error.
 
 import { compileHandlerProgram } from './tac-handler-codegen.js';
 
 /** @typedef {Record<string, any>} Node */
-/** @typedef {{ type: 'ident' | 'int' | 'str' | 'kw' | 'punct' | 'eof', value: string, line: number }} Token */
+/** @typedef {{ type: 'ident' | 'int' | 'str' | 'lifetime' | 'kw' | 'punct' | 'eof', value: string, line: number }} Token */
 
 const INTEGER_TYPES = new Set(['i8', 'i16', 'i32', 'u8', 'u16', 'u32', 'isize', 'usize']);
 const KEYWORDS = new Set(['impl', 'pub', 'fn', 'let', 'mut', 'if', 'else', 'while', 'return', 'bool', 'true', 'false', ...INTEGER_TYPES]);
@@ -93,6 +93,14 @@ export function tokenize(source) {
             tokens.push({ type: 'str', value, line });
             continue;
         }
+        // Rust lifetime annotation in borrowed return types, e.g. `&'static str`.
+        if (c === '\'' && isIdentStart(source[i + 1] ?? '')) {
+            let start = i;
+            i += 2;
+            while (i < source.length && isIdent(source[i])) i += 1;
+            tokens.push({ type: 'lifetime', value: source.slice(start, i), line });
+            continue;
+        }
         if (isIdentStart(c)) {
             let start = i;
             while (i < source.length && isIdent(source[i])) i += 1;
@@ -157,11 +165,17 @@ export class Parser {
     /** @returns {'i32' | 'bool' | 'str' | 'json'} */
     parseReturnTypeName() {
         const t = this.next();
+        if (t.type === 'punct' && t.value === '&') {
+            if (this.peek().type === 'lifetime') this.next();
+            const borrowed = this.next();
+            if (borrowed.type === 'ident' && borrowed.value === 'str') return 'str';
+            throw new Error(`Tac worker (rust): unsupported borrowed return type '&${borrowed.value || 'end of input'}' on line ${borrowed.line} (use &str or &'static str)`);
+        }
         if ((t.type === 'kw' || t.type === 'ident') && INTEGER_TYPES.has(t.value)) return 'i32';
         if (t.type === 'kw' && t.value === 'bool') return 'bool';
         if (t.type === 'ident' && t.value === 'String') return 'str';
         if (t.type === 'ident' && t.value === 'Json') return 'json';
-        throw new Error(`Tac worker (rust): unsupported return type '${t.value || 'end of input'}' on line ${t.line} (use an i32-compatible integer, bool, String, or Json)`);
+        throw new Error(`Tac worker (rust): unsupported return type '${t.value || 'end of input'}' on line ${t.line} (use an i32-compatible integer, bool, String, &str, or Json)`);
     }
 
     /** Consume a balanced `{ ... }` block (assumes the next token is `{`). */
@@ -379,6 +393,12 @@ export class Parser {
             const otherwise = this.parseBlock();
             return { kind: 'if', cond, then, otherwise };
         }
+        // JSON object literal in value position: `{ "key": expr, ... }`. Method
+        // bodies and if/while blocks are parsed by parseBlock, so a `{` reached
+        // while parsing an expression is unambiguously an object literal.
+        if (this.isPunct('{')) {
+            return this.parseObjectLiteral();
+        }
         if (t.type === 'ident') {
             const name = this.next().value;
             if (name === 'json' && this.isPunct('(')) {
@@ -392,15 +412,42 @@ export class Parser {
                 this.next();
                 const member = this.expectIdent();
                 this.expectPunct('(');
+                // Keyed request accessors take a string literal: request.query("k").
+                if (member === 'query' || member === 'path' || member === 'header' || member === 'platform') {
+                    const keyToken = this.next();
+                    if (keyToken.type !== 'str')
+                        throw new Error(`Tac worker (rust): request.${member}(...) requires a string key on line ${t.line}`);
+                    this.expectPunct(')');
+                    const kind = member === 'query' ? 'requestQuery' : member === 'path' ? 'requestPath' : member === 'header' ? 'requestHeader' : 'requestPlatform';
+                    return { kind, key: keyToken.value, receiver: name };
+                }
                 this.expectPunct(')');
                 if (member === 'len') return { kind: 'requestLen', receiver: name };
                 if (member === 'body') return { kind: 'requestBody', receiver: name };
                 if (member === 'json') return { kind: 'requestJson', receiver: name };
-                throw new Error(`Tac worker (rust): unsupported call '.${member}()' on line ${t.line} (request.len(), request.body(), and request.json() are available)`);
+                throw new Error(`Tac worker (rust): unsupported call '.${member}()' on line ${t.line} (request.len(), request.body(), request.json(), request.query("k"), request.path("k"), request.header("k"), request.platform("key") are available)`);
             }
             return { kind: 'var', name };
         }
         throw new Error(`Tac worker (rust): unexpected token '${t.value || 'end of input'}' on line ${t.line}`);
+    }
+
+    /** @returns {Node} A `{ "key": expr, ... }` JSON object literal. */
+    parseObjectLiteral() {
+        this.expectPunct('{');
+        /** @type {Node[]} */
+        const entries = [];
+        while (!this.isPunct('}')) {
+            const keyToken = this.next();
+            if (keyToken.type !== 'str')
+                throw new Error(`Tac worker (rust): object keys must be string literals on line ${keyToken.line}`);
+            this.expectPunct(':');
+            entries.push({ key: keyToken.value, value: this.parseExpr() });
+            if (this.isPunct(',')) this.next();
+            else break;
+        }
+        this.expectPunct('}');
+        return { kind: 'jsonObject', entries };
     }
 }
 

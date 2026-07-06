@@ -1,0 +1,45 @@
+.poly-status {
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+
+.poly-note {
+  margin: 0 0 0.75rem;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}
+
+.poly-results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.poly-results li {
+  display: grid;
+  grid-template-columns: 6.5rem 3.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--w-font-sm);
+}
+
+.poly-results code {
+  color: var(--w-text-subtle);
+}
+
+.poly-result {
+  color: var(--w-text-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--w-font-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poly-hint {
+  margin: 0.75rem 0 0;
+  color: var(--w-text-very-subtle);
+  font-size: var(--w-font-xs);
+}

@@ -29,17 +29,17 @@ async function createExampleApp(options = {}) {
         private: true
     }, null, 2));
     if (frontend) {
-        await mkdir(path.join(root, 'browser', 'pages'), { recursive: true });
-        await mkdir(path.join(root, 'browser', 'shared', 'scripts'), { recursive: true });
-        await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'imports.js'), `import { bootMessage } from "./import-support.js";
+        await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+        await mkdir(path.join(root, 'client', 'shared', 'scripts'), { recursive: true });
+        await writeFile(path.join(root, 'client', 'shared', 'scripts', 'imports.js'), `import { bootMessage } from "./import-support.js";
 import "./imports.css";
 
 console.log(bootMessage);
 document.documentElement.dataset.boot = bootMessage;
 `);
-        await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'import-support.js'), `export const bootMessage = "fixture-boot";\n`);
-        await writeFile(path.join(root, 'browser', 'shared', 'scripts', 'imports.css'), `body { background: rgb(12, 34, 56); }\n`);
-        await writeFile(path.join(root, 'browser', 'pages', 'tac.html'), `<main><h1>Fixture Home</h1></main>`);
+        await writeFile(path.join(root, 'client', 'shared', 'scripts', 'import-support.js'), `export const bootMessage = "fixture-boot";\n`);
+        await writeFile(path.join(root, 'client', 'shared', 'scripts', 'imports.css'), `body { background: rgb(12, 34, 56); }\n`);
+        await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<main><h1>Fixture Home</h1></main>`);
     }
     if (backend) {
         await mkdir(path.join(root, 'server', 'routes', 'api'), { recursive: true });
@@ -53,7 +53,8 @@ document.documentElement.dataset.boot = bootMessage;
     }
     if (data) {
         const fylo = new Fylo(path.join(root, 'db'));
-        await fylo.putData('users', {
+        await fylo['users'].create();
+        await fylo['users'].put({
             email: 'browser-db@example.test',
             role: 'admin',
         });
@@ -91,7 +92,7 @@ async function getFreePort() {
         });
     });
 }
-timedTest('yon.serve serves frontend and backend responses when browser and server folders exist', { timeout: 40000 }, async () => {
+timedTest('yon.serve serves frontend and backend responses when client and server folders exist', { timeout: 40000 }, async () => {
     const root = await createExampleApp();
     const port = await getFreePort();
     /** @type {NodeJS.ProcessEnv} */
@@ -187,7 +188,7 @@ timedTest('yon.serve serves frontend and backend responses when browser and serv
     }
     expect(proc.exitCode).toBeNull();
 });
-timedTest('yon.serve serves frontend only when only the browser folder exists', { timeout: 40000 }, async () => {
+timedTest('yon.serve serves frontend only when only the client folder exists', { timeout: 40000 }, async () => {
     const root = await createExampleApp({ backend: false });
     const port = await getFreePort();
     /** @type {NodeJS.ProcessEnv} */
@@ -250,7 +251,7 @@ timedTest('yon.serve serves frontend only when only the browser folder exists', 
     }
     expect(proc.exitCode).toBeNull();
 });
-timedTest('yon.serve mounts FYLO browser routes for browser and db folders without server folder', { timeout: 40000 }, async () => {
+timedTest('yon.serve mounts FYLO browser routes for client and db folders without server folder', { timeout: 40000 }, async () => {
     const root = await createExampleApp({ backend: false, data: true });
     const port = await getFreePort();
     /** @type {NodeJS.ProcessEnv} */

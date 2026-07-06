@@ -23,11 +23,26 @@
  */
 
 /**
+ * @typedef {object} TacPlatformContext
+ * @property {'web' | 'macos' | 'windows' | 'linux' | 'android' | 'ios'} target
+ * @property {'web' | 'macos' | 'windows' | 'linux' | 'android' | 'ios'} platform
+ * @property {'browser' | 'desktop' | 'mobile'} environment
+ * @property {'macos' | 'windows' | 'linux' | 'android' | 'ios' | 'unknown'} os
+ * @property {'macos' | 'windows' | 'linux' | 'android' | 'ios' | 'unknown'} [browserOS]
+ * @property {boolean} native
+ * @property {boolean} browser
+ * @property {boolean} web
+ * @property {boolean} desktop
+ * @property {boolean} mobile
+ */
+
+/**
  * @typedef {object} TacRuntimeBindings
  * @property {boolean} isBrowser
  * @property {boolean} isServer
  * @property {(controller: Record<string, unknown>) => void} bindPersistentFields
  * @property {<T>(key: string, fallback?: T) => T | undefined} env
+ * @property {TacPlatformContext} platform
  * @property {TacProps} props
  * @property {(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>} fetch
  * @property {(fn: () => void | Promise<void>) => void} onMount
@@ -42,6 +57,18 @@ const noopHelpers = {
     isServer: true,
     bindPersistentFields: () => { },
     env: (_, fallback) => fallback,
+    platform: Object.freeze({
+        target: 'web',
+        platform: 'web',
+        environment: 'browser',
+        os: 'unknown',
+        browserOS: 'unknown',
+        native: false,
+        browser: true,
+        web: true,
+        desktop: false,
+        mobile: false,
+    }),
     props: {},
     fetch: (input, init) => fetch(input, init),
     onMount: () => { },

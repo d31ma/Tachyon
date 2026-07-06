@@ -1,0 +1,23 @@
+<w-footer border>
+  <w-container size="xl" class="footer-inner">
+    <div class="w-row align-center ga-2">
+      <img class="brand-mark" src="/shared/assets/logo.svg" alt="" width="24" height="24" />
+      <span class="brand-name">TACHYON</span>
+      <span class="footer-note">A polyglot, file-system-routed full-stack framework for Bun.</span>
+    </div>
+
+    <p class="footer-note">
+      <logic :if="environment === 'desktop'">Running the {platform} desktop bundle.</logic><logic :else-if="environment === 'mobile'">Running the {platform} mobile bundle.</logic><logic else>Running the {platform} bundle in a browser environment.</logic>
+      This site is frontend-only: Tac Workers are its backend, the FYLO OPFS mirror is its database, and the theme, fetch cache and documents all live in your browser.
+    </p>
+
+    <nav class="w-row ga-3 footer-links" aria-label="Footer">
+      <a href="/atlas">Capability atlas</a>
+      <a href="/docs">Documentation</a>
+      <a href="https://duvay.del.ma" target="_blank" rel="noopener">DuVay</a>
+      <a href="https://github.com/d31ma/Tachyon" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+
+    <p class="footer-note">MIT licensed. Interface built with DuVay web components, vendored at {duvayVersion}. Package {packageName}.</p>
+  </w-container>
+</w-footer>

@@ -1,0 +1,8 @@
+<w-card variant="outlined" class="panel-card clicker-card">
+  <w-card-text>
+    <span class="clicker-label">{label} <logic :if="release"><w-chip size="x-small">{release}</w-chip></logic></span>
+    <strong class="clicker-count">{$clicks}</strong>
+    <w-btn size="sm" variant="filled" on:click="$clicks += 1">Click ({$clicks})</w-btn>
+    <clicker-ui :clicks="$clicks" label="Nested component" />
+  </w-card-text>
+</w-card>

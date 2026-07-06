@@ -1,3 +1,0 @@
-{"ts":1778984773254,"action":"insert","id":"4UZVJ02N8T8","doc":{"name":"Pneumatic gripper with sensor feedback","source":"dashboard","tags":["robotics","gripper","sensors"],"price":349,"inStock":false}}
-{"ts":1778984773295,"action":"insert","id":"4UZVJ02NB22","doc":{"name":"Industrial servo motor unit","source":"dashboard","tags":["manufacturing","automation","rotary"],"price":1249.99,"inStock":true}}
-{"ts":1778984773329,"action":"insert","id":"4UZVJ02ND6S","doc":{"name":"High-precision linear actuator","source":"api","tags":["manufacturing","linear-motion","robotics"],"price":879.5,"inStock":true}}

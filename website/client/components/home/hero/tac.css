@@ -1,0 +1,53 @@
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+  align-items: center;
+  padding-block: 3rem 2rem;
+}
+
+.hero h1 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.9rem, 4.5vw, 3.1rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+.hero-sub {
+  margin: 0 0 1.25rem;
+  max-width: 58ch;
+  color: var(--w-text-subtle);
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.hero-actions {
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.hero-install {
+  max-width: 34rem;
+}
+
+.hero-note {
+  margin: 1rem 0 0;
+  color: var(--w-text-very-subtle);
+  font-size: var(--w-font-sm);
+  max-width: 52ch;
+}
+
+.hero-art {
+  display: none;
+  justify-self: center;
+}
+
+@container (min-width: 860px) {
+  .hero {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.6fr);
+  }
+
+  .hero-art {
+    display: block;
+  }
+}

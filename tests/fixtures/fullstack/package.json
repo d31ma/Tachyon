@@ -1,0 +1,11 @@
+{
+  "name": "tachyon-fullstack-fixture",
+  "version": "26.23.01",
+  "private": true,
+  "type": "module",
+  "description": "Full-stack fixture app exercised by the framework integration suite.",
+  "scripts": {
+    "serve": "bun ../../../src/cli/serve.js",
+    "bundle": "bun ../../../src/cli/bundle.js"
+  }
+}

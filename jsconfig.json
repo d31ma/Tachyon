@@ -4,10 +4,10 @@
     "src/**/*.d.ts",
     "src/**/*.js",
     "tests/**/*.js",
-    "examples/**/*.d.ts",
-    "examples/**/*.js",
-    "examples/**/*.ts",
+    "website/**/*.d.ts",
+    "website/**/*.js",
+    "website/**/*.ts",
     "scripts/**/*.js"
   ],
-  "exclude": ["node_modules", "node_modules*", "dist", "bin", "**/*.as.ts", "examples/dist", "examples/dist-debug", "examples/node_modules", "examples/node_modules*"]
+  "exclude": ["node_modules", "node_modules*", "dist", "bin", "**/*.as.ts", "website/dist", "website/dist-debug", "website/node_modules", "website/node_modules*", "website/client/shared/assets/duvay/**/*.js"]
 }

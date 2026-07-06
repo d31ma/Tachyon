@@ -56,10 +56,10 @@ export default class YonRealtime {
         return Number.isFinite(value) && value >= 1024 ? value : 65536;
     }
 
-    /** @returns {Fylo} */
+    /** @returns {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */
     static db() {
         const root = YonRealtime.root();
-        return new Fylo(root, fyloOptions(root));
+        return /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
     }
 
     /** @returns {LocalQueue} */
@@ -142,7 +142,7 @@ export default class YonRealtime {
     static async ensureCollections() {
         const db = YonRealtime.db();
         try {
-            await db.createCollection(CLIENTS_COLLECTION);
+            await db[CLIENTS_COLLECTION].create();
         }
         catch (error) {
             if (!String(error instanceof Error ? error.message : error).toLowerCase().includes('exist')) throw error;
@@ -157,7 +157,7 @@ export default class YonRealtime {
         const clientId = requestedClientId?.trim() || await Fylo.uniqueTTID(undefined);
         YonRealtime.assertClientId(clientId);
         await YonRealtime.ensureCollections();
-        await YonRealtime.db().putData(CLIENTS_COLLECTION, {
+        await YonRealtime.db()[CLIENTS_COLLECTION].put({
             [clientId]: {
                 clientId,
                 registeredAt: new Date().toISOString(),

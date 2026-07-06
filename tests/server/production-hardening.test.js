@@ -81,20 +81,20 @@ test('untrusted proxy headers are ignored', () => {
     });
 });
 test('generated request IDs use FYLO TTIDs', async () => {
-    const requestId = await Yon.getRequestId(new Request('http://127.0.0.1/languages/javascript'));
+    const requestId = await Yon.getRequestId(new Request('http://127.0.0.1/language/javascript'));
     const laterRequestId = await Fylo.uniqueTTID(undefined);
     expect(requestId).toMatch(/^[0-9A-Z]{11}$/);
     expect(laterRequestId).toMatch(/^[0-9A-Z]{11}$/);
     expect(laterRequestId).not.toBe(requestId);
 });
 test('incoming request IDs are preserved when within the supported length', async () => {
-    const request = new Request('http://127.0.0.1/languages/javascript', {
+    const request = new Request('http://127.0.0.1/language/javascript', {
         headers: { 'X-Request-Id': 'external-request-id' },
     });
     expect(await Yon.getRequestId(request)).toBe('external-request-id');
 });
 test('handler log paths are relative to the routes folder', () => {
     Router.routesPath = '/workspace/app/server/routes';
-    expect(Yon.routeRelativeHandler('/workspace/app/server/routes/languages/javascript/yon.js'))
-        .toBe('/languages/javascript/yon.js');
+    expect(Yon.routeRelativeHandler('/workspace/app/server/routes/language/javascript/yon.js'))
+        .toBe('/language/javascript/yon.js');
 });

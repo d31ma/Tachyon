@@ -71,14 +71,28 @@ export default class Router {
     static routeHandlers = {};
     /** @type {Record<string, SlugMap>} */
     static routeSlugs = {};
-    static routesPath = Router.resolveWorkspacePath('YON_ROUTES_PATH', ['server/routes', 'routes']);
-    static pagesPath = Router.resolveWorkspacePath('YON_PAGES_PATH', ['browser/pages', 'routes']);
-    static componentsPath = Router.resolveWorkspacePath('YON_COMPONENTS_PATH', ['browser/components', 'components']);
-    static workersPath = Router.resolveWorkspacePath('YON_WORKERS_PATH', ['browser/workers']);
-    static assetsPath = Router.resolveWorkspacePath('YON_ASSETS_PATH', ['browser/shared/assets', 'shared/assets', 'assets']);
-    static sharedDataPath = Router.resolveWorkspacePath('YON_SHARED_DATA_PATH', ['browser/shared/data', 'shared/data']);
-    static sharedScriptsPath = Router.resolveWorkspacePath('YON_SHARED_SCRIPTS_PATH', ['browser/shared/scripts']);
-    static sharedStylesPath = Router.resolveWorkspacePath('YON_SHARED_STYLES_PATH', ['browser/shared/styles']);
+    /**
+     * Stable hash of the current route manifest — changes whenever routes
+     * change. Used as the cache version for service worker / Cache API.
+     * @returns {string}
+     */
+    static routeManifestHash() {
+        const json = JSON.stringify(Object.keys(Router.routeSlugs).sort());
+        let hash = 0;
+        for (let i = 0; i < json.length; i++) {
+            hash = ((hash << 5) - hash) + json.charCodeAt(i);
+            hash |= 0;
+        }
+        return Math.abs(hash).toString(36).slice(0, 8) || '0';
+    }
+    static routesPath = Router.resolveWorkspacePath('YON_ROUTES_PATH', ['server/routes']);
+    static pagesPath = Router.resolveWorkspacePath('YON_PAGES_PATH', ['client/pages']);
+    static componentsPath = Router.resolveWorkspacePath('YON_COMPONENTS_PATH', ['client/components']);
+    static workersPath = Router.resolveWorkspacePath('YON_WORKERS_PATH', ['client/workers']);
+    static assetsPath = Router.resolveWorkspacePath('YON_ASSETS_PATH', ['client/shared/assets']);
+    static sharedDataPath = Router.resolveWorkspacePath('YON_SHARED_DATA_PATH', ['client/shared/data']);
+    static sharedScriptsPath = Router.resolveWorkspacePath('YON_SHARED_SCRIPTS_PATH', ['client/shared/scripts']);
+    static sharedStylesPath = Router.resolveWorkspacePath('YON_SHARED_STYLES_PATH', ['client/shared/styles']);
     static middlewarePath = process.env.YON_MIDDLEWARE_PATH || `${process.cwd()}/middleware`;
     static optionsFileName = 'OPTIONS.schema.json';
     /** @type {Middleware | null} */
@@ -258,6 +272,15 @@ export default class Router {
     }
 
     /** @param {string} pathname */
+    static resolveApiRoute(pathname) {
+        /** @type {Record<string, SlugMap>} */
+        const routes = {};
+        for (const route of Router.allRoutes.keys())
+            routes[route] = {};
+        return Router.resolveRoutePattern(pathname, routes);
+    }
+
+    /** @param {string} pathname */
     static hasPageRoute(pathname) {
         return Router.resolvePageRoute(pathname) !== null;
     }
@@ -302,7 +325,7 @@ export default class Router {
             return 'no-cache, must-revalidate';
         if (normalizedPath.startsWith('/components/')
             || normalizedPath.startsWith('/pages/')
-            || normalizedPath.startsWith('/modules/')) {
+            || normalizedPath.startsWith('/shared/modules/')) {
             return 'no-cache, must-revalidate';
         }
         return 'no-store';
@@ -333,26 +356,41 @@ export default class Router {
         const virtualRoute = routeDirectory === '.'
             ? terminalSegment
             : `${routeDirectory}/${terminalSegment}`;
-        const { pathname: routePathname } = Router.validateSegmentPath(virtualRoute, terminalSegment, staticPaths);
-        route = routePathname;
+
+        // If this is the first handler for the route, run full slug validation.
+        // Subsequent handlers (multi-language) reuse the already-validated path.
+        const resolvedRoute = routeDirectory === '.' ? '/' : `/${routeDirectory}`;
+        const existingMethods = Router.routeHandlers[resolvedRoute];
+        if (!existingMethods) {
+            const { pathname: routePathname } = Router.validateSegmentPath(virtualRoute, terminalSegment, staticPaths);
+            route = routePathname;
+        } else {
+            route = resolvedRoute;
+        }
 
         const fullHandlerPath = path.join(Router.routesPath, routeFilePath);
         const adapter = HandlerAdapter.resolve(fullHandlerPath, []);
         if (!adapter) {
             throw new Error(
-                `Invalid route handler '${routeFilePath}' — handler must define a class named 'Handler' ` +
-                `with at least one static HTTP method (GET, POST, PUT, DELETE, etc.).`
+                `Invalid route handler '${routeFilePath}' — for a built-in language, define a class named ` +
+                `'Handler' with at least one static HTTP method (GET, POST, PUT, DELETE, etc.). ` +
+                `For any other language, have the handler read the JSON request from stdin and write the ` +
+                `response to stdout, declare its methods in an adjacent OPTIONS.schema.json, and make sure ` +
+                `its extension has a runner (built-in for common languages; add one under "interpreters" ` +
+                `in .tachyonrc for others) or the file is executable.`
             );
         }
 
-        // Only one handler file per route — reject a second file for the same path
-        const existingHandlers = Router.routeHandlers[route];
-        if (existingHandlers) {
-            const existingFile = Object.values(existingHandlers)[0];
-            if (existingFile && path.resolve(existingFile) !== path.resolve(fullHandlerPath)) {
+        // Multiple handler files per route are allowed (e.g. yon.py + yon.rs)
+        // as long as they declare non-overlapping HTTP methods.
+        if (existingMethods) {
+            const overlapping = [...adapter.methods].filter((m) => m in existingMethods);
+            if (overlapping.length > 0) {
+                const existingFile = existingMethods[overlapping[0]];
                 throw new Error(
-                    `Duplicate handler for route '${route}' — both '${path.basename(existingFile)}' and '${routeFile}' exist. ` +
-                    `Only one handler file is allowed per route.`
+                    `Method conflict for route '${route}' — ` +
+                    `'${path.basename(String(existingFile))}' and '${routeFile}' both declare [${overlapping.join(', ')}]. ` +
+                    `Each HTTP method may only appear in one handler file per route.`
                 );
             }
         }
@@ -365,7 +403,13 @@ export default class Router {
             Router.routeHandlers[route][method] = fullHandlerPath;
         }
 
-        const routeOptionsFile = Bun.file(`${Router.routesPath}${Router.routeToFilesystemPath(route)}/${Router.optionsFileName}`);
+        const schemaDir = Router.routeToFilesystemPath(route);
+        let routeOptionsFile = Bun.file(`${Router.routesPath}${schemaDir}/${Router.optionsFileName}`);
+        if (!await routeOptionsFile.exists()) {
+            // Fall back to build/ mirror for production deployments
+            const buildSchema = Bun.file(`build${schemaDir}/${Router.optionsFileName}`);
+            if (await buildSchema.exists()) routeOptionsFile = buildSchema;
+        }
         if (await routeOptionsFile.exists() && !Router.routeConfigs[route]) {
             Router.routeConfigs[route] = await routeOptionsFile.json();
             Router.allRoutes.get(route)?.add('OPTIONS');
@@ -421,13 +465,22 @@ export default class Router {
         // resetStaticState/validate cycle — scan the route directory
         // for a `yon.*` file so we never return an extensionless
         // path that posix_spawn would ENOENT on.
-        let handlerPath = Router.routeHandlers[route]?.[request.method];
+        const registeredMethods = Router.routeHandlers[route];
+        let handlerPath = registeredMethods?.[request.method];
         if (!handlerPath) {
-            const routeDir = `${Router.routesPath}${Router.routeToFilesystemPath(route)}`;
-            if (existsSync(routeDir)) {
-                const match = Array.from(new Bun.Glob(`${Router.routeFileName}.*`).scanSync({ cwd: routeDir }))[0];
-                if (match)
-                    handlerPath = `${routeDir}/${match}`;
+            if (registeredMethods) {
+                throw Response.json(
+                    { detail: `Method ${request.method} is not declared for ${route}` },
+                    { status: 422, headers: Router.getHeaders(request) }
+                );
+            }
+            if (!registeredMethods) {
+                const routeDir = `${Router.routesPath}${Router.routeToFilesystemPath(route)}`;
+                if (existsSync(routeDir)) {
+                    const match = Array.from(new Bun.Glob(`${Router.routeFileName}.*`).scanSync({ cwd: routeDir }))[0];
+                    if (match)
+                        handlerPath = `${routeDir}/${match}`;
+                }
             }
             if (!handlerPath) {
                 throw Response.json(

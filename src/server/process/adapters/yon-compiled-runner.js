@@ -2,6 +2,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
+import { loadToolchainConfig } from '../../../shared/toolchain-config.js';
 
 export default class YonCompiledRunner {
     static cacheVersion = 'yon-compiled-runner:v2';
@@ -193,8 +194,6 @@ export default class YonCompiledRunner {
             return '.cs';
         if (language === 'cpp')
             return '.cpp';
-        if (language === 'kotlin')
-            return '.kt';
         if (language === 'rust')
             return '.rs';
         return `.${language}`;
@@ -286,18 +285,35 @@ export default class YonCompiledRunner {
     }
 
     /** @returns {string} */
-    static swiftExecutable() {
-        return 'swiftc';
-    }
-
-    /** @returns {string} */
-    static kotlinExecutable() {
-        return 'kotlinc';
-    }
-
-    /** @returns {string} */
     static rustExecutable() {
         return 'rustc';
+    }
+
+    /**
+     * Return compiler flags for a language. Resolution order:
+     * 1. Environment variable (TACHYON_RUSTFLAGS / TACHYON_CXXFLAGS)
+     * 2. `.tachyonrc` `flags` entry for the language
+     * 3. Hardcoded defaults (`-C prefer-dynamic` for Rust, none for C++)
+     * @param {string} language
+     * @returns {string[]}
+     */
+    static compilerFlags(language) {
+        const envKey = language === 'rust' ? 'TACHYON_RUSTFLAGS'
+            : language === 'cpp' ? 'TACHYON_CXXFLAGS'
+                : null;
+        if (envKey && process.env[envKey] !== undefined) {
+            const env = process.env[envKey];
+            return env.trim() ? env.split(/\s+/) : [];
+        }
+        try {
+            const config = loadToolchainConfig();
+            const entry = config.toolchains[language];
+            if (entry && Array.isArray(entry.flags)) return entry.flags;
+        } catch {
+            // Config missing or invalid — fall through to defaults
+        }
+        if (language === 'rust') return ['-C', 'prefer-dynamic'];
+        return [];
     }
 
     /**
@@ -749,7 +765,9 @@ ${dispatch}
                 throw new Error('C++ route must define class Handler with at least one static HTTP method');
             writeFileSync(path.join(root, 'YonJson.hpp'), YonCompiledRunner.cppJsonSupportSource());
             writeFileSync(path.join(root, 'main.cpp'), YonCompiledRunner.cppMainSource(methods));
-            await YonCompiledRunner.runCommand([YonCompiledRunner.cppExecutable(), '-std=c++17', '-O2', '-o', binaryPath, 'main.cpp'], root);
+            const cc = YonCompiledRunner.cppExecutable();
+            const flags = YonCompiledRunner.compilerFlags('cpp');
+            await YonCompiledRunner.runCommand([cc, '-std=c++17', '-O2', ...flags, '-o', binaryPath, 'main.cpp'], root);
         });
         return YonCompiledRunner.runCommand([binaryPath], root, requestText);
     }
@@ -1012,324 +1030,6 @@ public class Main {
             await YonCompiledRunner.runCommand(['javac', ...sources], root);
         });
         return YonCompiledRunner.runCommand(['java', '-cp', root, 'Main'], root, requestText);
-    }
-
-    /**
-     * @param {string} source
-     * @returns {string[]}
-     */
-    static swiftMethods(source) {
-        return YonCompiledRunner.httpMethods.filter((method) => new RegExp(`\\bstatic\\s+func\\s+${method}\\s*\\(`).test(source));
-    }
-
-    /**
-     * @param {string[]} methods
-     * @returns {string}
-     */
-    static swiftMainSource(methods) {
-        const dispatch = methods.map((method) => `    case "${method}": result = Handler.${method}(request)`).join('\n');
-        return `import Foundation
-
-let inputData = FileHandle.standardInput.readDataToEndOfFile()
-let inputText = String(data: inputData, encoding: .utf8) ?? ""
-let payload = inputText.isEmpty ? "{}" : inputText
-let parsed = try JSONSerialization.jsonObject(with: Data(payload.utf8), options: [.fragmentsAllowed])
-guard let request = parsed as? [String: Any] else {
-    FileHandle.standardError.write(Data("Expected Tachyon request JSON to be an object".utf8))
-    exit(1)
-}
-let method = (request["method"] as? String) ?? ""
-if method.isEmpty {
-    FileHandle.standardError.write(Data("Missing HTTP method in request payload".utf8))
-    exit(1)
-}
-var result: Any? = nil
-switch method {
-${dispatch}
-default:
-    FileHandle.standardError.write(Data("Handler class does not implement static \\(method)()".utf8))
-    exit(1)
-}
-guard let value = result else { exit(0) }
-if let text = value as? String {
-    FileHandle.standardOutput.write(Data(text.utf8))
-} else {
-    FileHandle.standardOutput.write(try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]))
-}
-`;
-    }
-
-    /**
-     * @param {string} handlerPath
-     * @param {string} requestText
-     * @returns {Promise<string>}
-     */
-    static async runSwift(handlerPath, requestText) {
-        const root = YonCompiledRunner.workspace('swift', handlerPath);
-        const marker = '.yon-swift-production-ready';
-        const binaryName = process.platform === 'win32' ? 'handler.exe' : 'handler';
-        const binaryPath = path.join(root, binaryName);
-        await YonCompiledRunner.prepareArtifact(root, marker, async () => {
-            YonCompiledRunner.copyServiceSources('swift', handlerPath, root);
-            const source = YonCompiledRunner.writeSourceWithoutShebang(handlerPath, path.join(root, 'Handler.swift'));
-            const methods = YonCompiledRunner.swiftMethods(source);
-            if (methods.length === 0)
-                throw new Error('Swift route must define Handler with at least one static HTTP method');
-            writeFileSync(path.join(root, 'main.swift'), YonCompiledRunner.swiftMainSource(methods));
-            const sources = readdirSync(root).filter((entry) => entry.endsWith('.swift'));
-            const optimization = YonCompiledRunner.isProduction() ? ['-O'] : [];
-            await YonCompiledRunner.runCommand([YonCompiledRunner.swiftExecutable(), ...optimization, '-o', binaryPath, ...sources], root);
-        });
-        return YonCompiledRunner.runCommand([binaryPath], root, requestText);
-    }
-
-    /** @returns {string} */
-    static kotlinJsonSupportSource() {
-        return `object YonJson {
-    fun parse(input: String): Any? = Parser(if (input.isBlank()) "{}" else input).parse()
-
-    @Suppress("UNCHECKED_CAST")
-    fun parseObject(input: String): Map<String, Any?> {
-        val value = parse(input)
-        if (value is Map<*, *>) return value as Map<String, Any?>
-        throw IllegalArgumentException("Expected Tachyon request JSON to be an object")
-    }
-
-    fun stringify(value: Any?): String = when (value) {
-        null -> "null"
-        is String -> quote(value)
-        is Boolean -> value.toString()
-        is Number -> numberToString(value)
-        is Map<*, *> -> buildString {
-            append('{')
-            var first = true
-            for ((key, entry) in value) {
-                if (!first) append(',')
-                first = false
-                append(quote(key.toString()))
-                append(':')
-                append(stringify(entry))
-            }
-            append('}')
-        }
-        is Iterable<*> -> buildString {
-            append('[')
-            var first = true
-            for (item in value) {
-                if (!first) append(',')
-                first = false
-                append(stringify(item))
-            }
-            append(']')
-        }
-        else -> quote(value.toString())
-    }
-
-    private fun numberToString(value: Number): String {
-        if (value is Double) {
-            if (value.isFinite() && value == Math.floor(value)) return value.toLong().toString()
-            return value.toString()
-        }
-        return value.toString()
-    }
-
-    private fun quote(text: String): String {
-        val out = StringBuilder("\\"")
-        for (ch in text) {
-            when (ch) {
-                '"' -> out.append("\\\\\\"")
-                '\\\\' -> out.append("\\\\\\\\")
-                '\\b' -> out.append("\\\\b")
-                '\\u000C' -> out.append("\\\\f")
-                '\\n' -> out.append("\\\\n")
-                '\\r' -> out.append("\\\\r")
-                '\\t' -> out.append("\\\\t")
-                else -> if (ch < ' ') out.append("\\\\u%04x".format(ch.code)) else out.append(ch)
-            }
-        }
-        out.append('"')
-        return out.toString()
-    }
-
-    private class Parser(private val text: String) {
-        private var index = 0
-
-        fun parse(): Any? {
-            val value = readValue()
-            skipWhitespace()
-            if (index != text.length) throw error("Unexpected trailing JSON")
-            return value
-        }
-
-        private fun readValue(): Any? {
-            skipWhitespace()
-            if (index >= text.length) throw error("Unexpected end of JSON")
-            return when (text[index]) {
-                '{' -> readObject()
-                '[' -> readArray()
-                '"' -> readString()
-                't' -> readLiteral("true", true)
-                'f' -> readLiteral("false", false)
-                'n' -> readLiteral("null", null)
-                else -> {
-                    val ch = text[index]
-                    if (ch == '-' || ch.isDigit()) readNumber() else throw error("Unexpected JSON token")
-                }
-            }
-        }
-
-        private fun readObject(): Map<String, Any?> {
-            expect('{')
-            val obj = LinkedHashMap<String, Any?>()
-            skipWhitespace()
-            if (peek('}')) { index++; return obj }
-            while (true) {
-                skipWhitespace()
-                val key = readString()
-                skipWhitespace()
-                expect(':')
-                obj[key] = readValue()
-                skipWhitespace()
-                if (peek('}')) { index++; return obj }
-                expect(',')
-            }
-        }
-
-        private fun readArray(): List<Any?> {
-            expect('[')
-            val arr = ArrayList<Any?>()
-            skipWhitespace()
-            if (peek(']')) { index++; return arr }
-            while (true) {
-                arr.add(readValue())
-                skipWhitespace()
-                if (peek(']')) { index++; return arr }
-                expect(',')
-            }
-        }
-
-        private fun readString(): String {
-            expect('"')
-            val out = StringBuilder()
-            while (index < text.length) {
-                val ch = text[index++]
-                if (ch == '"') return out.toString()
-                if (ch != '\\\\') { out.append(ch); continue }
-                if (index >= text.length) throw error("Invalid escape sequence")
-                when (text[index++]) {
-                    '"' -> out.append('"')
-                    '\\\\' -> out.append('\\\\')
-                    '/' -> out.append('/')
-                    'b' -> out.append('\\b')
-                    'f' -> out.append('\\u000C')
-                    'n' -> out.append('\\n')
-                    'r' -> out.append('\\r')
-                    't' -> out.append('\\t')
-                    'u' -> {
-                        if (index + 4 > text.length) throw error("Invalid unicode escape")
-                        out.append(text.substring(index, index + 4).toInt(16).toChar())
-                        index += 4
-                    }
-                    else -> throw error("Invalid escape sequence")
-                }
-            }
-            throw error("Unterminated string")
-        }
-
-        private fun readNumber(): Any {
-            val start = index
-            if (peek('-')) index++
-            while (index < text.length && text[index].isDigit()) index++
-            var decimal = false
-            if (peek('.')) {
-                decimal = true
-                index++
-                while (index < text.length && text[index].isDigit()) index++
-            }
-            if (index < text.length && (text[index] == 'e' || text[index] == 'E')) {
-                decimal = true
-                index++
-                if (index < text.length && (text[index] == '+' || text[index] == '-')) index++
-                while (index < text.length && text[index].isDigit()) index++
-            }
-            val number = text.substring(start, index)
-            return if (decimal) number.toDouble() else number.toLong()
-        }
-
-        private fun readLiteral(literal: String, value: Any?): Any? {
-            if (!text.startsWith(literal, index)) throw error("Invalid literal")
-            index += literal.length
-            return value
-        }
-
-        private fun skipWhitespace() {
-            while (index < text.length && text[index].isWhitespace()) index++
-        }
-
-        private fun peek(expected: Char) = index < text.length && text[index] == expected
-
-        private fun expect(expected: Char) {
-            if (!peek(expected)) throw error("Expected '\$expected'")
-            index++
-        }
-
-        private fun error(message: String) = IllegalArgumentException("\$message at character \$index")
-    }
-}
-`;
-    }
-
-    /**
-     * @param {string} source
-     * @returns {string[]}
-     */
-    static kotlinMethods(source) {
-        return YonCompiledRunner.httpMethods.filter((method) => new RegExp(`\\bfun\\s+${method}\\s*\\(`).test(source));
-    }
-
-    /**
-     * @param {string[]} methods
-     * @returns {string}
-     */
-    static kotlinMainSource(methods) {
-        const dispatch = methods.map((method) => `        "${method}" -> Handler.${method}(request)`).join('\n');
-        return `fun main() {
-    val input = System.\`in\`.readBytes().toString(Charsets.UTF_8)
-    val request = YonJson.parseObject(input)
-    val method = request["method"] as? String
-    if (method.isNullOrEmpty()) throw IllegalArgumentException("Missing HTTP method in request payload")
-    val result: Any? = when (method) {
-${dispatch}
-        else -> throw IllegalArgumentException("Handler class does not implement static \$method()")
-    }
-    if (result != null) {
-        if (result is String) print(result) else print(YonJson.stringify(result))
-    }
-}
-`;
-    }
-
-    /**
-     * @param {string} handlerPath
-     * @param {string} requestText
-     * @returns {Promise<string>}
-     */
-    static async runKotlin(handlerPath, requestText) {
-        const root = YonCompiledRunner.workspace('kotlin', handlerPath);
-        const marker = '.yon-kotlin-production-ready';
-        const jarPath = path.join(root, 'app.jar');
-        await YonCompiledRunner.prepareArtifact(root, marker, async () => {
-            YonCompiledRunner.copyServiceSources('kotlin', handlerPath, root);
-            const source = YonCompiledRunner.writeSourceWithoutShebang(handlerPath, path.join(root, 'Handler.kt'));
-            const methods = YonCompiledRunner.kotlinMethods(source);
-            if (methods.length === 0)
-                throw new Error('Kotlin route must define Handler with at least one static HTTP method');
-            writeFileSync(path.join(root, 'YonJson.kt'), YonCompiledRunner.kotlinJsonSupportSource());
-            writeFileSync(path.join(root, 'main.kt'), YonCompiledRunner.kotlinMainSource(methods));
-            const sources = readdirSync(root).filter((entry) => entry.endsWith('.kt'));
-            await YonCompiledRunner.runCommand([YonCompiledRunner.kotlinExecutable(), ...sources, '-include-runtime', '-d', 'app.jar'], root);
-        });
-        return YonCompiledRunner.runCommand(['java', '-cp', jarPath, 'MainKt'], root, requestText);
     }
 
     /** @returns {string} */
@@ -1828,12 +1528,82 @@ ${dispatch}
             writeFileSync(path.join(root, 'yon_json.rs'), YonCompiledRunner.rustJsonSupportSource());
             writeFileSync(path.join(root, 'main.rs'), YonCompiledRunner.rustMainSource(methods, serviceFiles));
             const optimization = YonCompiledRunner.isProduction() ? ['-O'] : [];
-            await YonCompiledRunner.runCommand([YonCompiledRunner.rustExecutable(), '--edition=2021', ...optimization, '-o', binaryPath, 'main.rs'], root);
+            const flags = YonCompiledRunner.compilerFlags('rust');
+            await YonCompiledRunner.runCommand([YonCompiledRunner.rustExecutable(), '--edition=2021', ...optimization, ...flags, '-o', binaryPath, 'main.rs'], root);
         });
         return YonCompiledRunner.runCommand([binaryPath], root, requestText);
     }
 
+    /**
+     * Compile a handler to a native binary and copy it to the given output path.
+     * Used by `yon.build` to pre-compile handlers.
+     * @param {string} language
+     * @param {string} handlerPath
+     * @param {string} outputPath
+     * @returns {Promise<void>}
+     */
+    static async build(language, handlerPath, outputPath) {
+        if (!existsSync(handlerPath))
+            throw new Error(`Handler not found: ${handlerPath}`);
+
+        if (language === 'rust') {
+            const root = YonCompiledRunner.workspace('rust', handlerPath);
+            const marker = '.yon-rust-production-ready';
+            const binaryName = process.platform === 'win32' ? 'handler.exe' : 'handler';
+            const binaryPath = path.join(root, binaryName);
+            const flags = YonCompiledRunner.compilerFlags('rust');
+            await YonCompiledRunner.prepareArtifact(root, marker, async () => {
+                YonCompiledRunner.copyServiceSources('rust', handlerPath, root);
+                const source = YonCompiledRunner.writeSourceWithoutShebang(handlerPath, path.join(root, 'Handler.rs'));
+                const methods = YonCompiledRunner.rustMethods(source);
+                if (methods.length === 0)
+                    throw new Error('Rust route must define impl Handler with at least one HTTP method');
+                const serviceFiles = readdirSync(root)
+                    .filter((entry) => entry.endsWith('.rs') && !['Handler.rs', 'main.rs', 'yon_json.rs'].includes(entry))
+                    .sort();
+                writeFileSync(path.join(root, 'yon_json.rs'), YonCompiledRunner.rustJsonSupportSource());
+                writeFileSync(path.join(root, 'main.rs'), YonCompiledRunner.rustMainSource(methods, serviceFiles));
+                await YonCompiledRunner.runCommand([YonCompiledRunner.rustExecutable(), '--edition=2021', '-O', ...flags, '-o', binaryPath, 'main.rs'], root);
+            });
+            copyFileSync(binaryPath, outputPath);
+            return;
+        }
+
+        if (language === 'cpp') {
+            const root = YonCompiledRunner.workspace('cpp', handlerPath);
+            const marker = '.yon-cpp-production-ready';
+            const binaryName = process.platform === 'win32' ? 'handler.exe' : 'handler';
+            const binaryPath = path.join(root, binaryName);
+            const flags = YonCompiledRunner.compilerFlags('cpp');
+            await YonCompiledRunner.prepareArtifact(root, marker, async () => {
+                YonCompiledRunner.copyServiceSources('cpp', handlerPath, root);
+                const source = YonCompiledRunner.writeSourceWithoutShebang(handlerPath, path.join(root, 'Handler.cpp'));
+                const methods = YonCompiledRunner.cppMethods(source);
+                if (methods.length === 0)
+                    throw new Error('C++ route must define class Handler with at least one HTTP method');
+                writeFileSync(path.join(root, 'YonJson.hpp'), YonCompiledRunner.cppJsonSupportSource());
+                writeFileSync(path.join(root, 'main.cpp'), YonCompiledRunner.cppMainSource(methods));
+                const cc = YonCompiledRunner.cppExecutable();
+                await YonCompiledRunner.runCommand([cc, '-std=c++17', '-O2', ...flags, '-o', binaryPath, 'main.cpp'], root);
+            });
+            copyFileSync(binaryPath, outputPath);
+            return;
+        }
+
+        throw new Error(`Build not yet supported for language: ${language}`);
+    }
+
     static async run() {
+        const buildIdx = process.argv.indexOf('--build');
+        if (buildIdx !== -1 && buildIdx + 1 < process.argv.length) {
+            const language = process.argv[2];
+            const handlerPath = process.argv[3];
+            const outputPath = process.argv[buildIdx + 1];
+            await YonCompiledRunner.build(language, handlerPath, outputPath);
+            Bun.stdout.write(outputPath);
+            return;
+        }
+
         const language = process.argv[2];
         const handlerPath = process.argv[3];
         if (!language || !handlerPath)
@@ -1849,13 +1619,9 @@ ${dispatch}
                     ? await YonCompiledRunner.runCpp(handlerPath, requestText)
                     : language === 'java'
                         ? await YonCompiledRunner.runJava(handlerPath, requestText)
-                        : language === 'swift'
-                            ? await YonCompiledRunner.runSwift(handlerPath, requestText)
-                            : language === 'kotlin'
-                                ? await YonCompiledRunner.runKotlin(handlerPath, requestText)
-                                : language === 'rust'
-                                    ? await YonCompiledRunner.runRust(handlerPath, requestText)
-                                    : null;
+                        : language === 'rust'
+                            ? await YonCompiledRunner.runRust(handlerPath, requestText)
+                            : null;
         if (output === null)
             throw new Error(`Unsupported compiled handler language: ${language}`);
         Bun.stdout.write(output);

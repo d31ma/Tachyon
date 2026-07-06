@@ -3,7 +3,9 @@ node_modules*/
 examples/node_modules*/
 .env
 .fylo-data/
+.tachyon/
 dist
+build
 coverage
 test-results
 .DS_Store
@@ -13,17 +15,11 @@ __pycache__/
 .claude/
 .gemini/
 src/shared/manifests/route-manifest.json
-examples/db/collections.stale-*
-examples/.collections/
-examples/.queue/
-examples/db/.collections/fylo-operation-runs/
-examples/db/.collections/fylo-related-records/
-examples/db/.collections/fylo-demo-items/
-examples/db/.collections/language-route-events/
-examples/db/.collections/yon-realtime-clients/
-examples/db/.collections/demo-realtime-clients/
-examples/db/.collections/demo-realtime-messages/
-examples/db/schemas/fylo-demo-items/
+
+# FYLO runtime output in the full-stack test fixture — schemas are the
+# committed source; collections and version history are regenerated per run.
+tests/fixtures/fullstack/db/.collections/
+tests/fixtures/fullstack/db/.fylo-vcs/
 package-lock.json
 
 # Graphify

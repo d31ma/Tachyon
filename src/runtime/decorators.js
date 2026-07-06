@@ -19,21 +19,21 @@
  */
 
 /**
- * @param {Tac & { __ty_signal_publish_fields__?: TacPublishedField[] }} self
+ * @param {Tac & { __tc_signal_publish_fields__?: TacPublishedField[] }} self
  * @param {string} name
  * @param {string | symbol} field
  * @param {Record<string, unknown>} options
  */
 function registerPublishedField(self, name, field, options) {
-    if (!Object.prototype.hasOwnProperty.call(self, '__ty_signal_publish_fields__')) {
-        Object.defineProperty(self, '__ty_signal_publish_fields__', {
+    if (!Object.prototype.hasOwnProperty.call(self, '__tc_signal_publish_fields__')) {
+        Object.defineProperty(self, '__tc_signal_publish_fields__', {
             configurable: true,
             enumerable: false,
             value: [],
             writable: true,
         });
     }
-    const fields = /** @type {TacPublishedField[]} */ (self.__ty_signal_publish_fields__);
+    const fields = /** @type {TacPublishedField[]} */ (self.__tc_signal_publish_fields__);
     fields.push({
         name,
         field,
@@ -176,8 +176,8 @@ function applyPublish(nameOrOptions, options, value, ctx) {
     const name = resolveSignalName(nameOrOptions, ctx);
     const publishOptions = resolvePublishOptions(nameOrOptions, options);
     if (ctx.kind === 'field') {
-        ctx.addInitializer(/** @this {Tac & { __ty_signal_publish_fields__?: TacPublishedField[] }} */ function () {
-            const self = /** @type {Tac & { __ty_signal_publish_fields__?: TacPublishedField[] }} */ (this);
+        ctx.addInitializer(/** @this {Tac & { __tc_signal_publish_fields__?: TacPublishedField[] }} */ function () {
+            const self = /** @type {Tac & { __tc_signal_publish_fields__?: TacPublishedField[] }} */ (this);
             registerPublishedField(self, name, ctx.name, publishOptions);
         });
         return;

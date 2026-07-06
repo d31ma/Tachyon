@@ -7,24 +7,24 @@
  */
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
-const TY_BOUND_PERSISTENT_FIELDS = '__ty_bound_persistent_fields__'
-const TY_BOUND_REACTIVE_FIELDS = '__ty_bound_reactive_fields__'
-const TY_SIGNAL_PUBLISH_FIELDS = '__ty_signal_publish_fields__'
-const TY_INTERNAL_FIELDS = new Set(['props', 'tac', TY_BOUND_PERSISTENT_FIELDS, TY_BOUND_REACTIVE_FIELDS, TY_SIGNAL_PUBLISH_FIELDS])
+const TC_BOUND_PERSISTENT_FIELDS = '__tc_bound_persistent_fields__'
+const TC_BOUND_REACTIVE_FIELDS = '__tc_bound_reactive_fields__'
+const TC_SIGNAL_PUBLISH_FIELDS = '__tc_signal_publish_fields__'
+const TC_INTERNAL_FIELDS = new Set(['props', 'tac', TC_BOUND_PERSISTENT_FIELDS, TC_BOUND_REACTIVE_FIELDS, TC_SIGNAL_PUBLISH_FIELDS])
 
 /** @param {string} name */
-const ty_camelCasePropName = (name) => name.replace(/-([a-zA-Z0-9])/g, (_match, char) => char.toUpperCase())
+const tc_camelCasePropName = (name) => name.replace(/-([a-zA-Z0-9])/g, (_match, char) => char.toUpperCase())
 
 /**
  * @param {unknown} props
  * @returns {TacProps}
  */
-const ty_decodeProps = (props) => {
+const tc_decodeProps = (props) => {
     /** @param {TacProps} propBag */
     const withCamelAliases = (propBag) => {
         for (const key of Object.keys(propBag)) {
             if (!key.includes('-')) continue
-            const camelKey = ty_camelCasePropName(key)
+            const camelKey = tc_camelCasePropName(key)
             if (camelKey !== key && !Object.prototype.hasOwnProperty.call(propBag, camelKey))
                 propBag[camelKey] = propBag[key]
         }
@@ -47,7 +47,7 @@ const ty_decodeProps = (props) => {
  * @param {unknown} props
  * @returns {Record<string, unknown>}
  */
-const ty_createScope = (controller, props) => {
+const tc_createScope = (controller, props) => {
     /** @type {Record<string, unknown>} */
     const state = Object.create(null)
     /** @type {TacProps} */
@@ -64,8 +64,8 @@ const ty_createScope = (controller, props) => {
         },
         get(_target, key) {
             if (key === Symbol.unscopables) return undefined
-            if (key === '__ty_controller__') return controller
-            if (key === '__ty_props__') return propBag
+            if (key === '__tc_controller__') return controller
+            if (key === '__tc_props__') return propBag
             if (typeof key !== 'string') return undefined
 
             if (Object.prototype.hasOwnProperty.call(state, key)) return state[key]
@@ -120,18 +120,39 @@ const ty_createScope = (controller, props) => {
     return proxy
 }
 
-const __ty_isBrowserEnv = () => typeof window !== 'undefined'
-    && !(/** @type {Record<string, unknown>} */ (globalThis).__ty_prerender__)
+const __tc_isBrowserEnv = () => typeof window !== 'undefined'
+    && !(/** @type {Record<string, unknown>} */ (globalThis).__tc_prerender__)
+
+const __tc_defaultPlatform = Object.freeze({
+    target: 'web',
+    platform: 'web',
+    environment: 'browser',
+    os: 'unknown',
+    browserOS: 'unknown',
+    native: false,
+    browser: true,
+    web: true,
+    desktop: false,
+    mobile: false,
+})
+
+const __tc_platformContext = () => {
+    const tacGlobal = /** @type {{ Tac?: { platform?: unknown } }} */ (globalThis).Tac
+    const candidate = tacGlobal?.platform
+    return candidate && typeof candidate === 'object'
+        ? /** @type {typeof __tc_defaultPlatform} */ (candidate)
+        : __tc_defaultPlatform
+}
 
 /**
  * @returns {Promise<IDBDatabase | null>}
  */
-const __ty_openFetchCache = async () => {
-    if (!__ty_isBrowserEnv() || typeof indexedDB === 'undefined')
+const __tc_openFetchCache = async () => {
+    if (!__tc_isBrowserEnv() || typeof indexedDB === 'undefined')
         return null
-    if (window.__ty_fetch_cache_db__)
-        return window.__ty_fetch_cache_db__ ?? null
-    window.__ty_fetch_cache_db__ = await new Promise((resolve) => {
+    if (window.__tc_fetch_cache_db__)
+        return window.__tc_fetch_cache_db__ ?? null
+    window.__tc_fetch_cache_db__ = await new Promise((resolve) => {
         const request = indexedDB.open('tachyon-fetch-cache', 1)
         request.onupgradeneeded = () => {
             request.result.createObjectStore('responses', { keyPath: 'key' })
@@ -139,15 +160,15 @@ const __ty_openFetchCache = async () => {
         request.onsuccess = () => resolve(request.result)
         request.onerror = () => resolve(null)
     })
-    return window.__ty_fetch_cache_db__ ?? null
+    return window.__tc_fetch_cache_db__ ?? null
 }
 
 /**
  * @param {string} cacheKey
  * @returns {Promise<Response | null>}
  */
-const __ty_readCachedResponse = async (cacheKey) => {
-    const db = await __ty_openFetchCache()
+const __tc_readCachedResponse = async (cacheKey) => {
+    const db = await __tc_openFetchCache()
     if (!db)
         return null
     return await new Promise((resolve) => {
@@ -174,8 +195,8 @@ const __ty_readCachedResponse = async (cacheKey) => {
  * @param {Response} response
  * @returns {Promise<void>}
  */
-const __ty_writeCachedResponse = async (cacheKey, response) => {
-    const db = await __ty_openFetchCache()
+const __tc_writeCachedResponse = async (cacheKey, response) => {
+    const db = await __tc_openFetchCache()
     if (!db)
         return
     const body = await response.arrayBuffer()
@@ -198,8 +219,8 @@ const __ty_writeCachedResponse = async (cacheKey, response) => {
  * @param {string} cacheKey
  * @returns {Promise<void>}
  */
-const __ty_deleteCachedResponse = async (cacheKey) => {
-    const db = await __ty_openFetchCache()
+const __tc_deleteCachedResponse = async (cacheKey) => {
+    const db = await __tc_openFetchCache()
     if (!db)
         return
     await new Promise((resolve) => {
@@ -218,9 +239,9 @@ const __ty_deleteCachedResponse = async (cacheKey) => {
 const localFirstFetch = async (input, init) => {
     const request = new Request(input, init)
     const method = request.method.toUpperCase()
-    const browserEnv = __ty_isBrowserEnv()
+    const browserEnv = __tc_isBrowserEnv()
     const sharedCache = /** @type {{ fetch?: Function } | undefined} */ (
-        /** @type {Record<string, unknown>} */ (globalThis).__ty_browser_cache__
+        /** @type {Record<string, unknown>} */ (globalThis).__tc_browser_cache__
     )
     if (browserEnv && typeof sharedCache?.fetch === 'function') {
         const canCacheRead = (method === 'GET' || method === 'HEAD') && request.cache !== 'no-store'
@@ -236,27 +257,27 @@ const localFirstFetch = async (input, init) => {
         && request.cache !== 'no-store'
     const cacheKey = canReadThroughCache ? `${method}:${request.url}` : null
     if (cacheKey && request.cache !== 'reload') {
-        const cached = await __ty_readCachedResponse(cacheKey)
+        const cached = await __tc_readCachedResponse(cacheKey)
         if (cached)
             return cached
     }
     try {
         const nativeFetch = /** @type {typeof fetch} */ (
-            /** @type {Record<string, unknown>} */ (globalThis).__ty_native_fetch__ ?? fetch
+            /** @type {Record<string, unknown>} */ (globalThis).__tc_native_fetch__ ?? fetch
         )
         const response = await nativeFetch(input, init)
         if (cacheKey && response.ok)
-            void __ty_writeCachedResponse(cacheKey, response.clone())
+            void __tc_writeCachedResponse(cacheKey, response.clone())
         if (!cacheKey && response.ok && browserEnv) {
             void Promise.all([
-                __ty_deleteCachedResponse(`GET:${request.url}`),
-                __ty_deleteCachedResponse(`HEAD:${request.url}`),
+                __tc_deleteCachedResponse(`GET:${request.url}`),
+                __tc_deleteCachedResponse(`HEAD:${request.url}`),
             ])
         }
         return response
     } catch (error) {
         if (cacheKey) {
-            const cached = await __ty_readCachedResponse(cacheKey)
+            const cached = await __tc_readCachedResponse(cacheKey)
             if (cached)
                 return cached
         }
@@ -264,11 +285,11 @@ const localFirstFetch = async (input, init) => {
     }
 }
 
-if (__ty_isBrowserEnv()) {
+if (__tc_isBrowserEnv()) {
     const g = /** @type {Record<string, unknown>} */ (globalThis)
-    if (!g.__ty_fetch_installed__) {
-        g.__ty_fetch_installed__ = true
-        g.__ty_native_fetch__ = globalThis.fetch.bind(globalThis)
+    if (!g.__tc_fetch_installed__) {
+        g.__tc_fetch_installed__ = true
+        g.__tc_native_fetch__ = globalThis.fetch.bind(globalThis)
         globalThis.fetch = /** @type {typeof fetch} */ (
             (input, init) => localFirstFetch(input, init)
         )
@@ -276,7 +297,7 @@ if (__ty_isBrowserEnv()) {
 }
 
 /** @param {string} modulePath */
-const ty_createHelpers = (modulePath) => {
+const tc_createHelpers = (modulePath) => {
     /** @type {RenderContext} */
     const renderContext = {
         componentRootId: null,
@@ -284,7 +305,7 @@ const ty_createHelpers = (modulePath) => {
         event: undefined,
     }
 
-    const isBrowser = typeof window !== 'undefined' && !globalThis.__ty_prerender__
+    const isBrowser = typeof window !== 'undefined' && !globalThis.__tc_prerender__
     const isServer = !isBrowser
     let rerenderScheduled = false
     let suppressReactiveRerender = false
@@ -297,19 +318,30 @@ const ty_createHelpers = (modulePath) => {
         rerenderScheduled = true
         queueMicrotask(() => {
             rerenderScheduled = false
-            window.__ty_rerender?.()
+            // Scope the reactive refresh to this instance's own component subtree;
+            // the page root (no componentRootId) falls back to a full refresh.
+            window.__tc_rerender?.(renderContext.componentRootId ?? undefined)
         })
     }
 
     /** @param {() => void | Promise<void>} fn */
     const onMount = (fn) => {
         if (!isBrowser) return
-        if (!window.__ty_onMount_queue__) window.__ty_onMount_queue__ = []
-        window.__ty_onMount_queue__.push(fn)
+        if (!window.__tc_onMount_queue__) window.__tc_onMount_queue__ = []
+        window.__tc_onMount_queue__.push(fn)
     }
 
-    const rerender = () => {
-        if (isBrowser) window.__ty_rerender?.()
+    /**
+     * Triggers a re-render. Scoped to the calling component by default; pass
+     * `{ global: true }` to force a full-page refresh (escape hatch for the rare
+     * case a component must update content rendered by its parent/page —
+     * prefer publish/subscribe for cross-component updates).
+     * @param {{ global?: boolean }} [options]
+     */
+    const rerender = (options) => {
+        if (!isBrowser) return
+        const hostId = options && options.global ? undefined : (renderContext.componentRootId ?? undefined)
+        window.__tc_rerender?.(hostId)
     }
 
     /**
@@ -320,7 +352,7 @@ const ty_createHelpers = (modulePath) => {
      */
     const env = (key, fallback = undefined) => {
         if (!isBrowser) return fallback
-        const publicEnv = /** @type {Record<string, unknown> | undefined} */ (window.__ty_public_env__)
+        const publicEnv = /** @type {Record<string, unknown> | undefined} */ (window.__tc_public_env__)
         if (!publicEnv || !(key in publicEnv)) return fallback
         return /** @type {T | undefined} */ (publicEnv[key])
     }
@@ -370,14 +402,14 @@ const ty_createHelpers = (modulePath) => {
 
     const signalHub = () => {
         if (!isBrowser) return null
-        const targetWindow = /** @type {Window & { __ty_signals__?: { values: Map<string, unknown>, listeners: Map<string, Set<(value: unknown) => void | Promise<void>>> } }} */ (window)
-        if (!targetWindow.__ty_signals__) {
-            targetWindow.__ty_signals__ = {
+        const targetWindow = /** @type {Window & { __tc_signals__?: { values: Map<string, unknown>, listeners: Map<string, Set<(value: unknown) => void | Promise<void>>> } }} */ (window)
+        if (!targetWindow.__tc_signals__) {
+            targetWindow.__tc_signals__ = {
                 values: new Map(),
                 listeners: new Map(),
             }
         }
-        return targetWindow.__ty_signals__
+        return targetWindow.__tc_signals__
     }
 
     /**
@@ -401,7 +433,7 @@ const ty_createHelpers = (modulePath) => {
      * @returns {string}
      */
     const resolvePersistScope = (props) => {
-        const rawScope = props.__ty_persist_id__
+        const rawScope = props.__tc_persist_id__
             ?? (isBrowser ? window.location.pathname || '/' : modulePath || 'server')
         return `${modulePath || 'module'}:${String(rawScope)}`
     }
@@ -524,10 +556,10 @@ const ty_createHelpers = (modulePath) => {
      * @param {TacProps} props
      */
     const bindPersistentFields = (controller, props) => {
-        const boundFields = controller[TY_BOUND_PERSISTENT_FIELDS] instanceof Set
-            ? controller[TY_BOUND_PERSISTENT_FIELDS]
+        const boundFields = controller[TC_BOUND_PERSISTENT_FIELDS] instanceof Set
+            ? controller[TC_BOUND_PERSISTENT_FIELDS]
             : new Set()
-        controller[TY_BOUND_PERSISTENT_FIELDS] = boundFields
+        controller[TC_BOUND_PERSISTENT_FIELDS] = boundFields
         const persistScope = resolvePersistScope(props)
         for (const fieldName of Object.keys(controller)) {
             if (boundFields.has(fieldName))
@@ -576,8 +608,8 @@ const ty_createHelpers = (modulePath) => {
      * @param {unknown} value
      */
     const publishSignalField = (controller, fieldName, value) => {
-        const fields = Array.isArray(controller[TY_SIGNAL_PUBLISH_FIELDS])
-            ? controller[TY_SIGNAL_PUBLISH_FIELDS]
+        const fields = Array.isArray(controller[TC_SIGNAL_PUBLISH_FIELDS])
+            ? controller[TC_SIGNAL_PUBLISH_FIELDS]
             : []
         for (const field of fields) {
             if (field && field.field === fieldName) {
@@ -590,8 +622,8 @@ const ty_createHelpers = (modulePath) => {
      * @param {Record<string, unknown>} controller
      */
     const publishSignalFields = (controller) => {
-        const fields = Array.isArray(controller[TY_SIGNAL_PUBLISH_FIELDS])
-            ? controller[TY_SIGNAL_PUBLISH_FIELDS]
+        const fields = Array.isArray(controller[TC_SIGNAL_PUBLISH_FIELDS])
+            ? controller[TC_SIGNAL_PUBLISH_FIELDS]
             : []
         for (const field of fields) {
             if (field && typeof field.field === 'string' && field.field in controller) {
@@ -604,13 +636,13 @@ const ty_createHelpers = (modulePath) => {
      * @param {Record<string, unknown>} controller
      */
     const bindReactiveFields = (controller) => {
-        const boundFields = controller[TY_BOUND_REACTIVE_FIELDS] instanceof Set
-            ? controller[TY_BOUND_REACTIVE_FIELDS]
+        const boundFields = controller[TC_BOUND_REACTIVE_FIELDS] instanceof Set
+            ? controller[TC_BOUND_REACTIVE_FIELDS]
             : new Set()
-        controller[TY_BOUND_REACTIVE_FIELDS] = boundFields
+        controller[TC_BOUND_REACTIVE_FIELDS] = boundFields
 
         for (const fieldName of Object.keys(controller)) {
-            if (TY_INTERNAL_FIELDS.has(fieldName) || boundFields.has(fieldName))
+            if (TC_INTERNAL_FIELDS.has(fieldName) || boundFields.has(fieldName))
                 continue
             const descriptor = Object.getOwnPropertyDescriptor(controller, fieldName)
             if (!descriptor || descriptor.configurable === false)
@@ -662,6 +694,7 @@ const ty_createHelpers = (modulePath) => {
     const tacHelpers = (props) => ({
         get isBrowser() { return isBrowser },
         get isServer() { return isServer },
+        get platform() { return __tc_platformContext() },
         /** @param {Record<string, unknown>} controller */
         bindPersistentFields(controller) {
             bindPersistentFields(controller, props)
@@ -726,36 +759,87 @@ const ty_createHelpers = (modulePath) => {
     }
 
     /**
-     * @param {string} modulePath
-     * @returns {Promise<Function>}
+     * @param {string} targetPath
+     * @returns {string}
      */
-    const loadTacModule = async (modulePath) => {
+    const toRelativeModulePath = (targetPath) => {
+        const fromParts = modulePath.split('/').filter(Boolean)
+        const toParts = targetPath.split('/').filter(Boolean)
+        fromParts.pop()
+        while (fromParts.length && toParts.length && fromParts[0] === toParts[0]) {
+            fromParts.shift()
+            toParts.shift()
+        }
+        const relativeParts = [...fromParts.map(() => '..'), ...toParts]
+        const relative = relativeParts.join('/') || '.'
+        return relative.startsWith('.') ? relative : `./${relative}`
+    }
+    /**
+     * @param {string} targetPath
+     * @returns {Promise<(...args: any[]) => any>}
+     */
+    const loadTacModule = async (targetPath) => {
         const tacGlobal = typeof window !== 'undefined' ? window.Tac : undefined
-        if (tacGlobal?.load) return /** @type {Promise<Function>} */ (tacGlobal.load(modulePath))
+        // Absolute paths are root-relative URLs; the Tac registry knows how to
+        // resolve them for both browser runtime and server-side prerender.
+        if (targetPath.startsWith('/') && tacGlobal?.load) {
+            return /** @type {Promise<(...args: any[]) => any>} */ (tacGlobal.load(targetPath))
+        }
 
-        const resolved = new URL(import.meta.url)
-        resolved.pathname = resolved.pathname.replace(/\/(?:pages|components)\/.*$/, modulePath)
-
+        const importPath = targetPath.startsWith('/') ? toRelativeModulePath(targetPath) : targetPath
+        const resolved = new URL(importPath, import.meta.url)
         const module = await import(resolved.href)
-        if (typeof module.default === 'function') return module.default
+        const factory = /** @type {(...args: any[]) => any} */ (module.default)
+        if (typeof factory === 'function') {
+            tacGlobal?.register?.(targetPath, factory)
+            return factory
+        }
 
-        throw new Error(`Tac module "${modulePath}" did not export a renderer`)
+        throw new Error(`Tac module "${targetPath}" did not export a renderer`)
     }
 
     return {
         createTacHelpers: tacHelpers,
         bindCompanion,
-        createScope: ty_createScope,
-        decodeProps: ty_decodeProps,
+        createScope: tc_createScope,
+        decodeProps: tc_decodeProps,
         env,
         isBrowser,
         isServer,
+        get platform() { return __tc_platformContext() },
         onMount,
         publish,
         rerender,
         subscribe,
         fylo,
         loadTacModule,
+        /**
+         * Registers the event types this module uses for document-level delegation.
+         * The compiler injects one call per module (the compile-time event set), so
+         * the runtime never scans the DOM to discover handlers. No-op during
+         * server prerender (no Tac runtime / document).
+         * @param {string[]} eventNames
+         */
+        delegateEvents(eventNames) {
+            const runtime = /** @type {{ delegateEvents?: (names: string[]) => void }} */ (
+                /** @type {any} */ (globalThis).Tac);
+            if (runtime && typeof runtime.delegateEvents === 'function')
+                runtime.delegateEvents(eventNames);
+        },
+        /**
+         * Registers a component's render closure by host id so the runtime can
+         * re-render just this component's subtree. The compiler injects one call
+         * per component instance. No-op during server prerender.
+         * @param {string} hostId
+         * @param {(elemId?: string | null, event?: unknown, compId?: string | null) => Promise<string>} render
+         * @param {string} compId
+         */
+        registerComponentRender(hostId, render, compId) {
+            const runtime = /** @type {{ registerComponentRender?: (h: string, r: unknown, c: string) => void }} */ (
+                /** @type {any} */ (globalThis).Tac);
+            if (runtime && typeof runtime.registerComponentRender === 'function')
+                runtime.registerComponentRender(hostId, render, compId);
+        },
         /**
          * @param {unknown} switchValue
          * @param {unknown} caseValue
@@ -776,13 +860,13 @@ const ty_createHelpers = (modulePath) => {
     }
 }
 
-const __ty_module_imports__ = {
+const __tc_module_imports__ = {
 // module_imports
 }
 
-const __ty_compiled_factory__ = new AsyncFunction('__ty_helpers__', '__ty_module_imports__', 'props', "__TY_FACTORY_SOURCE__")
+const __tc_compiled_factory__ = new AsyncFunction('__tc_helpers__', '__tc_module_imports__', 'props', "__TY_FACTORY_SOURCE__")
 
 /** @param {unknown} props */
 export default async function (props) {
-    return await __ty_compiled_factory__(ty_createHelpers("__TY_MODULE_PATH__"), __ty_module_imports__, props)
+    return await __tc_compiled_factory__(tc_createHelpers("__TY_MODULE_PATH__"), __tc_module_imports__, props)
 }

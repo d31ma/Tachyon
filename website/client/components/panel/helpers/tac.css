@@ -1,0 +1,27 @@
+.draft-label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}
+
+.draft-label textarea {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--w-text) 25%, transparent);
+  border-radius: var(--w-radius-sm);
+  background: var(--w-surface);
+  color: var(--w-text);
+  font: inherit;
+  resize: vertical;
+}
+
+.helpers-actions {
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.helpers-note {
+  margin: 0.75rem 0 0;
+  color: var(--w-text-very-subtle);
+  font-size: var(--w-font-xs);
+}

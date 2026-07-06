@@ -1,0 +1,9 @@
+<section class="polyglot">
+  <h2>Polyglot backend</h2>
+  <logic :if="versioned">
+    <p>{versioned.message} (version {versioned.version})</p>
+  </logic>
+  <logic :if="!versioned">
+    <p>Waiting for the Python versions route…</p>
+  </logic>
+</section>

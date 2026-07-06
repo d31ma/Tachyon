@@ -1,0 +1,47 @@
+<script>
+    document.title = "404 — Tachyon"
+</script>
+
+<style>
+    .nf-shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 1rem;
+    }
+    .nf-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 1rem clamp(1rem, 3vw, 2rem);
+        color: inherit;
+        text-decoration: none;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+    }
+    .nf-brand img {
+        width: 1.75rem;
+        height: 1.75rem;
+    }
+    .nf-empty {
+        display: grid;
+        place-items: center;
+        padding: 2rem 1rem 5rem;
+    }
+</style>
+
+<div class="nf-shell">
+  <a class="nf-brand" href="/">
+    <img src="/shared/assets/logo.svg" alt="" width="28" height="28" />
+    TACHYON
+  </a>
+  <div class="nf-empty">
+    <w-empty
+      headline="404"
+      title="Page not found"
+      text="This page doesn't exist — or it moved faster than light and left no trace."
+      action-text="Back to home"
+      href="/">
+    </w-empty>
+  </div>
+</div>

@@ -5,6 +5,10 @@ import { createTachyonApp } from './helpers.mjs'
 
 const apps = []
 
+function webDistPath(app, ...segments) {
+  return path.join(app.root, 'dist', 'web', ...segments)
+}
+
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.cleanup()))
 })
@@ -13,8 +17,8 @@ test('tac.bundle prerenders component pages and supports global Tac output', { t
   const app = await createTachyonApp()
   apps.push(app)
 
-  await app.writeFile('browser/components/status/card/tac.html', '<script>let label = ""</script><strong>Status: {label}</strong>')
-  await app.writeFile('browser/pages/tac.html', [
+  await app.writeFile('client/components/status/card/tac.html', '<script>let label = ""</script><strong>Status: {label}</strong>')
+  await app.writeFile('client/pages/tac.html', [
     '<script>',
     "  let label = 'green'",
     '</script>',
@@ -24,8 +28,8 @@ test('tac.bundle prerenders component pages and supports global Tac output', { t
 
   app.runBin('tac.bundle', [], { env: { TAC_FORMAT: 'global' } })
 
-  const html = await app.readFile('dist/index.html')
-  const pageModule = await app.readFile('dist/pages/tac.js')
+  const html = await app.readFile('dist/web/index.html')
+  const pageModule = await app.readFile('dist/web/pages/tac.js')
 
   expect(html).toContain('Status: green')
   expect(html).toContain('<package-contract-widget')
@@ -37,7 +41,7 @@ test('async Tac event handlers are awaited before rerender output is produced', 
   const app = await createTachyonApp()
   apps.push(app)
 
-  await app.writeFile('browser/pages/tac.html', [
+  await app.writeFile('client/pages/tac.html', [
     '<script>',
     "let status = 'idle';",
     'async function requestMfa() {',
@@ -46,13 +50,13 @@ test('async Tac event handlers are awaited before rerender output is produced', 
     "  status = 'phone-input';",
     '}',
     '</script>',
-    '<button @click="requestMfa()">Continue</button>',
+    '<button on:click="requestMfa()">Continue</button>',
     '<p>{status}</p>',
   ].join('\n'))
 
   app.runBin('tac.bundle')
 
-  const modulePath = path.join(app.root, 'dist', 'pages', 'tac.js')
+  const modulePath = webDistPath(app, 'pages', 'tac.js')
   const pageModule = await import(`${pathToFileURL(modulePath).href}?contract=${Date.now()}`)
   const render = await pageModule.default()
   const initial = await render()

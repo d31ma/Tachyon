@@ -74,7 +74,7 @@ test('production HTML fallback does not inject the development HMR client', { ti
   const app = await createTachyonApp()
   apps.push(app)
 
-  await app.writeFile('browser/pages/tac.html', '<main>Production shell</main>')
+  await app.writeFile('client/pages/tac.html', '<main>Production shell</main>')
   app.runBin('tac.bundle')
 
   const port = await getFreePort()

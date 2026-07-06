@@ -2,7 +2,7 @@
 //
 // Language-agnostic Tac Worker codegen.
 //
-// Every in-house frontend (Rust, C++, etc.) is just a parser that produces this
+// Every in-house frontend is a parser that produces this
 // shared handler AST; this module type-checks it, lowers each method to a Wasm
 // function, and builds the verb-dispatching `call` with JSON responses. The
 // AST contract:
@@ -13,7 +13,7 @@
 //   Stmt     = let{name,expr} | assign{name,expr} | while{cond,body}
 //            | return{expr} | tail{expr} | exprStmt{expr}
 //   Expr     = int{value} | bool{value} | strlit{value} | var{name} | requestLen
-//            | requestJson | jsonRaw{expr}
+//            | requestJson | requestPlatform{key} | jsonRaw{expr}
 //            | unary{op:'-'|'!',expr} | binary{op,left,right} | if{cond,then,otherwise}
 //
 // `name` on a method must be an HTTP request verb; string/json values are
@@ -22,7 +22,7 @@
 // strings.
 
 import { Emitter, VAL } from './wasm-module.js';
-import { buildWorkerModule } from './tac-wasm-compiler.js';
+import { buildHandlerModule } from './tac-wasm-compiler.js';
 
 /** @typedef {Record<string, any>} Node */
 /** @typedef {'i32' | 'bool' | 'str' | 'json'} ValueType */
@@ -82,7 +82,14 @@ export function analyzeMethod(method) {
             case 'requestJson': type = 'json'; break;
             case 'requestQuery':
             case 'requestPath':
-            case 'requestHeader': type = 'str'; break;
+            case 'requestHeader':
+            case 'requestPlatform': type = 'str'; break;
+            case 'jsonObject': {
+                // A JSON object literal; each value may be i32/bool/str/json.
+                for (const entry of node.entries) inferExpr(entry.value);
+                type = 'json';
+                break;
+            }
             case 'jsonRaw': {
                 const innerType = inferExpr(node.expr);
                 if (innerType !== 'str' && innerType !== 'json')
@@ -241,14 +248,16 @@ function emitExpr(e, node, scope, ctx) {
             return;
         case 'requestQuery':
         case 'requestPath':
-        case 'requestHeader': {
+        case 'requestHeader':
+        case 'requestPlatform': {
             // Look the field up through a host-provided import. The key is a
             // compile-time constant; the host returns a string-header pointer.
             if (!ctx.imports)
-                throw new Error('Tac worker: request.query/path/header requires host imports (internal: not declared)');
+                throw new Error('Tac worker: request.query/path/header/platform requires host imports (internal: not declared)');
             const importIndex = node.kind === 'requestQuery' ? ctx.imports.query
                 : node.kind === 'requestPath' ? ctx.imports.path
-                    : ctx.imports.header;
+                    : node.kind === 'requestHeader' ? ctx.imports.header
+                        : ctx.imports.platform;
             const segment = ctx.intern(String(node.key ?? ''));
             e.i32Const(segment.offset).i32Const(segment.length).call(importIndex);
             return;
@@ -256,6 +265,23 @@ function emitExpr(e, node, scope, ctx) {
         case 'jsonRaw':
             emitExpr(e, node.expr, scope, ctx);
             return;
+        case 'jsonObject': {
+            // Build `{"k1":v1,"k2":v2}` as JSON text via string concatenation.
+            // Keys are JSON-encoded at compile time; values are rendered by type.
+            const open = ctx.intern('{');
+            e.i32Const(open.offset).i32Const(open.length).call(ctx.fns.mkStr);
+            node.entries.forEach((/** @type {Node} */ entry, /** @type {number} */ i) => {
+                const key = ctx.intern((i > 0 ? ',' : '') + JSON.stringify(entry.key) + ':');
+                e.i32Const(key.offset).i32Const(key.length).call(ctx.fns.mkStr);
+                e.call(ctx.fns.strCat);
+                emitJsonText(e, entry.value, scope, ctx);
+                e.call(ctx.fns.strCat);
+            });
+            const close = ctx.intern('}');
+            e.i32Const(close.offset).i32Const(close.length).call(ctx.fns.mkStr);
+            e.call(ctx.fns.strCat);
+            return;
+        }
         case 'var': {
             const local = scope.get(node.name);
             if (!local) throw new Error(`Tac worker: unknown variable '${node.name}'`);
@@ -337,6 +363,35 @@ function emitStringOperand(e, node, scope, ctx) {
 }
 
 /**
+ * Emit an expression as JSON text (a string header whose bytes are valid JSON),
+ * for object-literal values: i32 -> bare number, bool -> `true`/`false`,
+ * str -> quoted+escaped, json -> raw bytes unchanged.
+ * @param {Emitter} e
+ * @param {Node} node
+ * @param {LocalScope} scope
+ * @param {import('./tac-wasm-compiler.js').WorkerRuntimeContext} ctx
+ */
+function emitJsonText(e, node, scope, ctx) {
+    emitExpr(e, node, scope, ctx);
+    if (node.type === 'i32') {
+        e.call(ctx.fns.intToStr);
+    }
+    else if (node.type === 'bool') {
+        e.if(VAL.i32);
+        const t = ctx.intern('true');
+        e.i32Const(t.offset).i32Const(t.length).call(ctx.fns.mkStr);
+        e.else();
+        const f = ctx.intern('false');
+        e.i32Const(f.offset).i32Const(f.length).call(ctx.fns.mkStr);
+        e.end();
+    }
+    else if (node.type === 'str') {
+        e.call(ctx.fns.quoteStr);
+    }
+    // json: already JSON text — leave the header on the stack as-is.
+}
+
+/**
  * Emit a statement that yields no value.
  * @param {Emitter} e
  * @param {Node} stmt
@@ -403,6 +458,28 @@ const RESPONSE_STR_SUFFIX = '"}}';
 const RESPONSE_NOT_FOUND = '{"status":404,"headers":{"Content-Type":"application/json"},"body":{"error":"unknown method"}}';
 
 /**
+ * Whether any node in the subtree reads a request field (`request.query/path/
+ * header/platform`), which requires the host-provided imports to be declared.
+ * @param {Node} node
+ * @returns {boolean}
+ */
+function usesRequestFields(node) {
+    if (!node || typeof node !== 'object')
+        return false;
+    if (node.kind === 'requestQuery' || node.kind === 'requestPath' || node.kind === 'requestHeader' || node.kind === 'requestPlatform')
+        return true;
+    for (const value of Object.values(node)) {
+        if (Array.isArray(value)) {
+            if (value.some(usesRequestFields)) return true;
+        }
+        else if (value && typeof value === 'object' && usesRequestFields(value)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * Compile a parsed handler program into worker-ABI wasm bytes. Frontends parse
  * their own syntax into the shared AST and hand it here.
  * @param {{ methods: Node[] }} program
@@ -412,7 +489,8 @@ export function compileHandlerProgram(program) {
     if (program.methods.length === 0)
         throw new Error('Tac worker: the handler must declare at least one HTTP request method');
 
-    const module = buildWorkerModule((ctx) => {
+    const requestFields = program.methods.some((method) => usesRequestFields(method.body));
+    const module = buildHandlerModule((ctx) => {
         const { module: mod, globals, fns, intern } = ctx;
 
         // streq(aPtr, aLen, bPtr, bLen) -> 1 if byte-equal else 0
@@ -544,7 +622,7 @@ export function compileHandlerProgram(program) {
         e.localGet(8).globalSet(globals.outLen);
         e.end(); // close the dispatch block
         return { body: e, locals: [VAL.i32, VAL.i32, VAL.i32, VAL.i32] };
-    });
+    }, { requestFields });
 
     return module.toBytes();
 }

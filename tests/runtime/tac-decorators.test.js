@@ -97,7 +97,7 @@ describe('Tac decorators', () => {
         }
         const helpers = createHelpers();
         const controller = new Fixture({}, helpers);
-        const fields = /** @type {Array<{ name: string, field: string, options: { retain: true } }>} */ (controller.__ty_signal_publish_fields__);
+        const fields = /** @type {Array<{ name: string, field: string, options: { retain: true } }>} */ (controller.__tc_signal_publish_fields__);
         expect(fields).toEqual([{ name: 'demo-release', field: 'release', options: { retain: true } }]);
     });
 
@@ -108,7 +108,7 @@ describe('Tac decorators', () => {
         }
         const helpers = createHelpers();
         const controller = new Fixture({}, helpers);
-        const fields = /** @type {Array<{ name: string, field: string, options: { retain: true } }>} */ (controller.__ty_signal_publish_fields__);
+        const fields = /** @type {Array<{ name: string, field: string, options: { retain: true } }>} */ (controller.__tc_signal_publish_fields__);
         expect(fields).toEqual([{ name: 'release', field: 'release', options: { retain: true } }]);
     });
 

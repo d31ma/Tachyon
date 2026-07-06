@@ -4,6 +4,7 @@
     "noEmit": true
   },
   "include": [
+    "src/**/*.d.ts",
     "tests/**/*.js",
     "scripts/**/*.js"
   ],

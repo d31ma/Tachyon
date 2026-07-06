@@ -1,0 +1,30 @@
+<w-card variant="outlined" class="panel-card">
+  <w-card-item title="One worker, every verb" subtitle="A Rust handler compiled in-house to WebAssembly answers each HTTP verb inside a browser Worker — the server that ships with the page.">
+  </w-card-item>
+  <w-card-text>
+    <div class="w-row ga-2 diag-status">
+      <w-chip size="small">{loadingState()}</w-chip>
+      <w-chip size="small" color="success">{wasmStatus}</w-chip>
+      <w-chip size="small">fetch("tac://language/rust")</w-chip>
+    </div>
+
+    <w-table density="compact" class="diag-table">
+      <table>
+        <thead>
+          <tr><th>Verb</th><th>Returns</th><th>Live wasm result</th></tr>
+        </thead>
+        <tbody>
+          <loop :for="run of verbRuns">
+            <tr>
+              <td><code>{run.verb}</code></td>
+              <td><code>{run.returns}</code></td>
+              <td class="diag-summary">{run.summary}</td>
+            </tr>
+          </loop>
+        </tbody>
+      </table>
+    </w-table>
+
+    <p class="diag-note">GET reports the request size, POST computes a checksum with a wasm loop, PUT does arithmetic on it, PATCH echoes structured JSON, and DELETE returns a boolean — the whole handler ABI, offline.</p>
+  </w-card-text>
+</w-card>

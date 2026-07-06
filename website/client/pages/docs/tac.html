@@ -1,0 +1,20 @@
+<site-header />
+
+<div class="docs-shell cq">
+  <w-container size="xl">
+    <!-- A real box for the grid: sticky children need a normal containing
+         block, and w-container slots its light DOM through display:contents. -->
+    <div class="docs-layout">
+      <aside class="docs-sidebar" aria-label="Documentation topics">
+        <docs-sidebar />
+      </aside>
+
+      <div class="docs-content">
+        <slot />
+      </div>
+    </div>
+  </w-container>
+</div>
+
+<site-footer />
+<site-bottomnav />

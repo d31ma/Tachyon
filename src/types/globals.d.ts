@@ -1,4 +1,4 @@
-declare module '/modules/*' {
+declare module '/shared/modules/*' {
   const value: any;
   export default value;
 }
@@ -29,18 +29,24 @@ declare module '@material/web/elevation/elevation.js';
 declare module '@material/web/progress/circular-progress.js';
 
 declare global {
-  var __ty_prerender__: boolean | undefined;
+  var __tc_prerender__: boolean | undefined;
   const Tac: typeof import("../runtime/tac.js").default;
   type TacProps = import("../runtime/tac.js").TacProps;
   const env: typeof import("../runtime/decorators.js").env;
   const onMount: typeof import("../runtime/decorators.js").onMount;
   const publish: typeof import("../runtime/decorators.js").publish;
   const subscribe: typeof import("../runtime/decorators.js").subscribe;
+  type TacPlatformContext = import("../runtime/tac.js").TacPlatformContext;
+  const platform: TacPlatformContext['platform'];
+  const environment: TacPlatformContext['environment'];
+  const os: TacPlatformContext['os'];
+  const target: TacPlatformContext['target'];
   type Json = unknown;
   interface TacWorkerRequest {
     len(): number;
     body(): string;
     json(): Json;
+    platform(key: 'platform' | 'environment' | 'os' | 'arch' | 'runtime' | 'target' | 'targets' | 'cpuCores' | 'language' | 'timezone' | 'online' | 'touch' | string): string;
   }
   function json(value: string | Json): Json;
   /**
@@ -52,9 +58,13 @@ declare global {
    * Usage:
    *   await fylo.users.find({ $ops: [{ role: { $eq: 'admin' } }] })
    *   await fylo.users.get('usr_xxx')
+   *   await fylo.users.batchPut([{ name: 'Ada' }, { name: 'Grace' }])
    *   await fylo.users.patch('usr_xxx', { role: 'admin' })
+   *   await fylo.users.patchMany({ query: { role: 'eq.admin' }, patch: { reviewed: true } })
    *   await fylo.users.del('usr_xxx')
+   *   await fylo.users.restore('usr_xxx')
    *   await fylo.sql('SELECT * FROM users LIMIT 10')
+   *   await fylo.createCollection('users')
    *   await fylo.collections()
    *   fylo.setCredentials('user', 'pass')
    *   fylo.clearCredentials()
@@ -65,27 +75,48 @@ declare global {
   const fylo: FyloApi;
 
   interface Window {
-    __ty_fetch_cache_db__?: IDBDatabase | null;
-    __ty_onMount_queue__?: Array<() => void | Promise<void>>;
-    __ty_public_env__?: Record<string, unknown>;
-    __ty_rerender?: () => void;
-    __ty_signals__?: {
+    __tc_fetch_cache_db__?: IDBDatabase | null;
+    __tc_onMount_queue__?: Array<() => void | Promise<void>>;
+    __tc_public_env__?: Record<string, unknown>;
+    __tc_rerender?: (componentRootId?: string) => void;
+    /**
+     * HMR (dev only) — targeted re-import of the changed module paths,
+     * re-rendering the current view in place. Installed by spa-renderer.js.
+     */
+    __tachyon_hmr_update__?: (paths: string[]) => Promise<void>;
+    /**
+     * HMR (dev only) — full in-place soft reload: clears the Tac module
+     * cache and re-navigates. Installed by spa-renderer.js.
+     */
+    __tachyon_hmr_reload__?: () => Promise<void>;
+    __tc_signals__?: {
       values: Map<string, unknown>;
       listeners: Map<string, Set<(value: unknown) => void | Promise<void>>>;
+    };
+    __tcNativeBridge__?: {
+      version: number;
+      postMessage: (message: unknown) => boolean;
+      invoke: (capability: string, payload?: unknown, options?: { source?: string; timeoutMs?: number }) => Promise<unknown>;
+      onMessage: (handler: (message: unknown) => void) => () => void;
+      messageHandler?: (message: unknown) => void;
     };
     Tac?: {
       version?: string;
       modules?: Map<string, unknown>;
+      platform?: TacPlatformContext;
       register: (path: string, factory: unknown) => unknown;
       load: (path: string) => Promise<unknown>;
     };
     /**
      * Global FYLO client. Same as the global `fylo` — populated by
-     * src/runtime/fylo-global.js. Property access returns a
-     * per-collection proxy; collections/meta live as own properties.
+     * src/runtime/fylo-browser-sync.js (re-exported from fylo-global.js).
+     * Property access returns a per-collection proxy; collections/meta
+     * live as own properties.
      */
     fylo?: FyloApi;
   }
+
+  var __tcNativeCapabilities__: Record<string, (payload: unknown, request?: unknown) => unknown | Promise<unknown>> | undefined;
 
   /**
    * Per-collection proxy returned by `fylo.<collectionName>` property access.
@@ -96,6 +127,23 @@ declare global {
     cache?: FyloCachePolicy;
   }
 
+  interface FyloQueryResult {
+    docs: Array<{ id: string; doc: unknown }>;
+    collection: string;
+    encryptedFields?: string[];
+    local?: boolean;
+    error?: string;
+  }
+  interface FyloDocResponse {
+    doc: unknown | null;
+    docError?: string;
+    error?: string;
+  }
+  interface FyloCollectionsResponse {
+    root: string;
+    collections: Array<string | { name: string; count?: number }>;
+    error?: string;
+  }
   type FyloSubscribeSource = 'initial' | 'event-stream' | 'poll' | 'local';
   interface FyloSubscribeMeta {
     collection: string;
@@ -126,7 +174,15 @@ declare global {
     put(id: string, doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; error?: string }>;
     patch(id: string, doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; error?: string }>;
     del(id: string): Promise<{ ok?: boolean; error?: string }>;
+    createCollection(): Promise<{ ok?: boolean; error?: string }>;
+    dropCollection(): Promise<{ ok?: boolean; error?: string }>;
+    inspect(): Promise<unknown>;
     rebuild(): Promise<{ ok?: boolean; result?: unknown; error?: string }>;
+    batchPut(docs: Array<Record<string, unknown>>): Promise<{ ok?: boolean; ids?: unknown[]; error?: string }>;
+    patchMany(update: Record<string, unknown>): Promise<{ ok?: boolean; result?: unknown; error?: string }>;
+    deleteMany(query: Record<string, unknown>): Promise<{ ok?: boolean; result?: unknown; error?: string }>;
+    restore(id: string): Promise<{ ok?: boolean; id?: string; error?: string }>;
+    latest(id: string): Promise<{ doc: unknown | null }>;
   }
 
   /**
@@ -140,6 +196,12 @@ declare global {
     clearCredentials(): void;
     collections(): Promise<FyloCollectionsResponse>;
     meta(): Promise<{ root: string; readOnly: boolean; revealed: boolean; path: string } | null>;
+    sql(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown>;
+    request(apiPath: string, init?: RequestInit & { cache?: FyloCachePolicy }): Promise<Response>;
+    createCollection(collection: string): Promise<{ ok?: boolean; error?: string }>;
+    dropCollection(collection: string): Promise<{ ok?: boolean; error?: string }>;
+    inspectCollection(collection: string): Promise<unknown>;
+    rebuildCollection(collection: string): Promise<unknown>;
   }
 
   /**

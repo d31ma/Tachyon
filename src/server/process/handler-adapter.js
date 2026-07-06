@@ -1,21 +1,30 @@
 // @ts-check
-import { readFileSync } from 'fs';
+import { accessSync, constants, readFileSync } from 'fs';
+import { access } from 'fs/promises';
 import path from 'path';
+import { pathToFileURL } from 'url';
+import {
+    HTTP_METHODS,
+    providerForExtension,
+    providerForLanguage,
+    providerForShebang,
+    registerLanguageProvider,
+    registeredLanguages,
+} from './language-providers.js';
+import { resolveInterpreter } from '../../shared/toolchain-config.js';
 
 /**
- * @typedef {'javascript' | 'typescript' | 'python' | 'ruby' | 'php' | 'dart' | 'java' | 'csharp' | 'cpp' | 'swift' | 'kotlin' | 'rust'} YonHandlerLanguage
+ * @typedef {string} YonHandlerLanguage A known-language provider id ('rust',
+ *   'python', …) or 'executable' for the universal (any-language) path.
  *
  * @typedef {object} HandlerAdapterMatch
  * @property {YonHandlerLanguage} language
  * @property {string[]} command
  * @property {Set<string>} methods
- *
  */
 
-const ADAPTER_DIR = path.join(import.meta.dir, 'adapters');
-
-/** HTTP methods that map to static method names on the Handler class. */
-const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']);
+/** Language label for handlers run directly as executables (any language). */
+const EXECUTABLE_LANGUAGE = 'executable';
 
 /**
  * @param {string} commandPath
@@ -25,22 +34,86 @@ function basename(commandPath) {
     return commandPath.replaceAll('\\', '/').split('/').pop()?.toLowerCase() ?? commandPath.toLowerCase();
 }
 
+/** @param {string} filePath */
+function isExecutableFile(filePath) {
+    try {
+        accessSync(filePath, constants.X_OK);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+
+/**
+ * Methods for generic executable handlers come from an adjacent
+ * OPTIONS.schema.json (the same sidecar convention Tac workers use) — the
+ * framework cannot parse an arbitrary language's source for them.
+ * @param {string} handler
+ * @returns {Set<string>}
+ */
+function methodsFromOptionsSchema(handler) {
+    /** @type {Set<string>} */
+    const methods = new Set();
+    try {
+        const schema = JSON.parse(readFileSync(path.join(path.dirname(handler), 'OPTIONS.schema.json'), 'utf8'));
+        for (const key of Object.keys(schema ?? {})) {
+            if (HTTP_METHODS.has(key.toUpperCase()))
+                methods.add(key.toUpperCase());
+        }
+    }
+    catch {
+        // Missing or malformed schema: no methods, caller rejects the handler.
+    }
+    return methods;
+}
+
 export default class HandlerAdapter {
-    /** @type {ReadonlyArray<YonHandlerLanguage>} */
-    static supportedLanguages = Object.freeze([
-        'javascript',
-        'typescript',
-        'python',
-        'ruby',
-        'php',
-        'dart',
-        'java',
-        'csharp',
-        'cpp',
-        'swift',
-        'kotlin',
-        'rust',
-    ]);
+    /** @type {Set<string>} Provider files already loaded this process. */
+    static #loadedProviderFiles = new Set();
+
+    /**
+     * The languages Yon ships an ergonomic adapter for — NOT the set of
+     * languages it "supports". Every language is supported: any executable
+     * `yon.<ext>` that speaks the stdin/stdout protocol is a valid route.
+     * These providers merely spare the developer the protocol glue for the
+     * common languages. Exposed for tooling/diagnostics, not gatekeeping.
+     * @returns {ReadonlyArray<string>}
+     */
+    static get knownLanguages() {
+        return Object.freeze(registeredLanguages());
+    }
+
+    /**
+     * Register a language provider programmatically. Apps normally export
+     * providers from `server/yon.providers.js` instead.
+     * @param {import('./language-providers.js').YonLanguageProvider} provider
+     */
+    static registerProvider(provider) {
+        registerLanguageProvider(provider);
+    }
+
+    /**
+     * Load app-defined providers from `<root>/server/yon.providers.js`
+     * (default export: an array of providers). Loaded once per process.
+     * @param {string} [root]
+     */
+    static async loadUserProviders(root = process.cwd()) {
+        const file = path.join(root, 'server', 'yon.providers.js');
+        if (HandlerAdapter.#loadedProviderFiles.has(file))
+            return;
+        HandlerAdapter.#loadedProviderFiles.add(file);
+        try {
+            await access(file);
+        }
+        catch {
+            return;
+        }
+        const module = await import(pathToFileURL(file).href);
+        const providers = Array.isArray(module.default) ? module.default : [];
+        for (const provider of providers)
+            registerLanguageProvider(provider);
+    }
 
     /**
      * @param {string} handler
@@ -55,17 +128,42 @@ export default class HandlerAdapter {
         catch {
             return null;
         }
+        // Convenience path: a language Yon ships an adapter for, whose source
+        // follows the `class Handler` convention, runs through that adapter —
+        // the developer writes only handler methods, no stdin/stdout glue.
         const language = HandlerAdapter.detectLanguage(handler, shebangTokens, source);
-        if (!language || !HandlerAdapter.hasHandlerClass(source, language))
-            return null;
-        const methods = HandlerAdapter.detectMethods(source, language);
-        if (methods.size === 0)
-            return null;
-        return {
-            language,
-            command: HandlerAdapter.commandFor(language, handler),
-            methods,
-        };
+        const provider = language ? providerForLanguage(language) : null;
+        if (provider && provider.hasHandlerClass(source)) {
+            const methods = HandlerAdapter.detectMethods(source, /** @type {string} */ (language));
+            if (methods.size > 0) {
+                return {
+                    language: /** @type {YonHandlerLanguage} */ (language),
+                    command: provider.command(handler),
+                    methods,
+                };
+            }
+        }
+        // Universal path: ANY language, run by extension — no shebang. The
+        // extension names the language and `.tachyonrc` interpreters map it
+        // to a run command (`.go` → `go run`, seeded with common defaults,
+        // fully overridable). A handler that is itself executable (a prebuilt
+        // binary, or a script with its own shebang) is also accepted. Either
+        // way the handler speaks the stdin/stdout JSON protocol and declares
+        // its HTTP methods in the adjacent OPTIONS.schema.json, since the
+        // framework does not parse arbitrary source. The only limit is the
+        // developer's toolchain; there is no "supported" list.
+        const interpreter = resolveInterpreter(path.extname(handler));
+        if (interpreter || isExecutableFile(handler)) {
+            const methods = methodsFromOptionsSchema(handler);
+            if (methods.size > 0) {
+                return {
+                    language: /** @type {YonHandlerLanguage} */ (language ?? EXECUTABLE_LANGUAGE),
+                    command: interpreter ? [...interpreter, handler] : [handler],
+                    methods,
+                };
+            }
+        }
+        return null;
     }
 
     /**
@@ -74,31 +172,12 @@ export default class HandlerAdapter {
      * @returns {string[]}
      */
     static commandFor(language, handler) {
-        if (language === 'javascript' || language === 'typescript') {
-            return [process.execPath, path.join(ADAPTER_DIR, 'yon-js-runner.js'), handler];
-        }
-        if (language === 'python') {
-            return ['python3', path.join(ADAPTER_DIR, 'yon-python-runner.py'), handler];
-        }
-        if (language === 'ruby') {
-            return ['ruby', path.join(ADAPTER_DIR, 'yon-ruby-runner.rb'), handler];
-        }
-        if (language === 'php') {
-            return [HandlerAdapter.phpExecutable(), path.join(ADAPTER_DIR, 'yon-php-runner.php'), handler];
-        }
-        // Java, C#, Dart, C++, Swift, Kotlin, Rust — compiled languages
-        return [process.execPath, path.join(ADAPTER_DIR, 'yon-compiled-runner.js'), language, handler];
-    }
-
-    /** @returns {string} */
-    static phpExecutable() {
-        if (process.platform !== 'win32')
-            return 'php';
-        const localAppData = process.env.LOCALAPPDATA;
-        const candidate = localAppData
-            ? path.join(localAppData, 'Microsoft', 'WinGet', 'Packages', 'PHP.PHP.8.4_Microsoft.Winget.Source_8wekyb3d8bbwe', 'php.exe')
-            : '';
-        return candidate && readFileSync.length && candidate ? candidate : 'php';
+        if (language === EXECUTABLE_LANGUAGE)
+            return [handler];
+        const provider = providerForLanguage(language);
+        if (!provider)
+            throw new Error(`No Yon language provider registered for '${language}'`);
+        return provider.command(handler);
     }
 
     /**
@@ -109,112 +188,34 @@ export default class HandlerAdapter {
      */
     static detectLanguage(handler, shebangTokens, source) {
         const extension = path.extname(handler).toLowerCase();
-        if (extension === '.js' || extension === '.mjs' || extension === '.cjs')
-            return 'javascript';
-        if (extension === '.ts' || extension === '.mts' || extension === '.cts')
-            return 'typescript';
-        if (extension === '.py')
-            return 'python';
-        if (extension === '.rb')
-            return 'ruby';
-        if (extension === '.php')
-            return 'php';
-        if (extension === '.dart')
-            return 'dart';
-        if (extension === '.java')
-            return 'java';
-        if (extension === '.cs')
-            return 'csharp';
-        if (extension === '.cpp' || extension === '.cc' || extension === '.cxx')
-            return 'cpp';
-        if (extension === '.swift')
-            return 'swift';
-        if (extension === '.kt' || extension === '.kts')
-            return 'kotlin';
-        if (extension === '.rs')
-            return 'rust';
+        const byExtension = extension ? providerForExtension(extension) : null;
+        if (byExtension)
+            return byExtension.language;
 
         const command = basename(shebangTokens[0] ?? '');
-        if (['bun', 'node', 'deno'].includes(command))
+        const byShebang = providerForShebang(command);
+        if (!byShebang)
+            return null;
+        // JS runtimes execute both dialects — sniff the source to keep the
+        // historical TypeScript detection for extension-less handlers.
+        if (byShebang.language === 'javascript') {
             return source.includes(':') && /\bexport\s+(?:async\s+)?function\s+handler\b/.test(source)
                 ? 'typescript'
                 : 'javascript';
-        if (command.startsWith('python'))
-            return 'python';
-        if (command === 'ruby')
-            return 'ruby';
-        if (command === 'php')
-            return 'php';
-        if (command === 'dart')
-            return 'dart';
-        if (command === 'java')
-            return 'java';
-        if (command === 'dotnet' || command === 'csharp')
-            return 'csharp';
-        if (command === 'clang++' || command === 'g++' || command === 'c++')
-            return 'cpp';
-        if (command === 'swift' || command === 'swiftc')
-            return 'swift';
-        if (command === 'kotlin' || command === 'kotlinc')
-            return 'kotlin';
-        if (command === 'rust' || command === 'rustc')
-            return 'rust';
-        return null;
+        }
+        return byShebang.language;
     }
 
     /**
-     * @param {unknown} value
-     * @returns {value is YonHandlerLanguage}
-     */
-    static isSupportedLanguage(value) {
-        return typeof value === 'string'
-            && HandlerAdapter.supportedLanguages.includes(/** @type {YonHandlerLanguage} */ (value));
-    }
-
-    /**
-     * Checks whether the source follows the `class Handler` convention.
-     * Each supported language must define a class named `Handler` with at
-     * least one static method whose name matches an HTTP verb.
-     * @param {string} source
-     * @param {YonHandlerLanguage} language
-     * @returns {boolean}
-     */
-    static hasHandlerConvention(source, language) {
-        if (!HandlerAdapter.hasHandlerClass(source, language))
-            return false;
-        return HandlerAdapter.detectMethods(source, language).size > 0;
-    }
-
-    /**
-     * Checks whether the source declares a `Handler` class.
      * @param {string} source
      * @param {YonHandlerLanguage} language
      * @returns {boolean}
      */
     static hasHandlerClass(source, language) {
-        if (language === 'javascript' || language === 'typescript') {
-            return /\bexport\s+class\s+Handler\b/.test(source)
-                || /\bclass\s+Handler\b/.test(source);
-        }
-        // Swift handlers may namespace static methods under a class, struct, or enum.
-        if (language === 'swift') {
-            return /\b(?:class|struct|enum)\s+Handler\b/.test(source);
-        }
-        // Kotlin handlers expose HTTP verbs through a `class Handler { companion object }`
-        // or a top-level `object Handler`.
-        if (language === 'kotlin') {
-            return /\b(?:class|object)\s+Handler\b/.test(source);
-        }
-        if (language === 'rust') {
-            return /\b(?:struct|enum)\s+Handler\b/.test(source) && /\bimpl\s+Handler\b/.test(source);
-        }
-        // Python, Ruby, PHP, Dart, Java, C#, C++ all use `class Handler`
-        return /\bclass\s+Handler\b/.test(source);
+        return providerForLanguage(language)?.hasHandlerClass(source) ?? false;
     }
 
     /**
-     * Scans source for HTTP method names implemented as static methods on
-     * the `Handler` class. Returns the set of methods found.
      * @param {string} source
      * @param {YonHandlerLanguage} language
      * @returns {Set<string>}
@@ -236,47 +237,6 @@ export default class HandlerAdapter {
      * @returns {boolean}
      */
     static hasMethod(source, language, method) {
-        if (language === 'javascript' || language === 'typescript') {
-            // static GET(request), static async GET(request), or static async *GET() (generator)
-            return new RegExp(`\\bstatic\\s+(?:async\\s+)?(?:\\*\\s*)?${method}\\s*\\(`).test(source);
-        }
-        if (language === 'python') {
-            // @staticmethod\n    def GET(request) or def GET(request) inside class
-            return new RegExp(`\\bdef\\s+${method}\\s*\\(`).test(source);
-        }
-        if (language === 'ruby') {
-            // def self.GET(request)
-            return new RegExp(`\\bdef\\s+self\\.${method}\\b`).test(source);
-        }
-        if (language === 'php') {
-            // public static function GET($request)
-            return new RegExp(`\\bstatic\\s+function\\s+${method}\\s*\\(`).test(source);
-        }
-        if (language === 'dart') {
-            // static dynamic GET(Map<String, dynamic> request) or static Future<...> GET(...)
-            return new RegExp(`\\bstatic\\s+[\\w<>,?\\s]+\\s+${method}\\s*\\(`).test(source);
-        }
-        if (language === 'java' || language === 'cpp') {
-            // Java: public static Object GET(Map<String, Object> request)
-            // C++: static YonJson GET(const YonJson& request)
-            return new RegExp(`\\bstatic\\s+[\\w:<>,?\\[\\]&*\\s]+\\s+${method}\\s*\\(`).test(source);
-        }
-        if (language === 'csharp') {
-            // public static Dictionary<string, object?> GET(JsonElement request)
-            return new RegExp(`\\bstatic\\s+[\\w<>,?\\[\\]\\s]+\\s+${method}\\s*\\(`).test(source);
-        }
-        if (language === 'swift') {
-            // static func GET(_ request: [String: Any]) -> Any?
-            return new RegExp(`\\bstatic\\s+func\\s+${method}\\s*\\(`).test(source);
-        }
-        if (language === 'kotlin') {
-            // fun GET(request: Map<String, Any?>): Any? inside `companion object` / `object Handler`
-            return new RegExp(`\\bfun\\s+${method}\\s*\\(`).test(source);
-        }
-        if (language === 'rust') {
-            // impl Handler { pub fn GET(request: &YonJson) -> YonJson { ... } }
-            return new RegExp(`\\b(?:pub\\s+)?fn\\s+${method}\\s*\\(`).test(source);
-        }
-        return false;
+        return providerForLanguage(language)?.hasMethod(source, method) ?? false;
     }
 }

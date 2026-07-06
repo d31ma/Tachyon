@@ -25,7 +25,7 @@
  * @property {FyloIndexOptions} index
  * @property {FyloCacheOptions=} cache
  * @property {boolean=} queue
- * @property {FyloWormMode=} worm
+ * @property {{ mode?: FyloWormMode }=} worm
  * @property {FyloSyncMode=} syncMode
  * @property {boolean=} rls
  */
@@ -125,8 +125,10 @@ export function fyloOptions(_root, env = process.env) {
 
     if (isTruthy(envValue(env, ['FYLO_QUEUE']))) options.queue = true;
 
+    // FYLO 26.23 expects WORM as an object (`{ mode }`), not a bare string — a
+    // string silently disables WORM because the engine reads `worm.mode`.
     const wormMode = /** @type {FyloWormMode | undefined} */ (envValue(env, ['FYLO_WORM']));
-    if (wormMode === 'strict') options.worm = wormMode;
+    if (wormMode === 'strict') options.worm = { mode: wormMode };
 
     const syncMode = /** @type {FyloSyncMode | undefined} */ (envValue(env, ['FYLO_SYNC_MODE']));
     if (syncMode === 'await-sync' || syncMode === 'fire-and-forget') options.syncMode = syncMode;

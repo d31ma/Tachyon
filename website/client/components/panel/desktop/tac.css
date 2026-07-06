@@ -1,0 +1,15 @@
+.platform-chips {
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.platform-note {
+  margin: 0 0 0.75rem;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}
+
+.platform-worker {
+  margin: 0;
+  font-size: var(--w-font-sm);
+}

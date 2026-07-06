@@ -82,7 +82,7 @@ describe('Compiler.findReferencedDecorators', () => {
               update() {}
             }
         `;
-        expect(() => Compiler.assertNoRemovedDecorators(source, '/app/browser/components/card/tac.js'))
+        expect(() => Compiler.assertNoRemovedDecorators(source, '/app/client/components/card/tac.js'))
             .toThrow('Tac decorator @render is not supported in v2. Reassign instance fields to trigger automatic rerenders instead.');
     });
 
@@ -94,6 +94,6 @@ describe('Compiler.findReferencedDecorators', () => {
               update() {}
             }
         `;
-        expect(() => Compiler.assertNoRemovedDecorators(source, '/app/browser/components/card/tac.js')).not.toThrow();
+        expect(() => Compiler.assertNoRemovedDecorators(source, '/app/client/components/card/tac.js')).not.toThrow();
     });
 });

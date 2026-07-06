@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url';
 const TEMPLATE_PATH = fileURLToPath(new URL('../../src/compiler/render-template.js', import.meta.url));
 /**
  * Builds a factory from render-template.js with test code injected into the
- * script slot. Results are returned via globalThis.__ty_test__ to bridge
+ * script slot. Results are returned via globalThis.__tc_test__ to bridge
  * the ESM module boundary.
  */
 /**
@@ -25,24 +25,24 @@ const TEMPLATE_PATH = fileURLToPath(new URL('../../src/compiler/render-template.
 async function buildTestFactory(testScript, testInners) {
     const source = await Bun.file(TEMPLATE_PATH).text();
     const factorySource = `
-const __ty_props__ = __ty_helpers__.decodeProps(props);
-const __ty_scope__ = __ty_helpers__.createScope(null, __ty_props__);
+const __tc_props__ = __tc_helpers__.decodeProps(props);
+const __tc_scope__ = __tc_helpers__.createScope(null, __tc_props__);
 
-with (__ty_scope__) {
-    const fetch = __ty_helpers__.fetch;
-    const isBrowser = __ty_helpers__.isBrowser;
-    const isServer = __ty_helpers__.isServer;
-    const onMount = __ty_helpers__.onMount;
-    const publish = __ty_helpers__.publish;
-    const rerender = __ty_helpers__.rerender;
-    const subscribe = __ty_helpers__.subscribe;
+with (__tc_scope__) {
+    const fetch = __tc_helpers__.fetch;
+    const isBrowser = __tc_helpers__.isBrowser;
+    const isServer = __tc_helpers__.isServer;
+    const onMount = __tc_helpers__.onMount;
+    const publish = __tc_helpers__.publish;
+    const rerender = __tc_helpers__.rerender;
+    const subscribe = __tc_helpers__.subscribe;
 
     ${testScript}
 
-    if (__ty_props__) {
-        for (const __k__ of Object.keys(__ty_props__)) {
-            if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(__k__) && !__k__.startsWith('__ty_')) {
-                const __v__ = __ty_props__[__k__];
+    if (__tc_props__) {
+        for (const __k__ of Object.keys(__tc_props__)) {
+            if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(__k__) && !__k__.startsWith('__tc_')) {
+                const __v__ = __tc_props__[__k__];
                 try { eval(\`\${__k__} = __v__\`) } catch {}
             }
         }
@@ -52,32 +52,32 @@ with (__ty_scope__) {
 
     return async function(elemId, event, compId) {
         const counters = { id: {}, ev: {}, bind: {} };
-        const ty_componentRootId = compId
-            ? (String(compId).startsWith('ty-') ? String(compId) : 'ty-' + compId + '-0')
+        const tc_componentRootId = compId
+            ? (String(compId).startsWith('tc-') ? String(compId) : 'tc-' + compId + '-0')
             : null;
 
-        __ty_helpers__.setRenderContext({ componentRootId: ty_componentRootId, elemId, event });
+        __tc_helpers__.setRenderContext({ componentRootId: tc_componentRootId, elemId, event });
 
-        const ty_generateId = (hash, source) => {
+        const tc_generateId = (hash, source) => {
             const key = compId ? hash + '-' + compId : hash;
             const map = counters[source];
 
-            if (key in map) return 'ty-' + key + '-' + map[key]++;
+            if (key in map) return 'tc-' + key + '-' + map[key]++;
 
             map[key] = 1;
-            return 'ty-' + key + '-0';
+            return 'tc-' + key + '-0';
         };
 
-        const ty_invokeEvent = async (hash, action) => {
-            if (elemId === ty_generateId(hash, 'ev')) {
+        const tc_invokeEvent = async (hash, action) => {
+            if (elemId === tc_generateId(hash, 'ev')) {
                 if (typeof action === 'function') await action(event);
                 else await eval(action);
             }
             return '';
         };
 
-        const ty_assignValue = (hash, variable) => {
-            if (elemId === ty_generateId(hash, 'bind') && event) {
+        const tc_assignValue = (hash, variable) => {
+            if (elemId === tc_generateId(hash, 'bind') && event) {
                 if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(variable)) {
                     const __val__ = event.value;
                     eval(\`\${variable} = __val__\`);
@@ -86,7 +86,7 @@ with (__ty_scope__) {
             return '';
         };
 
-        const ty_escapeHtml = (value) => {
+        const tc_escapeHtml = (value) => {
             if (value === null || value === undefined) return '';
             return String(value)
                 .replaceAll('&', '&amp;')
@@ -96,8 +96,8 @@ with (__ty_scope__) {
                 .replaceAll("'", '&#39;');
         };
 
-        const ty_escapeText = ty_escapeHtml;
-        const ty_escapeAttr = ty_escapeHtml;
+        const tc_escapeText = tc_escapeHtml;
+        const tc_escapeAttr = tc_escapeHtml;
 
         let elements = '';
         let render;
@@ -120,7 +120,7 @@ with (__ty_scope__) {
 function testResults() {
     /** @type {TestResults} */
     const results = {};
-    /** @type {any} */ (globalThis).__ty_test__ = results;
+    /** @type {any} */ (globalThis).__tc_test__ = results;
     return results;
 }
 
@@ -210,7 +210,7 @@ function createFakeIndexedDB() {
 describe('render-template server-side (no window)', () => {
     test('isBrowser is false and isServer is true', async () => {
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.isBrowser = isBrowser; __ty_test__.isServer = isServer`);
+        const factory = await buildTestFactory(`__tc_test__.isBrowser = isBrowser; __tc_test__.isServer = isServer`);
         await factory();
         expect(r.isBrowser).toBe(false);
         expect(r.isServer).toBe(true);
@@ -218,27 +218,27 @@ describe('render-template server-side (no window)', () => {
     test('onMount is a no-op — callback is never registered or called', async () => {
         const r = testResults();
         r.called = false;
-        const factory = await buildTestFactory(`onMount(() => { __ty_test__.called = true })`);
+        const factory = await buildTestFactory(`onMount(() => { __tc_test__.called = true })`);
         await factory();
         expect(r.called).toBe(false);
     });
     test('subscribe returns fallback when window is absent', async () => {
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.value = subscribe('key', 'fallback')`);
+        const factory = await buildTestFactory(`__tc_test__.value = subscribe('key', 'fallback')`);
         await factory();
         expect(r.value).toBe('fallback');
     });
     test('subscribe returns undefined fallback by default', async () => {
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.value = subscribe('key')`);
+        const factory = await buildTestFactory(`__tc_test__.value = subscribe('key')`);
         await factory();
         expect(r.value).toBeUndefined();
     });
     test('env returns fallback when window is absent', async () => {
         const r = testResults();
         const factory = await buildTestFactory(`
-            const helpers = __ty_helpers__.createTacHelpers({})
-            __ty_test__.value = helpers.env('API_BASE_URL', '/fallback')
+            const helpers = __tc_helpers__.createTacHelpers({})
+            __tc_test__.value = helpers.env('API_BASE_URL', '/fallback')
         `);
         await factory();
         expect(r.value).toBe('/fallback');
@@ -247,10 +247,10 @@ describe('render-template server-side (no window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $draft: 42 }
-            const helpers = __ty_helpers__.createTacHelpers({})
+            const helpers = __tc_helpers__.createTacHelpers({})
             helpers.bindPersistentFields(controller)
             controller.$draft = 99
-            __ty_test__.val = controller.$draft
+            __tc_test__.val = controller.$draft
         `);
         await factory();
         expect(r.val).toBe(99);
@@ -275,9 +275,9 @@ describe('render-template browser-side (with window)', () => {
             CustomEvent: globalThis.CustomEvent,
             indexedDB: globalThis.indexedDB,
             fetch: globalThis.fetch,
-            __ty_browser_cache__: /** @type {any} */ (globalThis).__ty_browser_cache__,
-            __ty_fetch_installed__: /** @type {any} */ (globalThis).__ty_fetch_installed__,
-            __ty_native_fetch__: /** @type {any} */ (globalThis).__ty_native_fetch__,
+            __tc_browser_cache__: /** @type {any} */ (globalThis).__tc_browser_cache__,
+            __tc_fetch_installed__: /** @type {any} */ (globalThis).__tc_fetch_installed__,
+            __tc_native_fetch__: /** @type {any} */ (globalThis).__tc_native_fetch__,
         };
         Object.assign(globalThis, {
             window: windowInstance,
@@ -286,97 +286,97 @@ describe('render-template browser-side (with window)', () => {
             CustomEvent: windowInstance.CustomEvent,
             indexedDB: createFakeIndexedDB(),
         });
-        (/** @type {any} */ (windowInstance)).__ty_fetch_cache_db__ = null;
+        (/** @type {any} */ (windowInstance)).__tc_fetch_cache_db__ = null;
     });
     afterAll(async () => {
         await windowInstance.happyDOM.close();
         Object.assign(globalThis, previousGlobals);
-        for (const key of ['__ty_browser_cache__', '__ty_fetch_installed__', '__ty_native_fetch__']) {
+        for (const key of ['__tc_browser_cache__', '__tc_fetch_installed__', '__tc_native_fetch__']) {
             if (previousGlobals[key] === undefined)
                 Reflect.deleteProperty(globalThis, key);
         }
     });
     test('isBrowser is true and isServer is false', async () => {
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.isBrowser = isBrowser; __ty_test__.isServer = isServer`);
+        const factory = await buildTestFactory(`__tc_test__.isBrowser = isBrowser; __tc_test__.isServer = isServer`);
         await factory();
         expect(r.isBrowser).toBe(true);
         expect(r.isServer).toBe(false);
     });
-    test('onMount pushes callback to window.__ty_onMount_queue__', async () => {
-        delete (/** @type {any} */ (windowInstance)).__ty_onMount_queue__;
+    test('onMount pushes callback to window.__tc_onMount_queue__', async () => {
+        delete (/** @type {any} */ (windowInstance)).__tc_onMount_queue__;
         const r = testResults();
         r.called = false;
-        const factory = await buildTestFactory(`onMount(() => { __ty_test__.called = true })`);
+        const factory = await buildTestFactory(`onMount(() => { __tc_test__.called = true })`);
         await factory();
-        const queue = /** @type {Array<() => void | Promise<void>>} */ ((/** @type {any} */ (windowInstance)).__ty_onMount_queue__);
+        const queue = /** @type {Array<() => void | Promise<void>>} */ ((/** @type {any} */ (windowInstance)).__tc_onMount_queue__);
         expect(Array.isArray(queue)).toBe(true);
         expect(queue.length).toBe(1);
         queue[0]();
         expect(r.called).toBe(true);
     });
     test('multiple onMount calls append to the queue in order', async () => {
-        delete (/** @type {any} */ (windowInstance)).__ty_onMount_queue__;
+        delete (/** @type {any} */ (windowInstance)).__tc_onMount_queue__;
         const r = testResults();
         r.order = [];
         const factory = await buildTestFactory(`
-            onMount(() => { __ty_test__.order.push(1) })
-            onMount(() => { __ty_test__.order.push(2) })
+            onMount(() => { __tc_test__.order.push(1) })
+            onMount(() => { __tc_test__.order.push(2) })
         `);
         await factory();
-        const queue = /** @type {Array<() => void | Promise<void>>} */ ((/** @type {any} */ (windowInstance)).__ty_onMount_queue__);
+        const queue = /** @type {Array<() => void | Promise<void>>} */ ((/** @type {any} */ (windowInstance)).__tc_onMount_queue__);
         queue.forEach(/** @param {() => void | Promise<void>} fn */ (fn) => fn());
         expect(r.order).toEqual([1, 2]);
     });
     test('subscribe retrieves retained signal value', async () => {
-        (/** @type {any} */ (windowInstance)).__ty_signals__ = {
+        (/** @type {any} */ (windowInstance)).__tc_signals__ = {
             values: new Map([['apiBase', 'https://api.example.com']]),
             listeners: new Map(),
         };
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.value = subscribe('apiBase')`);
+        const factory = await buildTestFactory(`__tc_test__.value = subscribe('apiBase')`);
         await factory();
         expect(r.value).toBe('https://api.example.com');
     });
     test('subscribe returns fallback for absent signal', async () => {
-        (/** @type {any} */ (windowInstance)).__ty_signals__ = {
+        (/** @type {any} */ (windowInstance)).__tc_signals__ = {
             values: new Map(),
             listeners: new Map(),
         };
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.value = subscribe('missing', 'default')`);
+        const factory = await buildTestFactory(`__tc_test__.value = subscribe('missing', 'default')`);
         await factory();
         expect(r.value).toBe('default');
     });
     test('publish stores retained signal values', async () => {
-        delete (/** @type {any} */ (windowInstance)).__ty_signals__;
+        delete (/** @type {any} */ (windowInstance)).__tc_signals__;
         const factory = await buildTestFactory(`publish('svc', { url: '/api' }, { retain: true })`);
         await factory();
-        expect((/** @type {any} */ (windowInstance)).__ty_signals__.values.get('svc')).toEqual({ url: '/api' });
+        expect((/** @type {any} */ (windowInstance)).__tc_signals__.values.get('svc')).toEqual({ url: '/api' });
     });
     test('publish notifies subscribers', async () => {
-        delete (/** @type {any} */ (windowInstance)).__ty_signals__;
+        delete (/** @type {any} */ (windowInstance)).__tc_signals__;
         const r = testResults();
         r.events = [];
         const factory = await buildTestFactory(`
-            subscribe('saved', (value) => { __ty_test__.events.push(value) }, { immediate: false })
+            subscribe('saved', (value) => { __tc_test__.events.push(value) }, { immediate: false })
             publish('saved', { id: 1 })
         `);
         await factory();
         expect(r.events).toEqual([{ id: 1 }]);
     });
     test('published companion fields retain initial values and future assignments', async () => {
-        delete (/** @type {any} */ (windowInstance)).__ty_signals__;
+        delete (/** @type {any} */ (windowInstance)).__tc_signals__;
         const factory = await buildTestFactory(`
             const controller = {
                 theme: 'light',
-                __ty_signal_publish_fields__: [{ name: 'theme', field: 'theme', options: { retain: true } }]
+                __tc_signal_publish_fields__: [{ name: 'theme', field: 'theme', options: { retain: true } }]
             }
-            const helpers = __ty_helpers__.createTacHelpers({})
-            __ty_helpers__.bindCompanion(controller, {}, helpers)
-            __ty_test__.initial = subscribe('theme')
+            const helpers = __tc_helpers__.createTacHelpers({})
+            __tc_helpers__.bindCompanion(controller, {}, helpers)
+            __tc_test__.initial = subscribe('theme')
             controller.theme = 'dark'
-            __ty_test__.updated = subscribe('theme')
+            __tc_test__.updated = subscribe('theme')
         `);
         const r = testResults();
         await factory();
@@ -384,28 +384,28 @@ describe('render-template browser-side (with window)', () => {
         expect(r.updated).toBe('dark');
     });
     test('public browser env values are exposed only through the explicit helper', async () => {
-        (/** @type {any} */ (windowInstance)).__ty_public_env__ = {
+        (/** @type {any} */ (windowInstance)).__tc_public_env__ = {
             API_BASE_URL: 'https://api.example.com',
         };
         const r = testResults();
         const factory = await buildTestFactory(`
-            const helpers = __ty_helpers__.createTacHelpers({})
-            __ty_test__.value = helpers.env('API_BASE_URL', '/fallback')
-            __ty_test__.missing = helpers.env('MISSING', '/fallback')
+            const helpers = __tc_helpers__.createTacHelpers({})
+            __tc_test__.value = helpers.env('API_BASE_URL', '/fallback')
+            __tc_test__.missing = helpers.env('MISSING', '/fallback')
         `);
         await factory();
         expect(r.value).toBe('https://api.example.com');
         expect(r.missing).toBe('/fallback');
-        delete (/** @type {any} */ (windowInstance)).__ty_public_env__;
+        delete (/** @type {any} */ (windowInstance)).__tc_public_env__;
     });
     test('persistent $ fields restore value from sessionStorage', async () => {
         windowInstance.sessionStorage.setItem('tac:__TY_MODULE_PATH__:fixture:$draft', JSON.stringify({ id: 7 }));
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $draft: null }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
             helpers.bindPersistentFields(controller)
-            __ty_test__.val = controller.$draft
+            __tc_test__.val = controller.$draft
         `);
         await factory();
         expect(r.val).toEqual({ id: 7 });
@@ -416,9 +416,9 @@ describe('render-template browser-side (with window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $draft: 'init' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
             helpers.bindPersistentFields(controller)
-            __ty_test__.val = controller.$draft
+            __tc_test__.val = controller.$draft
         `);
         await factory();
         expect(r.val).toBe('init');
@@ -427,7 +427,7 @@ describe('render-template browser-side (with window)', () => {
         windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$draft');
         const factory = await buildTestFactory(`
             const controller = { $draft: null }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
             helpers.bindPersistentFields(controller)
             controller.$draft = { persisted: true }
         `);
@@ -441,9 +441,9 @@ describe('render-template browser-side (with window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $draft: 'init' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture', draft: 'prop-default' })
-            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
-            __ty_test__.val = controller.$draft
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture', draft: 'prop-default' })
+            __tc_helpers__.bindCompanion(controller, helpers.props, helpers)
+            __tc_test__.val = controller.$draft
         `);
         await factory();
         expect(r.val).toBe('stored');
@@ -455,9 +455,9 @@ describe('render-template browser-side (with window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $draft: 'init' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture', draft: 'prop-default' })
-            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
-            __ty_test__.val = controller.$draft
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture', draft: 'prop-default' })
+            __tc_helpers__.bindCompanion(controller, helpers.props, helpers)
+            __tc_test__.val = controller.$draft
         `);
         await factory();
         expect(r.val).toBe('prop-default');
@@ -467,69 +467,69 @@ describe('render-template browser-side (with window)', () => {
     test('companion public field assignments schedule one batched rerender', async () => {
         const r = testResults();
         r.calls = 0;
-        (/** @type {any} */ (windowInstance)).__ty_rerender = () => { r.calls += 1; };
+        (/** @type {any} */ (windowInstance)).__tc_rerender = () => { r.calls += 1; };
         const factory = await buildTestFactory(`
             const controller = { count: 0, label: 'idle' }
-            const helpers = __ty_helpers__.createTacHelpers({})
-            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            const helpers = __tc_helpers__.createTacHelpers({})
+            __tc_helpers__.bindCompanion(controller, helpers.props, helpers)
             controller.count = 1
             controller.label = 'ready'
-            __ty_test__.count = controller.count
-            __ty_test__.label = controller.label
+            __tc_test__.count = controller.count
+            __tc_test__.label = controller.label
         `);
         await factory();
         expect(r.count).toBe(1);
         expect(r.label).toBe('ready');
         expect(r.calls).toBe(1);
-        delete (/** @type {any} */ (windowInstance)).__ty_rerender;
+        delete (/** @type {any} */ (windowInstance)).__tc_rerender;
     });
     test('companion persistent field assignments write storage and schedule rerender', async () => {
         windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$draft');
         const r = testResults();
         r.calls = 0;
-        (/** @type {any} */ (windowInstance)).__ty_rerender = () => { r.calls += 1; };
+        (/** @type {any} */ (windowInstance)).__tc_rerender = () => { r.calls += 1; };
         const factory = await buildTestFactory(`
             const controller = { $draft: 'init' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
-            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
+            __tc_helpers__.bindCompanion(controller, helpers.props, helpers)
             controller.$draft = 'saved'
-            __ty_test__.value = controller.$draft
+            __tc_test__.value = controller.$draft
         `);
         await factory();
         expect(r.value).toBe('saved');
         expect(JSON.parse(windowInstance.sessionStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$draft') ?? 'null')).toBe('saved');
         expect(r.calls).toBe(1);
-        delete (/** @type {any} */ (windowInstance)).__ty_rerender;
+        delete (/** @type {any} */ (windowInstance)).__tc_rerender;
         windowInstance.sessionStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$draft');
     });
     test('companion field assignments during event render do not schedule an extra rerender', async () => {
         const r = testResults();
         r.calls = 0;
-        (/** @type {any} */ (windowInstance)).__ty_rerender = () => { r.calls += 1; };
+        (/** @type {any} */ (windowInstance)).__tc_rerender = () => { r.calls += 1; };
         const factory = await buildTestFactory(`
             const controller = { count: 0 }
-            const helpers = __ty_helpers__.createTacHelpers({})
-            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
-            __ty_helpers__.setRenderContext({ elemId: 'ty-event-0' })
+            const helpers = __tc_helpers__.createTacHelpers({})
+            __tc_helpers__.bindCompanion(controller, helpers.props, helpers)
+            __tc_helpers__.setRenderContext({ elemId: 'tc-event-0' })
             controller.count = 1
-            __ty_helpers__.setRenderContext({ elemId: null })
+            __tc_helpers__.setRenderContext({ elemId: null })
         `);
         await factory();
         await Promise.resolve();
         expect(r.calls).toBe(0);
-        delete (/** @type {any} */ (windowInstance)).__ty_rerender;
+        delete (/** @type {any} */ (windowInstance)).__tc_rerender;
     });
-    test('rerender calls window.__ty_rerender', async () => {
+    test('rerender calls window.__tc_rerender', async () => {
         const r = testResults();
         r.called = false;
-        (/** @type {any} */ (windowInstance)).__ty_rerender = () => { r.called = true; };
+        (/** @type {any} */ (windowInstance)).__tc_rerender = () => { r.called = true; };
         const factory = await buildTestFactory(`rerender()`);
         await factory();
         expect(r.called).toBe(true);
-        delete (/** @type {any} */ (windowInstance)).__ty_rerender;
+        delete (/** @type {any} */ (windowInstance)).__tc_rerender;
     });
-    test('rerender is safe when window.__ty_rerender is absent', async () => {
-        delete (/** @type {any} */ (windowInstance)).__ty_rerender;
+    test('rerender is safe when window.__tc_rerender is absent', async () => {
+        delete (/** @type {any} */ (windowInstance)).__tc_rerender;
         const factory = await buildTestFactory(`rerender()`);
         expect(async () => await factory()).not.toThrow();
     });
@@ -538,9 +538,9 @@ describe('render-template browser-side (with window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $draft: 'safe' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
             helpers.bindPersistentFields(controller)
-            __ty_test__.val = controller.$draft
+            __tc_test__.val = controller.$draft
         `);
         await factory();
         expect(r.val).toBe('safe');
@@ -551,9 +551,9 @@ describe('render-template browser-side (with window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $$theme: 'light' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
             helpers.bindPersistentFields(controller)
-            __ty_test__.val = controller.$$theme
+            __tc_test__.val = controller.$$theme
         `);
         await factory();
         expect(r.val).toBe('dark');
@@ -564,9 +564,9 @@ describe('render-template browser-side (with window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $$theme: 'system' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
             helpers.bindPersistentFields(controller)
-            __ty_test__.val = controller.$$theme
+            __tc_test__.val = controller.$$theme
         `);
         await factory();
         expect(r.val).toBe('system');
@@ -575,7 +575,7 @@ describe('render-template browser-side (with window)', () => {
         windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
         const factory = await buildTestFactory(`
             const controller = { $$theme: 'light' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
             helpers.bindPersistentFields(controller)
             controller.$$theme = 'oled'
         `);
@@ -589,9 +589,9 @@ describe('render-template browser-side (with window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $$theme: 'light' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture', theme: 'prop-theme' })
-            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
-            __ty_test__.val = controller.$$theme
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture', theme: 'prop-theme' })
+            __tc_helpers__.bindCompanion(controller, helpers.props, helpers)
+            __tc_test__.val = controller.$$theme
         `);
         await factory();
         expect(r.val).toBe('stored');
@@ -603,9 +603,9 @@ describe('render-template browser-side (with window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $$theme: 'light' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture', theme: 'prop-theme' })
-            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
-            __ty_test__.val = controller.$$theme
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture', theme: 'prop-theme' })
+            __tc_helpers__.bindCompanion(controller, helpers.props, helpers)
+            __tc_test__.val = controller.$$theme
         `);
         await factory();
         expect(r.val).toBe('prop-theme');
@@ -616,19 +616,19 @@ describe('render-template browser-side (with window)', () => {
         windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
         const r = testResults();
         r.calls = 0;
-        (/** @type {any} */ (windowInstance)).__ty_rerender = () => { r.calls += 1; };
+        (/** @type {any} */ (windowInstance)).__tc_rerender = () => { r.calls += 1; };
         const factory = await buildTestFactory(`
             const controller = { $$theme: 'light' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
-            __ty_helpers__.bindCompanion(controller, helpers.props, helpers)
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
+            __tc_helpers__.bindCompanion(controller, helpers.props, helpers)
             controller.$$theme = 'dark'
-            __ty_test__.value = controller.$$theme
+            __tc_test__.value = controller.$$theme
         `);
         await factory();
         expect(r.value).toBe('dark');
         expect(JSON.parse(windowInstance.localStorage.getItem('tac:__TY_MODULE_PATH__:fixture:$$theme') ?? 'null')).toBe('dark');
         expect(r.calls).toBe(1);
-        delete (/** @type {any} */ (windowInstance)).__ty_rerender;
+        delete (/** @type {any} */ (windowInstance)).__tc_rerender;
         windowInstance.localStorage.removeItem('tac:__TY_MODULE_PATH__:fixture:$$theme');
     });
     test('persistent $$ fields are safe with malformed localStorage data', async () => {
@@ -636,9 +636,9 @@ describe('render-template browser-side (with window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $$theme: 'safe' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
             helpers.bindPersistentFields(controller)
-            __ty_test__.val = controller.$$theme
+            __tc_test__.val = controller.$$theme
         `);
         await factory();
         expect(r.val).toBe('safe');
@@ -650,12 +650,12 @@ describe('render-template browser-side (with window)', () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $clicks: 0, $$theme: 'light' }
-            const helpers = __ty_helpers__.createTacHelpers({ __ty_persist_id__: 'fixture' })
+            const helpers = __tc_helpers__.createTacHelpers({ __tc_persist_id__: 'fixture' })
             helpers.bindPersistentFields(controller)
             controller.$clicks += 1
             controller.$$theme = 'oled'
-            __ty_test__.clicks = controller.$clicks
-            __ty_test__.theme = controller.$$theme
+            __tc_test__.clicks = controller.$clicks
+            __tc_test__.theme = controller.$$theme
         `);
         await factory();
         expect(r.clicks).toBe(6);
@@ -667,8 +667,8 @@ describe('render-template browser-side (with window)', () => {
     });
     test('successful non-GET requests invalidate cached GET responses for the same URL', async () => {
         const r = testResults();
-        (/** @type {any} */ (windowInstance)).__ty_fetch_cache_db__ = null;
-        const previousNativeFetch = (/** @type {any} */ (globalThis)).__ty_native_fetch__;
+        (/** @type {any} */ (windowInstance)).__tc_fetch_cache_db__ = null;
+        const previousNativeFetch = (/** @type {any} */ (globalThis)).__tc_native_fetch__;
         /** @type {string[]} */
         const seen = [];
         const fetchStub = /** @type {typeof fetch} */ (async (input, init) => {
@@ -681,26 +681,26 @@ describe('render-template browser-side (with window)', () => {
                 return new Response('cached-get', { status: 200 });
             return new Response('fresh-get', { status: 200 });
         });
-        (/** @type {any} */ (globalThis)).__ty_native_fetch__ = fetchStub;
+        (/** @type {any} */ (globalThis)).__tc_native_fetch__ = fetchStub;
         try {
             const factory = await buildTestFactory(`
                 async function run() {
-                    const helpers = __ty_helpers__.createTacHelpers({})
+                    const helpers = __tc_helpers__.createTacHelpers({})
                     const first = await helpers.fetch('https://example.test/items')
                     const mutation = await helpers.fetch('https://example.test/items', { method: 'POST', body: 'name=widget' })
                     const second = await helpers.fetch('https://example.test/items')
-                    __ty_test__.first = await first.text()
-                    __ty_test__.mutation = await mutation.text()
-                    __ty_test__.second = await second.text()
+                    __tc_test__.first = await first.text()
+                    __tc_test__.mutation = await mutation.text()
+                    __tc_test__.second = await second.text()
                 }
                 await run()
             `);
             await factory();
         } finally {
             if (previousNativeFetch === undefined) {
-                Reflect.deleteProperty(globalThis, '__ty_native_fetch__');
+                Reflect.deleteProperty(globalThis, '__tc_native_fetch__');
             } else {
-                (/** @type {any} */ (globalThis)).__ty_native_fetch__ = previousNativeFetch;
+                (/** @type {any} */ (globalThis)).__tc_native_fetch__ = previousNativeFetch;
             }
         }
         expect(r.first).toBe('cached-get');
@@ -709,28 +709,28 @@ describe('render-template browser-side (with window)', () => {
     });
 });
 // ── Prerender-environment (window = globalThis, no sessionStorage) ─────────────
-describe('render-template prerender-environment (window=globalThis, __ty_prerender__=true)', () => {
+describe('render-template prerender-environment (window=globalThis, __tc_prerender__=true)', () => {
     /** @type {Record<string, unknown>} */
     let previousGlobals;
     beforeAll(() => {
         previousGlobals = {
             window: globalThis.window,
-            __ty_prerender__: /** @type {any} */ (globalThis).__ty_prerender__,
+            __tc_prerender__: /** @type {any} */ (globalThis).__tc_prerender__,
         };
         Object.assign(globalThis, {
             window: globalThis,
-            __ty_prerender__: true,
+            __tc_prerender__: true,
         });
     });
     afterAll(() => {
         Object.assign(globalThis, previousGlobals);
-        if (previousGlobals.__ty_prerender__ === undefined) {
-            Reflect.deleteProperty(globalThis, '__ty_prerender__');
+        if (previousGlobals.__tc_prerender__ === undefined) {
+            Reflect.deleteProperty(globalThis, '__tc_prerender__');
         }
     });
     test('isBrowser is false and isServer is true despite window being set', async () => {
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.isBrowser = isBrowser; __ty_test__.isServer = isServer`);
+        const factory = await buildTestFactory(`__tc_test__.isBrowser = isBrowser; __tc_test__.isServer = isServer`);
         await factory();
         expect(r.isBrowser).toBe(false);
         expect(r.isServer).toBe(true);
@@ -738,19 +738,19 @@ describe('render-template prerender-environment (window=globalThis, __ty_prerend
     test('onMount does not push to any queue during prerender', async () => {
         const r = testResults();
         r.called = false;
-        const factory = await buildTestFactory(`onMount(() => { __ty_test__.called = true })`);
+        const factory = await buildTestFactory(`onMount(() => { __tc_test__.called = true })`);
         await factory();
         expect(r.called).toBe(false);
-        expect((/** @type {any} */ (globalThis)).__ty_onMount_queue__).toBeUndefined();
+        expect((/** @type {any} */ (globalThis)).__tc_onMount_queue__).toBeUndefined();
     });
     test('persistent $ fields do not crash during prerender', async () => {
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $draft: 99 }
-            const helpers = __ty_helpers__.createTacHelpers({})
+            const helpers = __tc_helpers__.createTacHelpers({})
             helpers.bindPersistentFields(controller)
             controller.$draft = 100
-            __ty_test__.val = controller.$draft
+            __tc_test__.val = controller.$draft
         `);
         await factory();
         expect(r.val).toBe(100);
@@ -759,23 +759,23 @@ describe('render-template prerender-environment (window=globalThis, __ty_prerend
         const r = testResults();
         const factory = await buildTestFactory(`
             const controller = { $$theme: 'dark' }
-            const helpers = __ty_helpers__.createTacHelpers({})
+            const helpers = __tc_helpers__.createTacHelpers({})
             helpers.bindPersistentFields(controller)
             controller.$$theme = 'light'
-            __ty_test__.val = controller.$$theme
+            __tc_test__.val = controller.$$theme
         `);
         await factory();
         expect(r.val).toBe('light');
     });
     test('subscribe returns fallback during prerender', async () => {
         const r = testResults();
-        const factory = await buildTestFactory(`__ty_test__.value = subscribe('k', 'prerender-fallback')`);
+        const factory = await buildTestFactory(`__tc_test__.value = subscribe('k', 'prerender-fallback')`);
         await factory();
         expect(r.value).toBe('prerender-fallback');
     });
 });
 // ── Async event handler re-rendering ───────────────────────────────────────────
-describe('ty_invokeEvent awaits async handlers', () => {
+describe('tc_invokeEvent awaits async handlers', () => {
     test('state change after await inside handler is visible when render completes', async () => {
         const r = testResults();
         const script = `
@@ -786,13 +786,13 @@ describe('ty_invokeEvent awaits async handlers', () => {
             }
         `;
         const inners = `
-            await ty_invokeEvent('testhash', async ($event) => { const __event__ = $event; return next() })
-            ;(globalThis).__ty_test__.step = step
+            await tc_invokeEvent('testhash', async ($event) => { const __event__ = $event; return next() })
+            ;(globalThis).__tc_test__.step = step
         `;
         const factory = await buildTestFactory(script, inners);
         const render = await factory();
         // Trigger the event by passing the matching element ID
-        await render('ty-testhash-0', null);
+        await render('tc-testhash-0', null);
         expect(r.step).toBe('done');
     });
     test('sync handler still works with async callback and return', async () => {
@@ -801,12 +801,12 @@ describe('ty_invokeEvent awaits async handlers', () => {
             let count = 0
         `;
         const inners = `
-            await ty_invokeEvent('synchash', async ($event) => { const __event__ = $event; return count++ })
-            ;(globalThis).__ty_test__.count = count
+            await tc_invokeEvent('synchash', async ($event) => { const __event__ = $event; return count++ })
+            ;(globalThis).__tc_test__.count = count
         `;
         const factory = await buildTestFactory(script, inners);
         const render = await factory();
-        await render('ty-synchash-0', null);
+        await render('tc-synchash-0', null);
         expect(r.count).toBe(1);
     });
     test('handler returning a promise chain is awaited', async () => {
@@ -819,12 +819,12 @@ describe('ty_invokeEvent awaits async handlers', () => {
             }
         `;
         const inners = `
-            await ty_invokeEvent('chainhash', async ($event) => { const __event__ = $event; return fetchData() })
-            ;(globalThis).__ty_test__.value = value
+            await tc_invokeEvent('chainhash', async ($event) => { const __event__ = $event; return fetchData() })
+            ;(globalThis).__tc_test__.value = value
         `;
         const factory = await buildTestFactory(script, inners);
         const render = await factory();
-        await render('ty-chainhash-0', null);
+        await render('tc-chainhash-0', null);
         expect(r.value).toBe('resolved');
     });
     test('non-matching element ID does not execute handler', async () => {
@@ -832,16 +832,77 @@ describe('ty_invokeEvent awaits async handlers', () => {
         r.called = false;
         const script = `
             async function handler() {
-                ;(globalThis).__ty_test__.called = true
+                ;(globalThis).__tc_test__.called = true
             }
         `;
         const inners = `
-            await ty_invokeEvent('skiphash', async ($event) => { const __event__ = $event; return handler() })
+            await tc_invokeEvent('skiphash', async ($event) => { const __event__ = $event; return handler() })
         `;
         const factory = await buildTestFactory(script, inners);
         const render = await factory();
         // Pass a non-matching ID
-        await render('ty-wrongid-0', null);
+        await render('tc-wrongid-0', null);
         expect(r.called).toBe(false);
+    });
+});
+
+describe('delegateEvents helper registers the compile-time event set', () => {
+    test('routes the event set to the Tac runtime once at factory setup', async () => {
+        /** @type {string[]} */
+        const captured = [];
+        const previousTac = /** @type {any} */ (globalThis).Tac;
+        /** @type {any} */ (globalThis).Tac = { delegateEvents: (/** @type {string[]} */ names) => captured.push(...names) };
+        try {
+            // Mirrors the call the compiler injects into a module's factory setup.
+            const factory = await buildTestFactory(`__tc_helpers__.delegateEvents(['save', 'update:selected']);`);
+            await factory();
+            expect(captured).toEqual(['save', 'update:selected']);
+        }
+        finally {
+            /** @type {any} */ (globalThis).Tac = previousTac;
+        }
+    });
+
+    test('is a no-op when no Tac runtime is present (server prerender)', async () => {
+        const previousTac = /** @type {any} */ (globalThis).Tac;
+        /** @type {any} */ (globalThis).Tac = undefined;
+        try {
+            const factory = await buildTestFactory(`__tc_helpers__.delegateEvents(['save']);`);
+            await expect(factory()).resolves.toBeDefined(); // does not throw
+        }
+        finally {
+            /** @type {any} */ (globalThis).Tac = previousTac;
+        }
+    });
+});
+
+describe('registerComponentRender helper routes to the Tac runtime', () => {
+    test('forwards (hostId, render, compId) to the runtime registry', async () => {
+        /** @type {any[]} */
+        const calls = [];
+        const previousTac = /** @type {any} */ (globalThis).Tac;
+        /** @type {any} */ (globalThis).Tac = {
+            registerComponentRender: (/** @type {any} */ h, /** @type {any} */ r, /** @type {any} */ c) => calls.push([h, typeof r, c]),
+        };
+        try {
+            const factory = await buildTestFactory(`__tc_helpers__.registerComponentRender('tc-abc-0', async () => '', 'abc');`);
+            await factory();
+            expect(calls).toEqual([['tc-abc-0', 'function', 'abc']]);
+        }
+        finally {
+            /** @type {any} */ (globalThis).Tac = previousTac;
+        }
+    });
+
+    test('is a no-op during server prerender (no Tac runtime)', async () => {
+        const previousTac = /** @type {any} */ (globalThis).Tac;
+        /** @type {any} */ (globalThis).Tac = undefined;
+        try {
+            const factory = await buildTestFactory(`__tc_helpers__.registerComponentRender('tc-abc-0', async () => '', 'abc');`);
+            await expect(factory()).resolves.toBeDefined();
+        }
+        finally {
+            /** @type {any} */ (globalThis).Tac = previousTac;
+        }
     });
 });

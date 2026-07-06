@@ -1,0 +1,20 @@
+.live-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.live-count {
+  font-size: 1.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-label {
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}
+
+.live-actions {
+  margin-top: 0.75rem;
+}

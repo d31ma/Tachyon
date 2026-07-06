@@ -2,46 +2,16 @@
 //
 // Backend resolution coordinator.
 //
-// After routes are validated, decide which execution backend serves each
-// handler file and register it. Preference order: in-house `wasm-compiled`
-// (compiled/subset languages lowered by Tachyon's own compiler) → (later)
-// `wasm-interpreter` (vendored Python/Ruby/PHP) → default `subprocess`. Called
-// from the server's `configureRoutes` lifecycle; safe to call repeatedly (HMR).
+// Yon ships the `server/` source as-is and runs every route as a process.
+// There is no execution-backend registry any more (the in-house wasm backend
+// has been removed; the Tac frontend worker compiler is separate): compiled
+// languages compile on first request and cache the result, everything else
+// runs through its interpreter or as an executable. These hooks remain for
+// the server's `configureRoutes` lifecycle (they are safe to call
+// repeatedly, e.g. on HMR) and as extension points for future backends.
 
-import HandlerAdapter from '../handler-adapter.js';
-import Router from '../../http/route-handler.js';
-import { clearBackends } from './registry.js';
-import * as wasmCompiled from './wasm-compiled.js';
+/** Register per-handler execution backends. No-op: every route is a process. */
+export function registerHandlerBackends() {}
 
-/** @returns {string[]} Unique handler file paths across all routes/methods. */
-function handlerPaths() {
-    /** @type {Set<string>} */
-    const paths = new Set();
-    for (const methods of Object.values(Router.routeHandlers))
-        for (const handlerPath of Object.values(methods))
-            if (handlerPath) paths.add(handlerPath);
-    return [...paths];
-}
-
-/**
- * Inspect every route handler and register its in-house execution backend.
- * Handlers with no in-house path keep the default subprocess backend.
- */
-export function registerHandlerBackends() {
-    for (const handlerPath of handlerPaths()) {
-        const adapter = HandlerAdapter.resolve(handlerPath, []);
-        if (!adapter)
-            continue;
-        // In-house compiled wasm (compiled + subset languages).
-        if (wasmCompiled.tryRegister(handlerPath, adapter.language))
-            continue;
-        // Phase 2/3: wasm-interpreter for python/ruby/php goes here.
-        // Otherwise the handler stays on the default subprocess backend.
-    }
-}
-
-/** Drop all in-house backend registrations and warm caches (HMR reload). */
-export function clearHandlerBackends() {
-    clearBackends();
-    wasmCompiled.clearHosts();
-}
+/** Drop per-handler backend registrations (HMR reload). No-op. */
+export function clearHandlerBackends() {}

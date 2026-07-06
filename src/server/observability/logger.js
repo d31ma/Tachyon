@@ -8,7 +8,32 @@
  * @typedef {{ level: LogLevel, format: LogFormat, colorize: boolean, now: () => Date, write: (line: string, level: LogLevel) => void }} LoggerOptions
  */
 const RESET = '\x1b[0m';
+const DIM = '\x1b[2m';
 const DEFAULT_SERVICE = 'tachyon';
+/**
+ * Pretty logs are grouped under the three product surfaces — Tac (build tooling,
+ * compiler, CLI, frontend), Yon (server runtime, HTTP, handlers), and Fylo (data)
+ * — so a dev sees one readable tag per line instead of a flat scope grab-bag.
+ * The raw scope is still preserved in JSON output for log aggregators.
+ * @type {Record<string, string>}
+ */
+const BRAND_BY_SCOPE = {
+    'cli:bundle': 'Tac', 'cli:serve': 'Tac', 'cli:preview': 'Tac',
+    'cli:native-bundle': 'Tac', 'cli:init': 'Tac', 'compiler': 'Tac',
+    'yon': 'Yon', 'http': 'Yon', 'handler': 'Yon', 'process-pool': 'Yon',
+    'telemetry': 'Yon',
+    'fylo-gateway': 'Fylo',
+};
+/** @type {Record<string, string>} */
+const BRAND_COLORS = { Tac: '\x1b[36m', Yon: '\x1b[34m', Fylo: '\x1b[35m' };
+/** @param {string} service @param {string | undefined} scope @returns {string} */
+function brandFor(service, scope) {
+    if (scope && BRAND_BY_SCOPE[scope])
+        return BRAND_BY_SCOPE[scope];
+    if (scope)
+        return scope;
+    return service === DEFAULT_SERVICE ? 'Tac' : service;
+}
 /** @type {Record<LogLevel, number>} */
 const LEVEL_SEVERITY = {
     trace: 10,
@@ -168,24 +193,30 @@ function normalizeEntry(level, message, bindings, fields, now) {
         err: errorField === undefined ? undefined : serializeError(errorField),
     };
 }
+/** @param {string} text @param {string} color @param {boolean} colorize */
+function paint(text, color, colorize) {
+    return colorize && color ? `${color}${text}${RESET}` : text;
+}
 /** @param {LogEntry} entry @param {boolean} colorize */
 function buildPrettyLine(entry, colorize) {
     const { timestamp, level, message, service, scope, err, ...fields } = entry;
+    // Time only (HH:MM:SS.mmm) — dev doesn't need the date on every line.
+    const time = timestamp.slice(11, 23);
     const upperLevel = level.toUpperCase().padEnd(5);
-    const color = level === 'silent' ? '' : LEVEL_COLORS[level];
-    const levelLabel = colorize && color ? `${color}${upperLevel}${RESET}` : upperLevel;
-    const namespace = scope ? `${service}/${scope}` : service;
+    const levelColor = level === 'silent' ? '' : LEVEL_COLORS[level];
+    const brand = brandFor(service, scope);
+    const tag = `[${brand}]`.padEnd(6);
     const inlineFields = Object.entries(fields)
         .filter(([, value]) => value !== undefined)
         .map(([key, value]) => `${key}=${toInlineString(value)}`)
         .join(' ');
-    const headline = `${timestamp} ${levelLabel} [${namespace}] ${message}`;
-    const body = inlineFields ? `${headline} ${inlineFields}` : headline;
+    const headline = `${paint(time, DIM, colorize)} ${paint(upperLevel, levelColor, colorize)} ${paint(tag, BRAND_COLORS[brand] ?? '', colorize)} ${message}`;
+    const body = inlineFields ? `${headline} ${paint(inlineFields, DIM, colorize)}` : headline;
     if (!err)
         return body;
     const summary = `${err.name ?? 'Error'}: ${err.message ?? 'Unknown error'}`;
     const stack = typeof err.stack === 'string' && err.stack.length > 0 ? `\n${err.stack}` : '';
-    return `${body}\n${summary}${stack}`;
+    return `${body}\n${paint(summary, levelColor, colorize)}${paint(stack, DIM, colorize)}`;
 }
 class TachyonLogger {
     /** @type {LoggerFields} */ bindings;

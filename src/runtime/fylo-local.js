@@ -31,7 +31,7 @@ function safeSegment(value) {
 function isBrowser() {
     return typeof navigator !== 'undefined'
         && (typeof window !== 'undefined' || typeof globalThis.postMessage === 'function')
-        && !/** @type {Record<string, unknown>} */ (globalThis).__ty_prerender__;
+        && !/** @type {Record<string, unknown>} */ (globalThis).__tc_prerender__;
 }
 
 /**
@@ -657,7 +657,7 @@ class FyloLocalWorkerClient {
     canUseWorker() {
         return typeof window !== 'undefined'
             && typeof Worker !== 'undefined'
-            && !/** @type {Record<string, unknown>} */ (globalThis).__ty_prerender__;
+            && !/** @type {Record<string, unknown>} */ (globalThis).__tc_prerender__;
     }
 
     fallbackEngine() {
@@ -856,27 +856,27 @@ class FyloLocalWorkerClient {
 /** @returns {FyloMemoryLocalStore} */
 function getMemoryStore() {
     const global = /** @type {Record<string, unknown>} */ (globalThis);
-    if (global.__ty_fylo_memory_store__ instanceof FyloMemoryLocalStore)
-        return global.__ty_fylo_memory_store__;
+    if (global.__tc_fylo_memory_store__ instanceof FyloMemoryLocalStore)
+        return global.__tc_fylo_memory_store__;
     const store = new FyloMemoryLocalStore();
-    global.__ty_fylo_memory_store__ = store;
+    global.__tc_fylo_memory_store__ = store;
     return store;
 }
 
 /** @returns {FyloLocalCoordinator} */
 export function getFyloLocalEngine() {
     const global = /** @type {Record<string, unknown>} */ (globalThis);
-    if (global.__ty_fylo_local_engine__)
-        return /** @type {FyloLocalCoordinator} */ (global.__ty_fylo_local_engine__);
-    const engine = typeof window !== 'undefined' && !global.__ty_prerender__
+    if (global.__tc_fylo_local_engine__)
+        return /** @type {FyloLocalCoordinator} */ (global.__tc_fylo_local_engine__);
+    const engine = typeof window !== 'undefined' && !global.__tc_prerender__
         ? new FyloLocalWorkerClient()
         : new FyloLocalEngine();
-    global.__ty_fylo_local_engine__ = engine;
+    global.__tc_fylo_local_engine__ = engine;
     return engine;
 }
 
 export function resetFyloLocalEngineForTest() {
     const global = /** @type {Record<string, unknown>} */ (globalThis);
-    Reflect.deleteProperty(global, '__ty_fylo_local_engine__');
-    Reflect.deleteProperty(global, '__ty_fylo_memory_store__');
+    Reflect.deleteProperty(global, '__tc_fylo_local_engine__');
+    Reflect.deleteProperty(global, '__tc_fylo_memory_store__');
 }

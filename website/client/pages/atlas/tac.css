@@ -1,0 +1,77 @@
+.atlas-hero {
+  padding-block: 2.5rem 1.5rem;
+}
+
+.atlas-kicker {
+  margin: 0 0 0.4rem;
+  color: var(--w-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: var(--w-font-xs);
+  font-weight: 600;
+}
+
+.atlas-hero h1 {
+  margin: 0 0 0.6rem;
+  font-size: clamp(1.7rem, 3.5vw, 2.6rem);
+  line-height: 1.15;
+  max-width: 24ch;
+}
+
+.atlas-sub {
+  margin: 0 0 1.1rem;
+  color: var(--w-text-subtle);
+  max-width: 62ch;
+}
+
+.atlas-actions {
+  flex-wrap: wrap;
+}
+
+.atlas-jump {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-block: 0.5rem 1.25rem;
+  scrollbar-width: thin;
+}
+
+.atlas-section {
+  padding-block: 1.75rem;
+}
+
+.atlas-section header {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--w-text) 12%, transparent);
+}
+
+.atlas-index {
+  display: inline-grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: var(--w-radius);
+  background: color-mix(in srgb, var(--w-primary) 14%, transparent);
+  color: var(--w-primary);
+  font-weight: 700;
+  font-size: var(--w-font-xs);
+}
+
+.atlas-section h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.atlas-section header p {
+  margin: 0.15rem 0 0;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+}
+
+.atlas-jump w-chip {
+  cursor: pointer;
+}

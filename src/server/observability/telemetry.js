@@ -238,18 +238,28 @@ class TelemetryStore {
 }
 
 class FyloTelemetryStore extends TelemetryStore {
-    /** @type {Promise<InstanceType<typeof Fylo>> | null} */
+    /** @type {Promise<InstanceType<typeof Fylo> & Record<string, import('@d31ma/fylo').CollectionFacade>> | null} */
     static fyloPromise = null;
     /** @type {Promise<void> | null} */
     static ensureCollectionPromise = null;
 
     /**
-     * @returns {Promise<InstanceType<typeof Fylo>>}
+     * @returns {Promise<InstanceType<typeof Fylo> & Record<string, import('@d31ma/fylo').CollectionFacade>>}
      */
     async getFylo() {
         if (!FyloTelemetryStore.fyloPromise) {
             const root = TelemetryConfig.root();
-            FyloTelemetryStore.fyloPromise = Promise.resolve(new Fylo(root, fyloOptions(root)));
+            // WORM mode: telemetry spans are immutable — written once, never
+            // updated or deleted. Aligns with the OTLP spec where spans are
+            // append-only and identified by traceId + spanId.
+            const options = {
+                ...fyloOptions(root),
+                worm: { mode: /** @type {const} */ ('strict') },
+            };
+            FyloTelemetryStore.fyloPromise = Promise.resolve(
+                /** @type {InstanceType<typeof Fylo> & Record<string, import('@d31ma/fylo').CollectionFacade>} */
+                (new Fylo(root, options)),
+            );
         }
         return await FyloTelemetryStore.fyloPromise;
     }
@@ -262,7 +272,7 @@ class FyloTelemetryStore extends TelemetryStore {
             FyloTelemetryStore.ensureCollectionPromise = (async () => {
                 const fylo = await this.getFylo();
                 try {
-                    await fylo.createCollection(TelemetryConfig.collectionName);
+                    await fylo[TelemetryConfig.collectionName].create();
                 }
                 catch (error) {
                     const message = error instanceof Error ? error.message : String(error);
@@ -282,7 +292,7 @@ class FyloTelemetryStore extends TelemetryStore {
     async persistSpan(span) {
         await this.ensureCollection();
         const fylo = await this.getFylo();
-        await fylo.putData(TelemetryConfig.collectionName, span);
+        await fylo[TelemetryConfig.collectionName].put(span);
     }
 }
 

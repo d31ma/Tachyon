@@ -3,8 +3,6 @@ import path from 'path';
 import Fylo from '@d31ma/fylo';
 import Router from "./http/route-handler.js";
 import Pool from "./process/process-pool.js";
-import { resolveBackend } from "./process/backends/registry.js";
-import * as WasmCompiled from "./process/backends/wasm-compiled.js";
 import Validate from "./http/schema-validator.js";
 import OpenAPI from "./openapi/openapi.js";
 import FyloBrowser from "./fylo-browser/fylo-browser.js";
@@ -65,6 +63,25 @@ export default class Yon {
     static processLogger = logger.child({ scope: 'yon' });
     static requestLogger = logger.child({ scope: 'http' });
     static handlerLogger = logger.child({ scope: 'handler' });
+    /**
+     * Logs one completed request as a terse access line. Successful static
+     * serves (the dev firehose) drop to debug so they're hidden by default;
+     * dynamic requests stay at info; 4xx warn and 5xx error carry the detail.
+     * @param {{ requestId: string, traceId?: string, method: string, path: string, route?: string, kind: string, status: number, durationMs: number, ipAddress?: string }} info
+     */
+    static logRequest(info) {
+        const level = info.status >= 500 ? 'error'
+            : info.status >= 400 ? 'warn'
+                : info.kind === 'frontend' ? 'debug'
+                    : 'info';
+        Yon.requestLogger.log(level, `${info.method} ${info.path} ${info.status} ${info.durationMs}ms`, {
+            requestId: info.requestId,
+            traceId: info.traceId,
+            route: info.route,
+            kind: info.kind,
+            ipAddress: info.ipAddress,
+        });
+    }
     static STREAM_MIME_TYPE = "text/event-stream";
     static REQUEST_ID_HEADER = 'X-Request-Id';
     static MAX_REQUEST_ID_LENGTH = 200;
@@ -491,7 +508,7 @@ export default class Yon {
             'tachyon.handler.response_bytes': responseBytes,
             'tachyon.handler.error_bytes': errorBytes,
         };
-        Yon.handlerLogger.info('Handler resource usage', {
+        Yon.handlerLogger.debug('Handler resource usage', {
             requestId: context.requestId,
             handler: loggedHandler,
             pid: proc.pid,
@@ -628,10 +645,9 @@ export default class Yon {
         }
     }
     /**
-     * Acquire a non-streaming route response through the handler's execution
-     * backend. Defaults to the subprocess runner (today's behavior); routes
-     * registered as `wasm-compiled` or `wasm-interpreter` execute in-process.
-     * Keeping this switch here lets {@link Yon.serveRequest} stay backend-agnostic.
+     * Acquire a non-streaming route response. Every route runs as a
+     * subprocess; this wrapper keeps {@link Yon.serveRequest} agnostic of how
+     * a handler is executed.
      * @param {string} handler
      * @param {RequestPayload} stdin
      * @param {RequestContext} context
@@ -639,13 +655,7 @@ export default class Yon {
      * @returns {Promise<RouteResponse>}
      */
     static getBackendResponse(handler, stdin, context, config) {
-        switch (resolveBackend(handler)) {
-            case 'wasm-compiled':
-                return WasmCompiled.getResponse(handler, stdin, context, config);
-            // Phase 2/3 add the 'wasm-interpreter' arm here.
-            default:
-                return Yon.getResponse([handler], stdin, context, config);
-        }
+        return Yon.getResponse([handler], stdin, context, config);
     }
     /**
      * Streaming variant of {@link Yon.getBackendResponse}.
@@ -656,12 +666,7 @@ export default class Yon {
      * @returns {AsyncGenerator<RouteResponse>}
      */
     static getBackendStream(handler, stdin, context, config) {
-        switch (resolveBackend(handler)) {
-            case 'wasm-compiled':
-                return WasmCompiled.getStreamResponse(handler, stdin, context, config);
-            default:
-                return Yon.getStreamResponse([handler], stdin, context, config);
-        }
+        return Yon.getStreamResponse([handler], stdin, context, config);
     }
     /**
      * @param {string | null | undefined} authorization
@@ -1017,7 +1022,7 @@ export default class Yon {
                     'http.response.cache_control': response.headers.get('cache-control') ?? undefined,
                 },
             });
-            Yon.requestLogger.info('Request completed', {
+            Yon.logRequest({
                 requestId,
                 traceId: context.traceId,
                 method,
@@ -1061,6 +1066,7 @@ export default class Yon {
                 const start = Date.now();
                 const path = new URL(request.url).pathname;
                 const method = request.method;
+                const matchedRoute = Router.resolveApiRoute(path) ?? route;
                 const clientInfo = Yon.getClientInfo(request, server?.requestIP(/** @type {BunRequest} */ (request))?.address ?? null);
                 const requestId = await Yon.getRequestId(request);
                 /** @type {RequestContext} */
@@ -1072,7 +1078,7 @@ export default class Yon {
                 };
                 const requestSpan = Telemetry.startRequestSpan(request, {
                     requestId,
-                    route,
+                    route: matchedRoute,
                     method,
                     path,
                     protocol: clientInfo.protocol,
@@ -1124,7 +1130,7 @@ export default class Yon {
                     }
                     else if (method === "OPTIONS") {
                         requestKind = 'options';
-                        const routePath = route === '/' ? '' : Router.routeToFilesystemPath(route);
+                        const routePath = matchedRoute === '/' ? '' : Router.routeToFilesystemPath(matchedRoute);
                         responseHeaders = Router.getHeaders(request);
                         const isPreflight = request.headers.get('origin') && request.headers.get('Access-Control-Request-Method');
                         if (isPreflight) {
@@ -1147,7 +1153,7 @@ export default class Yon {
                             }
                         }
                         if (!response) {
-                            const { handler, method: routeMethod, stdin, config } = await Router.processRequest(/** @type {BunRequest} */ (request), route);
+                            const { handler, method: routeMethod, stdin, config } = await Router.processRequest(/** @type {BunRequest} */ (request), matchedRoute);
                             context.bearer = Yon.getBearerContext(stdin.headers?.authorization);
                             response = await Yon.serveRequest(request, handler, routeMethod, stdin, context, config);
                             if (Router.middleware?.after) {
@@ -1186,12 +1192,12 @@ export default class Yon {
                         'http.response.cache_control': response.headers.get('cache-control') ?? undefined,
                     },
                 });
-                Yon.requestLogger.info('Request completed', {
+                Yon.logRequest({
                     requestId,
                     traceId: context.traceId,
                     method,
                     path,
-                    route,
+                    route: matchedRoute,
                     kind: requestKind,
                     status: response.status,
                     durationMs: Date.now() - start,

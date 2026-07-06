@@ -1,0 +1,145 @@
+.signal-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 1rem;
+  border-radius: var(--w-radius);
+  background: color-mix(in srgb, var(--w-primary) 12%, transparent);
+}
+
+.signal-label {
+  font-size: var(--w-font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.signal-value {
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-count {
+  margin-left: auto;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-xs);
+}
+
+.gallery {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@container (min-width: 720px) {
+  .gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.field-group {
+  margin: 0;
+  padding: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--w-text) 14%, transparent);
+  border-radius: var(--w-radius);
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.field-group legend {
+  padding-inline: 0.4rem;
+  color: var(--w-primary);
+  font-size: var(--w-font-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.field-group label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-xs);
+  min-width: 0;
+}
+
+.field-group label.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--w-text);
+  font-size: var(--w-font-sm);
+}
+
+.inline-row {
+  display: flex;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.field-group input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+.field-group select,
+.field-group textarea {
+  min-height: 38px;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--w-text) 25%, transparent);
+  border-radius: var(--w-radius-sm);
+  background: var(--w-surface);
+  color: var(--w-text);
+  font: inherit;
+  min-width: 0;
+  width: 100%;
+}
+
+.field-group input:focus-visible,
+.field-group select:focus-visible,
+.field-group textarea:focus-visible {
+  outline: 2px solid var(--w-primary);
+  outline-offset: 2px;
+}
+
+.file-input {
+  display: none;
+}
+
+.dropzone {
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.9rem;
+  border: 2px dashed color-mix(in srgb, var(--w-text) 25%, transparent);
+  border-radius: var(--w-radius);
+  cursor: pointer;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+  text-align: center;
+}
+
+.dropzone.over {
+  border-color: var(--w-primary);
+  background: color-mix(in srgb, var(--w-primary) 10%, transparent);
+}
+
+.dropzone .link {
+  color: var(--w-primary);
+  text-decoration: underline;
+}
+
+.file-chip {
+  color: var(--w-text);
+  font-size: var(--w-font-sm);
+}
+
+.hint {
+  margin: 0;
+  color: var(--w-text-very-subtle);
+  font-size: var(--w-font-xs);
+}
