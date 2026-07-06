@@ -118,7 +118,9 @@ async function packageAndroid(options) {
         return { skipped: 'Gradle not found — `brew install gradle@8` (or set TAC_ANDROID_GRADLE).' };
 
     // Pin the SDK for AGP regardless of the caller's environment.
-    await writeFile(path.join(options.projectRoot, 'local.properties'), `sdk.dir=${sdkRoot}\n`);
+    // Java .properties treats backslashes as escapes, so a Windows SDK path
+    // (C:\...) must use forward slashes for Gradle to parse sdk.dir.
+    await writeFile(path.join(options.projectRoot, 'local.properties'), `sdk.dir=${sdkRoot.replaceAll('\\', '/')}\n`);
 
     const build = await run([gradle, '--no-daemon', '-p', options.projectRoot, 'assembleRelease'], {
         env: { ANDROID_HOME: sdkRoot, ANDROID_SDK_ROOT: sdkRoot },

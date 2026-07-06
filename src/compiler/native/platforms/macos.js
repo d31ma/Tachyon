@@ -258,7 +258,7 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
         guard let entries = try? fileManager.contentsOfDirectory(atPath: workerDir.path) else {
             throw NativeBridgeError.message("Worker directory not found: " + route)
         }
-        guard let executable = entries.first(where: { !$0.hasSuffix(".json") && !$0.hasSuffix(".schema") }) else {
+        guard let executable = entries.first(where: { !$0.hasSuffix(".json") && !$0.hasSuffix(".schema") && !$0.hasPrefix(".") }) else {
             throw NativeBridgeError.message("No worker executable found for route: " + route)
         }
         let executableURL = workerDir.appendingPathComponent(executable)
@@ -480,7 +480,7 @@ cp -R "$OUTPUT_ROOT/Resources/"* "$BUILD_DIR/$APP_BUNDLE/Contents/Resources/"
 swiftc \\
     -O \\
     -parse-as-library \\
-    -target arm64-apple-macos11 \\
+    -target "$(uname -m)-apple-macos11" \\
     -framework Cocoa \\
     -framework WebKit \\
     "$OUTPUT_ROOT/Sources/TachyonApp.swift" \\

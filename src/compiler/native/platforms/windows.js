@@ -82,17 +82,17 @@ static std::wstring GetIndexUri() {
 
 static std::string Narrow(const std::wstring& value) {
     if (value.empty()) return "";
-    int size = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    std::string result(size > 0 ? size - 1 : 0, '\\0');
-    if (size > 0) WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, result.data(), size, nullptr, nullptr);
+    int size = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
+    std::string result(size, '\\0');
+    WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), size, nullptr, nullptr);
     return result;
 }
 
 static std::wstring Widen(const std::string& value) {
     if (value.empty()) return L"";
-    int size = MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, nullptr, 0);
-    std::wstring result(size > 0 ? size - 1 : 0, L'\\0');
-    if (size > 0) MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, result.data(), size);
+    int size = MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0);
+    std::wstring result(size, L'\\0');
+    MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), size);
     return result;
 }
 
