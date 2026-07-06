@@ -57,7 +57,13 @@ export function defaultToolchainConfig() {
             rust: {
                 compiler: 'rustc',
                 edition: '2021',
-                flags: ['-C', 'prefer-dynamic'],
+                // Statically link libstd: a compiled handler runs as a
+                // standalone subprocess, so it must not depend on the Rust
+                // toolchain's dynamic libstd being on the runtime library
+                // path (it is not on Linux — `prefer-dynamic` produced a
+                // binary that failed with "libstd-*.so: cannot open shared
+                // object file"). Override via TACHYON_RUSTFLAGS if needed.
+                flags: [],
             },
             cpp: {
                 compiler: '',
