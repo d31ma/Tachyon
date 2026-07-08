@@ -47,7 +47,7 @@ async function benchPhase(phase, run) {
         return await run();
     }
     finally {
-        (globalThis.__TAC_BENCH__ ??= []).push({ phase, ms: performance.now() - started });
+        (/** @type {any} */ (globalThis).__TAC_BENCH__ ??= []).push({ phase, ms: performance.now() - started });
     }
 }
 async function resolveAppName() {

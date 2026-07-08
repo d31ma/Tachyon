@@ -1,6 +1,7 @@
 // @ts-check
 import { mkdir, readdir, stat, writeFile } from 'fs/promises';
 import path from 'path';
+// @ts-ignore — bun embeds the .d.ts as text at compile time; tsc can't type this import.
 import globalsSource from '../types/globals.d.ts' with { type: 'text' };
 
 // Tachyon ships as the `ty` binary (off npm), so a scaffolded app can't

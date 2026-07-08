@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Fylo client — drives the `fylo` binary's persistent NDJSON loop.
 //
 // For JS/TS apps that consume the compiled binary instead of importing the npm

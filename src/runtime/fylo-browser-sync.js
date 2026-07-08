@@ -564,7 +564,7 @@ export function createFyloClient(basePath) {
                         const localCol = await getLocalCollection(collection);
                         if (!active) return;
                         if (localCol && typeof localCol.subscribe === 'function') {
-                            unsubscribeLocal = localCol.subscribe((event) => {
+                            unsubscribeLocal = localCol.subscribe((/** @type {{ id: string, ts: number, action: string, doc?: Record<string, any> }} */ event) => {
                                 if (!active) return;
                                 onBrowserEvent({ id: event.id, ts: event.ts, action: event.action, collection, doc: event.doc });
                                 this.find(query, { cache: 'no-store' }).then((/** @type {FyloFindResult} */ result) => {

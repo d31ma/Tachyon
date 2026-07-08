@@ -73,6 +73,8 @@ export default class Compiler {
     static pageFileName = Router.pageFileName;
     static prerenderRenderConcurrency = 4;
     static prerenderWriteConcurrency = 8;
+    /** @type {{ hits: number, misses: number }} */
+    static prerenderCacheStats = { hits: 0, misses: 0 };
     static compileConcurrency = 8;
     /** @type {OutputFormat} */
     static outputFormat = Compiler.resolveOutputFormat();

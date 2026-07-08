@@ -1,3 +1,4 @@
+// @ts-nocheck
 // src/browser/vendor/ttid.mjs
 var PRECISION = 1e4;
 var BASE = 36;
