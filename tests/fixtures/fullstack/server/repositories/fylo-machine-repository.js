@@ -10,7 +10,7 @@ export default class FyloMachineRepository {
     constructor(options = {}) {
         this.root = options.root ?? process.env.FYLO_ROOT ?? `${process.cwd()}/db`;
         this.schemaDir = options.schemaDir ?? process.env.FYLO_SCHEMA_DIR ?? process.env.FYLO_SCHEMA ?? `${process.cwd()}/db/schemas`;
-        this.executable = options.executable ?? process.env.FYLO_EXEC_PATH;
+        this.executable = options.executable ?? process.env.FYLO_EXEC_PATH ?? process.env.FYLO_BINARY ?? 'fylo';
     }
 
     /**
@@ -18,9 +18,9 @@ export default class FyloMachineRepository {
      * @returns {Promise<unknown>}
      */
     async exec(request) {
-        const command = this.executable
-            ? [this.executable, 'exec', '--request', '-', '--root', this.root]
-            : ['bunx', '--bun', 'fylo.exec', 'exec', '--request', '-', '--root', this.root];
+        // Fylo is binary-first now: drive the `fylo` binary directly (the old
+        // `bunx fylo.exec` npm bin no longer exists).
+        const command = [this.executable, 'exec', '--request', '-', '--root', this.root];
         const process = Bun.spawn({
             cmd: command,
             stdin: 'pipe',

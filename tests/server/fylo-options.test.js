@@ -2,44 +2,31 @@
 import { expect, test } from 'bun:test';
 import { fyloOptions } from '../../src/server/fylo-options.js';
 
-test('fyloOptions defaults to FYLO local-fs indexing', () => {
-    expect(fyloOptions('/tmp/fylo', {})).toEqual({
-        index: { backend: 'local-fs' },
+// Fylo 26.28 is binary-first: the shim spawns `fylo exec --loop` and the binary
+// reads index/cache/backend config from its own env. Tachyon only passes the
+// binary location and WORM through the Node-shim constructor.
+
+test('fyloOptions defaults to empty (fylo on PATH, WORM off)', () => {
+    expect(fyloOptions('/tmp/fylo', {})).toEqual({});
+});
+
+test('fyloOptions passes through an explicit binary path', () => {
+    expect(fyloOptions('/tmp/fylo', { FYLO_BINARY: '/opt/bin/fylo' })).toEqual({
+        binary: '/opt/bin/fylo',
     });
 });
 
-test('fyloOptions accepts explicit FYLO local-fs indexing', () => {
-    expect(fyloOptions('/tmp/fylo', { FYLO_INDEX_BACKEND: 'local-fs' })).toEqual({
-        index: { backend: 'local-fs' },
-    });
+test('fyloOptions enables WORM when FYLO_WORM=strict', () => {
+    expect(fyloOptions('/tmp/fylo', { FYLO_WORM: 'strict' })).toEqual({ worm: true });
 });
 
-test('fyloOptions passes through FYLO s3-client indexing', () => {
-    const options = fyloOptions('/tmp/fylo', {
-        FYLO_INDEX_BACKEND: 's3-client',
-        FYLO_S3_ACCESS_KEY_ID: 'access-key',
-        FYLO_S3_SECRET_ACCESS_KEY: 'secret-key',
-        FYLO_S3_SESSION_TOKEN: 'session-token',
-        FYLO_S3_REGION: 'us-east-1',
-        FYLO_S3_ENDPOINT: 'https://s3.example.test',
-    });
-
-    expect(options).toEqual({
-        index: {
-            backend: 's3-client',
-            s3: {
-                accessKeyId: 'access-key',
-                secretAccessKey: 'secret-key',
-                sessionToken: 'session-token',
-                region: 'us-east-1',
-                endpoint: 'https://s3.example.test',
-            },
-        },
-    });
+test('fyloOptions ignores non-strict FYLO_WORM values', () => {
+    expect(fyloOptions('/tmp/fylo', { FYLO_WORM: 'off' })).toEqual({});
 });
 
-test('fyloOptions rejects removed FYLO s3-prefix indexing', () => {
-    expect(() => fyloOptions('/tmp/fylo', { FYLO_INDEX_BACKEND: 's3-prefix' })).toThrow(
-        'Unsupported FYLO_INDEX_BACKEND "s3-prefix"'
-    );
+test('fyloOptions combines binary and WORM', () => {
+    expect(fyloOptions('/tmp/fylo', { FYLO_BINARY: 'fylo', FYLO_WORM: 'strict' })).toEqual({
+        binary: 'fylo',
+        worm: true,
+    });
 });

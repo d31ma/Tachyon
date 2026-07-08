@@ -1,6 +1,7 @@
 // @ts-check
-import { validateData as chexValidateData } from '@d31ma/chex';
-import { mkdtempSync } from 'fs';
+import { CHEX } from '../../vendor/chex/chex.mjs';
+import { warm } from '../../vendor/chex/warm.js';
+import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import Router from "./route-handler.js";
@@ -9,11 +10,31 @@ import Router from "./route-handler.js";
 /** @typedef {Record<string, SchemaRecord>} MethodSchema */
 
 export default class Validate {
-    /** @type {string | null} */
+    /**
+     * CHEX is binary-first now (no importable package). We drive the `chex`
+     * binary through the vendored NDJSON shim, wrapped in `warm()` so the
+     * long-lived subprocess stays unref'd while idle and never blocks exit.
+     * @type {(import('../../vendor/chex/chex.mjs').CHEX) | null}
+     */
+    static chexClient = null;
+
+    /** Temp dir holding schemas written for the binary (it reads from disk). @type {string | null} */
     static chexSchemaDir = null;
 
-    /** @type {Map<string, SchemaRecord>} */
-    static chexSchemas = new Map();
+    /** Schema-cache keys already written to {@link chexSchemaDir}. @type {Set<string>} */
+    static writtenSchemas = new Set();
+
+    /** @returns {import('../../vendor/chex/chex.mjs').CHEX} */
+    static getChex() {
+        if (!Validate.chexClient) Validate.chexClient = warm(new CHEX());
+        return Validate.chexClient;
+    }
+
+    /** @returns {string} */
+    static ensureSchemaDir() {
+        if (!Validate.chexSchemaDir) Validate.chexSchemaDir = mkdtempSync(path.join(tmpdir(), 'tachyon-chex-'));
+        return Validate.chexSchemaDir;
+    }
 
     /**
      * Derives the route directory from a handler file path by stripping the
@@ -32,20 +53,6 @@ export default class Validate {
     }
 
     /**
-     * @param {string} route
-     * @param {string | undefined} method
-     * @param {string} io
-     * @returns {string}
-     */
-    static schemaCacheKey(route, method, io) {
-        const digest = new Bun.CryptoHasher('sha256')
-            .update(`${route}:${method ?? ''}:${io}`)
-            .digest('hex')
-            .slice(0, 16);
-        return `tachyon_${digest}`;
-    }
-
-    /**
      * @param {SchemaRecord} data
      * @param {SchemaRecord} schema
      * @param {string} route
@@ -54,13 +61,20 @@ export default class Validate {
      * @param {string} io
      */
     static async validateWithChex(data, schema, route, parentRoute, method, io) {
-        const key = Validate.schemaCacheKey(parentRoute, method, io);
-        // CHEX treats schema references ending in .schema.json as paths and
-        // looks up its cache under a 'path:'-prefixed key.  Seed the cache
-        // with the exact key CHEX will request so it skips disk I/O.
-        const chexKey = `${key}.schema.json`;
-        Validate.chexSchemas.set(`path:${chexKey}`, schema);
-        await chexValidateData(chexKey, data, { schemaDir: null, cache: Validate.chexSchemas });
+        // The chex binary resolves a schema name against a directory
+        // (`<dir>/<name>.schema.json`), so write the schema to the temp dir. Key
+        // the file by schema CONTENT (not route/method/io) — the same route can
+        // be validated against different schemas (e.g. per status code), so a
+        // route-keyed cache would serve a stale schema.
+        const serialized = JSON.stringify(schema);
+        const key = `tachyon_${new Bun.CryptoHasher('sha256').update(serialized).digest('hex').slice(0, 32)}`;
+        const dir = Validate.ensureSchemaDir();
+        if (!Validate.writtenSchemas.has(key)) {
+            writeFileSync(path.join(dir, `${key}.schema.json`), serialized);
+            Validate.writtenSchemas.add(key);
+        }
+        // Resolves with the validated data, rejects (ValidationError) on mismatch.
+        await Validate.getChex().validate(key, data, dir);
     }
 
     /**

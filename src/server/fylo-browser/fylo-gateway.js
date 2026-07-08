@@ -1,7 +1,8 @@
 // @ts-check
 import path from 'path';
-import Fylo from '@d31ma/fylo';
-import { createFyloHttpHandler } from '@d31ma/fylo/server';
+import net from 'node:net';
+import { spawn } from 'node:child_process';
+import { Fylo } from '../../vendor/fylo/fylo-node.mjs';
 import Router from '../http/route-handler.js';
 import logger from '../observability/logger.js';
 import { fyloOptions } from '../fylo-options.js';
@@ -254,40 +255,121 @@ function shellHtml() {
 </html>`;
 }
 
-// ── Official handler (created lazily) ────────────────────────────────────
+// ── Shared fylo binary handles (created lazily) ──────────────────────────
+//
+// Fylo 26.28 is binary-first. The admin handlers below drive one long-lived
+// `fylo exec --loop` subprocess (via the Node shim) instead of an in-process
+// engine, and the `/_fylo/v1/*` data plane is reverse-proxied to a `fylo serve`
+// subprocess — the backend the browser sync client is built to reconcile with.
+// Both are keyed on the active root so tests that switch FYLO_ROOT recreate them.
 
-/** @type {ReturnType<typeof createFyloHttpHandler> | null} */
-let officialHandler = null;
+/** @type {{ root: string, db: Fylo } | null} */
+let sharedFylo = null;
 
-/** @returns {ReturnType<typeof createFyloHttpHandler>} */
-function getOfficialHandler() {
-    if (!officialHandler) {
-        officialHandler = createFyloHttpHandler({
-            root: fyloRoot(),
-            allowAnonymous: true,
-            corsOrigin: process.env.YON_CORS_ORIGIN || undefined,
-        });
+/** @returns {Fylo & Record<string, any>} */
+function gatewayFylo() {
+    const root = fyloRoot();
+    if (!sharedFylo || sharedFylo.root !== root) {
+        if (sharedFylo) { try { sharedFylo.db.close(); } catch { /* already gone */ } }
+        sharedFylo = { root, db: new Fylo(root, fyloOptions(root)) };
+        registerCleanup();
     }
-    return officialHandler;
+    return /** @type {Fylo & Record<string, any>} */ (sharedFylo.db);
+}
+
+/** @type {{ root: string, base: string, proc: import('node:child_process').ChildProcess } | null} */
+let serveState = null;
+/** @type {Promise<string> | null} */
+let servePromise = null;
+
+/** Ask the OS for a free loopback port. @returns {Promise<number>} */
+function freePort() {
+    return new Promise((resolve, reject) => {
+        const srv = net.createServer();
+        srv.once('error', reject);
+        srv.listen(0, '127.0.0.1', () => {
+            const addr = srv.address();
+            const port = addr && typeof addr === 'object' ? addr.port : 0;
+            srv.close(() => resolve(port));
+        });
+    });
+}
+
+/** Poll `/v1/health` until the serve process answers. @param {string} base */
+async function waitForServeHealth(base) {
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline) {
+        try {
+            const res = await fetch(`${base}/v1/health`);
+            if (res.ok) return;
+        } catch { /* not listening yet */ }
+        await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error('fylo serve did not become healthy within 10s');
+}
+
+/** Spawn (once, per root) a `fylo serve` backend and return its base URL. */
+async function getServeBase() {
+    const root = fyloRoot();
+    if (serveState && serveState.root === root) return serveState.base;
+    if (servePromise) return servePromise;
+    servePromise = (async () => {
+        if (serveState) { try { serveState.proc.kill(); } catch { /* already gone */ } serveState = null; }
+        // ponytail: freePort → spawn has a tiny TOCTOU window; fine for a local
+        // loopback dev/admin backend, add a retry loop only if it ever races.
+        const port = await freePort();
+        const base = `http://127.0.0.1:${port}`;
+        const binary = fyloOptions(root).binary ?? 'fylo';
+        const args = ['serve', '--root', root, '--host', '127.0.0.1', '--port', String(port), '--allow-anonymous'];
+        const corsOrigin = process.env.YON_CORS_ORIGIN;
+        if (corsOrigin) args.push('--cors-origin', corsOrigin);
+        const proc = spawn(binary, args, { stdio: ['ignore', 'ignore', 'inherit'] });
+        proc.on('error', (err) => gatewayLogger.error('fylo serve failed to spawn', { err }));
+        await waitForServeHealth(base);
+        serveState = { root, base, proc };
+        registerCleanup();
+        return base;
+    })();
+    try {
+        return await servePromise;
+    } finally {
+        servePromise = null;
+    }
+}
+
+let cleanupRegistered = false;
+/** Best-effort teardown of the spawned subprocesses when the process exits. */
+function registerCleanup() {
+    if (cleanupRegistered) return;
+    cleanupRegistered = true;
+    // ponytail: 'exit'-only teardown; children die with the parent on a clean
+    // exit. Add SIGINT/SIGTERM kills here if orphaned processes ever show up.
+    process.on('exit', () => {
+        try { serveState?.proc.kill(); } catch { /* already gone */ }
+        try { sharedFylo?.db.close(); } catch { /* already gone */ }
+    });
 }
 
 /**
- * Rewrite a request URL from `/_fylo/v1/*` to `/v1/*` and delegate to the
- * official `@d31ma/fylo/server` handler.
+ * Reverse-proxy a `/_fylo/v1/*` request to the `fylo serve` backend, which
+ * implements the PostgREST-conformant data plane the browser sync client uses
+ * (`/v1/health`, `/v1/exec`, `/v1/:collection/events`).
  * @param {Request} request
  * @returns {Promise<Response>}
  */
 async function delegateToOfficialHandler(request) {
+    const base = await getServeBase();
     const url = new URL(request.url);
     const rewrittenPath = url.pathname.replace(`${BROWSER_PATH}/v1`, '/v1');
-    const rewrittenUrl = new URL(request.url);
-    rewrittenUrl.pathname = rewrittenPath;
-    const rewritten = new Request(rewrittenUrl.toString(), {
-        method: request.method,
-        headers: request.headers,
-        body: request.body,
-    });
-    return getOfficialHandler()(rewritten);
+    const headers = new Headers(request.headers);
+    headers.delete('host'); // fetch sets the correct Host for the loopback target
+    /** @type {RequestInit & { duplex?: 'half' }} */
+    const init = { method: request.method, headers, redirect: 'manual' };
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+        init.body = request.body;
+        init.duplex = 'half';
+    }
+    return fetch(`${base}${rewrittenPath}${url.search}`, init);
 }
 
 // ── API handlers ─────────────────────────────────────────────────────────
@@ -295,7 +377,7 @@ async function delegateToOfficialHandler(request) {
 /** @returns {Promise<{ root: string, collections: Array<{ name: string, exists: boolean, docCount?: number, worm?: boolean, error?: string }> }>} */
 async function listCollections() {
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     /** @type {Array<{ name: string, exists: boolean, docsStored?: number, indexedDocs?: number, worm?: boolean, error?: string }>} */
     const collections = [];
     /** @type {string[]} */
@@ -342,7 +424,7 @@ async function patchDocument(request) {
         }
     }
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     try {
         const newId = await fylo[collection].patch(id, /** @type {Record<string, any>} */ (doc));
         return { ok: true, id: newId };
@@ -358,7 +440,7 @@ async function deleteDocument(url) {
     const id = url.searchParams.get('id') ?? '';
     if (!collection || !id) return { error: 'collection and id query parameters required' };
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     try {
         await fylo[collection].delete(id);
         return { ok: true };
@@ -459,7 +541,7 @@ async function createRestDocument(request) {
     const doc = await readJsonObject(request);
     await assertEditableDocument(route.collection, doc);
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     try {
         await fylo[route.collection].create();
         const id = await fylo[route.collection].put(/** @type {Record<string, any>} */ (doc));
@@ -478,7 +560,7 @@ async function updateRestDocument(request) {
     const doc = await readJsonObject(request);
     await assertEditableDocument(route.collection, doc);
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     try {
         if (request.method === 'PUT') await fylo[route.collection].create();
         const id = request.method === 'PUT'
@@ -497,7 +579,7 @@ async function deleteRestDocument(request) {
     const route = parseRestDocumentPath(request);
     if (!route || !route.id) return jsonResponse(request, { error: 'not found' }, 404);
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     try {
         await fylo[route.collection].delete(route.id);
         return new Response(null, { status: 204, headers: Router.getHeaders(request) });
@@ -515,7 +597,7 @@ async function rebuildCollectionAction(request) {
     const collection = (body.collection ?? '').toString();
     if (!collection) return { error: 'collection is required' };
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     try {
         const result = await fylo[collection].rebuild();
         return { ok: true, result };
@@ -534,22 +616,20 @@ async function listDeletedDocuments(url) {
     const offsetParam = Number(url.searchParams.get('offset') ?? 0);
     const offset = Number.isFinite(offsetParam) && offsetParam >= 0 ? Math.trunc(offsetParam) : 0;
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     const encryptedFields = await getEncryptedFields(collection);
     /** @type {Array<{ id: string, doc: unknown, deletedAt?: string }>} */
     const docs = [];
     let skipped = 0;
     try {
-        for await (const entry of fylo[collection].find.deleted().collect()) {
-            for (const [id, doc] of Object.entries(/** @type {Record<string, unknown>} */ (entry))) {
-                if (skipped < offset) { skipped++; continue; }
-                const redacted = redactDoc(doc, encryptedFields);
-                const deletedAt = typeof (/** @type {any} */ (doc)?._deleted) === 'number'
-                    ? new Date(/** @type {any} */ (doc)._deleted).toISOString()
-                    : undefined;
-                docs.push({ id, doc: redacted, deletedAt });
-                if (docs.length >= limit) break;
-            }
+        const result = /** @type {Record<string, unknown>} */ (await fylo.findDeletedDocs(collection, {}) ?? {});
+        for (const [id, doc] of Object.entries(result)) {
+            if (skipped < offset) { skipped++; continue; }
+            const redacted = redactDoc(doc, encryptedFields);
+            const deletedAt = typeof (/** @type {any} */ (doc)?._deleted) === 'number'
+                ? new Date(/** @type {any} */ (doc)._deleted).toISOString()
+                : undefined;
+            docs.push({ id, doc: redacted, deletedAt });
             if (docs.length >= limit) break;
         }
     } catch (error) {
@@ -569,7 +649,7 @@ async function restoreDocumentAction(request) {
     if (!collection || !id) return { error: 'collection and id are required' };
     if (!isSafeCollectionName(collection)) return { error: 'invalid collection name' };
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     try {
         const restoredId = await fylo[collection].restore(id);
         return { ok: true, id: restoredId };
@@ -709,14 +789,14 @@ async function getDocument(url) {
     const id = url.searchParams.get('id') ?? '';
     if (!collection || !id) return { error: 'collection and id query parameters required' };
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     const encryptedFields = await getEncryptedFields(collection);
     /** @type {Record<string, unknown> | null} */
     let doc = null;
     /** @type {string | undefined} */
     let docError;
     try {
-        const result = await fylo[collection].get(id).once();
+        const result = await fylo[collection].latest(id);
         const resultObject = result && typeof result === 'object' ? /** @type {Record<string, unknown>} */ (result) : null;
         const raw = resultObject && id in resultObject && resultObject[id] && typeof resultObject[id] === 'object'
             ? /** @type {Record<string, unknown>} */ (resultObject[id])
@@ -881,20 +961,18 @@ async function listDocuments(url) {
         ? { $ops: [{ [filters[0].field]: filters[0].filter }], $limit: (limit + offset) * (filters.length > 1 ? 4 : 1) }
         : {};
     const root = fyloRoot();
-    const fylo = /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+    const fylo = gatewayFylo();
     const encryptedFields = await getEncryptedFields(collection);
     /** @type {Array<{ id: string, doc: unknown }>} */
     const docs = [];
     let skipped = 0;
     try {
-        for await (const entry of fylo[collection].find(/** @type {any} */ (query)).collect()) {
-            for (const [id, doc] of Object.entries(/** @type {Record<string, unknown>} */ (entry))) {
-                if (filters.length > 1 && !matchesAllFilters(doc, filters)) continue;
-                if (skipped < offset) { skipped++; continue; }
-                const redacted = redactDoc(doc, encryptedFields);
-                docs.push({ id, doc: selectFields(redacted, select) });
-                if (docs.length >= limit) break;
-            }
+        const result = /** @type {Record<string, unknown>} */ (await fylo[collection].find(/** @type {any} */ (query)) ?? {});
+        for (const [id, doc] of Object.entries(result)) {
+            if (filters.length > 1 && !matchesAllFilters(doc, filters)) continue;
+            if (skipped < offset) { skipped++; continue; }
+            const redacted = redactDoc(doc, encryptedFields);
+            docs.push({ id, doc: selectFields(redacted, select) });
             if (docs.length >= limit) break;
         }
     } catch (error) {
@@ -974,8 +1052,8 @@ export default class FyloGateway {
             }, `${BROWSER_PATH}/app.js`),
         };
 
-        // ── Official FYLO HTTP gateway (/_fylo/v1/*) ──────────────────
-        // Delegates to @d31ma/fylo/server's PostgREST-conformant handler
+        // ── FYLO data plane (/_fylo/v1/*) ─────────────────────────────
+        // Reverse-proxied to a spawned `fylo serve` backend (binary-first)
         Router.reqRoutes[`${BROWSER_PATH}/v1`] = {
             GET: wrap(async (request = new Request(`http://localhost${BROWSER_PATH}/v1`)) => {
                 return delegateToOfficialHandler(request);

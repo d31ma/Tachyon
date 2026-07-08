@@ -15,8 +15,8 @@
       "sections": [
         {
           "heading": "Install",
-          "body": "Install the package, scaffold an app, and start the shape-aware dev server. Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
-          "code": "bun add @d31ma/tachyon\nyon.init my-app --name \"My App\"\ncd my-app && bun install\nbun run serve"
+          "body": "Tachyon ships as the standalone `ty` binary — no npm, no Bun required. The installer also pulls the `fylo` (document store) and `chex` (schema validation) binaries it drives at runtime. Scaffold an app and start the shape-aware dev server: Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
+          "code": "curl -fsSL https://tachyon.del.ma/install.sh | sh\nty init my-app --name \"My App\"\ncd my-app\nty serve"
         },
         {
           "heading": "Layout",
@@ -126,8 +126,8 @@
         },
         {
           "heading": "Build and deploy",
-          "body": "bun run bundle writes a static-ready dist/web by default; --target all emits self-contained native webview hosts for macOS, Windows, Linux, iOS and Android from the same client source.",
-          "code": "bun run bundle -- --target all\nbun run preview"
+          "body": "ty bundle writes a static-ready dist/web by default; --target all emits self-contained native webview hosts for macOS, Windows, Linux, iOS and Android from the same client source.",
+          "code": "ty bundle --target all\nty preview"
         },
         {
           "heading": "Security",

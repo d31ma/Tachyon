@@ -1,6 +1,6 @@
 // @ts-check
 import { afterEach, expect, test } from 'bun:test';
-import Fylo from '@d31ma/fylo';
+import TTID from '../../src/vendor/ttid/ttid.mjs';
 import Router from '../../src/server/http/route-handler.js';
 import Yon from '../../src/server/yon.js';
 const originalTrustProxy = process.env.YON_TRUST_PROXY;
@@ -82,7 +82,7 @@ test('untrusted proxy headers are ignored', () => {
 });
 test('generated request IDs use FYLO TTIDs', async () => {
     const requestId = await Yon.getRequestId(new Request('http://127.0.0.1/language/javascript'));
-    const laterRequestId = await Fylo.uniqueTTID(undefined);
+    const laterRequestId = TTID.generate();
     expect(requestId).toMatch(/^[0-9A-Z]{11}$/);
     expect(laterRequestId).toMatch(/^[0-9A-Z]{11}$/);
     expect(laterRequestId).not.toBe(requestId);

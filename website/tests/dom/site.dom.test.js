@@ -43,10 +43,13 @@ describe('homepage DOM', () => {
         expect(shell).toContain('fylo-browser-path')
     })
 
-    test('renders the DuVay shell: app bar, drawer, bottom navigation, footer', () => {
+    test('renders the DuVay shell: app bar, burger nav-icon, drawer, footer', () => {
         expect(home.document.querySelector('w-app-bar')).toBeTruthy()
+        // Below-desktop navigation is the burger icon that opens the side drawer —
+        // no bottom bar (it overlapped the OS gesture area on phones).
+        expect(home.document.querySelector('w-app-bar-nav-icon[for="site-drawer"]')).toBeTruthy()
         expect(home.document.querySelector('w-navigation-drawer#site-drawer')).toBeTruthy()
-        expect(home.document.querySelector('w-bottom-navigation')).toBeTruthy()
+        expect(home.document.querySelector('w-bottom-navigation')).toBeFalsy()
         expect(home.document.querySelector('w-footer')).toBeTruthy()
         expect(home.document.querySelector('img.brand-mark[src="/shared/assets/logo.svg"]')).toBeTruthy()
     })
@@ -56,7 +59,7 @@ describe('homepage DOM', () => {
         expect(hero?.textContent).toContain('Ship the whole stack')
         const cards = home.document.querySelectorAll('.features-grid w-card')
         expect(cards.length).toBe(6)
-        expect(home.document.querySelector('.hero-install code')?.textContent).toContain('bun add @d31ma/tachyon')
+        expect(home.document.querySelector('.hero-install code')?.textContent).toContain('ty init my-app')
     })
 
     test('links the primary destinations', () => {

@@ -1,8 +1,10 @@
 // @ts-check
-import Fylo, { LocalQueue } from '@d31ma/fylo';
+import { Fylo } from '../../vendor/fylo/fylo-node.mjs';
+import TTID from '../../vendor/ttid/ttid.mjs';
 import path from 'path';
 import Router from '../http/route-handler.js';
 import { fyloOptions } from '../fylo-options.js';
+import TopicLog from './topic-log.js';
 
 const DEFAULT_PATH = '/_yon/realtime';
 const CLIENTS_COLLECTION = 'yon-realtime-clients';
@@ -56,15 +58,25 @@ export default class YonRealtime {
         return Number.isFinite(value) && value >= 1024 ? value : 65536;
     }
 
-    /** @returns {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */
+    /** @returns {Fylo & Record<string, any>} */
     static db() {
         const root = YonRealtime.root();
-        return /** @type {Fylo & Record<string, import('@d31ma/fylo').CollectionFacade>} */ (new Fylo(root, fyloOptions(root)));
+        return /** @type {Fylo & Record<string, any>} */ (new Fylo(root, fyloOptions(root)));
     }
 
-    /** @returns {LocalQueue} */
+    /** @returns {TopicLog} */
     static queue() {
-        return new LocalQueue({ root: YonRealtime.root() });
+        return new TopicLog(YonRealtime.root());
+    }
+
+    /**
+     * Mint an 11-char TTID client id matching {@link CLIENT_ID_PATTERN}. TTID is
+     * pure computation, so the vendored web generator works server-side with no
+     * binary — a real time-ordered id, not a random placeholder.
+     * @returns {string}
+     */
+    static generateClientId() {
+        return TTID.generate();
     }
 
     /** @param {string} clientId */
@@ -154,7 +166,7 @@ export default class YonRealtime {
      * @returns {Promise<YonRealtimeClient>}
      */
     static async registerClient(requestedClientId) {
-        const clientId = requestedClientId?.trim() || await Fylo.uniqueTTID(undefined);
+        const clientId = requestedClientId?.trim() || YonRealtime.generateClientId();
         YonRealtime.assertClientId(clientId);
         await YonRealtime.ensureCollections();
         await YonRealtime.db()[CLIENTS_COLLECTION].put({

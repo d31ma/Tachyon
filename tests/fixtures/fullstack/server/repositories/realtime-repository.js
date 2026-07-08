@@ -1,7 +1,8 @@
 // @ts-check
-import Fylo, { LocalQueue } from '@d31ma/fylo';
+import { Fylo } from '../../../../../src/vendor/fylo/fylo-node.mjs';
 import { fyloOptions } from '../../../../../src/server/fylo-options.js';
 import YonRealtime from '../../../../../src/server/realtime/realtime.js';
+import TopicLog from '../../../../../src/server/realtime/topic-log.js';
 
 const CLIENT_ID_PATTERN = /^[0-9A-Z]{11}$/;
 const CLIENTS_COLLECTION = 'demo-realtime-clients';
@@ -12,14 +13,14 @@ export default class RealtimeRepository {
     constructor(options = {}) {
         this.root = options.root || YonRealtime.root();
         this.fylo = new Fylo(this.root, fyloOptions(this.root));
-        this.queue = new LocalQueue({ root: this.root });
+        this.queue = new TopicLog(this.root);
     }
 
     /**
      * FYLO exposes collections as dynamic proxy properties; give them a
      * typed doorway so checkJs knows the accessor shape.
      * @param {string} name
-     * @returns {{ create(): Promise<void>, put(data: object): Promise<string>, find(query: object): Promise<{ collect(): AsyncIterable<unknown> }> }}
+     * @returns {{ create(): Promise<void>, put(data: object): Promise<string>, find(query: object): Promise<Record<string, unknown>> }}
      */
     collection(name) {
         return /** @type {Record<string, any>} */ (/** @type {unknown} */ (this.fylo))[name];
@@ -31,7 +32,7 @@ export default class RealtimeRepository {
      */
     async registerClient(input) {
         await this.collection(CLIENTS_COLLECTION).create();
-        const clientId = await Fylo.uniqueTTID(undefined);
+        const clientId = YonRealtime.generateClientId();
         const registeredAt = new Date().toISOString();
         const client = {
             clientId,
@@ -50,10 +51,11 @@ export default class RealtimeRepository {
         /** @type {Array<{ clientId: string, nickname: string, streamUrl: string, registeredAt: string }>} */
         const clients = [];
         try {
+            // The Node shim's find() resolves to an `{ id: doc }` map (not the
+            // old chainable `.collect()` iterable); collectClients recurses into
+            // the map's values.
             const found = await this.collection(CLIENTS_COLLECTION).find({});
-            for await (const entry of found.collect()) {
-                RealtimeRepository.collectClients(entry, clients);
-            }
+            RealtimeRepository.collectClients(found ?? {}, clients);
         }
         catch {
             // No clients registered yet — the collection does not exist until

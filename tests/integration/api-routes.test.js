@@ -1,6 +1,6 @@
 // @ts-check
 import { test, beforeAll, afterAll, expect, describe } from 'bun:test';
-import Fylo from '@d31ma/fylo';
+import { Fylo } from '../../src/vendor/fylo/fylo-node.mjs';
 import { mkdir, mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
@@ -204,7 +204,9 @@ async function waitForTelemetrySpans(requestId) {
         try {
             /** @type {Array<{ resource: Record<string, any>, scope: Record<string, any>, span: Record<string, any> }>} */
             const spans = [];
-            for await (const doc of fylo['otel-spans'].find({}).collect()) {
+            // Node shim find() resolves to an `{ id: doc }` map.
+            const found = /** @type {Record<string, any>} */ (await fylo['otel-spans'].find({}) ?? {});
+            for (const doc of Object.values(found)) {
                 spans.push(...extractPersistedSpans(/** @type {Record<string, any>} */ (doc)));
                 for (const traceDoc of Object.values(/** @type {Record<string, any>} */ (doc))) {
                     if (traceDoc && typeof traceDoc === 'object') {
@@ -1808,7 +1810,6 @@ describe('FYLO_SCHEMA schema loading', () => {
         try {
             process.env.FYLO_SCHEMA = schemasDir;
             const fylo = new Fylo(root);
-            await fylo.ready();
 
             const inspect = await fylo[collection].inspect();
             expect(inspect.exists).toBe(true);

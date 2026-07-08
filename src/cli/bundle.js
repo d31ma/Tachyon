@@ -32,6 +32,24 @@ process.env.TAC_BUNDLE_TARGETS = bundleTargets.join(',');
 const WATCH_DEBOUNCE_MS = 200;
 const BUILD_CONCURRENCY = 8;
 const bundleLogger = logger.child({ scope: 'cli:bundle' });
+
+/**
+ * Opt-in phase timing for the build harness. When TAC_BENCH is set, records how
+ * long each build phase took into globalThis.__TAC_BENCH__ so a caller can read
+ * the compile-vs-write-vs-prerender split. A no-op (just runs the phase) otherwise.
+ * @template T @param {string} phase @param {() => Promise<T>} run @returns {Promise<T>}
+ */
+async function benchPhase(phase, run) {
+    if (!process.env.TAC_BENCH)
+        return run();
+    const started = performance.now();
+    try {
+        return await run();
+    }
+    finally {
+        (globalThis.__TAC_BENCH__ ??= []).push({ phase, ms: performance.now() - started });
+    }
+}
 async function resolveAppName() {
     try {
         const pkg = JSON.parse(await readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
@@ -158,9 +176,9 @@ export async function runBuild() {
             process.env.TAC_BUNDLE_TARGETS = target;
             activeDistPath = path.join(stagingPath, target);
             await mkdir(activeDistPath, { recursive: true });
-            await Compiler.createStaticRoutes();
-            await runWithConcurrency(Object.keys(Router.reqRoutes), BUILD_CONCURRENCY, buildRouteOutput);
-            await Compiler.prerenderStaticPages(activeDistPath);
+            await benchPhase('compile', () => Compiler.createStaticRoutes());
+            await benchPhase('write', () => runWithConcurrency(Object.keys(Router.reqRoutes), BUILD_CONCURRENCY, buildRouteOutput));
+            await benchPhase('prerender', () => Compiler.prerenderStaticPages(activeDistPath));
             if (!skipNativeHost && NATIVE_TARGET_SET.has(target)) {
                 nativeHosts.push({
                     target,

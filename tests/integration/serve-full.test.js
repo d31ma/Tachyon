@@ -1,7 +1,7 @@
 // @ts-check
 import { afterEach, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
-import Fylo from '@d31ma/fylo';
+import { Fylo } from '../../src/vendor/fylo/fylo-node.mjs';
 import net from 'net';
 import path from 'path';
 import { tmpdir } from 'os';

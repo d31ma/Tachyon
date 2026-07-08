@@ -22,12 +22,15 @@ test('createAppScaffold writes a deployable starter app', async () => {
     const handler = await readFile(path.join(appDir, 'server', 'routes', 'yon.js'), 'utf8');
     const jsconfig = await readFile(path.join(appDir, 'jsconfig.json'), 'utf8');
     const tachyonEnv = await readFile(path.join(appDir, 'tachyon-env.d.ts'), 'utf8');
-    expect(packageJson).toContain('"serve": "yon.serve"');
+    expect(packageJson).toContain('"serve": "ty serve"');
     expect(packageJson).toContain('"name": "acme-desk"');
-    expect(packageJson).toContain('"preview": "tac.preview --watch"');
-    expect(packageJson).toContain('"@d31ma/tachyon"');
+    expect(packageJson).toContain('"preview": "ty preview --watch"');
+    // Off npm: no @d31ma/tachyon dependency; the CLI is the `ty` binary.
+    expect(packageJson).not.toContain('@d31ma/tachyon');
     expect(jsconfig).toContain('tachyon-env.d.ts');
-    expect(tachyonEnv).toContain('@d31ma/tachyon/globals');
+    // Globals are embedded self-contained (no @d31ma/tachyon/globals reference).
+    expect(tachyonEnv).toContain('const fylo: FyloApi');
+    expect(tachyonEnv).not.toContain('@d31ma/tachyon/globals');
     expect(await readFile(path.join(appDir, 'client', 'pages', 'tac.js'), 'utf8')).toContain('document.title = "Acme Desk"');
     expect(await Bun.file(path.join(appDir, 'browser')).exists()).toBe(false);
     expect(await Bun.file(path.join(appDir, '.env.test')).exists()).toBe(true);
