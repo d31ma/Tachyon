@@ -394,12 +394,11 @@ with its own shebang also works.) The built-in languages (JS/TS, Python, Ruby,
 PHP, and the compiled ones) are conveniences that let you write a
 `class Handler` and skip the stdin/stdout glue.
 
-`POST /language/fylo` drives the FYLO machine interface end-to-end through the
-`fylo.exec` binary bundled by `@d31ma/fylo`: the route calls a service, the
-service calls a repository or language-native process helper, and that layer
-sends JSON operations to the FYLO binary. During development it invokes `bunx
---bun fylo.exec`; in production, set `FYLO_EXEC_PATH=/path/to/fylo` to point the
-helpers at a compiled FYLO executable instead.
+`POST /language/fylo` drives the FYLO machine interface end-to-end through
+`fylo exec`: the route calls a service, the service calls a repository or
+language-native process helper, and that layer sends JSON operations to the
+installed FYLO binary. Set `FYLO_EXEC_PATH=/path/to/fylo` or
+`FYLO_BINARY=/path/to/fylo` to point helpers at a pinned executable.
 
 | Route | Demonstrates |
 | ----- | ------------ |

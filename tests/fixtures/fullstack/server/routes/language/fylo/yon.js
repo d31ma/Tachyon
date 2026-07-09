@@ -4,7 +4,7 @@ export class Handler {
   static #service = new LanguageService();
 
   /**
-   * Drives the FYLO machine interface end-to-end via `fylo.exec` for the
+   * Drives the FYLO machine interface end-to-end via `fylo exec` for the
    * dashboard's polyglot showcase. Heavy (approximately 25 subprocess spawns) — kept on a
    * dedicated route so it doesn't slow down the lightweight `/languages/javascript`
    * diagnostics endpoint or interfere with other example collections.
