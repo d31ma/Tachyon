@@ -1,9 +1,9 @@
 // @ts-check
 //
-// Tachyon Fylo browser route registration — delegates to FyloGateway which
-// wraps the official @d31ma/fylo/server HTTP handler and adds Tachyon-specific
-// endpoints (SSE streaming, deleted-doc management, rebuild, encryption
-// redaction, browser UI shell).
+// Tachyon Fylo browser route registration — delegates to FyloGateway, which
+// drives the FYLO GitHub release binary and adds Tachyon-specific endpoints
+// (SSE streaming, deleted-doc management, rebuild, encryption redaction,
+// browser UI shell).
 //
 // Kept as a thin facade so existing callers (Yon.createServerRoutes) and the
 // loadCollectionSchema test export don't need to change their import paths.

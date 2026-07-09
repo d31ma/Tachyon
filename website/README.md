@@ -25,9 +25,9 @@ without a CDN inside a `default-src 'self'` content-security policy.
   from `client/shared/data/docs.json`.
 
 The shell is polymorphic: desktop gets full app-bar navigation, while
-below-desktop layouts use an off-canvas drawer with roomier touch targets.
-Content-level layouts use container queries, and the platform-aware Tac
-globals stamp `data-environment` / `data-platform` onto `<body>`.
+below-desktop layouts use a right-side dropdown menu with roomier touch
+targets. Content-level layouts use container queries, and the platform-aware
+Tac globals stamp `data-environment` / `data-platform` onto `<body>`.
 
 The same `client/` source bundles into `dist/web/`, `dist/macos/`,
 `dist/windows/`, `dist/linux/`, `dist/ios/`, and `dist/android/`. The
