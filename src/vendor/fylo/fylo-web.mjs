@@ -3828,6 +3828,10 @@ class SyncEngine {
           await this._pollOnce(collection);
         } catch {}
         await new Promise((resolve) => {
+          if (signal.aborted) {
+            resolve(undefined);
+            return;
+          }
           let timer;
           const onAbort = () => {
             clearTimeout(timer);

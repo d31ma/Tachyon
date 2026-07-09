@@ -24,7 +24,7 @@ export default class extends Tac {
 
     menu.addEventListener('click', (event) => {
       if (!(event.target instanceof Element)) return
-      if (!event.target.closest('a[href]')) return
+      if (!event.target.closest('[href]')) return
       menu.classList.remove('open')
       trigger.setAttribute('aria-expanded', 'false')
     })

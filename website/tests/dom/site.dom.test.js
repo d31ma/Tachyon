@@ -78,6 +78,13 @@ describe('homepage DOM', () => {
             expect(hrefs).toContain(target)
         }
     })
+
+    test('mobile dropdown closes from href-bearing custom elements', async () => {
+        const source = await read('client/components/site/header/tac.js')
+
+        expect(source).toContain("closest('[href]')")
+        expect(source).not.toContain("closest('a[href]')")
+    })
 })
 
 describe('atlas DOM', () => {
