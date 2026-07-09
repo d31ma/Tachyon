@@ -37,7 +37,8 @@
 
 Tachyon ships as a single standalone binary — `ty` — with no npm package and no
 Bun required on your machine. The installer also pulls the `fylo` (document
-store) and `chex` (schema validation) binaries Tachyon drives at runtime.
+store), `chex` (schema validation), and `ttid` (identifier generation) binaries
+Tachyon drives at runtime.
 
 ```bash
 # macOS / Linux

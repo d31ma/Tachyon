@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install FYLO and CHEX binaries
+      - name: Install FYLO, CHEX, and TTID binaries
         run: |
           sh ./scripts/install-vendor-bins.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"

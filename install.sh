@@ -2,13 +2,13 @@
 # Tachyon installer for macOS and Linux.
 #   curl -fsSL https://tachyon.del.ma/install.sh | sh
 # Downloads the right `ty` binary from the latest GitHub release, verifies its
-# checksum, installs it to a directory on your PATH, then installs the `fylo`
-# and `chex` binaries Tachyon drives at runtime.
+# checksum, installs it to a directory on your PATH, then installs the `fylo`,
+# `chex`, and `ttid` binaries Tachyon drives at runtime.
 set -eu
 
 REPO="d31ma/Tachyon"
 BASE="https://github.com/${REPO}/releases/latest/download"
-TACHYON_STEPS=7
+TACHYON_STEPS=8
 tachyon_step=0
 
 repeat_char() {
@@ -91,11 +91,13 @@ chmod +x "$tmp/ty"
 mv "$tmp/ty" "$dest/ty"
 echo "Installed ty to ${dest}/ty"
 
-# Tachyon drives the FYLO and CHEX binaries at runtime — install them too.
+# Tachyon drives the FYLO, CHEX, and TTID binaries at runtime — install them too.
 tachyon_progress "Installing FYLO runtime"
 curl -fsSL https://github.com/d31ma/Fylo/releases/latest/download/install.sh | sh
 tachyon_progress "Installing CHEX validator"
 curl -fsSL https://github.com/d31ma/Chex/releases/latest/download/install.sh | sh
+tachyon_progress "Installing TTID generator"
+curl -fsSL https://github.com/d31ma/TTID/releases/latest/download/install.sh | sh
 
 case ":$PATH:" in
     *":$dest:"*) : ;;

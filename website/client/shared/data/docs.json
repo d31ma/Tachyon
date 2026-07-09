@@ -40,7 +40,7 @@
       "sections": [
         {
           "heading": "Install",
-          "body": "Tachyon ships as the standalone `ty` binary — no package manager or runtime toolchain required. The installer also pulls the `fylo` (document store) and `chex` (schema validation) binaries it drives at runtime. Scaffold an app and start the shape-aware dev server: Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
+          "body": "Tachyon ships as the standalone `ty` binary — no package manager or runtime toolchain required. The installer also pulls the `fylo` (document store), `chex` (schema validation), and `ttid` (identifier generation) binaries it drives at runtime. Scaffold an app and start the shape-aware dev server: Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
           "code": "curl -fsSL https://tachyon.del.ma/install.sh | sh\nty init my-app --name \"My App\"\ncd my-app\nty serve"
         },
         {

@@ -2,13 +2,13 @@
 #   irm https://tachyon.del.ma/install.ps1 | iex
 # Downloads the latest `ty` Windows binary from GitHub releases, verifies its
 # checksum, installs it under %LOCALAPPDATA%\Tachyon (added to your user PATH),
-# then installs the `fylo` and `chex` binaries Tachyon drives at runtime.
+# then installs the `fylo`, `chex`, and `ttid` binaries Tachyon drives at runtime.
 $ErrorActionPreference = 'Stop'
 
 $repo = 'd31ma/Tachyon'
 $base = "https://github.com/$repo/releases/latest/download"
 $asset = 'ty-windows-x64.exe'
-$script:TachyonSteps = 7
+$script:TachyonSteps = 8
 $script:TachyonStep = 0
 
 function Write-TachyonStep {
@@ -64,11 +64,13 @@ if ($userPath -notlike "*$dest*") {
 
 Write-Host "Installed ty to $exe"
 
-# Tachyon drives the FYLO and CHEX binaries at runtime — install them too.
+# Tachyon drives the FYLO, CHEX, and TTID binaries at runtime — install them too.
 Write-TachyonStep 'Installing FYLO runtime'
 irm https://github.com/d31ma/Fylo/releases/latest/download/install.ps1 | iex
 Write-TachyonStep 'Installing CHEX validator'
 irm https://github.com/d31ma/Chex/releases/latest/download/install.ps1 | iex
+Write-TachyonStep 'Installing TTID generator'
+irm https://github.com/d31ma/TTID/releases/latest/download/install.ps1 | iex
 
 Write-Progress -Activity 'Tachyon install' -Completed
 Write-Host "Run 'ty --help' to get started."
