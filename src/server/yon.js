@@ -1,6 +1,6 @@
 // @ts-check
 import path from 'path';
-import Fylo from '@d31ma/fylo';
+import TTID from '../vendor/ttid/ttid.mjs';
 import Router from "./http/route-handler.js";
 import Pool from "./process/process-pool.js";
 import Validate from "./http/schema-validator.js";
@@ -720,7 +720,10 @@ export default class Yon {
         if (incoming && incoming.length <= Yon.MAX_REQUEST_ID_LENGTH) {
             return incoming;
         }
-        return await Fylo.uniqueTTID(undefined);
+        // fylo is binary-first now (no importable uniqueTTID), but TTID is pure
+        // computation — the vendored web generator mints real time-ordered TTIDs
+        // with no binary, preserving the 11-char request-id format.
+        return TTID.generate();
     }
     /**
      * @param {string} handler

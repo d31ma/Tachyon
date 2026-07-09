@@ -12,6 +12,7 @@
     "isolatedModules": true,
     "allowJs": true,
     "checkJs": true,
+    "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "maxNodeModuleJsDepth": 0,
     "skipLibCheck": true,

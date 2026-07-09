@@ -3,6 +3,7 @@
 import Yon from "../server/yon.js";
 import Pool from "../server/process/process-pool.js";
 import HandlerAdapter from "../server/process/handler-adapter.js";
+import MiddlewareAdapter from "../server/process/middleware-adapter.js";
 import { clearHandlerBackends, registerHandlerBackends } from "../server/process/backends/resolve.js";
 import Router from "../server/http/route-handler.js";
 import logger from "../server/observability/logger.js";
@@ -131,6 +132,13 @@ async function loadMiddleware() {
             ? { before: middlewareModule.before, after: middlewareModule.after }
             : null;
         Router.rateLimiter = middlewareModule.rateLimiter ?? null;
+        return;
+    }
+    const adapter = await MiddlewareAdapter.discover(Router.middlewarePath);
+    if (adapter) {
+        const hooks = adapter.toRuntimeHooks();
+        Router.middleware = hooks.middleware;
+        Router.rateLimiter = hooks.rateLimiter;
     }
 }
 const appShape = await detectAppShape();

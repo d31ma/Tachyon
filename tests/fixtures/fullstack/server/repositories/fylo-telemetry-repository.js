@@ -1,6 +1,6 @@
 // @ts-check
 
-import Fylo from '@d31ma/fylo';
+import { Fylo } from '../../../../../src/vendor/fylo/fylo-node.mjs';
 import { readFile } from 'fs/promises';
 import path from 'path';
 import { fyloOptions } from '../../../../../src/server/fylo-options.js';
@@ -32,11 +32,13 @@ export default class FyloTelemetryRepository {
         /** @type {Array<Record<string, unknown>>} */
         const entries = [];
         try {
-            const collection = /** @type {Record<string, { find(query: object): Promise<{ collect(): AsyncIterable<unknown> }> }>} */ (
+            const collection = /** @type {Record<string, { find(query: object): Promise<Record<string, unknown>> }>} */ (
                 /** @type {unknown} */ (this.fylo)
             )[this.collection];
-            const found = await collection.find({});
-            for await (const doc of found.collect()) {
+            // The Node shim's find() resolves to an `{ id: doc }` map.
+            const found = /** @type {Record<string, unknown>} */ (await collection.find({}) ?? {});
+            for (const doc of Object.values(found)) {
+                if (!doc || typeof doc !== 'object') continue;
                 entries.push(/** @type {Record<string, unknown>} */ (doc));
                 for (const entry of Object.values(/** @type {Record<string, unknown>} */ (doc))) {
                     if (entry && typeof entry === 'object') {

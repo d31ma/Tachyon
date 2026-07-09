@@ -6,7 +6,7 @@ export default class {
   /** @type {number} */
   $$totalVisits = 0
   /** @type {string} */
-  installCommand = 'bun add @d31ma/tachyon\nyon.init my-app && cd my-app\nbun run serve'
+  installCommand = 'curl -fsSL https://tachyon.del.ma/install.sh | sh\nty init my-app && cd my-app\nty serve'
 
   constructor() {
     this.$visits += 1

@@ -1,4 +1,4 @@
-# TAC-H-YON Website
+# Tachyon Website
 
 Living Tachyon showcase for the in-repo `@d31ma/tachyon` package. This app is
 **frontend-only**: there is no `server/` and no `db/`. Tac Workers compiled
@@ -13,7 +13,8 @@ without a CDN inside a `default-src 'self'` content-security policy.
 
 ## Structure
 
-- `/` — marketing landing page: hero, feature cards, quickstart code tabs.
+- `/` — marketing landing page: hero, feature cards, Yon backend runtime
+  overview, device target matrix, and quickstart code tabs.
 - `/atlas` — the guided capability atlas, running entirely in the browser:
   native inputs, a reactive canvas studio, Wikimedia SSE streaming,
   tab-to-tab realtime over BroadcastChannel with OPFS-replayed history, a Rust
@@ -23,10 +24,10 @@ without a CDN inside a `default-src 'self'` content-security policy.
 - `/docs` — a wrapper page (`<slot />`) hosting dynamic `_topic` routes fed
   from `client/shared/data/docs.json`.
 
-The shell is polymorphic: desktop gets full app-bar navigation, tablet gets an
-off-canvas drawer, and phones get bottom navigation with roomier touch
-targets. Content-level layouts use container queries, and the platform-aware
-Tac globals stamp `data-environment` / `data-platform` onto `<body>`.
+The shell is polymorphic: desktop gets full app-bar navigation, while
+below-desktop layouts use an off-canvas drawer with roomier touch targets.
+Content-level layouts use container queries, and the platform-aware Tac
+globals stamp `data-environment` / `data-platform` onto `<body>`.
 
 The same `client/` source bundles into `dist/web/`, `dist/macos/`,
 `dist/windows/`, `dist/linux/`, `dist/ios/`, and `dist/android/`. The
@@ -34,25 +35,40 @@ full-stack backend showcase (polyglot Yon routes, server FYLO, realtime
 mailboxes, OpenTelemetry) lives in the framework repo at
 `tests/fixtures/fullstack/`, where the integration suite exercises it.
 
-## Scripts
+## Commands
 
-- `bun run serve`
-  Runs the Tachyon dev server (shape-aware: frontend-only).
-- `bun run start`
-  Alias for `bun run serve`.
-- `bun run bundle`
-  Builds `dist/web/` by default. Pass `-- --target all` for every platform.
-- `bun run preview`
-  Rebuilds and previews the selected target; web is the default.
+The public workflow assumes app authors installed Tachyon's standalone `ty`
+binary. No package-manager command is required to build or preview a Tachyon app:
+
+```sh
+ty serve
+ty bundle --target web
+ty bundle --target macos
+ty bundle --target windows
+ty bundle --target linux
+ty bundle --target ios
+ty bundle --target android
+ty bundle --target all
+ty preview --target web
+ty preview --target macos
+ty preview --target android
+```
+
+Backend-only and full-stack apps use the same binary:
+
+```sh
+ty serve
+YON_VALIDATE=true ty serve
+YON_DATA_BROWSER_ENABLED=true ty serve
+YON_REALTIME_ENABLED=true ty serve
+YON_OTEL_ENABLED=true ty serve
+```
 
 ## Testing
 
-- `bun test`
-  Runs the Bun smoke suite and the bundled DOM regression suite.
-- `bun run test:dom`
-  Runs only the DOM regression suite.
-- `bunx tsc --noEmit`
-  Typechecks client and tests with strict JSDoc.
+The repository's CI runs the website smoke, DOM and typechecking suites. App
+authors consuming the binary should use `ty bundle` and `ty preview` for local
+validation.
 
 ## PWA
 

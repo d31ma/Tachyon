@@ -19,10 +19,10 @@ class YonPythonRunner:
         return module
 
     @staticmethod
-    def resolve_handler_class(module):
-        handler_class = getattr(module, "Handler", None)
+    def resolve_handler_class(module, class_name="Handler"):
+        handler_class = getattr(module, class_name, None)
         if handler_class is None or not isinstance(handler_class, type):
-            raise RuntimeError("Python route must define a class named Handler")
+            raise RuntimeError(f"Python route must define a class named {class_name}")
         return handler_class
 
     @staticmethod
@@ -56,8 +56,9 @@ class YonPythonRunner:
         method = request.get("method")
         if not method:
             raise RuntimeError("Missing HTTP method in request payload")
+        class_name = request.get("className") or "Handler"
         module = YonPythonRunner.load_module(sys.argv[1])
-        handler_class = YonPythonRunner.resolve_handler_class(module)
+        handler_class = YonPythonRunner.resolve_handler_class(module, class_name)
         dispatch = YonPythonRunner.resolve_method(handler_class, method)
         YonPythonRunner.write(await YonPythonRunner.call(dispatch, request))
 

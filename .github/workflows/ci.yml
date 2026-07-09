@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  packages: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -15,13 +14,9 @@ concurrency:
 
 jobs:
   test:
-    name: Test (Bun ${{ matrix.bun-version }})
+    name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
-    strategy:
-      matrix:
-        bun-version: [latest]
 
     steps:
       - name: Checkout
@@ -30,46 +25,45 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ matrix.bun-version }}
-
-      - name: Configure npm registry
-        run: |
-          {
-            echo "@d31ma:registry=https://registry.npmjs.org/"
-          } > .npmrc
-          cp .npmrc ~/.npmrc
-          cat >> bunfig.toml <<'EOF'
-
-          [install.scopes]
-          "@d31ma" = { url = "https://registry.npmjs.org/" }
-          EOF
+          bun-version: latest
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-
-      - name: Install Playwright Chromium
-        run: bunx playwright install chromium
+      - name: Install FYLO, CHEX, and TTID binaries
+        run: |
+          sh ./scripts/install-vendor-bins.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Type check
         run: bun run typecheck
 
-      - name: Run tests with coverage
-        if: matrix.bun-version == 'latest'
-        run: bun run test:coverage
-        env:
-          HOSTNAME: 127.0.0.1
-          BASIC_AUTH: admin:pass
-
       - name: Run tests
-        if: matrix.bun-version != 'latest'
         run: bun run test
         env:
           HOSTNAME: 127.0.0.1
           BASIC_AUTH: admin:pass
 
-      - name: Run package blackbox tests
-        if: matrix.bun-version == 'latest'
-        run: bun run test:blackbox
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || github.token }}
+  build:
+    name: Binary compile smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Compile ty and verify it runs
+        run: |
+          set -euo pipefail
+          bun build --compile --target=bun-linux-x64 ./src/cli/index.js --outfile ty
+          ./ty --version
+          ./ty --help

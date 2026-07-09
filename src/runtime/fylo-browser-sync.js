@@ -1,6 +1,6 @@
 // @ts-check
 //
-// Fylo browser sync client — wraps the official @d31ma/fylo/browser local-first
+// Fylo browser sync client — wraps the vendored fylo web shim's local-first
 // OPFS database and adds HTTP sync, IndexedDB caching, and SSE subscriptions to
 // bridge the browser client with the server gateway at /_fylo.
 //
@@ -9,7 +9,7 @@
 //   fylo.<collection>.batchPut/patchMany/deleteMany/restore/latest/inspect/rebuild
 //   fylo.createCollection/dropCollection/inspectCollection/rebuildCollection
 //   fylo.collections() / fylo.meta() / fylo.setCredentials() / fylo.sql()
-import { createBrowserClient } from '@d31ma/fylo/browser';
+import { createBrowserClient } from '../vendor/fylo/fylo-web.mjs';
 import { tacBrowserCache } from './browser-cache.js';
 
 /**
@@ -56,7 +56,7 @@ const FYLO_BROWSER_PATH = () => {
 
 /**
  * Creates the Tachyon fylo browser sync client (synchronous factory).
- * The official @d31ma/fylo/browser OPFS client is lazily initialized on
+ * The vendored fylo web shim's OPFS client is lazily initialized on
  * first mutation or local read.
  *
  * @param {string} [basePath] - Path to the Fylo browser gateway (e.g. '/_fylo').
@@ -114,7 +114,7 @@ export function createFyloClient(basePath) {
         }
     }
 
-    /** @param {string} collection @returns {Promise<import('@d31ma/fylo/browser').BrowserDirectCollection | null>} */
+    /** @param {string} collection @returns {Promise<import('../vendor/fylo/fylo-web.mjs').BrowserDirectCollection | null>} */
     async function getLocalCollection(collection) {
         const client = await getLocalClient();
         return client ? client.collection(collection) : null;
@@ -123,7 +123,7 @@ export function createFyloClient(basePath) {
     /**
      * Query the local mirror, treating a missing local collection as empty —
      * collections only exist locally after the first mirrored write.
-     * @param {import('@d31ma/fylo/browser').BrowserDirectCollection | null} col
+     * @param {import('../vendor/fylo/fylo-web.mjs').BrowserDirectCollection | null} col
      * @param {Record<string, unknown>} query
      * @returns {Promise<Array<{ id: string, doc: unknown }>>}
      */
@@ -145,8 +145,8 @@ export function createFyloClient(basePath) {
 
     /**
      * Write to the local mirror, creating the collection on first use.
-     * @param {import('@d31ma/fylo/browser').BrowserDirectCollection | null} col
-     * @param {(c: import('@d31ma/fylo/browser').BrowserDirectCollection) => Promise<any>} write
+     * @param {import('../vendor/fylo/fylo-web.mjs').BrowserDirectCollection | null} col
+     * @param {(c: import('../vendor/fylo/fylo-web.mjs').BrowserDirectCollection) => Promise<any>} write
      * @returns {Promise<any>}
      */
     async function localWrite(col, write) {
@@ -564,7 +564,7 @@ export function createFyloClient(basePath) {
                         const localCol = await getLocalCollection(collection);
                         if (!active) return;
                         if (localCol && typeof localCol.subscribe === 'function') {
-                            unsubscribeLocal = localCol.subscribe((event) => {
+                            unsubscribeLocal = localCol.subscribe((/** @type {{ id: string, ts: number, action: string, doc?: Record<string, any> }} */ event) => {
                                 if (!active) return;
                                 onBrowserEvent({ id: event.id, ts: event.ts, action: event.action, collection, doc: event.doc });
                                 this.find(query, { cache: 'no-store' }).then((/** @type {FyloFindResult} */ result) => {

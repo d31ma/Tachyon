@@ -12,7 +12,7 @@ export default class {
       title: 'Polyglot backends',
       tag: 'Tac + Yon',
       href: '/atlas',
-      body: 'Yon routes speak JavaScript, TypeScript, Python, Rust, C++ and more on the server — and this site\'s own backend is Tac Workers running Wasm in your browser.',
+      body: 'Yon keeps backend routes file-routed and language-flexible, while this site dogfoods a frontend-only shape with Tac Workers running local WebAssembly in your browser.',
     },
     {
       title: 'Reactive companions',
@@ -24,7 +24,13 @@ export default class {
       title: 'Tac Workers',
       tag: 'Wasm',
       href: '/docs/workers',
-      body: 'Browser-local backends written in Rust, JavaScript or TypeScript, compiled to Wasm by Tachyon itself — no toolchain — and invoked with fetch("tac://…").',
+      body: 'Browser-local backends written in Rust, JavaScript or TypeScript, compiled by Tachyon, validated by OPTIONS.schema.json, and invoked with fetch("tac://…").',
+    },
+    {
+      title: 'Device targets',
+      tag: 'Native',
+      href: '/docs/devices',
+      body: 'Build web, macOS, Windows, Linux, iOS and Android outputs from the same client tree. Runtime globals expose environment, platform, target and os.',
     },
     {
       title: 'Local-first data',

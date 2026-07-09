@@ -1,6 +1,6 @@
 // @ts-check
 import path from 'path';
-import Fylo from '@d31ma/fylo';
+import { Fylo } from '../../vendor/fylo/fylo-node.mjs';
 import { fyloOptions } from '../fylo-options.js';
 import logger from './logger.js';
 
@@ -238,13 +238,13 @@ class TelemetryStore {
 }
 
 class FyloTelemetryStore extends TelemetryStore {
-    /** @type {Promise<InstanceType<typeof Fylo> & Record<string, import('@d31ma/fylo').CollectionFacade>> | null} */
+    /** @type {Promise<Fylo & Record<string, any>> | null} */
     static fyloPromise = null;
     /** @type {Promise<void> | null} */
     static ensureCollectionPromise = null;
 
     /**
-     * @returns {Promise<InstanceType<typeof Fylo> & Record<string, import('@d31ma/fylo').CollectionFacade>>}
+     * @returns {Promise<Fylo & Record<string, any>>}
      */
     async getFylo() {
         if (!FyloTelemetryStore.fyloPromise) {
@@ -254,10 +254,10 @@ class FyloTelemetryStore extends TelemetryStore {
             // append-only and identified by traceId + spanId.
             const options = {
                 ...fyloOptions(root),
-                worm: { mode: /** @type {const} */ ('strict') },
+                worm: true,
             };
             FyloTelemetryStore.fyloPromise = Promise.resolve(
-                /** @type {InstanceType<typeof Fylo> & Record<string, import('@d31ma/fylo').CollectionFacade>} */
+                /** @type {Fylo & Record<string, any>} */
                 (new Fylo(root, options)),
             );
         }

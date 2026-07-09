@@ -23,16 +23,20 @@ function parse(html) {
 let home
 /** @type {ReturnType<typeof parse>} */
 let atlas
+/** @type {ReturnType<typeof parse>} */
+let docs
 
 beforeAll(async () => {
     await ensureBundle()
     home = parse(await read('dist/web/index.html'))
     atlas = parse(await read('dist/web/atlas/index.html'))
+    docs = parse(await read('dist/web/docs/index.html'))
 }, 120000)
 
 afterAll(() => {
     home?.window.close()
     atlas?.window.close()
+    docs?.window.close()
 })
 
 describe('homepage DOM', () => {
@@ -43,10 +47,13 @@ describe('homepage DOM', () => {
         expect(shell).toContain('fylo-browser-path')
     })
 
-    test('renders the DuVay shell: app bar, drawer, bottom navigation, footer', () => {
+    test('renders the DuVay shell: app bar, burger nav-icon, drawer, footer', () => {
         expect(home.document.querySelector('w-app-bar')).toBeTruthy()
+        // Below-desktop navigation is the burger icon that opens the side drawer —
+        // no bottom bar (it overlapped the OS gesture area on phones).
+        expect(home.document.querySelector('w-app-bar-nav-icon[for="site-drawer"]')).toBeTruthy()
         expect(home.document.querySelector('w-navigation-drawer#site-drawer')).toBeTruthy()
-        expect(home.document.querySelector('w-bottom-navigation')).toBeTruthy()
+        expect(home.document.querySelector('w-bottom-navigation')).toBeFalsy()
         expect(home.document.querySelector('w-footer')).toBeTruthy()
         expect(home.document.querySelector('img.brand-mark[src="/shared/assets/logo.svg"]')).toBeTruthy()
     })
@@ -55,8 +62,12 @@ describe('homepage DOM', () => {
         const hero = home.document.querySelector('.hero h1')
         expect(hero?.textContent).toContain('Ship the whole stack')
         const cards = home.document.querySelectorAll('.features-grid w-card')
-        expect(cards.length).toBe(6)
-        expect(home.document.querySelector('.hero-install code')?.textContent).toContain('bun add @d31ma/tachyon')
+        expect(cards.length).toBe(7)
+        expect(home.document.querySelector('.hero-install code')?.textContent).toContain('ty init my-app')
+        expect(home.document.querySelector('[data-tac-scope="home-yon"]')).toBeTruthy()
+        expect(home.document.querySelector('.yon-languages')?.textContent).toContain('TypeScript')
+        expect(home.document.querySelector('[data-tac-scope="home-targets"]')).toBeTruthy()
+        expect(home.document.querySelector('.target-terminal pre code')?.textContent).toContain('ty bundle --target all')
     })
 
     test('links the primary destinations', () => {
@@ -92,5 +103,15 @@ describe('atlas DOM', () => {
     test('numbers the six atlas sections', () => {
         const ids = [...atlas.document.querySelectorAll('.atlas-section')].map((el) => el.id)
         expect(ids).toEqual(['compose', 'react', 'connect', 'store', 'observe', 'extend'])
+    })
+})
+
+describe('docs DOM', () => {
+    test('uses a DuVay-style documentation shell', () => {
+        expect(docs.document.querySelector('.docs-shell')).toBeTruthy()
+        expect(docs.document.querySelector('.docs-sidebar')).toBeTruthy()
+        expect(docs.document.querySelector('.docs-main')).toBeTruthy()
+        expect(docs.document.querySelector('.docs-page')).toBeTruthy()
+        expect(docs.document.querySelector('site-footer')).toBeFalsy()
     })
 })

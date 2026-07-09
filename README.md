@@ -1,6 +1,5 @@
 <p align="center">
-  <a href="https://www.npmjs.com/package/@d31ma/tachyon"><img src="https://img.shields.io/npm/v/@d31ma/tachyon?style=flat&label=npm" alt="npm version"></a>
-  <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-bun-f9f1e0?style=flat&logo=bun" alt="bun"></a>
+  <a href="https://github.com/d31ma/Tachyon/releases/latest"><img src="https://img.shields.io/github/v/release/d31ma/Tachyon?style=flat&label=release" alt="latest release"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat" alt="license"></a>
 </p>
 
@@ -36,49 +35,53 @@
 
 ## Install
 
+Tachyon ships as a single standalone binary — `ty` — with no npm package and no
+Bun required on your machine. The installer also pulls the `fylo` (document
+store), `chex` (schema validation), and `ttid` (identifier generation) binaries
+Tachyon drives at runtime.
+
 ```bash
-bun add @d31ma/tachyon
+# macOS / Linux
+curl -fsSL https://tachyon.del.ma/install.sh | sh
 ```
 
-That installs the public stable release from npm by default.
-
-If you are a `d31ma` member and want the private beta channel from GitHub Packages instead, configure a user-level `.npmrc`:
-
-```ini
-# ~/.npmrc
-@d31ma:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
-always-auth=true
+```powershell
+# Windows (PowerShell)
+irm https://tachyon.del.ma/install.ps1 | iex
 ```
+
+The installer grabs the right binary for your OS/arch from the latest
+[GitHub release](https://github.com/d31ma/Tachyon/releases), verifies its
+checksum, shows a staged Tachyon progress bar, and puts `ty` on your PATH.
+Verify with `ty --version`.
 
 ---
 
 ## Quick Start
 
 ```bash
-yon.init my-app
+ty init my-app
 cd my-app
-bun install
-bun run serve
+ty serve
 ```
 
-`yon.init` prompts for an app name when run interactively. For scripts, pass it
+`ty init` prompts for an app name when run interactively. For scripts, pass it
 explicitly:
 
 ```bash
-yon.init my-app --name "My App"
+ty init my-app --name "My App"
 ```
 
 Useful commands:
 
 <table>
 <tr><th align="left">Command</th><th align="left">Description</th></tr>
-<tr><td><code>bun run serve</code></td><td>Shape-aware dev server — frontend, backend, or full-stack on one port</td></tr>
-<tr><td><code>bun run bundle</code></td><td>Build static <code>dist/</code> output</td></tr>
-<tr><td><code>bun run preview</code></td><td>Serve the built <code>dist/web</code> directory by default</td></tr>
+<tr><td><code>ty serve</code></td><td>Shape-aware dev server — frontend, backend, or full-stack on one port</td></tr>
+<tr><td><code>ty bundle</code></td><td>Build static <code>dist/</code> output</td></tr>
+<tr><td><code>ty preview</code></td><td>Serve the built <code>dist/web</code> directory by default</td></tr>
 </table>
 
-`bun run serve` is shape-aware: `client/` only bundles and serves the frontend,
+`ty serve` is shape-aware: `client/` only bundles and serves the frontend,
 `server/` only serves backend routes, apps with both folders run as a full-stack
 app on one port, and `client/` + `db/` apps mount Tachyon's built-in FYLO
 browser routes when `YON_DATA_BROWSER_ENABLED=true`.
@@ -242,7 +245,7 @@ Run the full-stack fixture app with its normal environment:
 
 ```bash
 cd tests/fixtures/fullstack
-bun run serve
+ty serve
 ```
 
 FYLO owns everything inside `FYLO_ROOT`, including document shards, local prefix
@@ -391,12 +394,11 @@ with its own shebang also works.) The built-in languages (JS/TS, Python, Ruby,
 PHP, and the compiled ones) are conveniences that let you write a
 `class Handler` and skip the stdin/stdout glue.
 
-`POST /language/fylo` drives the FYLO machine interface end-to-end through the
-`fylo.exec` binary bundled by `@d31ma/fylo`: the route calls a service, the
-service calls a repository or language-native process helper, and that layer
-sends JSON operations to the FYLO binary. During development it invokes `bunx
---bun fylo.exec`; in production, set `FYLO_EXEC_PATH=/path/to/fylo` to point the
-helpers at a compiled FYLO executable instead.
+`POST /language/fylo` drives the FYLO machine interface end-to-end through
+`fylo exec`: the route calls a service, the service calls a repository or
+language-native process helper, and that layer sends JSON operations to the
+installed FYLO binary. Set `FYLO_EXEC_PATH=/path/to/fylo` or
+`FYLO_BINARY=/path/to/fylo` to point helpers at a pinned executable.
 
 | Route | Demonstrates |
 | ----- | ------------ |
@@ -809,27 +811,22 @@ Available helpers through `Tac`:
 
 The same context, lifecycle, and event helpers are also exposed as Stage 3 decorators. They move the wiring out of the constructor and onto the field or method that owns the value. Companion scripts can use them as bare identifiers — the Tachyon compiler auto-imports them when it sees the `@<name>` syntax, so no `import` line is needed in user code.
 
-For editor and `checkJs` support in consuming apps, include Tachyon's ambient
-globals once in the app:
+For editor and `checkJs` support, the `ty init` scaffold writes Tachyon's
+ambient globals into a self-contained `tachyon-env.d.ts` in the app root — no
+package reference required, since Tachyon ships as a binary rather than an npm
+module. That declaration lets app-authored page and component scripts use bare
+`Tac`, `publish`, `subscribe`, `env`, `onMount`, `fylo`, and `Worker` without
+local imports or `Cannot find name` diagnostics from TypeScript-aware tooling.
 
-```ts
-/// <reference types="@d31ma/tachyon/globals" />
-```
-
-The `yon.init` scaffold writes this to `tachyon-env.d.ts` automatically. It
-lets app-authored page and component scripts use bare `Tac`, `publish`,
-`subscribe`, `env`, `onMount`, `fylo`, and `Worker` without local imports
-or `Cannot find name` diagnostics from TypeScript-aware tooling.
-
-If the app also uses plain ESLint `no-undef`, import Tachyon's globals map in
-the app's flat config:
+If the app also uses plain ESLint `no-undef`, declare the same identifiers as
+`readonly` globals in the app's flat config:
 
 ```js
-import tachyonGlobals from '@d31ma/tachyon/eslint-globals'
-
 export default [{
   files: ['client/**/*.{js,ts}'],
-  languageOptions: { globals: tachyonGlobals }
+  languageOptions: {
+    globals: { Tac: 'readonly', publish: 'readonly', subscribe: 'readonly', env: 'readonly', onMount: 'readonly', fylo: 'readonly' }
+  }
 }]
 ```
 
@@ -872,11 +869,10 @@ Decorator semantics:
 
 `@subscribe` and `@env` mirror the underlying `tac.subscribe` / `tac.env` types and may return `undefined` when no fallback is supplied; declare the field's JSDoc type accordingly.
 
-Outside of companion scripts (tests, library code), import the decorators explicitly:
-
-```js
-import { subscribe, publish, env, onMount } from '@d31ma/tachyon/decorators'
-```
+The decorators are only available inside companion scripts, where the Tachyon
+compiler injects them automatically when it sees the `@<name>` syntax — there is
+no module to import, since Tachyon ships as the `ty` binary rather than an npm
+package.
 
 ### Reactive Fields
 
@@ -1045,7 +1041,7 @@ Files whose language does not support the selected target are not bundled.
 
 How the in-house compiler works:
 
-1. Tachyon finds `client/workers/**/tac.<language>` during `bun run bundle`.
+1. Tachyon finds `client/workers/**/tac.<language>` during `ty bundle`.
 2. The applicable language frontend tokenizes/parses only Tachyon's documented
    handler subset, not the full language.
 3. That parser emits a shared handler AST: methods named after HTTP verbs,
@@ -1464,17 +1460,17 @@ styles should live under `client/shared/assets` or `client/shared/styles`.
 <details>
 <summary><h2 style="display:inline">Build Output</h2></summary>
 
-`tac.bundle` writes a static-ready `dist/` directory. The default bundle target
+`ty bundle` writes a static-ready `dist/` directory. The default bundle target
 is `web`. To prepare the same Tac output for native shell packaging, pass
 `--target`:
 
 ```bash
-tac.bundle --target MacOS
-tac.bundle --target windows
-tac.bundle --target linux
-tac.bundle --target android
-tac.bundle --target ios
-tac.bundle --target all
+ty bundle --target MacOS
+ty bundle --target windows
+ty bundle --target linux
+ty bundle --target android
+ty bundle --target ios
+ty bundle --target all
 ```
 
 Targets are case-insensitive. Supported values are `web`, `macos`, `windows`,
@@ -1517,7 +1513,7 @@ The `platform` value is one of `web`, `macos`, `windows`, `linux`, `ios`, or
 The web platform also detects the visitor OS at runtime when the browser
 exposes enough user-agent information.
 
-For native targets, `tac.bundle` produces a native webview host at
+For native targets, `ty bundle` produces a native webview host at
 `dist/<target>/`:
 
 ```text
@@ -1532,7 +1528,7 @@ These hosts are frontend-only shells: they load the static Tac files (embedded
 under `Resources/`) through the operating system's webview (`WKWebView`,
 WebView2, WebKitGTK, iOS `WKWebView`, or Android `WebView`). They do not embed
 or spawn a Yon backend. Pass `--skip-native-host` to emit the plain web bundle
-at `dist/<target>/` instead, or run `tac.native-bundle --target <target>` later
+at `dist/<target>/` instead, or run `ty native-bundle --target <target>` later
 to turn an existing `dist/<target>/` web bundle into the native host in place.
 
 ### Native artifact export (`.apk` / `.ipa` / `.app` / Linux binary)
@@ -1566,7 +1562,7 @@ and remains buildable by hand.
   and the WebView2 SDK, building on Windows. Emits `dist/windows/<App>/`
   containing `<App>.exe` and its `Resources/`.
 
-`yon.serve --no-bundle` or `YON_SKIP_BUNDLE=true` starts the server without
+`ty serve --no-bundle` or `YON_SKIP_BUNDLE=true` starts the server without
 regenerating `dist/`, which is useful when another build pipeline owns frontend
 output. For post-processing that should run after every Tachyon bundle, export a
 `postBundle` hook from `tac.config.js`:
@@ -1623,22 +1619,22 @@ dist/
 
 <table>
 <tr><th align="left">Command</th><th align="left">Description</th></tr>
-<tr><td><code>yon.serve</code></td><td>Detects <code>client/</code> and <code>server/</code> contents, serves frontend, backend, or full-stack app</td></tr>
-<tr><td><code>tac.bundle</code></td><td>Builds <code>dist/</code></td></tr>
-<tr><td><code>tac.bundle --target MacOS</code></td><td>Builds a macOS <code>WKWebView</code> host at <code>dist/macos</code></td></tr>
-<tr><td><code>tac.bundle --target linux</code></td><td>Builds a Linux WebKitGTK host at <code>dist/linux</code></td></tr>
-<tr><td><code>tac.bundle --target android</code></td><td>Builds an Android WebView host at <code>dist/android</code></td></tr>
-<tr><td><code>tac.bundle --target ios</code></td><td>Builds an iOS <code>WKWebView</code> host at <code>dist/ios</code></td></tr>
-<tr><td><code>tac.bundle --target all</code></td><td>Builds the web bundle and native webview hosts for web, macOS, Windows, Linux, Android, and iOS</td></tr>
-<tr><td><code>tac.bundle --target macos --skip-native-host</code></td><td>Builds the plain web bundle at <code>dist/macos</code> without generating the native host</td></tr>
-<tr><td><code>tac.native-bundle --target macos</code></td><td>Turns an existing <code>dist/macos</code> web bundle into the native host in place</td></tr>
-<tr><td><code>tac.bundle --watch</code></td><td>Keeps <code>dist/</code> fresh</td></tr>
-<tr><td><code>tac.preview</code></td><td>Serves <code>dist/web</code></td></tr>
-<tr><td><code>tac.preview --target macos</code></td><td>Serves the selected target's previewable web assets, usually <code>dist/&lt;target&gt;/Resources</code> for native hosts</td></tr>
-<tr><td><code>tac.preview --watch --target web</code></td><td>Rebuilds and previews the selected target together</td></tr>
+<tr><td><code>ty serve</code></td><td>Detects <code>client/</code> and <code>server/</code> contents, serves frontend, backend, or full-stack app</td></tr>
+<tr><td><code>ty bundle</code></td><td>Builds <code>dist/</code></td></tr>
+<tr><td><code>ty bundle --target MacOS</code></td><td>Builds a macOS <code>WKWebView</code> host at <code>dist/macos</code></td></tr>
+<tr><td><code>ty bundle --target linux</code></td><td>Builds a Linux WebKitGTK host at <code>dist/linux</code></td></tr>
+<tr><td><code>ty bundle --target android</code></td><td>Builds an Android WebView host at <code>dist/android</code></td></tr>
+<tr><td><code>ty bundle --target ios</code></td><td>Builds an iOS <code>WKWebView</code> host at <code>dist/ios</code></td></tr>
+<tr><td><code>ty bundle --target all</code></td><td>Builds the web bundle and native webview hosts for web, macOS, Windows, Linux, Android, and iOS</td></tr>
+<tr><td><code>ty bundle --target macos --skip-native-host</code></td><td>Builds the plain web bundle at <code>dist/macos</code> without generating the native host</td></tr>
+<tr><td><code>ty native-bundle --target macos</code></td><td>Turns an existing <code>dist/macos</code> web bundle into the native host in place</td></tr>
+<tr><td><code>ty bundle --watch</code></td><td>Keeps <code>dist/</code> fresh</td></tr>
+<tr><td><code>ty preview</code></td><td>Serves <code>dist/web</code></td></tr>
+<tr><td><code>ty preview --target macos</code></td><td>Serves the selected target's previewable web assets, usually <code>dist/&lt;target&gt;/Resources</code> for native hosts</td></tr>
+<tr><td><code>ty preview --watch --target web</code></td><td>Rebuilds and previews the selected target together</td></tr>
 </table>
 
-`tac.preview --target <native>` checks local prerequisites before starting. For
+`ty preview --target <native>` checks local prerequisites before starting. For
 example, macOS preview requires macOS plus `swiftc`, iOS requires Xcode,
 Linux requires GTK/WebKitGTK development packages, Windows requires WebView2,
 and Android requires an Android SDK plus JDK. Use `--skip-native-checks` only
@@ -1664,15 +1660,93 @@ Tachyon also supports:
 - origin-aware CORS rejection before handler execution
 - proxy-aware request context
 - in-memory rate limiting
+- JavaScript and polyglot process middleware
 - middleware-provided distributed rate limiting
 - cache headers for runtime assets, chunks, shared assets, and shared data
 - document-request detection using browser navigation headers such as `Sec-Fetch-Dest` / `Sec-Fetch-Mode`, with `Accept: text/html` kept as a fallback
 
 ---
 
+## Middleware
+
+Existing JavaScript middleware still works from `middleware.js`:
+
+```js
+export default {
+  before(request, context) {
+    if (request.headers.get('x-blocked') === 'true') {
+      return Response.json({ detail: 'blocked' }, { status: 403 })
+    }
+  },
+  after(request, response, context) {
+    const headers = new Headers(response.headers)
+    headers.set('X-Request-Id', context.requestId)
+    return new Response(response.body, { status: response.status, headers })
+  },
+  rateLimiter: {
+    take(request, context) {
+      return null
+    },
+  },
+}
+```
+
+Polyglot middleware can live at `server/middleware/yon.<ext>` or
+`middleware/yon.<ext>`. JavaScript, TypeScript, Python, Ruby, and PHP can use a
+class-style adapter:
+
+```python
+class Middleware:
+    @staticmethod
+    def before(input):
+        if input["request"]["headers"].get("x-blocked") == "true":
+            return {
+                "action": "respond",
+                "status": 403,
+                "body": { "detail": "blocked" },
+            }
+
+    @staticmethod
+    def after(input):
+        return { "headers": { "X-Request-Id": input["context"]["requestId"] } }
+
+    @staticmethod
+    def rateLimit(input):
+        return {
+            "allowed": True,
+            "limit": 100,
+            "remaining": 99,
+            "resetAt": 1780000000000,
+        }
+```
+
+Any other language can use the raw shim protocol: read one JSON envelope from
+stdin and write one JSON result to stdout. The envelope includes `phase`,
+`request`, `response` for `after`, and `context`.
+
+```json
+{ "phase": "before", "request": {}, "context": {} }
+```
+
+Supported results:
+
+```json
+{ "action": "continue" }
+{ "action": "respond", "status": 403, "headers": {}, "body": {} }
+{ "action": "replace", "response": { "status": 200, "headers": {}, "body": {} } }
+{ "allowed": true, "limit": 100, "remaining": 99, "resetAt": 1780000000000 }
+```
+
+To preserve streaming responses and avoid accidentally consuming request
+bodies before route handlers run, process middleware receives request/response
+metadata by default, not body streams.
+
+---
+
 ## Distributed Rate Limiting
 
-Export a `rateLimiter` from `middleware.js` to use a shared backend.
+Export a `rateLimiter` from `middleware.js`, or `rateLimit()` from polyglot
+middleware, to use a shared backend.
 
 Required env vars:
 
@@ -1705,7 +1779,7 @@ UPSTASH_RATE_LIMIT_PREFIX=tachyon:rate-limit
   hashed Basic Auth, explicit origins, and shared rate limiting
 - configure `YON_TRUST_PROXY` when behind nginx, Caddy, or Cloudflare
 - use a shared rate limiter for multi-instance deployments
-- validate the built frontend with `tac.preview` before deploy
+- validate the built frontend with `ty preview` before deploy
 
 ---
 

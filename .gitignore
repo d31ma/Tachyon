@@ -5,6 +5,8 @@ examples/node_modules*/
 .fylo-data/
 .tachyon/
 dist
+dist-bin/
+dist-web/
 build
 coverage
 test-results
@@ -20,6 +22,7 @@ src/shared/manifests/route-manifest.json
 # committed source; collections and version history are regenerated per run.
 tests/fixtures/fullstack/db/.collections/
 tests/fixtures/fullstack/db/.fylo-vcs/
+tests/fixtures/fullstack/db/.fylo-catalog/
 package-lock.json
 
 # Graphify
@@ -29,8 +32,13 @@ CLAUDE.md
 AGENTS.md
 .github/copilot-instructions.md
 
+# Persistent prerender cache output (opt-in TAC_PRERENDER_CACHE)
+.tac-cache/
+
 # Untrack markdown except README
 *.md
 !README.md
+# Tracked planning docs (explicit exceptions to the *.md ignore above)
+!scripts/bench/PRERENDER-CACHE.md
 .codex
 .vscode

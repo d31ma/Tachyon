@@ -2,12 +2,12 @@
 
 final class YonPhpRunner
 {
-    public static function resolveHandlerClass(string $handlerPath): string
+    public static function resolveHandlerClass(string $handlerPath, string $className = 'Handler'): string
     {
-        if (!class_exists('Handler')) {
-            throw new RuntimeException('PHP route must define a class named Handler');
+        if (!class_exists($className)) {
+            throw new RuntimeException("PHP route must define a class named {$className}");
         }
-        return 'Handler';
+        return $className;
     }
 
     public static function resolveMethod(string $className, string $method): void
@@ -43,6 +43,7 @@ final class YonPhpRunner
         if ($method === null || $method === '') {
             throw new RuntimeException('Missing HTTP method in request payload');
         }
+        $className = $request['className'] ?? 'Handler';
 
         $source = file_get_contents($argv[1]);
         if ($source === false) {
@@ -62,7 +63,7 @@ final class YonPhpRunner
             @unlink($tempPath);
         }
 
-        $className = self::resolveHandlerClass($argv[1]);
+        $className = self::resolveHandlerClass($argv[1], $className);
         self::resolveMethod($className, $method);
         self::write(call_user_func([$className, $method], $request));
     }

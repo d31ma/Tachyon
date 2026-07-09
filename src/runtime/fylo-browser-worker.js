@@ -1,14 +1,15 @@
 // @ts-check
 //
-// Fylo browser worker — boots the official @d31ma/fylo/browser OPFS engine in a
+// Fylo browser worker — boots the vendored fylo web shim's OPFS engine in a
 // Web Worker context for off-main-thread I/O. Replaces fylo-local-worker.js
 // (deprecated) which used the hand-rolled OPFS filesystem adapter.
 //
-// The official @d31ma/fylo/browser package already provides a
-// SharedWorker/DedicatedWorker runtime via its createBrowserClient({ worker: true })
-// option. This worker entry point exists so the Tachyon compiler can bundle it
-// as a known asset, used by the compiler's FYLO_LOCAL_WORKER_PATH constant.
-import { createBrowserClient } from '@d31ma/fylo/browser';
+// Fylo is binary-first now: the browser can't spawn the binary, so it ships a
+// self-contained web bundle (src/vendor/fylo/fylo-web.mjs) that provides a
+// SharedWorker/DedicatedWorker runtime via createBrowserClient({ worker: true }).
+// This worker entry point exists so the Tachyon compiler can bundle it as a
+// known asset, used by the compiler's FYLO_LOCAL_WORKER_PATH constant.
+import { createBrowserClient } from '../vendor/fylo/fylo-web.mjs';
 
 const client = createBrowserClient({ storage: 'opfs', namespace: 'tachyon' });
 

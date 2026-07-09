@@ -2,21 +2,46 @@
   "order": [
     "introduction",
     "routing",
+    "devices",
     "templates",
     "companions",
     "workers",
     "storage",
-    "operations"
+    "yon",
+    "operations",
+    "cookbook"
+  ],
+  "groups": [
+    {
+      "title": "Start",
+      "summary": "Install, project shape, routing and target choices.",
+      "topics": ["introduction", "routing", "devices"]
+    },
+    {
+      "title": "Tac frontend",
+      "summary": "Templates, companions, workers and browser-local data.",
+      "topics": ["templates", "companions", "workers", "storage"]
+    },
+    {
+      "title": "Yon backend",
+      "summary": "Routes, middleware, validation, FYLO and observability.",
+      "topics": ["yon", "operations"]
+    },
+    {
+      "title": "Cookbook",
+      "summary": "Production-shaped recipes that combine Tac, Yon and FYLO.",
+      "topics": ["cookbook"]
+    }
   ],
   "topics": {
     "introduction": {
       "title": "Introduction",
-      "summary": "Tachyon is a polyglot, file-system-routed full-stack framework for Bun. Tac is the frontend layer, Yon is the backend/runtime layer, and FYLO is the document store beneath both.",
+      "summary": "Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Tac is the frontend layer, Yon is the backend/runtime layer, and FYLO is the document store beneath both.",
       "sections": [
         {
           "heading": "Install",
-          "body": "Install the package, scaffold an app, and start the shape-aware dev server. Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
-          "code": "bun add @d31ma/tachyon\nyon.init my-app --name \"My App\"\ncd my-app && bun install\nbun run serve"
+          "body": "Tachyon ships as the standalone `ty` binary — no package manager or runtime toolchain required. The installer also pulls the `fylo` (document store), `chex` (schema validation), and `ttid` (identifier generation) binaries it drives at runtime. Scaffold an app and start the shape-aware dev server: Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
+          "code": "curl -fsSL https://tachyon.del.ma/install.sh | sh\nty init my-app --name \"My App\"\ncd my-app\nty serve"
         },
         {
           "heading": "Layout",
@@ -42,6 +67,82 @@
         {
           "heading": "Validation",
           "body": "An OPTIONS.schema.json beside each handler validates requests and responses with CHEX regex schemas, and feeds the generated OpenAPI 3.1 document served at /openapi.json with a docs UI at /api-docs."
+        }
+      ]
+    },
+    "yon": {
+      "title": "Yon backend",
+      "summary": "Yon is Tachyon's backend/runtime layer: filesystem-routed handlers, polyglot process adapters, CHEX validation, OpenAPI docs, FYLO data routes, SSE realtime, middleware, rate limiting and OpenTelemetry.",
+      "sections": [
+        {
+          "heading": "Serve modes",
+          "body": "ty serve is shape-aware. A client/ app serves frontend assets, a server/ app serves backend routes, a client/ + server/ app runs full-stack, and client/ + db/ can mount Tachyon's built-in FYLO browser routes when YON_DATA_BROWSER_ENABLED=true.",
+          "code": "ty serve\nYON_PORT=8000 ty serve\nYON_HOST=0.0.0.0 ty serve\nNODE_ENV=production ty serve"
+        },
+        {
+          "heading": "Route convention",
+          "body": "Backend routes live at server/routes/<path>/yon.<ext>. A Handler class exposes static methods named after HTTP verbs. Dynamic path segments use _name folders and arrive in request.paths.",
+          "code": "server/routes/items/yon.ts      -> /items\nserver/routes/items/_id/yon.ts  -> /items/:id\n\nexport class Handler {\n  static GET(request) { return { items: [] } }\n  static POST(request) { return request.body }\n}"
+        },
+        {
+          "heading": "Languages",
+          "body": "Yon ships ergonomic adapters for JavaScript, TypeScript, Python, Ruby, PHP, Dart, Java, C#, C++ and Rust. The adapter path lets authors write only Handler methods. Any other executable language can still run by speaking Yon JSON over stdin/stdout and declaring methods in OPTIONS.schema.json.",
+          "code": "server/yon.providers.js     # optional app-defined providers\n.tachyonrc                 # optional interpreter overrides"
+        },
+        {
+          "heading": "Process lifecycle",
+          "body": "Yon invokes route handlers as processes and prewarms handlers after route discovery. When NODE_ENV=production, compiled-language adapters cache their build artifacts so later requests avoid recompilation work.",
+          "code": "YON_HANDLER_TIMEOUT_MS=30000\nYON_MAX_BODY_BYTES=1048576"
+        },
+        {
+          "heading": "Validation and status selection",
+          "body": "OPTIONS.schema.json is strictly CHEX. Request schemas validate declared request sections, response schemas validate the returned body, and status-code schemas let Yon infer the final HTTP status from the body shape.",
+          "code": "{\n  \"POST\": {\n    \"request\": { \"body\": { \"name\": \"^.{1,120}$\" } },\n    \"201\": { \"id\": \"^[0-9A-Za-z_-]+$\", \"name\": \"^.{1,120}$\" },\n    \"400\": { \"detail\": \"^name is required$\" }\n  }\n}"
+        },
+        {
+          "heading": "OpenAPI and docs UI",
+          "body": "Yon generates OpenAPI 3.1 from registered routes and OPTIONS.schema.json files. The JSON document is served at /openapi.json and the self-hosted Tachyon API docs UI is served at /api-docs by default.",
+          "code": "curl http://localhost:8080/openapi.json\nopen http://localhost:8080/api-docs"
+        },
+        {
+          "heading": "FYLO routes",
+          "body": "When YON_DATA_BROWSER_ENABLED=true, Yon mounts /_fylo for collection inspection and REST-style document operations. Keep it readonly by default; enable mutation only behind auth, explicit origins and rate limiting.",
+          "code": "YON_DATA_BROWSER_ENABLED=true\nYON_DATA_BROWSER_READONLY=true\nYON_DATA_BROWSER_READONLY=false"
+        },
+        {
+          "heading": "Realtime mailboxes",
+          "body": "YON_REALTIME_ENABLED mounts /_yon/realtime. Clients register a TTID, hold or reopen an SSE stream, and messages are stored durably in FYLO-backed topic logs for replay after reconnect.",
+          "code": "YON_REALTIME_ENABLED=true\ncurl -X POST /_yon/realtime/clients\ncurl '/_yon/realtime/stream?clientId=<TTID>'"
+        },
+        {
+          "heading": "Security and middleware",
+          "body": "Yon rejects disallowed origins before route execution, applies security headers, supports Basic Auth hashes, request/body limits, middleware before/after hooks, and an optional app-provided rateLimiter.take(). Legacy middleware.js still works, and polyglot middleware can live at server/middleware/yon.<ext> or middleware/yon.<ext>.",
+          "code": "YON_ALLOW_ORIGINS=https://app.example\nYON_BASIC_AUTH_HASH=...\nYON_RATE_LIMIT_MAX=120\nYON_RATE_LIMIT_WINDOW_MS=60000"
+        },
+        {
+          "heading": "Polyglot middleware",
+          "body": "Use middleware.js when you want direct JavaScript Request and Response objects. Use polyglot middleware when the app team wants the same cross-language process model as Yon routes. Tachyon looks for server/middleware/yon.<ext> first, then middleware/yon.<ext>.",
+          "code": "server/\n  middleware/\n    yon.py          # class-style Middleware adapter\n  routes/\n    items/yon.ts\n\n# or, for package-level middleware:\nmiddleware/\n  yon.rb"
+        },
+        {
+          "heading": "Class-style middleware",
+          "body": "JavaScript, TypeScript, Python, Ruby and PHP can define a Middleware class. before can return a response envelope to stop the request, after can add headers or replace the response, and rateLimit can return the same decision object as middleware.js rateLimiter.take().",
+          "code": "class Middleware:\n    @staticmethod\n    def before(input):\n        request = input[\"request\"]\n        if request[\"headers\"].get(\"x-blocked\") == \"true\":\n            return {\n                \"action\": \"respond\",\n                \"status\": 403,\n                \"headers\": { \"content-type\": \"application/json\" },\n                \"body\": { \"detail\": \"blocked by Python middleware\" },\n            }\n        return { \"action\": \"continue\" }\n\n    @staticmethod\n    def after(input):\n        return {\n            \"headers\": {\n                \"x-request-id\": input[\"context\"][\"requestId\"],\n                \"x-powered-by\": \"yon-python-middleware\",\n            }\n        }\n\n    @staticmethod\n    def rateLimit(input):\n        return {\n            \"allowed\": True,\n            \"limit\": 100,\n            \"remaining\": 99,\n            \"resetAt\": 1780000000000,\n        }"
+        },
+        {
+          "heading": "Raw shim middleware",
+          "body": "Any other language can skip the class adapter and use the raw protocol. The middleware file reads a JSON envelope from stdin and writes one JSON result to stdout. This is useful for Go, Swift, Zig, shell scripts, or a prebuilt binary.",
+          "code": "import json\nimport sys\nimport time\n\ninput = json.load(sys.stdin)\n\nif input[\"phase\"] == \"before\":\n    print(json.dumps({ \"action\": \"continue\" }))\n\nif input[\"phase\"] == \"after\":\n    print(json.dumps({\n        \"headers\": { \"x-middleware-phase\": \"after\" }\n    }))\n\nif input[\"phase\"] == \"rateLimit\":\n    print(json.dumps({\n        \"allowed\": True,\n        \"limit\": 100,\n        \"remaining\": 99,\n        \"resetAt\": int(time.time() * 1000) + 60000,\n    }))"
+        },
+        {
+          "heading": "Middleware envelopes",
+          "body": "Process middleware receives metadata-only envelopes by default so it cannot accidentally consume request bodies or break streaming responses. The before envelope includes phase, request and context. The after envelope also includes response metadata. Result envelopes can continue, respond early, replace a response, or return a rate-limit decision.",
+          "code": "{ \"phase\": \"before\", \"request\": {}, \"context\": {} }\n{ \"phase\": \"after\", \"request\": {}, \"response\": {}, \"context\": {} }\n\n{ \"action\": \"continue\" }\n{ \"action\": \"respond\", \"status\": 403, \"headers\": {}, \"body\": {} }\n{ \"action\": \"replace\", \"response\": { \"status\": 200, \"headers\": {}, \"body\": {} } }\n{ \"allowed\": true, \"limit\": 100, \"remaining\": 99, \"resetAt\": 1780000000000 }"
+        },
+        {
+          "heading": "Telemetry",
+          "body": "With YON_OTEL_ENABLED=true, Yon creates request and handler spans, continues traceparent, returns Traceparent and X-Trace-Id headers, and persists OTLP JSON trace documents into a FYLO collection.",
+          "code": "YON_OTEL_ENABLED=true\nYON_OTEL_SERVICE_NAME=my-api\nYON_OTEL_COLLECTION=otel-spans"
         }
       ]
     },
@@ -87,13 +188,46 @@
       "sections": [
         {
           "heading": "Author like a route",
-          "body": "A worker at client/workers/language/rust/tac.rs exposes verb methods. Tac workers are written in Rust, JavaScript, or TypeScript and compile to WebAssembly for the browser.",
+          "body": "A worker at client/workers/language/rust/tac.rs exposes verb methods. The current Tac compiler ships Rust, JavaScript and TypeScript worker providers. Rust is the cross-target provider; JavaScript and TypeScript are web-scoped providers that can run through the browser fallback where a native host supports it.",
           "code": "impl Handler {\n    pub fn POST(request: Request) -> String {\n        \"processed \" + request.len() + \" bytes\"\n    }\n}"
         },
         {
           "heading": "Invoke with fetch",
           "body": "The request verb selects the handler method, and heavy routes can opt into a worker pool. A small platform boundary exposes curated facts like os, arch and timezone through request.platform().",
           "code": "const res = await fetch('tac://language/rust?pool=4', {\n  method: 'POST',\n  body: text,\n})\nconst payload = await res.json()"
+        },
+        {
+          "heading": "Schemas",
+          "body": "An OPTIONS.schema.json beside the worker validates request and response payloads in the bundled browser runtime, so frontend workers keep the same contract-first shape as Yon routes."
+        },
+        {
+          "heading": "Peer boundary",
+          "body": "When the app opts in with TAC_NATIVE_CAPABILITIES=peer.*, Tac workers can ask the page runtime for brokered WebRTC data-channel operations. The app still owns signaling and TURN infrastructure."
+        }
+      ]
+    },
+    "devices": {
+      "title": "Devices and targets",
+      "summary": "Tac builds one client source tree into browser, desktop and mobile outputs. The selected target is embedded into the shell and exposed to templates, scripts and workers.",
+      "sections": [
+        {
+          "heading": "Targets",
+          "body": "The supported bundle targets are web, macos, windows, linux, ios and android. The all target expands to every supported target and writes sibling directories under dist/.",
+          "code": "ty bundle --target web      # dist/web\nty bundle --target macos    # dist/macos\nty bundle --target windows  # dist/windows\nty bundle --target linux    # dist/linux\nty bundle --target ios      # dist/ios\nty bundle --target android  # dist/android\nty bundle --target all"
+        },
+        {
+          "heading": "Preview",
+          "body": "Preview accepts exactly one target. If you omit --target, Tachyon previews web. Native previews run prerequisite checks first so missing Xcode, Android SDK, WebView2, GTK or WebKitGTK dependencies fail early with an actionable message.",
+          "code": "ty preview --target web\nty preview --target macos\nty preview --target android"
+        },
+        {
+          "heading": "Runtime globals",
+          "body": "Templates can read environment, platform, target and os without imports. Scripts can read the structured context at this.tac.platform, and workers can read the same facts with request.platform(\"key\").",
+          "code": "<switch :value=\"environment\">\n  <case :when=\"'desktop'\">Desktop {platform}</case>\n  <case :when=\"'mobile'\">Mobile {platform}</case>\n  <case default>Browser {platform}</case>\n</switch>\n\nconst mode = this.tac.platform.environment"
+        },
+        {
+          "heading": "Environment model",
+          "body": "web maps to environment=browser. macos, windows and linux map to environment=desktop. ios and android map to environment=mobile. Native targets keep platform equal to the selected OS; the web target detects the visitor OS separately when the browser exposes it."
         }
       ]
     },
@@ -116,6 +250,37 @@
         }
       ]
     },
+    "cookbook": {
+      "title": "Cookbook",
+      "summary": "Concrete recipes for building Tachyon apps without leaving the frontend-first workflow. This website is frontend-only, so these patterns can be explored with Tac workers and the browser FYLO client before a Yon server exists.",
+      "sections": [
+        {
+          "heading": "Frontend-only prototype",
+          "body": "Start with client/ and db/ only. Tac renders pages and components, workers mimic compute-heavy endpoints through tac:// URLs, and the browser FYLO client stores documents locally. When you later add server/routes, the UI contract can stay the same.",
+          "code": "client/\n  pages/tac.html\n  components/panel/users/tac.html\n  workers/language/rust/tac.rs\n  shared/data/docs.json\ndb/\n  schemas/users/manifest.json"
+        },
+        {
+          "heading": "Local-first collection",
+          "body": "Use fylo.<collection> from a Tac companion to read and write documents through the browser mirror. The wrapper keeps IndexedDB and OPFS as the local cache, then can synchronize with Yon /_fylo routes when a backend is present.",
+          "code": "const users = fylo.users\nconst created = await users.create({ name: 'Ada', role: 'author' })\nconst result = await users.find({ order: 'name.asc' }, { cache: 'network-first' })\nthis.users = result.docs.map((entry) => entry.doc)"
+        },
+        {
+          "heading": "Signal-driven UI",
+          "body": "Publish and subscribe decorators replace manual event wiring between companion scripts. A form can publish a collection change and every interested panel can refresh itself without knowing who sent the signal.",
+          "code": "export default class {\n  @publish('users:changed') changed = 0\n\n  async save() {\n    await fylo.users.create(this.form)\n    this.changed += 1\n  }\n}\n\nexport default class {\n  @subscribe('users:changed', { onMount: true })\n  async refresh() {}\n}"
+        },
+        {
+          "heading": "Polyglot middleware boundary",
+          "body": "When the frontend prototype grows a Yon server, add middleware at server/middleware/yon.<ext>. Class-style middleware works for the supported adapter languages, and the raw JSON shim lets a team keep an existing policy engine in another executable language.",
+          "code": "server/\n  middleware/yon.py\n  routes/users/yon.ts\n\nclass Middleware:\n    @staticmethod\n    def before(input):\n        return { \"action\": \"continue\" }"
+        },
+        {
+          "heading": "Native target polish",
+          "body": "Design once against the environment and platform globals, then bundle to web, desktop and mobile outputs. The same Tac template can choose browser, desktop or mobile copy without creating separate pages.",
+          "code": "<switch :value=\"environment\">\n  <case :when=\"'desktop'\">Desktop workspace for {platform}</case>\n  <case :when=\"'mobile'\">Pocket workspace for {platform}</case>\n  <case default>Browser workspace</case>\n</switch>"
+        }
+      ]
+    },
     "operations": {
       "title": "Operations",
       "summary": "Health and readiness endpoints, generated OpenAPI docs, middleware hooks, rate limiting, and OpenTelemetry spans persisted into FYLO come built in.",
@@ -126,8 +291,8 @@
         },
         {
           "heading": "Build and deploy",
-          "body": "bun run bundle writes a static-ready dist/web by default; --target all emits self-contained native webview hosts for macOS, Windows, Linux, iOS and Android from the same client source.",
-          "code": "bun run bundle -- --target all\nbun run preview"
+          "body": "ty bundle writes dist/web by default. Use --target all during release validation, then preview or package the individual target you intend to ship.",
+          "code": "ty bundle --target all\nty preview --target web\nty preview --target macos"
         },
         {
           "heading": "Security",

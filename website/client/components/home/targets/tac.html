@@ -1,0 +1,40 @@
+<section class="targets" aria-label="Build Tachyon for every device">
+  <div class="targets-copy">
+    <p class="eyebrow">Device targets</p>
+    <h2>One client tree, six outputs.</h2>
+    <p>
+      Tac builds the same <code>client/</code> source for the browser, desktop
+      WebView hosts, and mobile WebView hosts. Each selected target lands in
+      its own <code>dist/&lt;target&gt;</code> directory.
+    </p>
+  </div>
+
+  <div class="target-grid">
+    <loop :for="target of targets">
+      <w-card variant="outlined" :title="target.name" :subtitle="target.environment">
+        <w-card-text>
+          <p>{target.description}</p>
+          <pre class="code-block"><code>{target.command}</code></pre>
+        </w-card-text>
+      </w-card>
+    </loop>
+  </div>
+
+  <div class="target-terminal">
+    <div>
+      <h3>Build all platforms</h3>
+      <p>
+        Use <code>all</code> for release validation, then preview one target at a time.
+        Native preview checks the local machine before it opens a host project.
+      </p>
+    </div>
+    <pre class="code-block"><code>{allTargetsCommand}</code></pre>
+  </div>
+
+  <div class="target-globals" aria-label="Platform globals">
+    <w-chip size="small" color="primary">environment: {environment}</w-chip>
+    <w-chip size="small">platform: {platform}</w-chip>
+    <w-chip size="small">target: {target}</w-chip>
+    <w-chip size="small">os: {os}</w-chip>
+  </div>
+</section>

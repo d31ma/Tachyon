@@ -1,10 +1,16 @@
 <section class="features" aria-label="What Tachyon gives you">
-  <h2>Everything on this site runs on the features it describes</h2>
-  <p class="features-sub">No mock screenshots — each card links to the live capability behind it.</p>
+  <div class="features-copy">
+    <p class="eyebrow">Live capabilities</p>
+    <h2>Everything on this site runs on the features it describes</h2>
+    <p class="features-sub">No mock screenshots — each card links to the live capability behind it.</p>
+  </div>
+
   <div class="features-grid">
     <loop :for="feature of features">
-      <w-card variant="outlined" hover :href="feature.href" :title="feature.title" :subtitle="feature.tag">
-        <w-card-text>{feature.body}</w-card-text>
+      <w-card class="feature-card" variant="outlined" hover :href="feature.href" :title="feature.title" :subtitle="feature.tag">
+        <w-card-text>
+          <p>{feature.body}</p>
+        </w-card-text>
       </w-card>
     </loop>
   </div>

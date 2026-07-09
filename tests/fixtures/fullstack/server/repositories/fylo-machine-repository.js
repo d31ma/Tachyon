@@ -10,7 +10,7 @@ export default class FyloMachineRepository {
     constructor(options = {}) {
         this.root = options.root ?? process.env.FYLO_ROOT ?? `${process.cwd()}/db`;
         this.schemaDir = options.schemaDir ?? process.env.FYLO_SCHEMA_DIR ?? process.env.FYLO_SCHEMA ?? `${process.cwd()}/db/schemas`;
-        this.executable = options.executable ?? process.env.FYLO_EXEC_PATH;
+        this.executable = options.executable ?? process.env.FYLO_EXEC_PATH ?? process.env.FYLO_BINARY ?? 'fylo';
     }
 
     /**
@@ -18,9 +18,8 @@ export default class FyloMachineRepository {
      * @returns {Promise<unknown>}
      */
     async exec(request) {
-        const command = this.executable
-            ? [this.executable, 'exec', '--request', '-', '--root', this.root]
-            : ['bunx', '--bun', 'fylo.exec', 'exec', '--request', '-', '--root', this.root];
+        // Fylo is binary-first now: drive the `fylo` binary directly.
+        const command = [this.executable, 'exec', '--request', '-', '--root', this.root];
         const process = Bun.spawn({
             cmd: command,
             stdin: 'pipe',
@@ -35,11 +34,11 @@ export default class FyloMachineRepository {
             process.exited,
         ]);
         if (exitCode !== 0) {
-            throw new Error(stderr || stdout || 'fylo.exec failed');
+            throw new Error(stderr || stdout || 'fylo exec failed');
         }
         const response = JSON.parse(stdout || '{}');
         if (!response.ok) {
-            throw new Error(response.error?.message ?? 'fylo.exec returned an error');
+            throw new Error(response.error?.message ?? 'fylo exec returned an error');
         }
         return response.result;
     }
@@ -55,7 +54,7 @@ export default class FyloMachineRepository {
         const id = await this.exec({
             op: 'putData',
             collection,
-            data: { language, requestId, source: 'fylo.exec', kind: 'single' },
+            data: { language, requestId, source: 'fylo exec', kind: 'single' },
         });
         await this.exec({
             op: 'findDocs',

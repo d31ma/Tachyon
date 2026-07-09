@@ -20,11 +20,18 @@ function decode(stream) {
  * @param {number} timeoutMs
  */
 async function runCommand(cmd, timeoutMs) {
-    const proc = Bun.spawn(cmd, {
-        cwd: process.cwd(),
-        stdout: 'pipe',
-        stderr: 'pipe'
-    });
+    let proc;
+    try {
+        proc = Bun.spawn(cmd, {
+            cwd: process.cwd(),
+            stdout: 'pipe',
+            stderr: 'pipe'
+        });
+    } catch (error) {
+        // e.g. the candidate binary is missing (ENOENT) — report a failed probe
+        // so callers fall through to the next candidate instead of throwing.
+        return { exitCode: null, stdout: '', stderr: String(error), timedOut: false };
+    }
     const stdoutPromise = decode(proc.stdout);
     const stderrPromise = decode(proc.stderr);
     let timedOut = false;

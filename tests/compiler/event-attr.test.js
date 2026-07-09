@@ -49,6 +49,41 @@ describe('on:<event> compiles to a DuVay-safe marker (no literal on:<event> in t
     });
 });
 
+describe('a bare native handler is a footgun — warn and suggest the on: directive', () => {
+    /** Compile `html`, returning the warnings the compiler logged. */
+    async function warningsFor(html) {
+        Compiler.warnedBareHandlers.clear();
+        const original = Compiler.compilerLogger.warn;
+        /** @type {Array<{ message: string, meta: any }>} */
+        const warnings = [];
+        Compiler.compilerLogger.warn = (message, meta) => warnings.push({ message, meta });
+        try {
+            await compile(html);
+        }
+        finally {
+            Compiler.compilerLogger.warn = original;
+        }
+        return warnings;
+    }
+
+    test('onclick warns and points at on:click, while still emitting the raw attribute', async () => {
+        const warnings = await warningsFor('<button onclick="save()">x</button>');
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0].message).toContain('on:click');
+        expect(warnings[0].meta.suggestion).toBe('on:click');
+        // Behavior is unchanged — the attribute still flows through untouched.
+        expect(await compile('<button onclick="save()">x</button>')).toContain('onclick="save()"');
+    });
+
+    test('onboarding/online do not warn (real attributes, not handlers)', async () => {
+        expect(await warningsFor('<x-el onboarding="yes" online="true"></x-el>')).toHaveLength(0);
+    });
+
+    test('the on: directive form does not warn', async () => {
+        expect(await warningsFor('<button on:click="save($event)">x</button>')).toHaveLength(0);
+    });
+});
+
 describe('on:<event> handler values must be a single expression', () => {
     test('a multi-statement handler fails with a clear, attribute-named error', async () => {
         await expect(compile('<button on:load="var x = 1; doThing()">x</button>'))

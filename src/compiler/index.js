@@ -73,6 +73,8 @@ export default class Compiler {
     static pageFileName = Router.pageFileName;
     static prerenderRenderConcurrency = 4;
     static prerenderWriteConcurrency = 8;
+    /** @type {{ hits: number, misses: number }} */
+    static prerenderCacheStats = { hits: 0, misses: 0 };
     static compileConcurrency = 8;
     /** @type {OutputFormat} */
     static outputFormat = Compiler.resolveOutputFormat();
@@ -103,6 +105,23 @@ export default class Compiler {
     static wrapperPages = {};
     /** @type {Set<string>} */
     static warnedUnknownTags = new Set();
+    static warnedBareHandlers = new Set();
+    // Native GlobalEventHandler content attributes. A bare one on a Tac template
+    // (`onclick`) is almost always a typo for the `on:<event>` directive. Matched
+    // by exact name — not `/^on\w+$/` — so real attributes like `onboarding`,
+    // `online`, `onsale` don't trip the warning.
+    // ponytail: common subset; extend if authors mistype a handler not listed here.
+    static nativeEventHandlerAttrs = new Set([
+        'onabort', 'onblur', 'oncancel', 'oncanplay', 'onchange', 'onclick', 'onclose',
+        'oncontextmenu', 'oncopy', 'oncut', 'ondblclick', 'ondrag', 'ondragend',
+        'ondragenter', 'ondragleave', 'ondragover', 'ondragstart', 'ondrop', 'onerror',
+        'onfocus', 'oninput', 'oninvalid', 'onkeydown', 'onkeypress', 'onkeyup', 'onload',
+        'onmousedown', 'onmouseenter', 'onmouseleave', 'onmousemove', 'onmouseout',
+        'onmouseover', 'onmouseup', 'onpaste', 'onpointercancel', 'onpointerdown',
+        'onpointerenter', 'onpointerleave', 'onpointermove', 'onpointerout',
+        'onpointerover', 'onpointerup', 'onreset', 'onscroll', 'onselect', 'onsubmit',
+        'ontoggle', 'ontouchend', 'ontouchmove', 'ontouchstart', 'onwheel',
+    ]);
     /** @type {Set<string>} */
     static bundledDependencyModules = new Set();
     static nativeTags = new Set([
@@ -144,6 +163,39 @@ export default class Compiler {
     /** @param {string} value */
     static escapeRegExp(value) {
         return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    /**
+     * Deterministic 8-char base36 hash of a string (FNV-1a). Used for stable
+     * element ids and prerender cache keys — same input always maps to the same
+     * id, so unchanged source reproduces byte-identical build output.
+     * @param {string} value
+     */
+    static deterministicHash(value) {
+        let hash = 2166136261;
+        for (let index = 0; index < value.length; index++) {
+            hash ^= value.charCodeAt(index);
+            hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(36).padStart(8, '0').slice(-8);
+    }
+
+    /**
+     * Per-compile element/host id generator. Deterministic by default: a stable
+     * prefix derived from `seed` (the module's source identity) plus a monotonic
+     * counter. Ids are therefore unique within the module *by construction* (the
+     * counter never repeats — no hash-collision risk) and reproduce byte-for-byte
+     * across builds, which is what lets the persistent prerender cache hit. Set
+     * TAC_RANDOM_IDS to restore the legacy random-per-build ids (escape hatch).
+     * @param {string} seed
+     * @returns {() => string}
+     */
+    static idGenerator(seed) {
+        if (process.env.TAC_RANDOM_IDS)
+            return () => Bun.randomUUIDv7().replace(/-/g, '').slice(-8);
+        const prefix = Compiler.deterministicHash(seed);
+        let counter = 0;
+        return () => `${prefix}${(counter++).toString(36)}`;
     }
 
     /**
@@ -500,10 +552,69 @@ export default class Compiler {
             source: sourceName,
         });
     }
+
+    /**
+     * A bare native handler (`onclick`, `oninput`, …) on a Tac template is almost
+     * always a typo for the `on:<event>` directive. It silently no-ops against
+     * Tac's delegation (and double-binds under Light-DOM components), so warn and
+     * point at the fix rather than emitting it as a raw attribute.
+     * @param {string} name @param {string} tagName @param {string} sourceName
+     */
+    static warnBareHandler(name, tagName, sourceName) {
+        const key = `${sourceName}:${tagName}:${name}`;
+        if (Compiler.warnedBareHandlers.has(key))
+            return;
+        Compiler.warnedBareHandlers.add(key);
+        Compiler.compilerLogger.warn(`Bare handler "${name}" will not be wired by Tac; did you mean "on:${name.slice(2)}"?`, {
+            attribute: name,
+            suggestion: `on:${name.slice(2)}`,
+            tag: tagName,
+            source: sourceName,
+        });
+    }
+
+    /**
+     * The `<loop>`/`<logic>` regex passes only match well-formed directives
+     * (`:for`, `:if`, `:else-if`, `else`). A surviving `<loop>`/`<logic>` literal
+     * means the author typo'd or omitted the directive — it would otherwise leak
+     * into the DOM as text. Turn that silent leak into a located, named error.
+     * @param {string} renderSource @param {string} sourceName
+     */
+    static assertControlDirectivesResolved(renderSource, sourceName) {
+        const leak = renderSource.match(/`<(loop|logic)\b([^`]*)>`/);
+        if (!leak)
+            return;
+        const [, tag, rawAttrs] = leak;
+        const got = `<${tag}${rawAttrs}>`;
+        if (tag === 'loop')
+            throw new Error(`Invalid Tac <loop> in '${sourceName}': expected a :for directive like <loop :for="item of items">, got \`${got}\`.`);
+        throw new Error(`Invalid Tac <logic> in '${sourceName}': expected :if, :else-if, or else like <logic :if="cond">, got \`${got}\`.`);
+    }
+
+    /**
+     * Validate an interpolation expression's syntax at compile time, so a typo
+     * like `{ user.nam( }` fails the build with the offending expression quoted —
+     * instead of a cryptic parse error surfacing from the prerender worker at
+     * render time. Only syntax is checked; free identifiers (state, props) resolve
+     * at render. Wrapped in an async arrow so interpolations may legitimately await.
+     * @param {string} expr @param {string} sourceName
+     */
+    static assertValidInterpolation(expr, sourceName) {
+        if (!expr.trim())
+            return;
+        try {
+            // eslint-disable-next-line no-new-func
+            new Function(`"use strict"; return (async () => (\n${expr}\n));`);
+        }
+        catch {
+            throw new Error(`Invalid Tac interpolation in '${sourceName}': {${expr}} is not a valid expression.`);
+        }
+    }
     static async createStaticRoutes() {
         Compiler.compMapping.clear();
         Compiler.wrapperPages = {};
         Compiler.warnedUnknownTags.clear();
+        Compiler.warnedBareHandlers.clear();
         Compiler.nativeWorkerBinaryRoutes.clear();
         await Router.validatePageRoutes();
         // Components must be registered before pages compile so that
@@ -1336,6 +1447,17 @@ export default class Compiler {
     /** @param {string} distPath @param {string[]} routes */
     static async prerenderRoutes(distPath, routes) {
         const shellHTML = await Compiler.renderShellHTML();
+        // Persistent prerender cache (opt-in via TAC_PRERENDER_CACHE). Sound because
+        // ids are deterministic (see Compiler.idGenerator): unchanged source produces
+        // identical module bytes. Keyed on the compiled page+wrapper module bytes,
+        // which fully determine the rendered HTML — a page whose module is unchanged
+        // since a previous build reuses that build's HTML instead of re-rendering.
+        const cacheDir = process.env.TAC_PRERENDER_CACHE
+            ? path.join(process.cwd(), '.tac-cache', 'prerender')
+            : null;
+        if (cacheDir)
+            await mkdir(cacheDir, { recursive: true });
+        Compiler.prerenderCacheStats = { hits: 0, misses: 0 };
         /** @type {{ outputFile: string, html: string }[]} */
         const renderedRoutes = [];
         let renderIndex = 0;
@@ -1346,9 +1468,33 @@ export default class Compiler {
                 const outputFile = route === '/'
                     ? path.join(distPath, 'index.html')
                     : path.join(distPath, Router.routeToFilesystemPath(route).slice(1), 'index.html');
-                const html = routes.length === 1
-                    ? await Compiler.renderPageDocument(distPath, route, shellHTML)
-                    : await Compiler.renderPageDocumentIsolated(distPath, route, shellHTML);
+                /** @type {string | null} */
+                let html = null;
+                /** @type {string | null} */
+                let cacheFile = null;
+                if (cacheDir) {
+                    const key = await Compiler.prerenderCacheKey(distPath, route);
+                    if (key) {
+                        cacheFile = path.join(cacheDir, `${key}.html`);
+                        const cached = await readFile(cacheFile, 'utf8').catch(() => null);
+                        if (cached != null) {
+                            // Render is skipped, but the shipped module still needs its
+                            // absolute imports rewritten so the browser can load it.
+                            await Compiler.rewriteModuleImportsForRoute(distPath, route);
+                            html = cached;
+                            Compiler.prerenderCacheStats.hits++;
+                        }
+                    }
+                }
+                if (html == null) {
+                    html = routes.length === 1
+                        ? await Compiler.renderPageDocument(distPath, route, shellHTML)
+                        : await Compiler.renderPageDocumentIsolated(distPath, route, shellHTML);
+                    if (cacheFile) {
+                        await writeFile(cacheFile, html);
+                        Compiler.prerenderCacheStats.misses++;
+                    }
+                }
                 renderedRoutes[currentIndex] = { outputFile, html };
             }
         });
@@ -1362,6 +1508,35 @@ export default class Compiler {
             }
         });
         await Promise.all(workers);
+    }
+    /**
+     * Cache key for a route's prerendered HTML: a hash of the compiled page (and
+     * wrapper) module bytes, which — with deterministic ids — fully determine the
+     * output. Returns null if the module isn't on disk (don't cache what we can't key).
+     * @param {string} distPath @param {string} pathname
+     */
+    static async prerenderCacheKey(distPath, pathname) {
+        const pageFile = Compiler.pageModuleFilePath(distPath, pathname);
+        const pageBytes = await readFile(pageFile, 'utf8').catch(() => null);
+        if (pageBytes == null)
+            return null;
+        const wrapperRoute = Compiler.resolveWrapperPage(pathname);
+        const wrapperBytes = wrapperRoute
+            ? await readFile(path.join(distPath, wrapperRoute.slice(1)), 'utf8').catch(() => '')
+            : '';
+        return Compiler.deterministicHash(`${pathname}\0${pageBytes}\0${wrapperBytes}`);
+    }
+    /**
+     * Rewrites a route's page (and wrapper) module imports to browser-resolvable
+     * paths — the side effect renderPageDocument performs before rendering, applied
+     * on a cache hit where the render itself is skipped.
+     * @param {string} distPath @param {string} pathname
+     */
+    static async rewriteModuleImportsForRoute(distPath, pathname) {
+        await Compiler.rewriteAbsoluteImports(Compiler.pageModuleFilePath(distPath, pathname), distPath);
+        const wrapperRoute = Compiler.resolveWrapperPage(pathname);
+        if (wrapperRoute)
+            await Compiler.rewriteAbsoluteImports(path.join(distPath, wrapperRoute.slice(1)), distPath);
     }
     /** @param {string} route */
     static async bundlePageFile(route) {
@@ -1470,7 +1645,11 @@ export default class Compiler {
             const tagStack = [];
             let insideScript = false;
             let insideStyle = false;
-            const genHash = () => Bun.randomUUIDv7().replace(/-/g, '').slice(-8);
+            // Element/event ids: deterministic by default (see Compiler.idGenerator),
+            // so unchanged source compiles to byte-identical output — the basis of the
+            // persistent prerender cache. The `\0tpl` tag keeps this id space disjoint
+            // from the component-host ids minted in createJSData for the same module.
+            const genHash = Compiler.idGenerator(`${sourceName ?? 'anon'}\0tpl`);
             /** @param {string} value */
             const escapeTemplateLiteral = (value) => value
                 .replaceAll('\\', '\\\\')
@@ -1496,6 +1675,8 @@ export default class Compiler {
             const eventMarkerAttr = (eventName) => `data-tac-on-${eventName.replaceAll(':', '__')}`;
             /** @param {string} name @param {string} value @param {string} hash @param {string} tagName */
             const formatAttr = (name, value, hash, tagName) => {
+                if (Compiler.nativeEventHandlerAttrs.has(name))
+                    Compiler.warnBareHandler(name, tagName, sourceName);
                 if (name.startsWith('on:')) {
                     const eventName = name.slice(3);
                     // Handler values must be a single expression (typically a method
@@ -1537,10 +1718,12 @@ export default class Compiler {
                         return `__TY_BRACE_${literalBraces.length - 1}__`;
                     })
                     .replace(/\{!\s*([^{}]+?)\s*\}/g, (_match, expr) => {
+                    Compiler.assertValidInterpolation(expr, sourceName);
                     rawExpressions.push(expr);
                     return `__TY_RAW_${rawExpressions.length - 1}__`;
                 })
                     .replace(/\{\s*([^{}!][^{}]*?)\s*\}/g, (_match, expr) => {
+                    Compiler.assertValidInterpolation(expr.trim(), sourceName);
                     escapedExpressions.push(expr.trim());
                     return `__TY_EXPR_${escapedExpressions.length - 1}__`;
                 });
@@ -1660,6 +1843,9 @@ export default class Compiler {
      */
     /** @param {TemplateData} templateData @param {TemplateNode[]} elements @param {string} publicPath */
     static async createJSData(templateData, elements, publicPath) {
+        // Component-host ids: deterministic by default (see Compiler.idGenerator).
+        // `\0comp` keeps this id space disjoint from parseHTML's element/event ids.
+        const genHash = Compiler.idGenerator(`${publicPath}\0comp`);
         /** @type {string[]} */
         const statics = [];
         /** @type {string[]} */
@@ -1683,6 +1869,7 @@ export default class Compiler {
             .replaceAll(/`<logic :if="(.*?)">`/g, (_, expr) => `if(${expr}) {`)
             .replaceAll(/`<logic :else-if="(.*?)">`/g, (_, expr) => `else if(${expr}) {`)
             .replaceAll(/(`<logic else="">`)|(`<\/logic>`)/g, (_, expr) => expr ? `else {` : '}');
+        Compiler.assertControlDirectivesResolved(renderSource, publicPath);
         renderSource = Compiler.compileSwitchExpressions(renderSource, publicPath);
         // Bind dynamic attributes :attr="expr" → attr="${escaped expr}"
         renderSource = renderSource.replaceAll(/:(\w[\w-]*)="([^"]*)"/g, '$1="${tc_escapeAttr($2)}"');
@@ -3533,7 +3720,4 @@ async function __tac_resolve_native_response__(response) {
             }
         }
     }
-}
-function genHash() {
-    return Bun.randomUUIDv7().replace(/-/g, '').slice(-8);
 }

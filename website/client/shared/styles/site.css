@@ -86,57 +86,23 @@ w-app-bar {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* ---- polymorphic shell -------------------------------------------------
-   The site header companion stamps the Tac platform globals onto <body>
-   (data-environment: browser | desktop | mobile). Each environment keeps its
-   own feel: mobile gets bottom navigation and roomier touch targets, desktop
-   gets the full app-bar navigation, tablet sits between with the drawer. */
-
-.site-bottom-nav {
-  display: none;
-}
+/* ---- responsive navigation --------------------------------------------
+   Navigation is viewport-driven, not device-driven. At desktop widths the app
+   bar shows the full inline nav; below desktop it collapses to the burger icon
+   (w-app-bar-nav-icon, shown via .only-below-desktop) that opens the temporary
+   side drawer. There is no bottom bar: as a fixed element at the viewport edge
+   it overlapped the OS gesture area on phones and intercepted taps. */
 
 @media (max-width: 760px) {
-  .site-bottom-nav {
-    display: block;
-    position: fixed;
-    inset-inline: 0;
-    bottom: 0;
-    z-index: 30;
-    background: var(--w-surface);
-    border-top: 1px solid color-mix(in srgb, var(--w-text) 12%, transparent);
-  }
-
-  /* Spread the items across the full bar — the component's own grow
-     classes don't survive hydration, so the brand layer owns the layout. */
-  .site-bottom-nav w-bottom-navigation,
-  .site-bottom-nav w-bottom-navigation > nav {
-    display: flex;
-    width: 100%;
-  }
-
-  .site-bottom-nav w-bottom-nav-item {
-    flex: 1 1 0;
-    min-width: 0;
-    text-align: center;
-  }
-
-  .site-bottom-nav w-bottom-nav-item > * {
-    width: 100%;
-    justify-content: center;
-  }
-
-  /* The bottom navigation covers the drawer's destinations on phones. */
-  w-app-bar-nav-icon {
-    display: none !important;
-  }
-
-  body {
-    padding-bottom: calc(var(--w-bottom-nav-height, 64px) + env(safe-area-inset-bottom));
-  }
-
+  /* Phone widths: hide the phone-hidden extras; the burger + drawer carry nav. */
   .w-hide-phone {
     display: none !important;
+  }
+
+  /* Comfortable tap targets — keyed to viewport width, not device type. */
+  .w-btn,
+  button {
+    min-height: 44px;
   }
 }
 
@@ -150,15 +116,6 @@ w-app-bar {
   .only-below-desktop {
     display: none !important;
   }
-}
-
-body[data-environment="mobile"] {
-  --w-bottom-nav-height: 68px;
-}
-
-body[data-environment="mobile"] .w-btn,
-body[data-environment="mobile"] button {
-  min-height: 44px;
 }
 
 body[data-environment="desktop"] {

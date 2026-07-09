@@ -1,12 +1,23 @@
 // @ts-check
 
-/** @typedef {{ slug: string, title: string }} TopicLink */
+/**
+ * @typedef {{ heading?: string, body?: string, code?: string }} TopicSection
+ * @typedef {{ slug: string, title: string, summary: string, sections: TopicSection[] }} TopicLink
+ * @typedef {{ title: string, summary: string, topics: TopicLink[] }} TopicGroup
+ * @typedef {{
+ *   order?: string[],
+ *   groups?: { title: string, summary?: string, topics: string[] }[],
+ *   topics: Record<string, { title?: string, summary?: string, sections?: TopicSection[] }>
+ * }} DocsPayload
+ */
 
 export default class {
-  /** @type {TopicLink[]} */
-  topics = []
+  /** @type {TopicGroup[]} */
+  groups = []
   /** @type {string} */
   activeSlug = ''
+  /** @type {string} */
+  query = ''
 
   constructor() {
     if (typeof location !== 'undefined') {
@@ -14,10 +25,36 @@ export default class {
     }
   }
 
+  /** @returns {TopicGroup[]} */
+  get visibleGroups() {
+    const query = this.query.trim().toLowerCase()
+    if (!query) return this.groups
+
+    return this.groups
+      .map((group) => ({
+        ...group,
+        topics: group.topics.filter((topic) => this.matches(topic, query)),
+      }))
+      .filter((group) => group.topics.length > 0)
+  }
+
   /** @param {string} pathname @returns {string} */
   slugFrom(pathname) {
     const [, , slug] = pathname.split('/')
     return slug ?? ''
+  }
+
+  /** @param {TopicLink} topic @param {string} query @returns {boolean} */
+  matches(topic, query) {
+    const searchable = [
+      topic.title,
+      topic.summary,
+      ...topic.sections.flatMap((section) => [section.heading, section.body, section.code]),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return searchable.includes(query)
   }
 
   @onMount
@@ -34,14 +71,29 @@ export default class {
   @onMount
   async loadTopics() {
     try {
-      const response = await fetch('/shared/data/docs.json')
+      const response = await fetch('/shared/data/docs.json', { cache: 'reload' })
+      /** @type {DocsPayload} */
       const payload = await response.json()
-      this.topics = payload.order.map((/** @type {string} */ slug) => ({
-        slug,
-        title: payload.topics[slug]?.title ?? slug,
+      const order = payload.order ?? Object.keys(payload.topics)
+      const topicFor = (/** @type {string} */ slug) => {
+        const topic = payload.topics[slug] ?? {}
+        return {
+          slug,
+          title: topic.title ?? slug,
+          summary: topic.summary ?? '',
+          sections: topic.sections ?? [],
+        }
+      }
+      const sourceGroups = payload.groups?.length
+        ? payload.groups
+        : [{ title: 'Documentation', summary: 'Guides and reference.', topics: order }]
+      this.groups = sourceGroups.map((group) => ({
+        title: group.title,
+        summary: group.summary ?? '',
+        topics: group.topics.map(topicFor).filter((topic) => Boolean(topic.title)),
       }))
     } catch {
-      this.topics = []
+      this.groups = []
     }
   }
 }

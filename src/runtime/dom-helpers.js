@@ -220,8 +220,17 @@ export function morphChildren(parent, desired, options = {}) {
                 continue;
             const desiredElement = /** @type {Element} */ (desiredChild);
             syncAttributes(currentElement, desiredElement);
-            if (isCustomElement(currentElement) && morphLightDomSlots(currentElement, desiredElement, options))
-                continue;
+            if (isCustomElement(currentElement)) {
+                if (morphLightDomSlots(currentElement, desiredElement, options))
+                    continue;
+                // Slotless custom element (e.g. a light-DOM field/select that
+                // renders its own controls with no authored child surface): it
+                // owns its rendered subtree. Only reconcile when the authored
+                // template actually provides children; otherwise leave the
+                // component-generated DOM intact.
+                if (desiredElement.childNodes.length === 0)
+                    continue;
+            }
             const desiredChildFragment = document.createDocumentFragment();
             while (desiredChild.firstChild)
                 desiredChildFragment.appendChild(desiredChild.firstChild);

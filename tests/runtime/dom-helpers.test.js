@@ -158,6 +158,31 @@ describe('morphChildren', () => {
         expect(updated?.querySelector('.light-card-shell')).not.toBeNull();
         expect(updated?.querySelector('slot')?.textContent).toBe('Updated label');
     });
+    test('preserves a slotless Light DOM web component across rerenders', () => {
+        class LightField extends HTMLElement {
+            connectedCallback() {
+                if (this.querySelector('.w-text-field'))
+                    return;
+                const wrapper = document.createElement('div');
+                wrapper.className = 'w-text-field';
+                wrapper.append(document.createElement('input'));
+                this.replaceChildren(wrapper);
+            }
+        }
+        windowInstance.customElements.define('test-light-field', LightField);
+        document.body.innerHTML = `
+          <div id="root">
+            <test-light-field id="field" label="Email"></test-light-field>
+          </div>
+        `;
+        const root = /** @type {Element} */ (document.getElementById('root'));
+        morphChildren(root, parseFragment(`
+          <test-light-field id="field" label="Name"></test-light-field>
+        `));
+        const updated = document.getElementById('field');
+        expect(updated?.getAttribute('label')).toBe('Name');
+        expect(updated?.querySelector('.w-text-field input')).not.toBeNull();
+    });
 });
 describe('routing helpers', () => {
     test('resolves the best matching route and fills slugs', () => {

@@ -1,7 +1,26 @@
-<h2>Documentation</h2>
-<nav class="docs-nav">
-  <loop :for="topic of topics">
-    <a :href="'/docs/' + topic.slug" :class="topic.slug === activeSlug ? 'docs-link active' : 'docs-link'">{topic.title}</a>
+<nav class="docs-sidebar-nav" aria-label="Docs">
+  <a href="/docs/introduction" class="docs-sidebar-home">Documentation home</a>
+
+  <w-field class="docs-search" label="Search docs" hint="Try middleware, workers, FYLO...">
+    <input class="w-input" type="search" placeholder="Search Tachyon docs" :value="query" on:input="query = $event.target.value" />
+  </w-field>
+
+  <loop :for="group of visibleGroups">
+    <section class="docs-sidebar-section" :aria-label="group.title">
+      <h3 class="docs-sidebar-subhead">{group.title}</h3>
+      <p class="docs-group-summary">{group.summary}</p>
+      <ul class="docs-sidebar-list">
+        <loop :for="topic of group.topics">
+          <li>
+            <a :href="'/docs/' + topic.slug" :class="topic.slug === activeSlug ? 'active' : ''" :aria-current="topic.slug === activeSlug ? 'page' : null">
+              {topic.title}
+            </a>
+          </li>
+        </loop>
+      </ul>
+    </section>
   </loop>
+  <logic :if="visibleGroups.length === 0">
+    <w-empty-state title="No docs found" :text="'No docs match “' + query + '”. Try a broader term.'"></w-empty-state>
+  </logic>
 </nav>
-<p class="docs-hint">This section is a wrapper page: <code>docs/tac.html</code> holds a <code>&lt;slot /&gt;</code> and each topic is a dynamic <code>_topic</code> route.</p>

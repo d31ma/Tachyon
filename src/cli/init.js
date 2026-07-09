@@ -67,7 +67,7 @@ try {
     const appName = await resolveAppName(targetArg, providedAppName);
     const created = await createAppScaffold(targetDir, { appName });
     initLogger.info('Scaffolded Tachyon app', { path: created, appName });
-    initLogger.info('Next steps', { command: `cd ${targetArg} && bun install && bun run start` });
+    initLogger.info('Next steps', { command: `cd ${targetArg} && ty serve` });
 }
 catch (error) {
     initLogger.error('Failed to scaffold app', { err: error, path: targetDir });

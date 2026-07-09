@@ -1,0 +1,81 @@
+.targets {
+  padding-block: 2rem;
+}
+
+.targets-copy {
+  max-width: 62rem;
+  margin-bottom: 1.25rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--tachyon-from);
+  font-size: var(--w-font-xs);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.targets h2 {
+  margin: 0 0 0.55rem;
+  font-size: clamp(1.45rem, 2.7vw, 2rem);
+}
+
+.targets p {
+  color: var(--w-text-subtle);
+  line-height: 1.65;
+}
+
+.target-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+.target-grid p {
+  margin-top: 0;
+}
+
+.target-terminal {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--tachyon-from) 30%, transparent);
+  border-radius: calc(var(--w-radius) * 1.25);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--tachyon-to) 16%, transparent), transparent 42%),
+    var(--w-surface-container);
+}
+
+.target-terminal h3 {
+  margin: 0 0 0.35rem;
+}
+
+.target-terminal p {
+  margin: 0;
+}
+
+.target-globals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+@container (min-width: 680px) {
+  .target-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 980px) {
+  .target-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .target-terminal {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: start;
+  }
+}
