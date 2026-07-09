@@ -1,8 +1,8 @@
 // @ts-check
 
-// The page root holds no reactive state, so the shell (header, drawers,
-// bottom navigation) renders once per navigation. Live state lives in the
-// panel components — the re-render boundary Tac recommends.
+// The page root holds no reactive state, so the shell renders once per
+// navigation. Live state lives in the panel components — the re-render
+// boundary Tac recommends.
 export default class {
   /** @type {string} */
   subtitle = 'A living tour of reactive interfaces, native web capabilities, polyglot Wasm workers, durable browser data and observable client flows — with no server behind it.'

@@ -1,7 +1,5 @@
 <w-app-bar sticky scroll-behavior="elevate">
-  <w-container size="xl" class="w-row align-center ga-2 px-0">
-    <w-app-bar-nav-icon for="site-drawer" class="only-below-desktop" aria-label="Open site navigation"></w-app-bar-nav-icon>
-
+  <w-container size="xl" class="w-row align-center ga-2 px-0 site-header-row">
     <a href="/" class="w-row align-center ga-2 mr-auto" aria-label="Tachyon home">
       <img class="brand-mark" src="/shared/assets/logo.svg" alt="" width="28" height="28" />
       <span class="brand-name">TACHYON</span>
@@ -18,14 +16,24 @@
       ◐<span class="w-hide-phone"> Theme</span>
     </w-btn>
     <w-btn variant="text" size="sm" href="https://github.com/d31ma/Tachyon" target="_blank" rel="noopener" class="w-hide-phone">GitHub</w-btn>
+
+    <button
+      type="button"
+      class="w-btn w-btn-icon header-burger only-below-desktop"
+      aria-label="Menu"
+      aria-controls="mobile-menu"
+      aria-expanded="false"
+      w-dropdown-trigger
+    >
+      <span class="menu-icon menu-icon-open" aria-hidden="true">☰</span>
+      <span class="menu-icon menu-icon-close" aria-hidden="true">✕</span>
+    </button>
   </w-container>
 </w-app-bar>
 
-<w-navigation-drawer id="site-drawer" temporary label="Site navigation">
-  <w-list>
-    <w-list-item href="/" title="Home" subtitle="Why Tachyon"></w-list-item>
-    <w-list-item href="/atlas" title="Capability atlas" subtitle="Live in-browser demos"></w-list-item>
-    <w-list-item href="/docs" title="Documentation" subtitle="Guides and reference"></w-list-item>
-    <w-list-item href="https://github.com/d31ma/Tachyon" title="GitHub" subtitle="Website source"></w-list-item>
-  </w-list>
-</w-navigation-drawer>
+<nav id="mobile-menu" class="header-mobile-menu only-below-desktop" aria-label="Mobile navigation" w-dropdown>
+  <w-btn href="/" variant="text" class="mobile-menu-link">Home</w-btn>
+  <w-btn href="/atlas" variant="text" class="mobile-menu-link">Atlas</w-btn>
+  <w-btn href="/docs" variant="text" class="mobile-menu-link">Docs</w-btn>
+  <w-btn href="https://github.com/d31ma/Tachyon" target="_blank" rel="noopener" variant="text" class="mobile-menu-link">GitHub</w-btn>
+</nav>

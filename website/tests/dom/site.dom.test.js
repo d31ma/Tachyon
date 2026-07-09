@@ -47,12 +47,13 @@ describe('homepage DOM', () => {
         expect(shell).toContain('fylo-browser-path')
     })
 
-    test('renders the DuVay shell: app bar, burger nav-icon, drawer, footer', () => {
+    test('renders the DuVay shell: app bar, mobile dropdown, footer', () => {
         expect(home.document.querySelector('w-app-bar')).toBeTruthy()
-        // Below-desktop navigation is the burger icon that opens the side drawer —
-        // no bottom bar (it overlapped the OS gesture area on phones).
-        expect(home.document.querySelector('w-app-bar-nav-icon[for="site-drawer"]')).toBeTruthy()
-        expect(home.document.querySelector('w-navigation-drawer#site-drawer')).toBeTruthy()
+        // Below-desktop navigation is a right-aligned dropdown, matching FYLO's
+        // mobile shell. No bottom bar: it overlapped the OS gesture area.
+        expect(home.document.querySelector('button.header-burger[aria-controls="mobile-menu"]')).toBeTruthy()
+        expect(home.document.querySelector('nav#mobile-menu[w-dropdown]')).toBeTruthy()
+        expect(home.document.querySelector('w-navigation-drawer')).toBeFalsy()
         expect(home.document.querySelector('w-bottom-navigation')).toBeFalsy()
         expect(home.document.querySelector('w-footer')).toBeTruthy()
         expect(home.document.querySelector('img.brand-mark[src="/shared/assets/logo.svg"]')).toBeTruthy()
@@ -76,6 +77,13 @@ describe('homepage DOM', () => {
         for (const target of ['/atlas', '/docs']) {
             expect(hrefs).toContain(target)
         }
+    })
+
+    test('mobile dropdown closes from href-bearing custom elements', async () => {
+        const source = await read('client/components/site/header/tac.js')
+
+        expect(source).toContain("closest('[href]')")
+        expect(source).not.toContain("closest('a[href]')")
     })
 })
 

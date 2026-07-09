@@ -231,9 +231,9 @@ bun -e "console.log(await Bun.password.hash('user:pass'))"
 <details>
 <summary><h2 style="display:inline">FYLO Storage</h2></summary>
 
-Tachyon uses `@d31ma/fylo@26.25.1`, which is filesystem-first and uses the
-FYLO `local-fs` index backend by default. Set `FYLO_ROOT` to the directory that
-should contain FYLO-managed collections:
+Tachyon drives the FYLO GitHub release binary through its vendored runtime shim.
+FYLO is filesystem-first and uses the `local-fs` index backend by default. Set
+`FYLO_ROOT` to the directory that should contain FYLO-managed collections:
 
 ```env
 FYLO_ROOT=db
@@ -1328,10 +1328,10 @@ Inside Tac page/component scripts only, `fetch()` is wrapped with a local-first 
 
 This does not override the global browser `fetch` outside Tac page/component execution.
 
-The compiler-injected `fylo` browser client is backed by
-`@d31ma/fylo/browser`. FYLO stores browser-local documents in OPFS when the
-browser supports it, falls back to memory when OPFS is unavailable, and prefers
-a `SharedWorker`/`Worker` boundary so reads, writes, query filtering, and
+The compiler-injected `fylo` browser client is backed by Tachyon's vendored FYLO
+browser shim. FYLO stores browser-local documents in OPFS when the browser
+supports it, falls back to memory when OPFS is unavailable, and prefers a
+`SharedWorker`/`Worker` boundary so reads, writes, query filtering, and
 collection events stay off the UI thread. Tachyon keeps the older IndexedDB
 response cache as the network fallback layer for plain `fetch()` calls.
 

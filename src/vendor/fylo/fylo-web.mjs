@@ -3824,8 +3824,25 @@ class SyncEngine {
       } catch {
         if (signal.aborted)
           return;
-        await this._pollOnce(collection);
-        await new Promise((r) => setTimeout(r, this.pingMs));
+        try {
+          await this._pollOnce(collection);
+        } catch {}
+        await new Promise((resolve) => {
+          if (signal.aborted) {
+            resolve(undefined);
+            return;
+          }
+          let timer;
+          const onAbort = () => {
+            clearTimeout(timer);
+            resolve(undefined);
+          };
+          timer = setTimeout(() => {
+            signal.removeEventListener("abort", onAbort);
+            resolve(undefined);
+          }, this.pingMs);
+          signal.addEventListener("abort", onAbort, { once: true });
+        });
       }
     }
   }

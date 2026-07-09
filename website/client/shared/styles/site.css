@@ -88,13 +88,13 @@ w-app-bar {
 
 /* ---- responsive navigation --------------------------------------------
    Navigation is viewport-driven, not device-driven. At desktop widths the app
-   bar shows the full inline nav; below desktop it collapses to the burger icon
-   (w-app-bar-nav-icon, shown via .only-below-desktop) that opens the temporary
-   side drawer. There is no bottom bar: as a fixed element at the viewport edge
-   it overlapped the OS gesture area on phones and intercepted taps. */
+   bar shows the full inline nav; below desktop it collapses to a right-aligned
+   dropdown menu, matching the FYLO site pattern. There is no bottom bar: as a
+   fixed element at the viewport edge it overlapped the OS gesture area on
+   phones and intercepted taps. */
 
 @media (max-width: 760px) {
-  /* Phone widths: hide the phone-hidden extras; the burger + drawer carry nav. */
+  /* Phone widths: hide the phone-hidden extras; the dropdown carries nav. */
   .w-hide-phone {
     display: none !important;
   }
