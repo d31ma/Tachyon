@@ -1,0 +1,90 @@
+.yon {
+  padding-block: 2rem;
+}
+
+.yon-hero {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--tachyon-to) 30%, transparent);
+  border-radius: calc(var(--w-radius) * 1.25);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--tachyon-from) 14%, transparent), transparent 44%),
+    var(--w-surface-container);
+}
+
+.yon h2 {
+  margin: 0 0 0.55rem;
+  font-size: clamp(1.45rem, 2.7vw, 2rem);
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--tachyon-to);
+  font-size: var(--w-font-xs);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.yon h3 {
+  margin: 0 0 0.4rem;
+}
+
+.yon p {
+  color: var(--w-text-subtle);
+  line-height: 1.65;
+}
+
+.yon-grid {
+  display: grid;
+  gap: 1rem;
+  align-items: stretch;
+  grid-template-columns: 1fr;
+}
+
+.yon-card {
+  height: 100%;
+  min-height: 19.8125rem;
+}
+
+.yon-card > .w-card {
+  height: 100%;
+  min-height: inherit;
+}
+
+.yon-grid p {
+  margin: 0 0 0.9rem;
+}
+
+.yon-languages {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--w-border, color-mix(in srgb, var(--w-text) 14%, transparent));
+  border-radius: var(--w-radius);
+  background: var(--w-surface-container-low);
+}
+
+.language-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@container (min-width: 680px) {
+  .yon-hero {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+    align-items: start;
+  }
+
+  .yon-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 980px) {
+  .yon-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

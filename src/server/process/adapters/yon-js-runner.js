@@ -8,20 +8,21 @@ class YonJsRunner {
      * Resolves the Handler class from a module's exports.
      * Looks for a named `Handler` export first, then checks the default export.
      * @param {unknown} module
+     * @param {string} [className]
      * @returns {{ new?(): unknown } & Record<string, unknown>}
      */
-    static resolveHandlerClass(module) {
+    static resolveHandlerClass(module, className = 'Handler') {
         const mod = /** @type {Record<string, unknown>} */ (module);
-        // Named export: export class Handler { ... }
-        if (mod.Handler && typeof mod.Handler === 'function')
-            return /** @type {any} */ (mod.Handler);
-        // Default export: export default class Handler { ... }
+        // Named export: export class Handler/Middleware { ... }
+        if (mod[className] && typeof mod[className] === 'function')
+            return /** @type {any} */ (mod[className]);
+        // Default export: export default class Handler/Middleware { ... }
         if (mod.default && typeof mod.default === 'function') {
             const defaultExport = /** @type {any} */ (mod.default);
             if (/^class\s/.test(Function.prototype.toString.call(defaultExport)))
                 return defaultExport;
         }
-        throw new Error('Route module must export a class named Handler with static HTTP method handlers');
+        throw new Error(`Route module must export a class named ${className} with static method handlers`);
     }
 
     /**
@@ -132,11 +133,12 @@ class YonJsRunner {
         const method = request?.method;
         if (!method)
             throw new Error('Missing HTTP method in request payload');
+        const className = typeof request?.className === 'string' && request.className ? request.className : 'Handler';
         const module = await import(`${handlerPath}?t=${Date.now()}`);
-        const Handler = YonJsRunner.resolveHandlerClass(module);
+        const Handler = YonJsRunner.resolveHandlerClass(module, className);
         const dispatch = /** @type {Function | undefined} */ (Handler[method]);
         if (typeof dispatch !== 'function')
-            throw new Error(`Handler class does not implement static ${method}()`);
+            throw new Error(`${className} class does not implement static ${method}()`);
         const result = await dispatch(request);
         if (request?.headers?.accept === 'text/event-stream') {
             if (YonJsRunner.isReadableStream(result)) {

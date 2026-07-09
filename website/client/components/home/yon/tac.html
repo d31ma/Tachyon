@@ -1,0 +1,42 @@
+<section class="yon" aria-label="Yon backend framework">
+  <div class="yon-hero">
+    <div>
+      <p class="eyebrow">Yon backend</p>
+      <h2>Filesystem routes, polyglot handlers, production guardrails.</h2>
+      <p>
+        Yon is Tachyon's server runtime. Drop <code>yon.&lt;ext&gt;</code>
+        files under <code>server/routes</code>, export a <code>Handler</code>
+        class, and Tachyon wires HTTP methods, validation, OpenAPI, middleware,
+        FYLO and telemetry around each request.
+      </p>
+    </div>
+    <pre class="code-block"><code>{serveCommand}</code></pre>
+  </div>
+
+  <div class="yon-grid">
+    <loop :for="capability of capabilities">
+      <w-card class="yon-card" variant="outlined" :title="capability.title" :subtitle="capability.subtitle">
+        <w-card-text>
+          <p>{capability.body}</p>
+          <logic :if="capability.code">
+            <pre class="code-block"><code>{capability.code}</code></pre>
+          </logic>
+        </w-card-text>
+      </w-card>
+    </loop>
+  </div>
+
+  <div class="yon-languages">
+    <h3>Built-in ergonomic adapters</h3>
+    <p>
+      Yon can run any executable handler that speaks its JSON stdin/stdout
+      protocol, but these languages get the <code>class Handler</code>
+      convenience path out of the box.
+    </p>
+    <div class="language-row">
+      <loop :for="language of languages">
+        <w-chip size="small">{language}</w-chip>
+      </loop>
+    </div>
+  </div>
+</section>

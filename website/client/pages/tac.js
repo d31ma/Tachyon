@@ -2,6 +2,6 @@
 
 export default class {
   constructor() {
-    if (typeof document !== 'undefined') document.title = 'Tachyon — full-stack Bun framework'
+    if (typeof document !== 'undefined') document.title = 'Tachyon — full-stack ty framework'
   }
 }

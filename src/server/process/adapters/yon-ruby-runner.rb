@@ -2,11 +2,12 @@
 require "json"
 
 class YonRubyRunner
-  def self.resolve_handler_class
-    unless Object.const_defined?(:Handler)
-      raise "Ruby route must define a class named Handler"
+  def self.resolve_handler_class(class_name)
+    constant_name = class_name.to_sym
+    unless Object.const_defined?(constant_name)
+      raise "Ruby route must define a class named #{class_name}"
     end
-    Object.const_get(:Handler)
+    Object.const_get(constant_name)
   end
 
   def self.resolve_method(handler_class, method)
@@ -27,8 +28,9 @@ class YonRubyRunner
     request = JSON.parse(input.empty? ? "{}" : input)
     method = request["method"]
     raise "Missing HTTP method in request payload" if method.nil? || method.empty?
+    class_name = request["className"] || "Handler"
     load handler_path
-    handler_class = resolve_handler_class
+    handler_class = resolve_handler_class(class_name)
     dispatch = resolve_method(handler_class, method)
     write(dispatch.call(request))
   end

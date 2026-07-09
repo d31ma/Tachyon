@@ -27,8 +27,8 @@ const OG_IMAGE = `${SITE_URL}/shared/assets/logo.svg`; // TODO: prefer a 1200×6
 const ROUTES = {
     '/': {
         file: 'index.html',
-        title: 'Tachyon — the polyglot full-stack framework for Bun',
-        description: 'Tachyon is a polyglot, file-system-routed full-stack framework for Bun. Render reactive pages and components with Tac, serve routes in JavaScript, TypeScript, Python, Rust and more with Yon, and persist documents, realtime mailboxes and telemetry with FYLO.',
+        title: 'Tachyon — the polyglot full-stack framework for ty',
+        description: 'Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Render reactive pages and components with Tac, serve routes in JavaScript, TypeScript, Python, Rust and more with Yon, and persist documents, realtime mailboxes and telemetry with FYLO.',
     },
     '/atlas': {
         file: 'atlas/index.html',

@@ -8,6 +8,32 @@ set -eu
 
 REPO="d31ma/Tachyon"
 BASE="https://github.com/${REPO}/releases/latest/download"
+TACHYON_STEPS=7
+tachyon_step=0
+
+repeat_char() {
+    char=$1
+    count=$2
+    out=""
+    while [ "$count" -gt 0 ]; do
+        out="${out}${char}"
+        count=$((count - 1))
+    done
+    printf "%s" "$out"
+}
+
+tachyon_progress() {
+    tachyon_step=$((tachyon_step + 1))
+    percent=$((tachyon_step * 100 / TACHYON_STEPS))
+    filled=$((tachyon_step * 24 / TACHYON_STEPS))
+    empty=$((24 - filled))
+    bar=$(repeat_char "#" "$filled")
+    gap=$(repeat_char "-" "$empty")
+    printf "TACHYON [%s%s] %3d%%  %s\n" "$bar" "$gap" "$percent" "$1"
+}
+
+printf "TACHYON installer\n"
+printf "Bringing the ty binary online...\n\n"
 
 os=$(uname -s)
 arch=$(uname -m)
@@ -24,6 +50,8 @@ case "$arch" in
     *) echo "Unsupported architecture: $arch" >&2; exit 1 ;;
 esac
 
+tachyon_progress "Detected ${os_tag}/${arch_tag}"
+
 asset="ty-${os_tag}-${arch_tag}"
 url="${BASE}/${asset}"
 
@@ -34,14 +62,16 @@ else
     dest="${HOME}/.local/bin"
     mkdir -p "$dest"
 fi
+tachyon_progress "Selected install directory: ${dest}"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-echo "Downloading ${asset}..."
-curl -fSL "$url" -o "$tmp/ty"
+tachyon_progress "Downloading ${asset}"
+curl -fsSL "$url" -o "$tmp/ty"
 
 # Verify checksum against the release's SHA256SUMS (best-effort: skip if tools absent).
+tachyon_progress "Verifying release checksum"
 if command -v sha256sum >/dev/null 2>&1; then hash_cmd="sha256sum"; \
     elif command -v shasum >/dev/null 2>&1; then hash_cmd="shasum -a 256"; else hash_cmd=""; fi
 if [ -n "$hash_cmd" ]; then
@@ -56,13 +86,15 @@ if [ -n "$hash_cmd" ]; then
     fi
 fi
 
+tachyon_progress "Installing ty"
 chmod +x "$tmp/ty"
 mv "$tmp/ty" "$dest/ty"
 echo "Installed ty to ${dest}/ty"
 
 # Tachyon drives the FYLO and CHEX binaries at runtime — install them too.
-echo "Installing runtime dependencies (fylo, chex)..."
+tachyon_progress "Installing FYLO runtime"
 curl -fsSL https://github.com/d31ma/Fylo/releases/latest/download/install.sh | sh
+tachyon_progress "Installing CHEX validator"
 curl -fsSL https://github.com/d31ma/Chex/releases/latest/download/install.sh | sh
 
 case ":$PATH:" in

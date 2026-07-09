@@ -120,7 +120,8 @@ dist
 curl -fsSL https://tachyon.del.ma/install.sh | sh
 \`\`\`
 
-This installs the \`ty\` binary plus the \`fylo\` and \`chex\` binaries it drives at runtime.
+This shows a staged Tachyon progress bar while installing the \`ty\` binary plus
+the \`fylo\` and \`chex\` binaries it drives at runtime.
 
 ## Commands
 

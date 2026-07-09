@@ -110,3 +110,44 @@ describe('frontend-only sources', () => {
         }
     })
 })
+
+describe('docs content', () => {
+    test('groups every docs topic for framework-style navigation', async () => {
+        const docs = JSON.parse(await read('client/shared/data/docs.json'))
+        const grouped = new Set(docs.groups.flatMap((group) => group.topics))
+
+        expect(docs.groups.map((group) => group.title)).toEqual([
+            'Start',
+            'Tac frontend',
+            'Yon backend',
+            'Cookbook',
+        ])
+        expect([...grouped]).toEqual(docs.order)
+        expect(Object.keys(docs.topics).sort()).toEqual([...grouped].sort())
+    })
+
+    test('documents polyglot Yon middleware with class-style and raw shim examples', async () => {
+        const docs = JSON.parse(await read('client/shared/data/docs.json'))
+        const yon = docs.topics.yon
+        const text = JSON.stringify(yon)
+        const code = yon.sections.map((section) => section.code ?? '').join('\n')
+
+        expect(text).toContain('server/middleware/yon.<ext>')
+        expect(text).toContain('class Middleware:')
+        expect(text).toContain('Raw shim middleware')
+        expect(code).toContain('"phase": "before"')
+        expect(code).toContain('"action": "respond"')
+    })
+
+    test('documents frontend-only recipes that mimic backend and database features', async () => {
+        const docs = JSON.parse(await read('client/shared/data/docs.json'))
+        const cookbook = docs.topics.cookbook
+        const text = JSON.stringify(cookbook)
+
+        expect(cookbook.summary).toContain('frontend-only')
+        expect(text).toContain('tac://')
+        expect(text).toContain('fylo.users')
+        expect(text).toContain('server/middleware/yon.<ext>')
+        expect(text).toContain('environment')
+    })
+})

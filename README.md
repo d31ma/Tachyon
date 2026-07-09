@@ -51,7 +51,8 @@ irm https://tachyon.del.ma/install.ps1 | iex
 
 The installer grabs the right binary for your OS/arch from the latest
 [GitHub release](https://github.com/d31ma/Tachyon/releases), verifies its
-checksum, and puts `ty` on your PATH. Verify with `ty --version`.
+checksum, shows a staged Tachyon progress bar, and puts `ty` on your PATH.
+Verify with `ty --version`.
 
 ---
 
@@ -1659,15 +1660,93 @@ Tachyon also supports:
 - origin-aware CORS rejection before handler execution
 - proxy-aware request context
 - in-memory rate limiting
+- JavaScript and polyglot process middleware
 - middleware-provided distributed rate limiting
 - cache headers for runtime assets, chunks, shared assets, and shared data
 - document-request detection using browser navigation headers such as `Sec-Fetch-Dest` / `Sec-Fetch-Mode`, with `Accept: text/html` kept as a fallback
 
 ---
 
+## Middleware
+
+Existing JavaScript middleware still works from `middleware.js`:
+
+```js
+export default {
+  before(request, context) {
+    if (request.headers.get('x-blocked') === 'true') {
+      return Response.json({ detail: 'blocked' }, { status: 403 })
+    }
+  },
+  after(request, response, context) {
+    const headers = new Headers(response.headers)
+    headers.set('X-Request-Id', context.requestId)
+    return new Response(response.body, { status: response.status, headers })
+  },
+  rateLimiter: {
+    take(request, context) {
+      return null
+    },
+  },
+}
+```
+
+Polyglot middleware can live at `server/middleware/yon.<ext>` or
+`middleware/yon.<ext>`. JavaScript, TypeScript, Python, Ruby, and PHP can use a
+class-style adapter:
+
+```python
+class Middleware:
+    @staticmethod
+    def before(input):
+        if input["request"]["headers"].get("x-blocked") == "true":
+            return {
+                "action": "respond",
+                "status": 403,
+                "body": { "detail": "blocked" },
+            }
+
+    @staticmethod
+    def after(input):
+        return { "headers": { "X-Request-Id": input["context"]["requestId"] } }
+
+    @staticmethod
+    def rateLimit(input):
+        return {
+            "allowed": True,
+            "limit": 100,
+            "remaining": 99,
+            "resetAt": 1780000000000,
+        }
+```
+
+Any other language can use the raw shim protocol: read one JSON envelope from
+stdin and write one JSON result to stdout. The envelope includes `phase`,
+`request`, `response` for `after`, and `context`.
+
+```json
+{ "phase": "before", "request": {}, "context": {} }
+```
+
+Supported results:
+
+```json
+{ "action": "continue" }
+{ "action": "respond", "status": 403, "headers": {}, "body": {} }
+{ "action": "replace", "response": { "status": 200, "headers": {}, "body": {} } }
+{ "allowed": true, "limit": 100, "remaining": 99, "resetAt": 1780000000000 }
+```
+
+To preserve streaming responses and avoid accidentally consuming request
+bodies before route handlers run, process middleware receives request/response
+metadata by default, not body streams.
+
+---
+
 ## Distributed Rate Limiting
 
-Export a `rateLimiter` from `middleware.js` to use a shared backend.
+Export a `rateLimiter` from `middleware.js`, or `rateLimit()` from polyglot
+middleware, to use a shared backend.
 
 Required env vars:
 
