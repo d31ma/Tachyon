@@ -1,16 +1,16 @@
 # Graph Report - TACHYON  (2026-07-09)
 
 ## Corpus Check
-- 183 files · ~203,056 words
+- 183 files · ~203,063 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 6332 nodes · 12332 edges · 313 communities (212 shown, 101 thin omitted)
+- 6332 nodes · 12332 edges · 314 communities (211 shown, 103 thin omitted)
 - Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 867 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f8e60eb5`
+- Built from commit: `1b51410e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -120,13 +120,14 @@
 - [[_COMMUNITY_Community 102|Community 102]]
 - [[_COMMUNITY_Community 103|Community 103]]
 - [[_COMMUNITY_Community 104|Community 104]]
-- [[_COMMUNITY_Community 106|Community 106]]
+- [[_COMMUNITY_Community 105|Community 105]]
 - [[_COMMUNITY_Community 107|Community 107]]
 - [[_COMMUNITY_Community 108|Community 108]]
 - [[_COMMUNITY_Community 109|Community 109]]
 - [[_COMMUNITY_Community 110|Community 110]]
 - [[_COMMUNITY_Community 111|Community 111]]
 - [[_COMMUNITY_Community 112|Community 112]]
+- [[_COMMUNITY_Community 113|Community 113]]
 - [[_COMMUNITY_Community 114|Community 114]]
 - [[_COMMUNITY_Community 115|Community 115]]
 - [[_COMMUNITY_Community 116|Community 116]]
@@ -135,7 +136,6 @@
 - [[_COMMUNITY_Community 119|Community 119]]
 - [[_COMMUNITY_Community 120|Community 120]]
 - [[_COMMUNITY_Community 121|Community 121]]
-- [[_COMMUNITY_Community 122|Community 122]]
 - [[_COMMUNITY_Community 123|Community 123]]
 - [[_COMMUNITY_Community 124|Community 124]]
 - [[_COMMUNITY_Community 125|Community 125]]
@@ -172,20 +172,19 @@
 - [[_COMMUNITY_Community 156|Community 156]]
 - [[_COMMUNITY_Community 157|Community 157]]
 - [[_COMMUNITY_Community 158|Community 158]]
+- [[_COMMUNITY_Community 159|Community 159]]
 - [[_COMMUNITY_Community 160|Community 160]]
 - [[_COMMUNITY_Community 161|Community 161]]
 - [[_COMMUNITY_Community 162|Community 162]]
 - [[_COMMUNITY_Community 163|Community 163]]
 - [[_COMMUNITY_Community 164|Community 164]]
 - [[_COMMUNITY_Community 165|Community 165]]
-- [[_COMMUNITY_Community 166|Community 166]]
 - [[_COMMUNITY_Community 167|Community 167]]
 - [[_COMMUNITY_Community 168|Community 168]]
 - [[_COMMUNITY_Community 169|Community 169]]
 - [[_COMMUNITY_Community 170|Community 170]]
 - [[_COMMUNITY_Community 171|Community 171]]
 - [[_COMMUNITY_Community 172|Community 172]]
-- [[_COMMUNITY_Community 173|Community 173]]
 - [[_COMMUNITY_Community 174|Community 174]]
 - [[_COMMUNITY_Community 175|Community 175]]
 - [[_COMMUNITY_Community 176|Community 176]]
@@ -194,6 +193,7 @@
 - [[_COMMUNITY_Community 179|Community 179]]
 - [[_COMMUNITY_Community 180|Community 180]]
 - [[_COMMUNITY_Community 181|Community 181]]
+- [[_COMMUNITY_Community 182|Community 182]]
 - [[_COMMUNITY_Community 183|Community 183]]
 - [[_COMMUNITY_Community 184|Community 184]]
 - [[_COMMUNITY_Community 185|Community 185]]
@@ -230,9 +230,9 @@
 - [[_COMMUNITY_Community 216|Community 216]]
 - [[_COMMUNITY_Community 217|Community 217]]
 - [[_COMMUNITY_Community 218|Community 218]]
+- [[_COMMUNITY_Community 219|Community 219]]
+- [[_COMMUNITY_Community 220|Community 220]]
 - [[_COMMUNITY_Community 221|Community 221]]
-- [[_COMMUNITY_Community 222|Community 222]]
-- [[_COMMUNITY_Community 223|Community 223]]
 - [[_COMMUNITY_Community 224|Community 224]]
 - [[_COMMUNITY_Community 225|Community 225]]
 - [[_COMMUNITY_Community 226|Community 226]]
@@ -248,8 +248,8 @@
 - [[_COMMUNITY_Community 236|Community 236]]
 - [[_COMMUNITY_Community 237|Community 237]]
 - [[_COMMUNITY_Community 238|Community 238]]
-- [[_COMMUNITY_Community 239|Community 239]]
-- [[_COMMUNITY_Community 240|Community 240]]
+- [[_COMMUNITY_Community 241|Community 241]]
+- [[_COMMUNITY_Community 242|Community 242]]
 - [[_COMMUNITY_Community 243|Community 243]]
 - [[_COMMUNITY_Community 244|Community 244]]
 - [[_COMMUNITY_Community 245|Community 245]]
@@ -259,7 +259,6 @@
 - [[_COMMUNITY_Community 249|Community 249]]
 - [[_COMMUNITY_Community 250|Community 250]]
 - [[_COMMUNITY_Community 251|Community 251]]
-- [[_COMMUNITY_Community 252|Community 252]]
 - [[_COMMUNITY_Community 253|Community 253]]
 - [[_COMMUNITY_Community 254|Community 254]]
 - [[_COMMUNITY_Community 255|Community 255]]
@@ -291,17 +290,18 @@
 - [[_COMMUNITY_Community 281|Community 281]]
 - [[_COMMUNITY_Community 282|Community 282]]
 - [[_COMMUNITY_Community 283|Community 283]]
+- [[_COMMUNITY_Community 284|Community 284]]
 - [[_COMMUNITY_Community 285|Community 285]]
-- [[_COMMUNITY_Community 286|Community 286]]
+- [[_COMMUNITY_Community 287|Community 287]]
 - [[_COMMUNITY_Community 288|Community 288]]
-- [[_COMMUNITY_Community 289|Community 289]]
 - [[_COMMUNITY_Community 290|Community 290]]
 - [[_COMMUNITY_Community 291|Community 291]]
-- [[_COMMUNITY_Community 308|Community 308]]
+- [[_COMMUNITY_Community 292|Community 292]]
 - [[_COMMUNITY_Community 309|Community 309]]
 - [[_COMMUNITY_Community 310|Community 310]]
 - [[_COMMUNITY_Community 311|Community 311]]
 - [[_COMMUNITY_Community 312|Community 312]]
+- [[_COMMUNITY_Community 313|Community 313]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Compiler` - 148 edges
@@ -335,7 +335,7 @@
 - **Dashboard Page Composition** — index_dashboard_page, index_stats_grid, index_panel_helpers, index_wasm_zig_clicker, index_wasm_go_clicker, index_wasm_clicker, index_wasm_assemblyscript_clicker, index_wasm_rust_clicker, index_wasm_c_clicker [INFERRED]
 - **FYLO Database Ecosystem** — readme_db_structure, readme_fylo_system, readme_chex_schemas, readme_versioned_schema_layout, readme_seed_data, app_app_shell, index_stats_grid [INFERRED]
 
-## Communities (313 total, 101 thin omitted)
+## Communities (314 total, 103 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.02
@@ -378,56 +378,56 @@ Cohesion: 0.05
 Nodes (48): main(), run(), startServer(), shutdown(), main(), results, run(), startServer() (+40 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.06
-Nodes (5): Compiler, buildFingerprint(), pathFingerprint(), createTypecheckStage(), exists()
+Cohesion: 0.05
+Nodes (5): runSelectiveBuild(), writeRouteOutput(), Compiler, buildFingerprint(), pathFingerprint()
 
 ### Community 11 - "Community 11"
-Cohesion: 0.1
-Nodes (13): assertPathInside(), BrowserCore, BrowserDocuments, clone(), decodeTime(), isNotFound(), listBucketedDocIds(), relative() (+5 more)
+Cohesion: 0.09
+Nodes (49): assertEditableDocument(), BROWSER_PATH, browserContentSecurityPolicy(), clampEventStreamPollMs(), createRestDocument(), delegateToOfficialHandler(), deleteDocument(), deleteRestDocument() (+41 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.05
-Nodes (45): appendGroup(), basename(), BrowserPrefixIndexCodec, bytesToHex(), collectDeletedDocs(), collectFindDocs(), CollectionNotFoundError, createBrowserFylo() (+37 more)
+Cohesion: 0.06
+Nodes (40): basename(), BrowserPrefixIndexCodec, bytesToHex(), CollectionNotFoundError, createBrowserFylo(), createOpfsFilesystem(), createWorkerClient(), decodeSegment() (+32 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.09
-Nodes (48): assertEditableDocument(), BROWSER_PATH, browserContentSecurityPolicy(), clampEventStreamPollMs(), createRestDocument(), delegateToOfficialHandler(), deleteDocument(), deleteRestDocument() (+40 more)
-
-### Community 14 - "Community 14"
-Cohesion: 0.08
-Nodes (46): browserContentSecurityPolicy(), assertEditableDocument(), BROWSER_PATH, browserContentSecurityPolicy(), browserLogger, clampEventStreamPollMs(), createRestDocument(), deleteDocument() (+38 more)
-
-### Community 15 - "Community 15"
 Cohesion: 0.04
 Nodes (48): authFetch(), authHeaders(), decodeAnyValue(), describeEarlyExit(), extractPersistedSpans(), getResourceAttribute(), readTelemetryDocsFromDisk(), readTextStream() (+40 more)
 
-### Community 16 - "Community 16"
+### Community 14 - "Community 14"
 Cohesion: 0.05
 Nodes (35): applyTheme(), bindPersistentFields(), bindReactiveFields(), bindThemeListener(), browserEnv, constructor(), fylo, get() (+27 more)
+
+### Community 15 - "Community 15"
+Cohesion: 0.08
+Nodes (43): assertEditableDocument(), browserContentSecurityPolicy(), createRestDocument(), deleteDocument(), deleteRestDocument(), BROWSER_PATH, browserContentSecurityPolicy(), browserLogger (+35 more)
+
+### Community 16 - "Community 16"
+Cohesion: 0.05
+Nodes (34): bindPersistentFields(), bindReactiveFields(), bindRefreshListeners(), browserEnv, fylo, get(), getOwnPropertyDescriptor(), has() (+26 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.04
 Nodes (54): [26.22.03] — 2026-05-27, Added, Added, Added, Added, Added, Added, Added (+46 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.05
-Nodes (33): bindPersistentFields(), bindReactiveFields(), bindRefreshListeners(), browserEnv, fylo, get(), getOwnPropertyDescriptor(), has() (+25 more)
-
-### Community 19 - "Community 19"
 Cohesion: 0.04
 Nodes (29): bindPersistentFields(), bindReactiveFields(), bindRefreshListener(), browserEnv, DiagnosticsPayload, fylo, get(), getOwnPropertyDescriptor() (+21 more)
+
+### Community 19 - "Community 19"
+Cohesion: 0.07
+Nodes (48): classifyChange(), loadPostBundleHook(), normalizeRelative(), pathExists(), runBuild(), runPostBundleHook(), runWithConcurrency(), startBundleWatcher() (+40 more)
 
 ### Community 20 - "Community 20"
 Cohesion: 0.05
 Nodes (30): addItem(), bindPersistentFields(), bindReactiveFields(), bindRefreshListener(), browserEnv, clearItems(), formatDate(), fylo (+22 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.05
-Nodes (26): bindPersistentFields(), bindReactiveFields(), browserEnv, clearDraft(), fylo, get(), getOwnPropertyDescriptor(), has() (+18 more)
+Cohesion: 0.07
+Nodes (13): appendGroup(), BrowserCollectionFacade, browserProtocolError(), collectDeletedDocs(), collectFindDocs(), executeBrowserOperation(), FyloBrowser, isBrowserRequest() (+5 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.08
-Nodes (48): bin, bindPersistentFields(), bindReactiveFields(), browserEnv, bytes, constructor(), emit(), env() (+40 more)
+Cohesion: 0.05
+Nodes (26): bindPersistentFields(), bindReactiveFields(), browserEnv, clearDraft(), fylo, get(), getOwnPropertyDescriptor(), has() (+18 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.07
@@ -442,24 +442,24 @@ Cohesion: 0.05
 Nodes (31): bindPersistentFields(), bindReactiveFields(), bindRefreshListener(), browserEnv, formatResult(), fylo, get(), getOwnPropertyDescriptor() (+23 more)
 
 ### Community 26 - "Community 26"
+Cohesion: 0.09
+Nodes (46): bin, bindPersistentFields(), bindReactiveFields(), browserEnv, bytes, constructor(), emit(), env() (+38 more)
+
+### Community 27 - "Community 27"
 Cohesion: 0.05
 Nodes (28): bindPersistentFields(), bindReactiveFields(), bindRefreshListener(), browserEnv, fylo, get(), getOwnPropertyDescriptor(), has() (+20 more)
 
-### Community 27 - "Community 27"
-Cohesion: 0.07
-Nodes (44): classifyChange(), loadPostBundleHook(), normalizeRelative(), pathExists(), runBuild(), runPostBundleHook(), runWithConcurrency(), startBundleWatcher() (+36 more)
-
 ### Community 29 - "Community 29"
 Cohesion: 0.05
-Nodes (29): bindRefreshListener(), writeSessionValue(), bindPersistentFields(), bindReactiveFields(), bindRefreshListener(), browserEnv, fylo, get() (+21 more)
+Nodes (29): bindRefreshListener(), onMount2(), bindPersistentFields(), bindReactiveFields(), bindRefreshListener(), browserEnv, fylo, get() (+21 more)
 
 ### Community 30 - "Community 30"
-Cohesion: 0.1
-Nodes (9): BrowserPrefixIndex, completeLines(), dirname(), intersect(), OpfsFilesystem, parseWalMutation(), readTextIfExists(), serializeSnapshot() (+1 more)
-
-### Community 31 - "Community 31"
 Cohesion: 0.04
 Nodes (45): [26.21.7] — 2026-05-24, Added, Added, Added, Added, Added, Added, Added (+37 more)
+
+### Community 31 - "Community 31"
+Cohesion: 0.06
+Nodes (31): constructor(), emit(), rerender(), __tac_apply_state__(), bin, bindPersistentFields(), bindReactiveFields(), browserEnv (+23 more)
 
 ### Community 32 - "Community 32"
 Cohesion: 0.07
@@ -467,43 +467,43 @@ Nodes (41): findEventTarget(), resolveHandler(), canHandleClientNavigation(), co
 
 ### Community 34 - "Community 34"
 Cohesion: 0.06
-Nodes (26): get(), inject(), inject2(), scheduleRerender(), bindPersistentFields(), bindReactiveFields(), browserEnv, fylo (+18 more)
+Nodes (26): get(), inject(), inject2(), [name](), bindPersistentFields(), bindReactiveFields(), browserEnv, fylo (+18 more)
 
 ### Community 35 - "Community 35"
 Cohesion: 0.08
 Nodes (14): Handler, YonRequest, Handler, YonRequest, ItemRecord, JsonItemRepository, CreatedItem, CreateOptions (+6 more)
 
-### Community 38 - "Community 38"
+### Community 36 - "Community 36"
 Cohesion: 0.07
 Nodes (35): buildFyloBrowserPaths(), buildOperation(), buildSpec(), describeStatus(), docsContentSecurityPolicy(), docsScript(), docsStyles(), getDocsAssets() (+27 more)
 
-### Community 39 - "Community 39"
+### Community 37 - "Community 37"
 Cohesion: 0.05
 Nodes (18): get(), inject(), provide(), set(), browserEnv, fylo, get(), inject() (+10 more)
 
-### Community 40 - "Community 40"
-Cohesion: 0.11
-Nodes (24): reduceToArtifacts(), removeTempDir(), removeWithRetry(), copyDirectory(), fsError(), link(), makeStats(), open() (+16 more)
+### Community 38 - "Community 38"
+Cohesion: 0.15
+Nodes (10): assertPathInside(), BrowserDocuments, decodeTime(), dirname(), isNotFound(), listBucketedDocIds(), OpfsFilesystem, stripInternalFields() (+2 more)
 
-### Community 41 - "Community 41"
+### Community 39 - "Community 39"
 Cohesion: 0.06
 Nodes (28): bin, bindPersistentFields(), bindReactiveFields(), browserEnv, bytes, emit(), fylo, GET() (+20 more)
 
-### Community 42 - "Community 42"
+### Community 40 - "Community 40"
 Cohesion: 0.06
 Nodes (28): bin, bindPersistentFields(), bindReactiveFields(), browserEnv, bytes, emit(), fylo, get() (+20 more)
 
-### Community 43 - "Community 43"
-Cohesion: 0.06
-Nodes (28): writeLocalValue(), bin, bindPersistentFields(), bindReactiveFields(), browserEnv, bytes, emit(), fylo (+20 more)
-
-### Community 44 - "Community 44"
+### Community 42 - "Community 42"
 Cohesion: 0.06
 Nodes (35): createAppScaffold(), ensureEmptyDirectory(), defaultAppName(), initLogger, resolveAppName(), { targetArg, appName: providedAppName }, targetDir, appDir (+27 more)
 
+### Community 43 - "Community 43"
+Cohesion: 0.06
+Nodes (22): bindPersistentFields(), bindReactiveFields(), browserEnv, fylo, get(), getOwnPropertyDescriptor(), has(), inject() (+14 more)
+
 ### Community 45 - "Community 45"
-Cohesion: 0.08
-Nodes (10): PythonFyloRepository, PythonLanguageRepository, PythonLanguageService, PythonFyloRepository, PythonLanguageRepository, PythonLanguageService, DELETE(), GET() (+2 more)
+Cohesion: 0.06
+Nodes (25): bin, bindPersistentFields(), bindReactiveFields(), browserEnv, bytes, fylo, get(), getOwnPropertyDescriptor() (+17 more)
 
 ### Community 46 - "Community 46"
 Cohesion: 0.06
@@ -511,219 +511,219 @@ Nodes (24): bin, bindPersistentFields(), bindReactiveFields(), browserEnv, bytes
 
 ### Community 47 - "Community 47"
 Cohesion: 0.06
-Nodes (25): bin, bindPersistentFields(), bindReactiveFields(), browserEnv, bytes, fylo, get(), getOwnPropertyDescriptor() (+17 more)
+Nodes (37): [1.11.1] and earlier, [26.23.01] — 2026-06-01, [26.28.01] - 2026-07-06, Added, Added, Added, Added, Added (+29 more)
 
 ### Community 48 - "Community 48"
 Cohesion: 0.06
-Nodes (37): [1.11.1] and earlier, [26.23.01] — 2026-06-01, [26.28.01] - 2026-07-06, Added, Added, Added, Added, Added (+29 more)
-
-### Community 49 - "Community 49"
-Cohesion: 0.06
-Nodes (21): bindPersistentFields(), bindReactiveFields(), browserEnv, fylo, get(), getOwnPropertyDescriptor(), has(), inject() (+13 more)
-
-### Community 50 - "Community 50"
-Cohesion: 0.06
 Nodes (23): bindPersistentFields(), bindReactiveFields(), browserEnv, fylo, get(), getOwnPropertyDescriptor(), has(), inject() (+15 more)
 
-### Community 51 - "Community 51"
+### Community 49 - "Community 49"
+Cohesion: 0.13
+Nodes (19): copyDirectory(), fsError(), link(), makeStats(), open(), openSyncAccess(), OpfsDirectoryHandle, OpfsFileHandle (+11 more)
+
+### Community 50 - "Community 50"
 Cohesion: 0.1
-Nodes (30): buildFingerprint(), bundleCliPath, distPath, pathFingerprint(), previewLogger, readPreviewServerOptions(), readStringArg(), runFreshBundleBuild() (+22 more)
+Nodes (29): assetRoot, distPath, main(), nativeLogger, outputRoot, rawTarget, resolveAppName(), target (+21 more)
+
+### Community 51 - "Community 51"
+Cohesion: 0.09
+Nodes (3): BrowserCollectionFacade2, BrowserDirectCollection, BrowserFyloClient
 
 ### Community 52 - "Community 52"
-Cohesion: 0.1
-Nodes (3): BrowserCollectionFacade, browserProtocolError(), FyloBrowser
+Cohesion: 0.12
+Nodes (34): getAttribute(), b(), C(), d(), E(), GQ(), i(), m() (+26 more)
 
 ### Community 53 - "Community 53"
 Cohesion: 0.06
 Nodes (32): expectInteractiveSurface(), expectNoBrowserErrors(), waitForDashboardReady(), browserErrorMap, browserErrors, drawer, exampleName, expectDuvayShells() (+24 more)
 
 ### Community 54 - "Community 54"
-Cohesion: 0.09
-Nodes (3): BrowserCollectionFacade2, BrowserDirectCollection, BrowserFyloClient
-
-### Community 55 - "Community 55"
-Cohesion: 0.13
-Nodes (33): j, q, b(), C(), d(), E(), f(), g() (+25 more)
-
-### Community 56 - "Community 56"
 Cohesion: 0.11
 Nodes (27): appInfo(), authorizedNativeCapabilities(), createResponse(), dispatchBuiltInNativeCapability(), dispatchNativeCapability(), ensureNativeBridge(), fetch(), hasServerSideOsApis() (+19 more)
 
-### Community 57 - "Community 57"
+### Community 55 - "Community 55"
+Cohesion: 0.07
+Nodes (28): createFakeIndexedDB(), installWindow(), SwiftFyloRepository, authHeaders, calls, completed, createFakeIndexedDB(), eventOffsets (+20 more)
+
+### Community 56 - "Community 56"
 Cohesion: 0.12
-Nodes (33): assertEditableDocument(), createRestDocument(), deleteDocument(), deleteRestDocument(), FyloBrowser, fyloRoot(), getDocument(), getEncryptedFields() (+25 more)
+Nodes (32): assertEditableDocument(), createRestDocument(), deleteDocument(), deleteRestDocument(), FyloBrowser, fyloRoot(), getDocument(), getEncryptedFields() (+24 more)
 
 ### Community 58 - "Community 58"
 Cohesion: 0.07
-Nodes (28): createFakeIndexedDB(), installWindow(), SwiftFyloRepository, authHeaders, calls, completed, createFakeIndexedDB(), eventOffsets (+20 more)
+Nodes (28): adapter, BINARY_LANGUAGES, buildDir, buildImportMap(), canBuildBinary(), commandAvailable(), companionPaths, copyDir() (+20 more)
+
+### Community 59 - "Community 59"
+Cohesion: 0.11
+Nodes (15): ADAPTER_DIR, basename(), HandlerAdapter, HTTP_METHODS, isExecutableFile(), methodsFromOptionsSchema(), ADAPTER_DIR, BUILT_IN_PROVIDERS (+7 more)
 
 ### Community 60 - "Community 60"
 Cohesion: 0.09
 Nodes (16): basename(), CLASS_STYLE_LANGUAGES, headersObject(), isDirectory(), isExecutableFile(), MiddlewareAdapter, middlewareLogger, objectOrNull() (+8 more)
 
-### Community 61 - "Community 61"
-Cohesion: 0.07
-Nodes (28): adapter, BINARY_LANGUAGES, buildDir, buildImportMap(), canBuildBinary(), commandAvailable(), companionPaths, copyDir() (+20 more)
-
 ### Community 62 - "Community 62"
-Cohesion: 0.11
-Nodes (15): ADAPTER_DIR, basename(), HandlerAdapter, HTTP_METHODS, isExecutableFile(), methodsFromOptionsSchema(), ADAPTER_DIR, BUILT_IN_PROVIDERS (+7 more)
-
-### Community 63 - "Community 63"
 Cohesion: 0.09
 Nodes (28): clearHandlerBackends(), handlerPaths(), registerHandlerBackends(), bundleWatchEnabled, configureRoutes(), detectAppShape(), directoryHasFiles(), distPath (+20 more)
 
-### Community 64 - "Community 64"
+### Community 63 - "Community 63"
 Cohesion: 0.18
 Nodes (8): program, request, compileKotlinWorker(), KEYWORDS, Parser, PUNCT1, PUNCT2, tokenize()
 
-### Community 65 - "Community 65"
+### Community 64 - "Community 64"
 Cohesion: 0.06
 Nodes (25): trackBrowserErrors(), browserErrorMap, browserErrors, docsOperation, draft, exampleName, EXAMPLES_DIR, FIXTURE_ITEMS (+17 more)
 
-### Community 67 - "Community 67"
+### Community 65 - "Community 65"
+Cohesion: 0.12
+Nodes (24): backendByHandler, clearBackends(), hasInHouseBackend(), resolveBackend(), setBackend(), BUILD_DIR, buildArtifactPath(), cacheKey() (+16 more)
+
+### Community 66 - "Community 66"
 Cohesion: 0.09
 Nodes (29): appendEvents(), pollEvents(), setEventsStatus(), startEventsTail(), stopEventsTail(), appendEvents(), collectionLabel, collectionsRoot (+21 more)
+
+### Community 67 - "Community 67"
+Cohesion: 0.09
+Nodes (24): bytes, first, large, request, response, second, small, label (+16 more)
 
 ### Community 68 - "Community 68"
 Cohesion: 0.11
 Nodes (22): assertRun(), copyIfExists(), createTachyonApp(), run(), tachyonTarball(), uniqueName(), assertRun(), copyIfExists() (+14 more)
 
 ### Community 69 - "Community 69"
-Cohesion: 0.13
-Nodes (24): backendByHandler, clearBackends(), hasInHouseBackend(), resolveBackend(), setBackend(), BUILD_DIR, buildArtifactPath(), cacheKey() (+16 more)
-
-### Community 70 - "Community 70"
 Cohesion: 0.11
 Nodes (22): applyPublish(), applySubscribe(), emit(), env(), inject(), isDecoratorContext(), isPlainOptions(), memberSignalName() (+14 more)
 
+### Community 70 - "Community 70"
+Cohesion: 0.11
+Nodes (8): PythonLanguageRepository, PythonLanguageService, PythonLanguageRepository, PythonLanguageService, DELETE(), GET(), PATCH(), __status_code()
+
 ### Community 71 - "Community 71"
-Cohesion: 0.08
-Nodes (23): cleanBooleanAttrs(), isSameNode(), syncAttributes(), syncFormControlState(), cleanBooleanAttrs(), createValueEventDetail(), isCustomElement(), isSameNode() (+15 more)
-
-### Community 72 - "Community 72"
 Cohesion: 0.1
-Nodes (6): runSelectiveBuild(), writeRouteOutput(), fyloApiGet(), fyloRequest(), text(), pathExists()
+Nodes (22): syncAttributes(), syncFormControlState(), createValueEventDetail(), isCustomElement(), isSameNode(), morphChildren(), morphLightDomSlots(), ownedSlots() (+14 more)
 
-### Community 74 - "Community 74"
-Cohesion: 0.12
-Nodes (5): FyloBrowserClient, FyloCollectionClient, meta(), provide(), set()
+### Community 73 - "Community 73"
+Cohesion: 0.11
+Nodes (5): FyloTelemetryRepository, OtlpValueDecoder, TelemetryService, OtlpValueDecoder, Handler
 
 ### Community 75 - "Community 75"
 Cohesion: 0.12
 Nodes (5): FyloBrowserClient, FyloCollectionClient, meta(), provide(), set()
 
+### Community 76 - "Community 76"
+Cohesion: 0.12
+Nodes (5): FyloBrowserClient, FyloCollectionClient, meta(), provide(), set()
+
 ### Community 77 - "Community 77"
+Cohesion: 0.12
+Nodes (3): jsonOk(), Router, configureRoutes()
+
+### Community 78 - "Community 78"
 Cohesion: 0.11
 Nodes (19): localFirstFetch(), __tc_compiled_factory__, __tc_defaultPlatform, __tc_deleteCachedResponse(), TC_INTERNAL_FIELDS, __tc_isBrowserEnv(), __tc_module_imports__, __tc_openFetchCache() (+11 more)
 
-### Community 80 - "Community 80"
-Cohesion: 0.1
-Nodes (11): FACADE, RESERVED, safeSegment(), TopicLog, log, clientId, originalEnv, reader (+3 more)
+### Community 82 - "Community 82"
+Cohesion: 0.19
+Nodes (4): BrowserPrefixIndex, completeLines(), parseWalMutation(), readTextIfExists()
 
-### Community 85 - "Community 85"
+### Community 86 - "Community 86"
 Cohesion: 0.11
 Nodes (9): bytes, module, encodeName(), f64Bytes(), SECTION, signedLEB(), VAL, vector() (+1 more)
 
-### Community 86 - "Community 86"
+### Community 87 - "Community 87"
+Cohesion: 0.09
+Nodes (11): YonRubyRunner, calls, captured, ctx, method, r, request, seen (+3 more)
+
+### Community 88 - "Community 88"
 Cohesion: 0.09
 Nodes (9): FakeFile, FakeFileHandle, FakeSyncAccessHandle, installFakeOpfs(), docs, fylo, root, __resetOpfsFs() (+1 more)
 
-### Community 88 - "Community 88"
+### Community 89 - "Community 89"
 Cohesion: 0.11
 Nodes (20): big, get, program, put, request, requestBytes, response, small (+12 more)
 
-### Community 89 - "Community 89"
+### Community 91 - "Community 91"
 Cohesion: 0.16
 Nodes (24): tac_default(), tac_default2(), tac_default2(), __ty_compiled_factory__, ty_createHelpers(), tac_default2(), tac_default2(), tac_default2() (+16 more)
 
-### Community 91 - "Community 91"
+### Community 93 - "Community 93"
 Cohesion: 0.12
 Nodes (21): loadUsers(), loadWithPolicy(), policyNote(), recordCacheRun(), applyUsersResult(), bindRefreshListener(), CachePolicy, CacheRun (+13 more)
 
-### Community 92 - "Community 92"
+### Community 95 - "Community 95"
 Cohesion: 0.16
 Nodes (7): decode(), basename(), basename(), Pool, isAssetRequest(), shouldTreatAsAsset(), readUntil()
 
-### Community 93 - "Community 93"
+### Community 96 - "Community 96"
 Cohesion: 0.13
 Nodes (5): FyloBrowser, CppFyloRepository, loadLazyComponent(), CppLanguageService, string
 
-### Community 95 - "Community 95"
-Cohesion: 0.17
-Nodes (7): createBackendOnlyApp(), buildRouteOutput(), writeExecutableHandler(), buildTestFactory(), YonJsRunner, write(), YonRubyRunner
-
 ### Community 97 - "Community 97"
+Cohesion: 0.11
+Nodes (9): CHEX, warm(), dir, setup(), Fixture, helpers, instance, props (+1 more)
+
+### Community 98 - "Community 98"
 Cohesion: 0.23
 Nodes (19): outputRoot, tempDirs, androidSdkRoot(), commandAvailable(), findFileRecursive(), gradleExecutable(), hasNativePackager(), outputTail() (+11 more)
 
-### Community 99 - "Community 99"
-Cohesion: 0.2
-Nodes (3): MemoryFilesystem, notDirectory(), notFound()
-
 ### Community 100 - "Community 100"
-Cohesion: 0.14
-Nodes (7): warm(), dir, Validate, setup(), headers, laterRequestId, request
+Cohesion: 0.16
+Nodes (19): b, j, k, q, x, f(), g(), jQ() (+11 more)
 
 ### Community 101 - "Community 101"
-Cohesion: 0.19
-Nodes (3): ItemService, JsonItemRepository, loadManifests()
-
-### Community 102 - "Community 102"
 Cohesion: 0.1
 Nodes (17): CONFIG_ROOTS, createTypecheckStage(), elapsed, exists(), includesExamples, includesWebsite, isCloudSyncedPath(), projectRoot (+9 more)
 
-### Community 103 - "Community 103"
-Cohesion: 0.15
-Nodes (4): OtlpValueDecoder, TelemetryService, OtlpValueDecoder, Handler
+### Community 102 - "Community 102"
+Cohesion: 0.19
+Nodes (3): ItemService, JsonItemRepository, loadManifests()
 
 ### Community 104 - "Community 104"
+Cohesion: 0.2
+Nodes (20): escapeHtml(), hasSessionStorage(), loadDocs(), loadPersistedState(), persistState(), prettyJson(), renderAll(), renderAuthFields() (+12 more)
+
+### Community 105 - "Community 105"
 Cohesion: 0.17
 Nodes (17): collectRoutes(), directoryExists(), loadRoutes(), pathExists(), resolvePreviewFile(), resolveRouteTemplate(), resolveStaticPreviewRoot(), routeToPortablePath() (+9 more)
 
-### Community 106 - "Community 106"
+### Community 108 - "Community 108"
 Cohesion: 0.1
 Nodes (20): companionPath, compilerScriptPath, cppCompanionPath, cppTemplatePath, executable, jsCompanionPath, kotlinCompanionPath, kotlinTemplatePath (+12 more)
 
-### Community 108 - "Community 108"
+### Community 109 - "Community 109"
 Cohesion: 0.17
 Nodes (10): program, request, compilePythonWorker(), KEYWORDS, Parser, PUNCT1, PUNCT2, significantLines() (+2 more)
 
 ### Community 110 - "Community 110"
-Cohesion: 0.18
-Nodes (12): withCamelAliases(), ty_camelCasePropName(), emit(), has(), provide(), provide2(), rerender(), set() (+4 more)
+Cohesion: 0.2
+Nodes (4): createMemoryFilesystem(), MemoryFilesystem, notDirectory(), notFound()
 
 ### Community 111 - "Community 111"
+Cohesion: 0.14
+Nodes (3): pathExists(), createTypecheckStage(), exists()
+
+### Community 112 - "Community 112"
 Cohesion: 0.1
 Nodes (21): CLI Binary Rename (tach.* to tac.*/yon.*), OOP Companion Classes (export default class extends Tac), @d31ma/tachyon/decorators Package Export, Local-First fetch() with IndexedDB, Polyglot Backend Handlers, Rationale: Framework Split into Tac+Yon in v2.0, Stage 3 Decorator Forms (@inject, @provide, @env, @onMount, @emit), Tac Frontend Layer (Changelog) (+13 more)
 
-### Community 112 - "Community 112"
-Cohesion: 0.21
-Nodes (19): escapeHtml(), hasSessionStorage(), loadDocs(), loadPersistedState(), persistState(), prettyJson(), renderAll(), renderAuthFields() (+11 more)
-
-### Community 114 - "Community 114"
+### Community 113 - "Community 113"
 Cohesion: 0.11
 Nodes (15): HANDLERS, host, HANDLERS, host, response, big, get, program (+7 more)
 
-### Community 116 - "Community 116"
-Cohesion: 0.12
-Nodes (10): YonRubyRunner, calls, captured, ctx, method, r, request, seen (+2 more)
-
-### Community 117 - "Community 117"
+### Community 115 - "Community 115"
 Cohesion: 0.15
 Nodes (13): call(), load_module(), resolve_handler_class(), resolve_method(), run(), write(), YonPythonRunner, FyloMachineRepository (+5 more)
 
-### Community 118 - "Community 118"
-Cohesion: 0.12
-Nodes (3): Handler, Handler, LanguageRepository
+### Community 116 - "Community 116"
+Cohesion: 0.13
+Nodes (9): FACADE, RESERVED, log, clientId, originalEnv, reader, repository, tempDirs (+1 more)
 
-### Community 119 - "Community 119"
+### Community 118 - "Community 118"
 Cohesion: 0.18
 Nodes (12): applyEvent(), connect(), prepare(), readEventStream(), refreshClients(), register(), send(), connect() (+4 more)
 
-### Community 121 - "Community 121"
-Cohesion: 0.14
-Nodes (7): SPAN_KIND, STATUS_CODE, telemetryLogger, TelemetryStore, FyloTelemetryStore, TelemetryConfig, TelemetryStore
+### Community 119 - "Community 119"
+Cohesion: 0.11
+Nodes (16): fyloApiGet(), fyloRequest(), text(), ascScores, controller, decoder, descScores, firstId (+8 more)
 
 ### Community 124 - "Community 124"
 Cohesion: 0.15
@@ -734,36 +734,40 @@ Cohesion: 0.18
 Nodes (17): applyEvent(), editsLastHour(), isStreaming(), prepare(), pruneEditTimestamps(), readEventStream(), recordEdit(), start() (+9 more)
 
 ### Community 126 - "Community 126"
+Cohesion: 0.21
+Nodes (9): withCamelAliases(), ty_camelCasePropName(), has(), provide(), provide2(), set(), TacWasmJsonRuntime, withCamelAliases() (+1 more)
+
+### Community 127 - "Community 127"
+Cohesion: 0.11
+Nodes (18): withCamelAliases(), ty_camelCasePropName(), withCamelAliases(), withCamelAliases(), withCamelAliases(), withCamelAliases(), withCamelAliases(), withCamelAliases() (+10 more)
+
+### Community 128 - "Community 128"
 Cohesion: 0.16
 Nodes (3): FyloBrowser, env(), loadLazyComponent()
 
 ### Community 129 - "Community 129"
-Cohesion: 0.12
-Nodes (9): adapter, cmd, commands, handlerPath, main, proc, startedAt, support (+1 more)
-
-### Community 130 - "Community 130"
-Cohesion: 0.18
-Nodes (14): outputPath, proc, response, sourcePath, commandAvailable(), compileNativeWorkerExecutable(), compileRustWorkerExecutable(), detectRustMethods() (+6 more)
-
-### Community 131 - "Community 131"
-Cohesion: 0.18
-Nodes (14): label, analyzeMethod(), ARITHMETIC_OPS, BINARY_OPS, COMPARISON_OPS, emitBlockValue(), emitConditionValue(), emitExpr() (+6 more)
+Cohesion: 0.23
+Nodes (6): createBackendOnlyApp(), buildRouteOutput(), writeExecutableHandler(), buildTestFactory(), YonJsRunner, write()
 
 ### Community 132 - "Community 132"
 Cohesion: 0.12
-Nodes (3): broker, FakeDataChannel, FakePeerConnection
+Nodes (9): adapter, cmd, commands, handlerPath, main, proc, startedAt, support (+1 more)
 
 ### Community 133 - "Community 133"
-Cohesion: 0.12
-Nodes (17): ty_camelCasePropName(), withCamelAliases(), withCamelAliases(), withCamelAliases(), withCamelAliases(), withCamelAliases(), withCamelAliases(), withCamelAliases() (+9 more)
+Cohesion: 0.18
+Nodes (14): outputPath, proc, response, sourcePath, commandAvailable(), compileNativeWorkerExecutable(), compileRustWorkerExecutable(), detectRustMethods() (+6 more)
 
 ### Community 134 - "Community 134"
-Cohesion: 0.26
-Nodes (14): morphChildren(), parseFragment(), findLazyAncestor(), isInsideSlot(), observeLazyComponents(), patchBody(), patchSlot(), postPatch() (+6 more)
+Cohesion: 0.12
+Nodes (3): broker, FakeDataChannel, FakePeerConnection
 
 ### Community 135 - "Community 135"
 Cohesion: 0.2
 Nodes (3): InlineFyloCollectionClient, renderRestResult(), runQuery()
+
+### Community 136 - "Community 136"
+Cohesion: 0.12
+Nodes (4): PATCH(), Handler, Handler, Json
 
 ### Community 138 - "Community 138"
 Cohesion: 0.15
@@ -778,60 +782,56 @@ Cohesion: 0.15
 Nodes (4): RubyFyloRepository, RubyFyloRepository, RubyLanguageService, RubyLanguageService
 
 ### Community 141 - "Community 141"
-Cohesion: 0.26
-Nodes (7): emit(), provide(), rerender(), set(), __tac_apply_state__(), TacWasmJsonRuntime, withCamelAliases()
+Cohesion: 0.16
+Nodes (3): Handler, LanguageRepository, LanguageService
 
 ### Community 142 - "Community 142"
-Cohesion: 0.24
-Nodes (16): getAttribute(), d(), f(), g(), jQ(), m(), o(), p() (+8 more)
-
-### Community 143 - "Community 143"
-Cohesion: 0.12
-Nodes (13): ascScores, controller, decoder, descScores, firstId, names, nextId, originalEnv (+5 more)
-
-### Community 144 - "Community 144"
-Cohesion: 0.25
-Nodes (7): FyloTelemetryRepository, envValue(), fyloCacheOptions(), fyloOptions(), fyloS3Options(), isTruthy(), options
-
-### Community 145 - "Community 145"
 Cohesion: 0.13
 Nodes (7): bundle, bundleEntrypoint, createExampleApp(), preview, previewEntrypoint, processes, tempDirs
 
 ### Community 147 - "Community 147"
 Cohesion: 0.13
-Nodes (4): PATCH(), Handler, Handler, Json
-
-### Community 149 - "Community 149"
-Cohesion: 0.13
 Nodes (9): FakePeerConnection, filePath, first, invoke(), nativeWorker, responsePromise, second, tempDirs (+1 more)
 
-### Community 150 - "Community 150"
+### Community 148 - "Community 148"
 Cohesion: 0.27
 Nodes (7): emit(), provide(), rerender(), set(), __tac_apply_state__(), TacWasmJsonRuntime, withCamelAliases()
 
-### Community 152 - "Community 152"
+### Community 149 - "Community 149"
+Cohesion: 0.27
+Nodes (7): emit(), provide(), rerender(), set(), __tac_apply_state__(), TacWasmJsonRuntime, withCamelAliases()
+
+### Community 151 - "Community 151"
 Cohesion: 0.2
 Nodes (3): TelemetryAlertWorker, TelemetryAlertWorker, worker
 
-### Community 154 - "Community 154"
+### Community 153 - "Community 153"
 Cohesion: 0.18
 Nodes (4): JavaLanguageService, ty_createScope(), JavaFyloRepository, JavaLanguageService
 
-### Community 156 - "Community 156"
+### Community 155 - "Community 155"
+Cohesion: 0.25
+Nodes (14): render(), cleanBooleanAttrs(), isSameNode(), morphChildren(), parseFragment(), findLazyAncestor(), isInsideSlot(), observeLazyComponents() (+6 more)
+
+### Community 157 - "Community 157"
 Cohesion: 0.21
 Nodes (13): encryptionBanner(), errorMessage(), loadCollections(), previewOf(), renderDetail(), renderError(), renderRestResult(), runQuery() (+5 more)
 
-### Community 157 - "Community 157"
+### Community 158 - "Community 158"
 Cohesion: 0.23
 Nodes (13): installConsoleLogger(), buildCurl(), buildExecution(), buildRequestPayload(), defaultParameterValue(), defaultRequestBody(), ensureOperationState(), exampleFromSchema() (+5 more)
 
-### Community 158 - "Community 158"
+### Community 159 - "Community 159"
 Cohesion: 0.16
 Nodes (3): Handler, Handler, RealtimeService
 
+### Community 160 - "Community 160"
+Cohesion: 0.2
+Nodes (13): buildFingerprint(), bundleCliPath, distPath, pathFingerprint(), previewLogger, readPreviewServerOptions(), readStringArg(), runFreshBundleBuild() (+5 more)
+
 ### Community 161 - "Community 161"
-Cohesion: 0.29
-Nodes (12): render(), morphChildren(), parseFragment(), findLazyAncestor(), isInsideSlot(), observeLazyComponents(), patchBody(), patchSlot() (+4 more)
+Cohesion: 0.28
+Nodes (13): cleanBooleanAttrs(), parseFragment(), findLazyAncestor(), isInsideSlot(), observeLazyComponents(), patchBody(), patchSlot(), postPatch() (+5 more)
 
 ### Community 162 - "Community 162"
 Cohesion: 0.22
@@ -845,31 +845,23 @@ Nodes (9): clearToolchainConfig(), defaultInterpreters(), defaultToolchainConfig
 Cohesion: 0.23
 Nodes (10): canRunPlaywright(), decode(), resolveNodeCommand(), runCommand(), canRunPlaywright(), decode(), output, resolveNodeCommand() (+2 more)
 
-### Community 166 - "Community 166"
-Cohesion: 0.18
-Nodes (11): assetRoot, distPath, main(), nativeLogger, outputRoot, rawTarget, resolveAppName(), target (+3 more)
-
 ### Community 167 - "Community 167"
-Cohesion: 0.18
-Nodes (10): bytes, first, large, request, response, second, small, buildHandlerModule() (+2 more)
-
-### Community 168 - "Community 168"
 Cohesion: 0.19
 Nodes (3): resetTacWorkerPoolsForTest(), TacNativeWorkerClient, TacWorkerClient
 
-### Community 169 - "Community 169"
+### Community 168 - "Community 168"
 Cohesion: 0.26
 Nodes (4): expectInteractiveSurface(), expectNoBrowserErrors(), waitForDashboardReady(), PackageContractVerifier
 
-### Community 171 - "Community 171"
+### Community 170 - "Community 170"
 Cohesion: 0.24
 Nodes (4): IOS_APP_ICON_SIZES, MACOS_ICON_SIZES, PNG_SIGNATURE, GENERATORS
 
-### Community 172 - "Community 172"
+### Community 171 - "Community 171"
 Cohesion: 0.17
 Nodes (10): bundleEntrypoint, componentModule, createFixture(), decoder, docsIndex, homeIndex, proc, processes (+2 more)
 
-### Community 173 - "Community 173"
+### Community 172 - "Community 172"
 Cohesion: 0.23
 Nodes (4): InlineFyloBrowserClient, loadMeta(), createFyloClient(), importFylo()
 
@@ -878,118 +870,118 @@ Cohesion: 0.18
 Nodes (10): code:text (db/), code:text (db/schemas/<collection>/), code:text (db/.collections/<collection>/docs/<prefix>/<document-id>.jso), code:bash (fylo.admin rebuild <collection> --root db), .collections/, db/, Layout, .queue/ (+2 more)
 
 ### Community 175 - "Community 175"
+Cohesion: 0.27
+Nodes (9): createPublicBrowserEnvResponse(), createPublicBrowserEnvScript(), getPublicBrowserEnv(), splitList(), createPublicBrowserEnvResponse(), createPublicBrowserEnvScript(), getPublicBrowserEnv(), splitList() (+1 more)
+
+### Community 176 - "Community 176"
 Cohesion: 0.18
 Nodes (11): buildScriptPath, bundleEntrypoint, createFixture(), decode(), hostManifest, nativeEntrypoint, readPngAlpha(), runCli() (+3 more)
 
-### Community 178 - "Community 178"
-Cohesion: 0.24
-Nodes (3): ServiceWorkerPolicy, strategy, url
-
 ### Community 179 - "Community 179"
+Cohesion: 0.27
+Nodes (9): listCollections(), envValue(), fyloOptions(), fyloS3Options(), envValue(), fyloCacheOptions(), fyloS3Options(), isTruthy() (+1 more)
+
+### Community 180 - "Community 180"
 Cohesion: 0.2
 Nodes (8): createDeferredDelegation(), replayCaptured(), capture, d, event, registered, replayed, target
 
-### Community 180 - "Community 180"
+### Community 181 - "Community 181"
+Cohesion: 0.24
+Nodes (3): ServiceWorkerPolicy, strategy, url
+
+### Community 182 - "Community 182"
 Cohesion: 0.18
 Nodes (5): createExampleApp(), env, proc, processes, tempDirs
 
-### Community 183 - "Community 183"
+### Community 184 - "Community 184"
 Cohesion: 0.22
 Nodes (8): createBrowserClient(), createFyloClient(), fylo, FYLO_BROWSER_PATH(), sharedFyloProxy(), client, col, result
 
-### Community 184 - "Community 184"
+### Community 185 - "Community 185"
 Cohesion: 0.27
 Nodes (5): tokenizeCommand(), basename(), Pool, poolLogger, tokenizeCommand()
 
-### Community 185 - "Community 185"
+### Community 186 - "Community 186"
+Cohesion: 0.24
+Nodes (8): headers, laterRequestId, request, decodeTime(), generate(), isTTID(), timeNow(), TTID
+
+### Community 187 - "Community 187"
 Cohesion: 0.27
 Nodes (6): copy_bytes(), read_clicks(), tachyon_call(), tachyon_init(), write_state(), write_uint()
 
-### Community 191 - "Community 191"
+### Community 196 - "Community 196"
 Cohesion: 0.27
 Nodes (7): program, request, compileSwiftWorker(), KEYWORDS, PUNCT1, PUNCT2, tokenize()
 
-### Community 192 - "Community 192"
+### Community 197 - "Community 197"
 Cohesion: 0.2
 Nodes (6): a, b, eventIds, hostIds, html, registered
 
-### Community 194 - "Community 194"
-Cohesion: 0.36
-Nodes (9): createPublicBrowserEnvResponse(), createPublicBrowserEnvScript(), getPublicBrowserEnv(), splitList(), createPublicBrowserEnvResponse(), createPublicBrowserEnvScript(), getPublicBrowserEnv(), splitList() (+1 more)
-
-### Community 200 - "Community 200"
+### Community 206 - "Community 206"
 Cohesion: 0.24
 Nodes (8): decode(), runBundle(), bundleEntrypoint, createFixture(), decode(), docsIndex, runBundle(), tempDirs
 
-### Community 204 - "Community 204"
+### Community 208 - "Community 208"
 Cohesion: 0.2
 Nodes (7): Collection, DocEntry, EventEntry, QueryResult, onMount(), noopHelpers, Tac
 
-### Community 207 - "Community 207"
+### Community 212 - "Community 212"
 Cohesion: 0.22
 Nodes (5): createDistFixture(), createDistFixtureWithoutRoot(), createDynamicDistFixture(), tempDirs, createStaticPreviewServer()
 
-### Community 212 - "Community 212"
+### Community 216 - "Community 216"
 Cohesion: 0.25
 Nodes (8): bindPersistentFields(), bindReactiveFields(), getOwnPropertyDescriptor(), has(), readLocalValue(), readSessionValue(), resolvePersistScope(), prehydratePersistentText()
 
-### Community 216 - "Community 216"
+### Community 218 - "Community 218"
 Cohesion: 0.29
 Nodes (3): connectHMR(), hmrFrameRequestsReload(), parseHmrFrame()
 
-### Community 217 - "Community 217"
+### Community 219 - "Community 219"
 Cohesion: 0.29
 Nodes (8): findEventTarget(), resolveHandler(), canHandleClientNavigation(), dispatchAction(), handleDelegatedEvent(), navigate(), resolveLayout(), resolvePageHandler()
 
-### Community 218 - "Community 218"
+### Community 220 - "Community 220"
 Cohesion: 0.29
 Nodes (3): context, SwiftLanguageService, Handler
 
-### Community 222 - "Community 222"
+### Community 221 - "Community 221"
+Cohesion: 0.25
+Nodes (5): SPAN_KIND, STATUS_CODE, telemetryLogger, TelemetryStore, TelemetryStore
+
+### Community 224 - "Community 224"
 Cohesion: 0.25
 Nodes (7): AGENTS.md — Tachyon Project, All Agents, Backend Systems Architect, Browser Performance Engineer, Core Infrastructure Engineer, Frontend Systems Engineer, Role Definition
 
-### Community 223 - "Community 223"
+### Community 225 - "Community 225"
 Cohesion: 0.25
 Nodes (7): code:block1 (bun run bench:build                          # default sizes), Done, Measured impact (synthetic projects, `bun run bench:build`), Persistent prerender cache — status & productionization plan, Risks / open questions, Running the harness, To productionize (remaining)
 
-### Community 224 - "Community 224"
+### Community 226 - "Community 226"
 Cohesion: 0.36
 Nodes (6): binaryArtifactPath(), BUILD_DIR, getResponse(), log, spawnBinary(), tryRegister()
-
-### Community 225 - "Community 225"
-Cohesion: 0.25
-Nodes (5): Fixture, helpers, instance, props, Fixture
 
 ### Community 229 - "Community 229"
 Cohesion: 0.29
 Nodes (5): cleared, loaded, picked, saved, teardowns
 
-### Community 237 - "Community 237"
+### Community 236 - "Community 236"
 Cohesion: 0.29
 Nodes (5): changed, distWeb, file, incStart, routePath
 
-### Community 239 - "Community 239"
-Cohesion: 0.43
-Nodes (5): decodeTime(), generate(), isTTID(), timeNow(), TTID
-
-### Community 240 - "Community 240"
+### Community 238 - "Community 238"
 Cohesion: 0.33
 Nodes (4): GET(), Handler, statusCode(), KotlinLanguageService
 
-### Community 243 - "Community 243"
-Cohesion: 0.29
-Nodes (4): b, k, x, i()
-
-### Community 244 - "Community 244"
+### Community 241 - "Community 241"
 Cohesion: 0.29
 Nodes (7): bindPersistentFields(), bindReactiveFields(), getOwnPropertyDescriptor(), has(), readLocalValue(), readSessionValue(), resolvePersistScope()
 
-### Community 245 - "Community 245"
+### Community 242 - "Community 242"
 Cohesion: 0.29
 Nodes (7): Browser Env Allowlisting (TAC_PUBLIC_ENV), Yon Backend Routing (server/routes), Tachyon Configuration System (YON_*, TAC_*, FYLO_* env vars), Browser Env Allowlisting (TAC_PUBLIC_ENV), MVC Backend Architecture (routes->services->repositories), Rationale: MVC Backend Dependency Direction, Rationale: No Secure Browser Secrets Boundary
 
-### Community 250 - "Community 250"
+### Community 248 - "Community 248"
 Cohesion: 0.4
 Nodes (3): createComponentRegistry(), found, reg
 
@@ -997,103 +989,103 @@ Nodes (3): createComponentRegistry(), found, reg
 Cohesion: 0.53
 Nodes (5): withPublicBrowserEnv(), applySecurity(), renderSecurityBadges(), securitySchemeNames(), keys
 
-### Community 252 - "Community 252"
+### Community 254 - "Community 254"
 Cohesion: 0.33
 Nodes (5): appStyles, fonts, materialScript, tailwind, tailwindConfig
 
-### Community 254 - "Community 254"
+### Community 256 - "Community 256"
 Cohesion: 0.33
 Nodes (3): TypeScriptLanguageService, YonRequest, TypeScriptLanguageService
 
-### Community 255 - "Community 255"
+### Community 257 - "Community 257"
 Cohesion: 0.33
 Nodes (3): CSharpFyloRepository, CSharpLanguageService, CSharpLanguageService
 
-### Community 257 - "Community 257"
+### Community 259 - "Community 259"
 Cohesion: 0.53
 Nodes (4): DELETE(), GET(), Handler, PATCH()
 
-### Community 258 - "Community 258"
+### Community 260 - "Community 260"
 Cohesion: 0.53
 Nodes (6): localFirstFetch(), __ty_deleteCachedResponse(), __ty_isBrowserEnv(), __ty_openFetchCache(), __ty_readCachedResponse(), __ty_writeCachedResponse()
 
-### Community 259 - "Community 259"
+### Community 261 - "Community 261"
 Cohesion: 0.33
 Nodes (6): Automatic Prop-to-Field Binding, SessionStorage Persistence for $-prefixed Fields, Automatic Prop-to-Field Binding, Rationale: Prop Value Wins Over Field Default, Reactive Companion Fields, $-Prefixed Field SessionStorage Persistence
 
-### Community 260 - "Community 260"
+### Community 262 - "Community 262"
 Cohesion: 0.7
 Nodes (4): cacheModuleResponse(), getCachedModule(), openCache(), precacheModules()
 
-### Community 261 - "Community 261"
+### Community 263 - "Community 263"
 Cohesion: 0.4
 Nodes (3): COMMANDS, rest, userArgs
 
-### Community 262 - "Community 262"
+### Community 264 - "Community 264"
 Cohesion: 0.4
 Nodes (4): dart:convert, dart:io, DartFyloRepository, _machine
 
-### Community 265 - "Community 265"
+### Community 267 - "Community 267"
 Cohesion: 0.4
 Nodes (5): getAvailablePort(), applyEvent(), readEventStream(), start(), stop()
 
-### Community 266 - "Community 266"
+### Community 268 - "Community 268"
 Cohesion: 0.7
 Nodes (3): GET(), Handler, __status_code()
 
-### Community 267 - "Community 267"
+### Community 269 - "Community 269"
 Cohesion: 0.4
 Nodes (5): FYLO-backed OpenTelemetry Storage, @d31ma/fylo@26.19.7, FYLO Storage Backend (@d31ma/fylo), OpenTelemetry Storage (FYLO-backed), Rationale: OpenTelemetry Spans Fail Open
 
-### Community 268 - "Community 268"
+### Community 270 - "Community 270"
 Cohesion: 0.5
 Nodes (5): CHEX Regex Schemas, Database Layer (db/), FYLO Database System, Seed Data Import, Versioned Schema Layout
 
-### Community 270 - "Community 270"
+### Community 272 - "Community 272"
 Cohesion: 0.5
 Nodes (3): dart_language_service.dart, Handler, _statusCode
 
-### Community 271 - "Community 271"
+### Community 273 - "Community 273"
 Cohesion: 0.5
 Nodes (3): dart_fylo_repository.dart, DartLanguageService, DartLanguageService
 
-### Community 273 - "Community 273"
+### Community 275 - "Community 275"
 Cohesion: 0.5
 Nodes (4): Rationale: Language Compilers Are Optional, Rationale: Wasm Adapter Encapsulates DOM Access, tac-wasm-json@1 ABI, Wasm Companions
 
-### Community 274 - "Community 274"
+### Community 276 - "Community 276"
 Cohesion: 0.5
 Nodes (4): Distributed Rate Limiting (Upstash Redis), Production Security Hardening, Distributed Rate Limiting (Upstash Redis), Security Features (Hashed Basic Auth, CSP, HSTS, JWT)
 
-### Community 280 - "Community 280"
+### Community 282 - "Community 282"
 Cohesion: 0.67
 Nodes (3): not_found_default(), ty_createHelpers(), tac_default()
 
-### Community 281 - "Community 281"
+### Community 283 - "Community 283"
 Cohesion: 0.67
 Nodes (3): CHANGELOG.md Document, Keep a Changelog Format, Semantic Versioning 2.0.0
 
-### Community 282 - "Community 282"
+### Community 284 - "Community 284"
 Cohesion: 0.67
 Nodes (3): Scoped Component CSS (@scope wrapper), Scoped Component CSS, Tac Template System
 
-### Community 283 - "Community 283"
+### Community 285 - "Community 285"
 Cohesion: 0.67
 Nodes (3): Build Manifests Moved to src/shared/manifests/, Rationale: Separate Generated Artifacts from Runtime Source, Source File Reorganization (src/server/ subdirectories)
 
 ## Knowledge Gaps
 - **1182 isolated node(s):** `allocatedTestPorts`, `routeTestCases`, `languageRoutes`, `machineOperations`, `requestSpan` (+1177 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **101 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **103 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `set()` connect `Community 110` to `Community 0`, `Community 128`, `Community 2`, `Community 8`, `Community 10`, `Community 142`, `Community 14`, `Community 16`, `Community 18`, `Community 19`, `Community 20`, `Community 21`, `Community 22`, `Community 23`, `Community 152`, `Community 24`, `Community 26`, `Community 25`, `Community 156`, `Community 29`, `Community 157`, `Community 34`, `Community 38`, `Community 41`, `Community 42`, `Community 43`, `Community 45`, `Community 46`, `Community 47`, `Community 49`, `Community 50`, `Community 57`, `Community 65`, `Community 72`, `Community 76`, `Community 205`, `Community 84`, `Community 90`, `Community 92`, `Community 94`, `Community 101`, `Community 104`, `Community 251`, `Community 126`?**
+- **Why does `set()` connect `Community 126` to `Community 0`, `Community 128`, `Community 2`, `Community 8`, `Community 10`, `Community 14`, `Community 15`, `Community 16`, `Community 18`, `Community 20`, `Community 22`, `Community 151`, `Community 24`, `Community 25`, `Community 26`, `Community 27`, `Community 23`, `Community 29`, `Community 158`, `Community 31`, `Community 157`, `Community 34`, `Community 36`, `Community 39`, `Community 40`, `Community 43`, `Community 45`, `Community 46`, `Community 48`, `Community 52`, `Community 64`, `Community 77`, `Community 209`, `Community 85`, `Community 92`, `Community 94`, `Community 95`, `Community 102`, `Community 105`, `Community 111`, `Community 120`, `Community 251`?**
   _High betweenness centrality (0.211) - this node is a cross-community bridge._
-- **Why does `string` connect `Community 93` to `Community 2`, `Community 5`, `Community 135`, `Community 8`, `Community 137`, `Community 9`, `Community 14`, `Community 15`, `Community 25`, `Community 157`, `Community 158`, `Community 159`, `Community 32`, `Community 33`, `Community 162`, `Community 163`, `Community 37`, `Community 40`, `Community 177`, `Community 56`, `Community 58`, `Community 190`, `Community 70`, `Community 73`, `Community 213`, `Community 214`, `Community 119`, `Community 218`, `Community 91`, `Community 96`, `Community 100`, `Community 103`, `Community 232`, `Community 112`, `Community 247`, `Community 248`, `Community 251`?**
+- **Why does `string` connect `Community 96` to `Community 2`, `Community 5`, `Community 135`, `Community 8`, `Community 137`, `Community 9`, `Community 13`, `Community 141`, `Community 19`, `Community 152`, `Community 25`, `Community 158`, `Community 159`, `Community 32`, `Community 33`, `Community 162`, `Community 163`, `Community 169`, `Community 41`, `Community 54`, `Community 55`, `Community 56`, `Community 195`, `Community 69`, `Community 199`, `Community 73`, `Community 74`, `Community 220`, `Community 93`, `Community 103`, `Community 104`, `Community 243`, `Community 118`, `Community 246`, `Community 122`, `Community 251`?**
   _High betweenness centrality (0.164) - this node is a cross-community bridge._
-- **Why does `staticRouteResponse()` connect `Community 23` to `Community 92`, `Community 110`?**
+- **Why does `staticRouteResponse()` connect `Community 23` to `Community 126`, `Community 95`?**
   _High betweenness centrality (0.067) - this node is a cross-community bridge._
 - **Are the 78 inferred relationships involving `string` (e.g. with `getAvailablePort()` and `normalizeTelemetryPath()`) actually correct?**
   _`string` has 78 INFERRED edges - model-reasoned connections that need verification._

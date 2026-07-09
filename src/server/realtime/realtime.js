@@ -293,25 +293,27 @@ export default class YonRealtime {
                 activeConnection = connection;
                 YonRealtime.addConnection(clientId, connection);
                 YonRealtime.registerClient(clientId)
-                    .then(() => {
+                    .then(async () => {
                         if (connection.closed) return undefined;
                         YonRealtime.enqueue(controller, `event: ready\ndata: ${JSON.stringify({ clientId, cursor })}\n\n`);
-                        return YonRealtime.drain(clientId, connection);
+                        await YonRealtime.drain(clientId, connection);
+                        if (connection.closed) return undefined;
+                        const interval = setInterval(() => {
+                            YonRealtime.drain(clientId, connection).catch(() => {
+                                connection.closed = true;
+                                clearInterval(interval);
+                                controller.close();
+                                YonRealtime.removeConnection(clientId, connection);
+                            });
+                        }, YonRealtime.pollIntervalMs());
+                        activeInterval = interval;
+                        return undefined;
                     })
                     .catch(() => {
                         connection.closed = true;
                         try { controller.close(); } catch {}
                         YonRealtime.removeConnection(clientId, connection);
                     });
-                const interval = setInterval(() => {
-                    YonRealtime.drain(clientId, connection).catch(() => {
-                        connection.closed = true;
-                        clearInterval(interval);
-                        controller.close();
-                        YonRealtime.removeConnection(clientId, connection);
-                    });
-                }, YonRealtime.pollIntervalMs());
-                activeInterval = interval;
             },
             cancel() {
                 if (activeInterval) clearInterval(activeInterval);
