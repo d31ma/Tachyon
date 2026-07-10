@@ -20,7 +20,7 @@
 // object — use it for ops without a dedicated method (branching, schema, ...).
 // Requests are queued: each resolves with its own response line, in order.
 
-import { spawn } from 'node:child_process'
+import NdjsonProcessClient from '../shared/ndjson-process-client.mjs'
 
 // Property access that isn't a real method/field falls through to a collection
 // facade, so `db.users.put(...)` works alongside `db.putData('users', ...)`.
@@ -34,24 +34,15 @@ const FACADE = {
     }
 }
 
-export class Fylo {
+export class Fylo extends NdjsonProcessClient {
     /** @param {string} root @param {{ binary?: string, worm?: boolean }} [opts] */
     constructor(root, opts = {}) {
         const args = ['exec', '--loop', '--root', root]
         if (opts.worm) args.push('--worm')
-        this._proc = spawn(opts.binary ?? 'fylo', args, { stdio: ['pipe', 'pipe', 'inherit'] })
-        this._queue = [] // pending { resolve, reject } in request order
-        this._buffer = ''
-        this._proc.stdout.setEncoding('utf8')
-        this._proc.stdout.on('data', (chunk) => this._onData(chunk))
-        this._proc.on('exit', () => {
-            const err = new Error('fylo process exited')
-            for (const p of this._queue.splice(0)) p.reject(err)
-        })
-        // Surface spawn failures (e.g. binary missing) instead of crashing on an
-        // unhandled 'error' event.
-        this._proc.on('error', (err) => {
-            for (const p of this._queue.splice(0)) p.reject(err)
+        super({
+            name: 'fylo',
+            command: NdjsonProcessClient.resolveCommand('fylo', opts.binary),
+            args,
         })
         return new Proxy(this, FACADE)
     }
@@ -76,27 +67,6 @@ export class Fylo {
             restore: (id) => this.restoreDoc(name, id),
             find: (query) => this.findDocs(name, query)
         }
-    }
-
-    _onData(chunk) {
-        this._buffer += chunk
-        let nl
-        while ((nl = this._buffer.indexOf('\n')) !== -1) {
-            const line = this._buffer.slice(0, nl).trim()
-            this._buffer = this._buffer.slice(nl + 1)
-            if (!line) continue
-            const pending = this._queue.shift()
-            if (pending) pending.resolve(JSON.parse(line))
-        }
-    }
-
-    /** Send one raw machine-protocol op; resolves with the full response object. */
-    request(op) {
-        return new Promise((resolve, reject) => {
-            if (this._proc.exitCode !== null) return reject(new Error('fylo process exited'))
-            this._queue.push({ resolve, reject })
-            this._proc.stdin.write(JSON.stringify(op) + '\n')
-        })
     }
 
     /** Build an op, send it, and resolve with `result` (rejects on failure). */
@@ -196,12 +166,4 @@ export class Fylo {
         return this._op('importBulkData', { collection, url, limitOrOptions })
     }
 
-    /** Close stdin so the loop ends, and wait for the process to exit. */
-    close() {
-        return new Promise((resolve) => {
-            if (this._proc.exitCode !== null) return resolve()
-            this._proc.on('exit', () => resolve())
-            this._proc.stdin.end()
-        })
-    }
 }

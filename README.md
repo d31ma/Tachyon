@@ -79,12 +79,23 @@ Useful commands:
 <tr><td><code>ty serve</code></td><td>Shape-aware dev server — frontend, backend, or full-stack on one port</td></tr>
 <tr><td><code>ty bundle</code></td><td>Build static <code>dist/</code> output</td></tr>
 <tr><td><code>ty preview</code></td><td>Serve the built <code>dist/web</code> directory by default</td></tr>
+<tr><td><code>ty cache clean</code></td><td>Clear the standalone binary's materialized runtime cache</td></tr>
 </table>
 
 `ty serve` is shape-aware: `client/` only bundles and serves the frontend,
 `server/` only serves backend routes, apps with both folders run as a full-stack
 app on one port, and `client/` + `db/` apps mount Tachyon's built-in FYLO
 browser routes when `YON_DATA_BROWSER_ENABLED=true`.
+
+### Standalone Runtime Cache
+
+Live `Bun.build()` artifacts stay in memory while `ty serve` runs. The
+standalone `ty` binary stores only its materialized framework source files in a
+versioned OS cache so Bun can resolve them during a build: `~/Library/Caches/Tachyon`
+on macOS, `%LOCALAPPDATA%\\Tachyon\\Cache` on Windows, and
+`$XDG_CACHE_HOME/tachyon` (or `~/.cache/tachyon`) on Linux. Set
+`TACHYON_CACHE_DIR` to override the cache root, inspect it with `ty cache`, and
+remove only this runtime cache with `ty cache clean`.
 
 ---
 

@@ -1407,11 +1407,7 @@ timedTest('spa prehydration skips malformed persisted fields without blocking va
     const prehydrateModulePath = path.join(root, 'prehydrate.js');
     await writeFile(prehydrateModulePath, runtimeSource
         .slice(0, prehydrateEnd)
-        .replace("import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';\n", '')
-        .replace("import { cacheModuleResponse, clearStaticCache, precacheModules } from './static-cache.js';\n", '')
-        .replace("import { createDeferredDelegation } from './event-hydration.js';\n", '')
-        .replace("import { createComponentRegistry } from './component-registry.js';\n", '')
-        .replace("import { ServiceWorkerPolicy } from './service-worker-policy.js';\n", ''));
+        .replace(/^import .*?;\n/gm, ''));
     const windowInstance = new Window();
     /** @type {Record<string, unknown>} */
     const previousGlobals = {

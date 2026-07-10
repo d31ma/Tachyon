@@ -1,6 +1,7 @@
 // @ts-check
+import NdjsonProcessClient from '../../../vendor/shared/ndjson-process-client.mjs';
 
-class YonJsRunner {
+export default class YonJsRunner {
     static RESPONSE_START = '\x1fTACHYON_RESPONSE\x1e';
     static RESPONSE_END = '\x1eTACHYON_RESPONSE\x1f';
 
@@ -152,10 +153,22 @@ class YonJsRunner {
         }
         YonJsRunner.writeResponseFrame(YonJsRunner.serialize(result));
     }
+
+    static async runMain() {
+        try {
+            await YonJsRunner.run();
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.stack || error.message : String(error);
+            Bun.stderr.write(message);
+            process.exitCode = 1;
+        }
+        finally {
+            await NdjsonProcessClient.closeAll();
+        }
+    }
 }
 
-YonJsRunner.run().catch((error) => {
-    const message = error instanceof Error ? error.stack || error.message : String(error);
-    Bun.stderr.write(message);
-    process.exit(1);
-});
+if (import.meta.main) {
+    await YonJsRunner.runMain();
+}

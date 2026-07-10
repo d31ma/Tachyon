@@ -157,6 +157,13 @@ describe('EVENT_CAPTURE_SCRIPT (pre-hydration dead-zone capture)', () => {
         expect(capture().queue).toEqual([{ type: 'click', target: document.getElementById('a') }]);
     });
 
+    test('records a click on an href-bearing web component (for SPA-nav replay)', () => {
+        document.body.innerHTML = `<w-btn id="docs" href="/docs">Docs</w-btn>`;
+        const button = /** @type {Element} */ (document.getElementById('docs'));
+        button.dispatchEvent(/** @type {any} */ (new windowInstance.Event('click', { bubbles: true, cancelable: true })));
+        expect(capture().queue).toEqual([{ type: 'click', target: button }]);
+    });
+
     test('ignores clicks that do not target a Tac handler', () => {
         document.body.innerHTML = `<div id="plain">nothing</div>`;
         const plain = /** @type {Element} */ (document.getElementById('plain'));

@@ -1,5 +1,5 @@
 // @ts-check
-import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';
+import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, findNavigationTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';
 import { cacheModuleResponse, clearStaticCache, precacheModules } from './static-cache.js';
 import { createDeferredDelegation } from './event-hydration.js';
 import { createComponentRegistry } from './component-registry.js';
@@ -310,21 +310,23 @@ function findDelegatedTarget(event, eventName) {
  * @param {Event} event
  */
 function handleDelegatedEvent(eventName, event) {
-    const eventTarget = event.target instanceof Element ? event.target : null;
     if (eventName === 'click') {
-        const anchor = /** @type {HTMLAnchorElement | null} */ (eventTarget?.closest('a[href]'));
-        if (anchor) {
-            const url = new URL(anchor.href, location.origin);
+        const navigationTarget = findNavigationTarget(event);
+        if (navigationTarget) {
+            const href = navigationTarget.getAttribute('href');
+            if (!href)
+                return;
+            const url = new URL(href, location.origin);
             const hasModifierKey = event instanceof MouseEvent
                 && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
             const isPrimaryClick = !(event instanceof MouseEvent) || event.button === 0;
-            const target = anchor.getAttribute('target');
+            const target = navigationTarget.getAttribute('target');
             const isSameDocumentHash = url.origin === location.origin
                 && url.pathname === location.pathname
                 && url.search === location.search
                 && Boolean(url.hash);
             const allowSpaNavigation = url.origin === location.origin
-                && !anchor.hasAttribute('download')
+                && !navigationTarget.hasAttribute('download')
                 && !hasModifierKey
                 && isPrimaryClick
                 && (!target || target === '_self')

@@ -13,7 +13,7 @@ import { pathToFileURL } from "url";
 
 /**
  * @typedef {'file' | 'directory'} WatchTargetKind
- * @typedef {{ incremental?: boolean }} BundleWatcherOptions
+ * @typedef {{ incremental?: boolean, skipInitialBuild?: boolean }} BundleWatcherOptions
  * @typedef {import("../shared/native-targets.js").BundleTarget} BundleTarget
  */
 
@@ -587,7 +587,8 @@ async function watchPaths(onChange) {
  */
 export async function startBundleWatcher(options = {}) {
     const incremental = options.incremental ?? true;
-    if (!skipInitialBuild) {
+    const shouldSkipInitialBuild = options.skipInitialBuild ?? skipInitialBuild;
+    if (!shouldSkipInitialBuild) {
         await runBuild();
         incrementalReady = incremental && bundleTargets.length === 1;
     }
@@ -645,7 +646,7 @@ export async function startBundleWatcher(options = {}) {
         }
     };
 }
-if (import.meta.main) {
+export async function runBundleCommand() {
     if (!watchMode) {
         await runBuild();
     }
@@ -659,4 +660,7 @@ if (import.meta.main) {
         process.on('SIGTERM', shutdown);
         await new Promise(() => { });
     }
+}
+if (import.meta.main) {
+    await runBundleCommand();
 }

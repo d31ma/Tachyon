@@ -28,6 +28,12 @@ describe('malformed <loop>/<logic> directives fail the build instead of leaking 
         expect(await render('<logic :if="ok"><p>x</p></logic>')).toContain('if(ok)');
     });
 
+    test('a bare <logic else> compiles', async () => {
+        const output = await render('<logic :if="ok"><p>yes</p></logic><logic else><p>no</p></logic>');
+        expect(output).toContain('if(ok)');
+        expect(output).toContain('else {');
+    });
+
     test('<logic> with a typo\'d directive is a named error', async () => {
         await expect(render('<logic :iff="ok"><p>x</p></logic>'))
             .rejects.toThrow(/<logic>.*expected :if, :else-if, or else/s);
