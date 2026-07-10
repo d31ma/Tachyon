@@ -20,7 +20,6 @@ catch (error) {
     process.exit(1);
 }
 const WATCH_INTERVAL_MS = 300;
-const bundleCliPath = path.join(import.meta.dir, 'bundle.js');
 const previewLogger = logger.child({ scope: 'cli:preview' });
 
 /**
@@ -103,15 +102,23 @@ async function buildFingerprint() {
     return entries.flat().sort().join('|');
 }
 async function runFreshBundleBuild() {
-    const proc = Bun.spawn(['bun', bundleCliPath, '--target', previewTarget], {
-        cwd: process.cwd(),
-        env: process.env,
-        stdout: 'inherit',
-        stderr: 'inherit'
-    });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-        throw new Error(`Bundle subprocess exited with code ${exitCode}`);
+    const previousTarget = process.env.TAC_BUNDLE_TARGET;
+    const previousTargets = process.env.TAC_BUNDLE_TARGETS;
+    process.env.TAC_BUNDLE_TARGET = previewTarget;
+    process.env.TAC_BUNDLE_TARGETS = previewTarget;
+    try {
+        const { runBuild } = await import('./bundle.js');
+        await runBuild();
+    }
+    finally {
+        if (previousTarget === undefined)
+            Reflect.deleteProperty(process.env, 'TAC_BUNDLE_TARGET');
+        else
+            process.env.TAC_BUNDLE_TARGET = previousTarget;
+        if (previousTargets === undefined)
+            Reflect.deleteProperty(process.env, 'TAC_BUNDLE_TARGETS');
+        else
+            process.env.TAC_BUNDLE_TARGETS = previousTargets;
     }
 }
 async function startPreviewBundleWatcher() {

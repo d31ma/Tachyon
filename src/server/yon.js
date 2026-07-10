@@ -10,6 +10,7 @@ import YonRealtime from "./realtime/realtime.js";
 import Telemetry from './observability/telemetry.js';
 import { withPublicBrowserEnv } from './http/browser-env.js';
 import logger from './observability/logger.js';
+import APP_SHELL_SOURCE from "../runtime/shells/app.html" with { type: "text" };
 
 /**
  * @typedef {import("bun").BunRequest} BunRequest
@@ -244,7 +245,7 @@ export default class Yon {
     static async renderShellHTML(options = {}) {
         const includeHotReloadClient = options.includeHotReloadClient === true;
         const fyloBrowserPath = process.env.YON_DATA_BROWSER_PATH || '/_fylo';
-        let shellHTML = await Bun.file(`${import.meta.dir}/../runtime/shells/app.html`).text();
+        let shellHTML = /** @type {string} */ (/** @type {unknown} */ (APP_SHELL_SOURCE));
         shellHTML = shellHTML
             .replace('<!--__TACHYON_DEV_HEAD__-->', includeHotReloadClient
                 ? '    <script type="module" src="/hot-reload-client.js"></script>'

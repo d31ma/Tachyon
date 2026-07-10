@@ -199,34 +199,39 @@ async function authFetch(path, init = {}) {
  */
 async function waitForTelemetrySpans(requestId) {
     const fylo = new Fylo(telemetryRoot);
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < 4_000) {
-        try {
-            /** @type {Array<{ resource: Record<string, any>, scope: Record<string, any>, span: Record<string, any> }>} */
-            const spans = [];
-            // Node shim find() resolves to an `{ id: doc }` map.
-            const found = /** @type {Record<string, any>} */ (await fylo['otel-spans'].find({}) ?? {});
-            for (const doc of Object.values(found)) {
-                spans.push(...extractPersistedSpans(/** @type {Record<string, any>} */ (doc)));
-                for (const traceDoc of Object.values(/** @type {Record<string, any>} */ (doc))) {
-                    if (traceDoc && typeof traceDoc === 'object') {
-                        spans.push(...extractPersistedSpans(/** @type {Record<string, any>} */ (traceDoc)));
+    try {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 4_000) {
+            try {
+                /** @type {Array<{ resource: Record<string, any>, scope: Record<string, any>, span: Record<string, any> }>} */
+                const spans = [];
+                // Node shim find() resolves to an `{ id: doc }` map.
+                const found = /** @type {Record<string, any>} */ (await fylo['otel-spans'].find({}) ?? {});
+                for (const doc of Object.values(found)) {
+                    spans.push(...extractPersistedSpans(/** @type {Record<string, any>} */ (doc)));
+                    for (const traceDoc of Object.values(/** @type {Record<string, any>} */ (doc))) {
+                        if (traceDoc && typeof traceDoc === 'object') {
+                            spans.push(...extractPersistedSpans(/** @type {Record<string, any>} */ (traceDoc)));
+                        }
                     }
                 }
+                for (const doc of await readTelemetryDocsFromDisk()) {
+                    spans.push(...extractPersistedSpans(doc));
+                }
+                const matches = spans.filter((entry) => getAttribute(entry.span, 'tachyon.request.id') === requestId);
+                if (matches.length >= 2) {
+                    return matches;
+                }
+            } catch {
+                // Collection may not exist yet if the first span hasn't been written.
             }
-            for (const doc of await readTelemetryDocsFromDisk()) {
-                spans.push(...extractPersistedSpans(doc));
-            }
-            const matches = spans.filter((entry) => getAttribute(entry.span, 'tachyon.request.id') === requestId);
-            if (matches.length >= 2) {
-                return matches;
-            }
-        } catch {
-            // Collection may not exist yet if the first span hasn't been written.
+            await Bun.sleep(50);
         }
-        await Bun.sleep(50);
+        return [];
     }
-    return [];
+    finally {
+        await fylo.close();
+    }
 }
 
 async function readTelemetryDocsFromDisk() {
@@ -1810,11 +1815,15 @@ describe('FYLO_SCHEMA schema loading', () => {
         try {
             process.env.FYLO_SCHEMA = schemasDir;
             const fylo = new Fylo(root);
-
-            const inspect = await fylo[collection].inspect();
-            expect(inspect.exists).toBe(true);
-            expect(inspect.collection).toBe(collection);
-            expect(inspect.docsStored).toBe(0);
+            try {
+                const inspect = await fylo[collection].inspect();
+                expect(inspect.exists).toBe(true);
+                expect(inspect.collection).toBe(collection);
+                expect(inspect.docsStored).toBe(0);
+            }
+            finally {
+                await fylo.close();
+            }
         }
         finally {
             if (previousSchema === undefined) delete process.env.FYLO_SCHEMA;

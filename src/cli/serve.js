@@ -29,8 +29,6 @@ const start = Date.now();
 let bundleWatcher = null;
 const distPath = path.resolve(process.env.YON_DIST_PATH ?? path.join(process.cwd(), 'dist'));
 let frontendDistPath = distPath;
-const bundleCliPath = `${import.meta.dir}/bundle.js`;
-const hotReloadClientPath = path.join(import.meta.dir, '../runtime/hot-reload-client.js');
 const serveLogger = logger.child({ scope: 'cli:serve' });
 /** @type {Set<HmrClient>} */
 const hmrClients = new Set();
@@ -55,6 +53,13 @@ async function pathExists(path) {
     catch {
         return false;
     }
+}
+async function hotReloadClientSource() {
+    if (import.meta.dir.startsWith('/$bunfs/')) {
+        const mod = /** @type {{ default: string }} */ (/** @type {unknown} */ (await import('../runtime/hot-reload-client.js', { with: { type: 'text' } })));
+        return mod.default;
+    }
+    return Bun.file(path.join(import.meta.dir, '../runtime/hot-reload-client.js')).text();
 }
 /**
  * @param {string} root
@@ -189,13 +194,10 @@ if (frontendEnabled) {
 }
 await configureRoutes();
 if (hmrEnabled && !skipBundle) {
-    const bundleArgs = frontendEnabled
-        ? ['bun', bundleCliPath, '--watch', '--skip-initial-build']
-        : ['bun', bundleCliPath, '--watch'];
-    bundleWatcher = Bun.spawn(bundleArgs, {
-        cwd: process.cwd(),
-        stdout: 'inherit',
-        stderr: 'inherit'
+    const { startBundleWatcher } = await import('./bundle.js');
+    bundleWatcher = await startBundleWatcher({
+        incremental: true,
+        skipInitialBuild: frontendEnabled,
     });
 }
 if (frontendEnabled) {
@@ -346,12 +348,12 @@ const server = Bun.serve({
         if (hmrEnabled
             && pathname === "/hot-reload-client.js"
             && (req.method === 'GET' || req.method === 'HEAD')) {
-            return new Response(req.method === 'HEAD' ? null : Bun.file(hotReloadClientPath), {
+            return Promise.resolve(req.method === 'HEAD' ? '' : hotReloadClientSource()).then((source) => new Response(req.method === 'HEAD' ? null : source, {
                 headers: {
                     "Content-Type": "text/javascript; charset=utf-8",
                     "Cache-Control": "no-cache, must-revalidate",
                 },
-            });
+            }));
         }
         if (frontendEnabled) {
             const allowRootFallback = wantsHtmlDocument(req) && !isAssetRequest(pathname);
@@ -374,7 +376,7 @@ process.on('SIGINT', () => {
     for (const watcher of hmrWatchers)
         watcher.close();
     Pool.clearWarmedProcesses();
-    bundleWatcher?.kill();
+    bundleWatcher?.close?.();
     server.stop();
     serveLogger.info('Server stopped', { signal: 'SIGINT' });
     process.exit(0);
@@ -384,7 +386,7 @@ process.on('SIGTERM', () => {
     for (const watcher of hmrWatchers)
         watcher.close();
     Pool.clearWarmedProcesses();
-    bundleWatcher?.kill();
+    bundleWatcher?.close?.();
     server.stop();
     serveLogger.info('Server stopped', { signal: 'SIGTERM' });
     process.exit(0);

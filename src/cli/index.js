@@ -11,14 +11,16 @@
 //   ty bundle [--watch] …             build client + native artifacts
 //   ty native-bundle [--target <t>]   generate the native host only
 //   ty preview [--watch] …            preview a built bundle
+//   ty cache [status|clean]            inspect or clear standalone runtime cache
 //
-// The command modules run on import (top-level await + side effects), so we
-// normalize argv to `[exec, <command>, …args]` first — giving them the same
-// shape they'd see under `bun src/cli/<command>.js …` (flags from index 2).
+// Commands read flags from `process.argv`, so we normalize argv to
+// `[exec, <command>, …args]` first — giving them the same shape they'd see under
+// `bun src/cli/<command>.js …` (flags from index 2). Commands that expose an
+// explicit runner are called below; older command modules still run on import.
 
 import pkg from '../../package.json';
 
-const COMMANDS = ['init', 'serve', 'bundle', 'native-bundle', 'preview'];
+const COMMANDS = ['init', 'serve', 'bundle', 'native-bundle', 'preview', 'cache'];
 
 function usage() {
     console.log(`ty ${pkg.version} — Tachyon CLI
@@ -31,6 +33,7 @@ Commands:
   bundle             Build client + native artifacts
   native-bundle      Generate the native host only
   preview            Preview a built bundle
+  cache [status|clean] Inspect or clear standalone runtime cache
 
 Run 'ty <command> --help' for command-specific options.`);
 }
@@ -41,6 +44,28 @@ Run 'ty <command> --help' for command-specific options.`);
 const userArgs = process.argv.slice(2);
 const command = userArgs[0];
 const rest = userArgs.slice(1);
+
+async function runInternalAdapter() {
+    if (!command)
+        return false;
+    const normalized = command.replaceAll('\\', '/');
+    if (normalized.endsWith('/yon-js-runner.js') || normalized === 'yon-js-runner.js') {
+        process.argv = [process.argv[0], command, ...rest];
+        const { default: YonJsRunner } = await import('../server/process/adapters/yon-js-runner.js');
+        await YonJsRunner.run();
+        return true;
+    }
+    if (normalized.endsWith('/yon-compiled-runner.js') || normalized === 'yon-compiled-runner.js') {
+        process.argv = [process.argv[0], command, ...rest];
+        const { default: YonCompiledRunner } = await import('../server/process/adapters/yon-compiled-runner.js');
+        await YonCompiledRunner.run();
+        return true;
+    }
+    return false;
+}
+
+if (await runInternalAdapter())
+    process.exit(0);
 
 if (!command || command === '--help' || command === '-h' || command === 'help') {
     usage();
@@ -63,7 +88,8 @@ process.argv = [process.argv[0], command, ...rest];
 switch (command) {
     case 'init': await import('./init.js'); break;
     case 'serve': await import('./serve.js'); break;
-    case 'bundle': await import('./bundle.js'); break;
+    case 'bundle': await (await import('./bundle.js')).runBundleCommand(); break;
     case 'native-bundle': await import('./native-bundle.js'); break;
     case 'preview': await import('./preview.js'); break;
+    case 'cache': await (await import('./cache.js')).runCacheCommand(rest); break;
 }

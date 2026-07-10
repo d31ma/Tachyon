@@ -23,6 +23,44 @@ export function findEventTarget(element, eventName) {
 }
 
 /**
+ * Finds the element that owns an in-app navigation request. Native anchors are
+ * supported directly; custom elements can opt in by exposing an `href`
+ * attribute, which is how DuVay's `<w-btn>` represents link buttons.
+ *
+ * @param {Element} element
+ * @returns {boolean}
+ */
+function isNavigationTarget(element) {
+    return element.hasAttribute('href')
+        && !element.hasAttribute('disabled')
+        && (element.localName === 'a' || element.localName.includes('-'));
+}
+
+/**
+ * Resolves a navigation target across regular and shadow DOM. The composed
+ * path makes native links rendered inside a web component visible; the host
+ * fallback supports light-DOM components that expose `href` themselves.
+ *
+ * @param {Event} event
+ * @returns {Element | null}
+ */
+export function findNavigationTarget(event) {
+    if (typeof event.composedPath === 'function') {
+        for (const node of event.composedPath()) {
+            if (node instanceof Element && isNavigationTarget(node))
+                return node;
+        }
+    }
+    let candidate = event.target instanceof Element ? event.target : null;
+    while (candidate && candidate !== document.body) {
+        if (isNavigationTarget(candidate))
+            return candidate;
+        candidate = candidate.parentElement;
+    }
+    return null;
+}
+
+/**
  * Builds the event context used by the value-binding rerender path while
  * preserving DOM-style `$event.target.value` handler access.
  * @param {Element & { value?: unknown }} element

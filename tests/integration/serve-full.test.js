@@ -53,11 +53,16 @@ document.documentElement.dataset.boot = bootMessage;
     }
     if (data) {
         const fylo = new Fylo(path.join(root, 'db'));
-        await fylo['users'].create();
-        await fylo['users'].put({
-            email: 'browser-db@example.test',
-            role: 'admin',
-        });
+        try {
+            await fylo['users'].create();
+            await fylo['users'].put({
+                email: 'browser-db@example.test',
+                role: 'admin',
+            });
+        }
+        finally {
+            await fylo.close();
+        }
     }
     return root;
 }

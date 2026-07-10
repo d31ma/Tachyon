@@ -11,8 +11,9 @@ import { pathToFileURL } from "url";
 import { compileRustWorker } from "./wasm/rust-compiler.js";
 import { compileJavaScriptWorker, compileTypeScriptWorker } from "./wasm/javascript-compiler.js";
 import { buildRuntimeModule } from "./wasm/tac-wasm-compiler.js";
-import { EVENT_CAPTURE_SCRIPT } from "../runtime/event-hydration.js";
+import { EVENT_CAPTURE_SCRIPT } from "../runtime/event-capture-script.js";
 import { compileNativeWorkerExecutable } from "./native/worker-compiler.js";
+import TachyonRuntimeCache from "../shared/runtime-cache.js";
 /**
  * @typedef {import("bun").BunRequest} BunRequest
  * @typedef {import("bun").BunPlugin} BunPlugin
@@ -31,16 +32,92 @@ import { compileNativeWorkerExecutable } from "./native/worker-compiler.js";
  * @typedef {{ target: string, platform: string, environment: string, os: string, native: boolean, browser: boolean, web: boolean, desktop: boolean, mobile: boolean }} TacPlatformContext
  * @typedef {{ version: string, modules: Map<string, Function>, platform: TacPlatformContext, register: (id: string, factory: Function) => Function, load: (id: string) => Promise<Function> }} TacRegistry
  */
-const TEMPLATE_PATH = `${import.meta.dir}/render-template.js`;
-const SPA_RENDERER_PATH = `${import.meta.dir}/../runtime/spa-renderer.js`;
-const FYLO_LOCAL_WORKER_PATH = `${import.meta.dir}/../runtime/fylo-browser-worker.js`;
 const ROUTE_MANIFEST_PLACEHOLDER = '{"__tachyonPlaceholder":true}';
 const WRAPPER_MANIFEST_PLACEHOLDER = '{"__tachyonShellPlaceholder":true}';
-const NOT_FOUND_PATH = `${import.meta.dir}/../runtime/shells/not-found.html`;
-const APP_SHELL_PATH = `${import.meta.dir}/../runtime/shells/app.html`;
 const PRERENDER_WORKER_PATH = `${import.meta.dir}/../runtime/prerender-worker.js`;
 const MODULES_ROUTE_PREFIX = '/shared/modules';
 const IMPORT_MAP_PLACEHOLDER = '<!--__TACHYON_IMPORT_MAP__-->';
+const FRAMEWORK_SOURCE_ROOT = path.resolve(import.meta.dir, '..');
+const EVENT_CAPTURE_SCRIPT_SOURCE = `// @ts-check\nexport const EVENT_CAPTURE_SCRIPT = ${JSON.stringify(EVENT_CAPTURE_SCRIPT)};\n`;
+/** @type {Promise<string> | null} */
+let embeddedFrameworkRootPromise = null;
+const EMBEDDED_FRAMEWORK_FILES = [
+    'compiler/render-template.js',
+    'runtime/shells/app.html',
+    'runtime/shells/not-found.html',
+    'runtime/spa-renderer.js',
+    'runtime/dom-helpers.js',
+    'runtime/static-cache.js',
+    'runtime/event-capture-script.js',
+    'runtime/event-hydration.js',
+    'runtime/component-registry.js',
+    'runtime/service-worker-policy.js',
+    'runtime/fylo-browser-worker.js',
+    'runtime/hot-reload-client.js',
+    'runtime/tachyon-sw.js',
+    'runtime/decorators.js',
+    'runtime/fylo-global.js',
+    'runtime/fylo-browser-sync.js',
+    'runtime/browser-cache.js',
+    'runtime/tac-worker.js',
+    'vendor/fylo/fylo-web.mjs',
+];
+function isEmbeddedFrameworkRuntime() {
+    return import.meta.dir.startsWith('/$bunfs/');
+}
+/** @param {Promise<unknown>} modulePromise */
+async function textModule(modulePromise) {
+    return /** @type {{ default: string }} */ (await modulePromise).default;
+}
+/** @param {string} relativePath */
+async function loadEmbeddedFrameworkSource(relativePath) {
+    switch (relativePath) {
+        case 'compiler/render-template.js': return textModule(import('./render-template.js', { with: { type: 'text' } }));
+        case 'runtime/shells/app.html': return textModule(import('../runtime/shells/app.html', { with: { type: 'text' } }));
+        case 'runtime/shells/not-found.html': return textModule(import('../runtime/shells/not-found.html', { with: { type: 'text' } }));
+        case 'runtime/spa-renderer.js': return textModule(import('../runtime/spa-renderer.js', { with: { type: 'text' } }));
+        case 'runtime/dom-helpers.js': return textModule(import('../runtime/dom-helpers.js', { with: { type: 'text' } }));
+        case 'runtime/static-cache.js': return textModule(import('../runtime/static-cache.js', { with: { type: 'text' } }));
+        case 'runtime/event-capture-script.js': return EVENT_CAPTURE_SCRIPT_SOURCE;
+        case 'runtime/event-hydration.js': return textModule(import('../runtime/event-hydration.js', { with: { type: 'text' } }));
+        case 'runtime/component-registry.js': return textModule(import('../runtime/component-registry.js', { with: { type: 'text' } }));
+        case 'runtime/service-worker-policy.js': return textModule(import('../runtime/service-worker-policy.js', { with: { type: 'text' } }));
+        case 'runtime/fylo-browser-worker.js': return textModule(import('../runtime/fylo-browser-worker.js', { with: { type: 'text' } }));
+        case 'runtime/hot-reload-client.js': return textModule(import('../runtime/hot-reload-client.js', { with: { type: 'text' } }));
+        case 'runtime/tachyon-sw.js': return textModule(import('../runtime/tachyon-sw.js', { with: { type: 'text' } }));
+        case 'runtime/decorators.js': return textModule(import('../runtime/decorators.js', { with: { type: 'text' } }));
+        case 'runtime/fylo-global.js': return textModule(import('../runtime/fylo-global.js', { with: { type: 'text' } }));
+        case 'runtime/fylo-browser-sync.js': return textModule(import('../runtime/fylo-browser-sync.js', { with: { type: 'text' } }));
+        case 'runtime/browser-cache.js': return textModule(import('../runtime/browser-cache.js', { with: { type: 'text' } }));
+        case 'runtime/tac-worker.js': return textModule(import('../runtime/tac-worker.js', { with: { type: 'text' } }));
+        case 'vendor/fylo/fylo-web.mjs': return textModule(import('../vendor/fylo/fylo-web.mjs', { with: { type: 'text' } }));
+        default: throw new Error(`Unknown embedded Tachyon framework file: ${relativePath}`);
+    }
+}
+async function embeddedFrameworkRoot() {
+    if (!isEmbeddedFrameworkRuntime())
+        return FRAMEWORK_SOURCE_ROOT;
+    embeddedFrameworkRootPromise ??= (async () => {
+        const files = await Promise.all(EMBEDDED_FRAMEWORK_FILES.map(async (relativePath) => ({
+            path: relativePath,
+            source: await loadEmbeddedFrameworkSource(relativePath),
+        })));
+        return TachyonRuntimeCache.materialize(files);
+    })();
+    return embeddedFrameworkRootPromise;
+}
+/** @param {string} relativePath */
+async function frameworkFilePath(relativePath) {
+    return path.join(await embeddedFrameworkRoot(), relativePath);
+}
+/**
+ * @param {string} relativePath
+ */
+async function frameworkText(relativePath) {
+    if (isEmbeddedFrameworkRuntime())
+        return loadEmbeddedFrameworkSource(relativePath);
+    return Bun.file(path.join(FRAMEWORK_SOURCE_ROOT, relativePath)).text();
+}
 /**
  * @param {string} routePath
  * @param {BodyInit} body
@@ -519,7 +596,7 @@ export default class Compiler {
                 frame.caseClosers.push('}}');
                 return `{ const __tc_case_value=(${caseExpr}); if(!${frame.matchedVar} && __tc_helpers__.matchSwitchCase(${frame.valueVar}, __tc_case_value)) { ${frame.matchedVar}=true;`;
             }
-            if (match === '`<case default="">`') {
+            if (match === '`<case default="">`' || match === '`<case default>`') {
                 if (frame.defaultSeen)
                     throw new Error(`Invalid Tac switch in '${sourceName}': only one default case is allowed per <switch>.`);
                 frame.defaultSeen = true;
@@ -1128,7 +1205,7 @@ export default class Compiler {
             .replaceAll('&', '&amp;')
             .replaceAll('"', '&quot;')
             .replaceAll('<', '&lt;');
-        let shellHTML = await Bun.file(APP_SHELL_PATH).text();
+        let shellHTML = await frameworkText('runtime/shells/app.html');
         shellHTML = shellHTML
             // Pre-hydration capture: classic inline script runs before the deferred
             // runtime module, recording dead-zone click/submit interactions for replay.
@@ -1155,7 +1232,15 @@ export default class Compiler {
         shellHTML = await Compiler.withWebAppManifest(shellHTML, assetPrefix);
         return withPublicBrowserEnv(shellHTML, assetPrefix);
     }
-    static createSpaRendererManifestPlugin() {
+    /**
+     * Stages an SPA renderer with its route metadata already substituted.
+     * Bun plugins are not reliably invoked from a compiled executable, so this
+     * keeps the runtime bundle identical for source and standalone `ty` use.
+     *
+     * @param {string} spaRendererPath
+     * @returns {Promise<{ entrypoint: string, root: string }>}
+     */
+    static async stageSpaRendererEntrypoint(spaRendererPath) {
         const routeManifestJSON = JSON.stringify(Router.routeSlugs);
         const wrapperManifestJSON = JSON.stringify(Compiler.wrapperPages);
         const assetPrefixLiteral = Compiler.isNativeBundle() ? './' : '/';
@@ -1165,65 +1250,72 @@ export default class Compiler {
         const escapedWrapperManifestJSON = wrapperManifestJSON
             .replaceAll('\\', '\\\\')
             .replaceAll("'", "\\'");
-        return /** @type {BunPlugin} */ ({
-            name: 'tachyon-manifest-inline',
-            setup(build) {
-                build.onLoad({ filter: /spa-renderer\.js$/ }, async ({ path: filePath }) => {
-                    if (path.resolve(filePath) !== path.resolve(SPA_RENDERER_PATH))
-                        return undefined;
-                    const source = await Bun.file(filePath).text();
-                    if (!source.includes(ROUTE_MANIFEST_PLACEHOLDER))
-                        throw new Error('Tac SPA renderer route manifest placeholder is missing');
-                    if (!source.includes(WRAPPER_MANIFEST_PLACEHOLDER))
-                        throw new Error('Tac SPA renderer wrapper manifest placeholder is missing');
-                    if (!source.includes('__TACHYON_ASSET_PREFIX__'))
-                        throw new Error('Tac SPA renderer asset prefix placeholder is missing');
-                    return {
-                        contents: source
-                            .replace(ROUTE_MANIFEST_PLACEHOLDER, escapedRouteManifestJSON)
-                            .replace(WRAPPER_MANIFEST_PLACEHOLDER, escapedWrapperManifestJSON)
-                            .replaceAll('__TACHYON_ASSET_PREFIX__', assetPrefixLiteral),
-                        loader: 'js',
-                    };
-                });
-            },
-        });
+        const source = await Bun.file(spaRendererPath).text();
+        if (!source.includes(ROUTE_MANIFEST_PLACEHOLDER))
+            throw new Error('Tac SPA renderer route manifest placeholder is missing');
+        if (!source.includes(WRAPPER_MANIFEST_PLACEHOLDER))
+            throw new Error('Tac SPA renderer wrapper manifest placeholder is missing');
+        if (!source.includes('__TACHYON_ASSET_PREFIX__'))
+            throw new Error('Tac SPA renderer asset prefix placeholder is missing');
+
+        const sourceDirectory = path.dirname(spaRendererPath);
+        const root = await mkdtemp(path.join(sourceDirectory, '.tachyon-spa-'));
+        const rewrittenSource = source
+            .replace(ROUTE_MANIFEST_PLACEHOLDER, escapedRouteManifestJSON)
+            .replace(WRAPPER_MANIFEST_PLACEHOLDER, escapedWrapperManifestJSON)
+            .replaceAll('__TACHYON_ASSET_PREFIX__', assetPrefixLiteral)
+            // The staged entrypoint lives in a temporary directory. Point its
+            // direct runtime imports back to their framework source directory.
+            .replace(/(\bfrom\s+['"])\.\/([^'"]+)(['"])/g, (_match, prefix, relativePath, suffix) => {
+                const resolvedPath = path.join(sourceDirectory, relativePath);
+                const stagedImportPath = path.relative(root, resolvedPath).split(path.sep).join('/');
+                return `${prefix}${stagedImportPath.startsWith('.') ? stagedImportPath : `./${stagedImportPath}`}${suffix}`;
+            });
+        const entrypoint = path.join(root, 'spa-renderer.js');
+        await writeFile(entrypoint, rewrittenSource);
+        return { entrypoint, root };
     }
     static async bundleBrowserRuntimeAssets() {
-        const entrypoints = [
-            SPA_RENDERER_PATH,
-            FYLO_LOCAL_WORKER_PATH,
-            `${import.meta.dir}/../runtime/hot-reload-client.js`,
-            `${import.meta.dir}/../runtime/tachyon-sw.js`,
-        ];
-        const mainEntrypoint = await Compiler.getMainEntrypointPath();
-        if (mainEntrypoint)
-            entrypoints.splice(1, 0, mainEntrypoint);
-        const result = await Bun.build({
-            entrypoints,
-            format: 'esm',
-            naming: '[name].[ext]',
-            minify: true,
-            splitting: true,
-            target: 'browser',
-            plugins: [Compiler.createSpaRendererManifestPlugin()],
-        });
-        const registeredRoutes = new Set();
-        for (const output of result.outputs) {
-            const routePath = Compiler.routePathFromBuildOutput(output.path);
-            Router.reqRoutes[routePath] = {
-                GET: () => typedResponse(routePath, output, output.type)
-            };
-            registeredRoutes.add(routePath);
+        const spaRendererPath = await frameworkFilePath('runtime/spa-renderer.js');
+        const stagedRenderer = await Compiler.stageSpaRendererEntrypoint(spaRendererPath);
+        try {
+            const entrypoints = [
+                stagedRenderer.entrypoint,
+                await frameworkFilePath('runtime/fylo-browser-worker.js'),
+                await frameworkFilePath('runtime/hot-reload-client.js'),
+                await frameworkFilePath('runtime/tachyon-sw.js'),
+            ];
+            const mainEntrypoint = await Compiler.getMainEntrypointPath();
+            if (mainEntrypoint)
+                entrypoints.splice(1, 0, mainEntrypoint);
+            const result = await Bun.build({
+                entrypoints,
+                format: 'esm',
+                naming: '[name].[ext]',
+                minify: true,
+                splitting: true,
+                target: 'browser',
+            });
+            const registeredRoutes = new Set();
+            for (const output of result.outputs) {
+                const routePath = Compiler.routePathFromBuildOutput(output.path);
+                Router.reqRoutes[routePath] = {
+                    GET: () => typedResponse(routePath, output, output.type)
+                };
+                registeredRoutes.add(routePath);
+            }
+            Router.reqRoutes[PUBLIC_BROWSER_ENV_PATH] = { GET: createPublicBrowserEnvResponse };
+            registeredRoutes.add(PUBLIC_BROWSER_ENV_PATH);
+            for (const staleRoute of Compiler.browserRuntimeRoutes) {
+                if (!registeredRoutes.has(staleRoute))
+                    delete Router.reqRoutes[staleRoute];
+            }
+            Compiler.browserRuntimeRoutes = registeredRoutes;
+            return [...registeredRoutes];
         }
-        Router.reqRoutes[PUBLIC_BROWSER_ENV_PATH] = { GET: createPublicBrowserEnvResponse };
-        registeredRoutes.add(PUBLIC_BROWSER_ENV_PATH);
-        for (const staleRoute of Compiler.browserRuntimeRoutes) {
-            if (!registeredRoutes.has(staleRoute))
-                delete Router.reqRoutes[staleRoute];
+        finally {
+            await rm(stagedRenderer.root, { recursive: true, force: true });
         }
-        Compiler.browserRuntimeRoutes = registeredRoutes;
-        return [...registeredRoutes];
     }
     /**
      * @param {string} distPath
@@ -1413,6 +1505,9 @@ export default class Compiler {
     }
     /** @param {string} distPath @param {string} pathname @param {string} shellHTML */
     static async renderPageDocumentIsolated(distPath, pathname, shellHTML) {
+        if (isEmbeddedFrameworkRuntime()) {
+            return Compiler.renderPageDocumentForWorker(distPath, pathname, shellHTML, Compiler.wrapperPages);
+        }
         const proc = Bun.spawn(['bun', PRERENDER_WORKER_PATH], {
             cwd: process.cwd(),
             stdin: 'pipe',
@@ -1461,7 +1556,8 @@ export default class Compiler {
         /** @type {{ outputFile: string, html: string }[]} */
         const renderedRoutes = [];
         let renderIndex = 0;
-        const renderWorkers = Array.from({ length: Math.min(Compiler.prerenderRenderConcurrency, routes.length) }, async () => {
+        const renderConcurrency = isEmbeddedFrameworkRuntime() ? 1 : Compiler.prerenderRenderConcurrency;
+        const renderWorkers = Array.from({ length: Math.min(renderConcurrency, routes.length) }, async () => {
             while (renderIndex < routes.length) {
                 const currentIndex = renderIndex++;
                 const route = routes[currentIndex];
@@ -1868,7 +1964,7 @@ export default class Compiler {
             .replaceAll(/`<loop :for="(.*?)">`|`<\/loop>`/g, (_, expr) => expr ? Compiler.compileLoopExpression(expr) : '}')
             .replaceAll(/`<logic :if="(.*?)">`/g, (_, expr) => `if(${expr}) {`)
             .replaceAll(/`<logic :else-if="(.*?)">`/g, (_, expr) => `else if(${expr}) {`)
-            .replaceAll(/(`<logic else="">`)|(`<\/logic>`)/g, (_, expr) => expr ? `else {` : '}');
+            .replaceAll(/`<logic else(?:="")?>`|`<\/logic>`/g, (match) => match.startsWith('`<logic') ? `else {` : '}');
         Compiler.assertControlDirectivesResolved(renderSource, publicPath);
         renderSource = Compiler.compileSwitchExpressions(renderSource, publicPath);
         // Bind dynamic attributes :attr="expr" → attr="${escaped expr}"
@@ -2086,7 +2182,7 @@ with (__tc_scope__) {
         return elements;
     };
 }`;
-        let code = await Bun.file(TEMPLATE_PATH).text();
+        let code = await frameworkText('compiler/render-template.js');
         code = code.split('// module_imports').join(moduleImports.join(',\n'));
         code = code.split('"__TY_FACTORY_SOURCE__"').join(JSON.stringify(factorySource));
         code = code.split('"__TY_MODULE_PATH__"').join(JSON.stringify(publicPath));
@@ -2162,9 +2258,6 @@ ${transformed}
     static createCompanionScriptPlugin(sourcePath) {
         const filter = Compiler.createFilePathFilter(sourcePath);
         const tacInline = `var __tc_noopPlatform__=Object.freeze({target:"web",platform:"web",environment:"browser",os:"unknown",browserOS:"unknown",native:!1,browser:!0,web:!0,desktop:!1,mobile:!1});var __tc_noopHelpers__={isBrowser:!1,isServer:!0,bindPersistentFields:()=>{},env:(_,f)=>f,platform:__tc_noopPlatform__,props:{},fetch:(i,n)=>fetch(i,n),onMount:()=>{},publish:()=>!1,rerender:()=>{},subscribe:(_,c)=>typeof c=="function"?()=>{}:c};class Tac{props;tac;constructor(props={},tac=__tc_noopHelpers__){this.props=props,this.tac=tac}}`;
-        const decoratorsEntryPath = `${import.meta.dir}/../runtime/decorators.js`;
-        const fyloGlobalEntryPath = `${import.meta.dir}/../runtime/fylo-global.js`;
-        const tacWorkerEntryPath = `${import.meta.dir}/../runtime/tac-worker.js`;
         return /** @type {BunPlugin} */ ({
             name: `tachyon-tac-companion:${sourcePath}`,
             target: /** @type {import("bun").Target} */ ('browser'),
@@ -2174,14 +2267,17 @@ ${transformed}
                     Compiler.assertNoRemovedDecorators(contents, sourcePath);
                     const decoratorNames = Compiler.findReferencedDecorators(contents);
                     if (decoratorNames.length > 0) {
+                        const decoratorsEntryPath = await frameworkFilePath('runtime/decorators.js');
                         const importPath = Compiler.toRelativeImportPath(sourcePath, decoratorsEntryPath);
                         contents = `import { ${decoratorNames.join(', ')} } from ${JSON.stringify(importPath)};\n${contents}`;
                     }
                     if (Compiler.referencesFyloGlobal(contents)) {
+                        const fyloGlobalEntryPath = await frameworkFilePath('runtime/fylo-global.js');
                         const importPath = Compiler.toRelativeImportPath(sourcePath, fyloGlobalEntryPath);
                         contents = `import { fylo } from ${JSON.stringify(importPath)};\n${contents}`;
                     }
                     if (Compiler.referencesTacFetch(contents)) {
+                        const tacWorkerEntryPath = await frameworkFilePath('runtime/tac-worker.js');
                         const importPath = Compiler.toRelativeImportPath(sourcePath, tacWorkerEntryPath);
                         contents = `import { fetch } from ${JSON.stringify(importPath)};\n${contents}`;
                     }
@@ -3549,8 +3645,10 @@ async function __tac_resolve_native_response__(response) {
         const nfFile = Bun.file(`${process.cwd()}/404.html`);
         const nfContent = await nfFile.exists()
             ? await nfFile.text()
-            : await Bun.file(NOT_FOUND_PATH).text();
-        const nfSourcePath = await nfFile.exists() ? `${process.cwd()}/404.html` : NOT_FOUND_PATH;
+            : await frameworkText('runtime/shells/not-found.html');
+        const nfSourcePath = await nfFile.exists()
+            ? `${process.cwd()}/404.html`
+            : await frameworkFilePath('runtime/shells/not-found.html');
         const nfData = await Compiler.extractComponents(nfContent, nfSourcePath, 'pages', '404.html');
         await Compiler.registerModule(nfData, '404.html', 'pages', nfSourcePath);
     }

@@ -1,7 +1,7 @@
 // @ts-check
 import { afterAll, afterEach, beforeAll, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
-import { findEventTarget } from '../../src/runtime/dom-helpers.js';
+import { findEventTarget, findNavigationTarget } from '../../src/runtime/dom-helpers.js';
 
 /**
  * These tests prove Tac interoperates with Light-DOM web components (DuVay) via
@@ -112,4 +112,12 @@ test('arbitrary custom event names delegate the same way (no allow-list)', () =>
     const cleared = delegate('clear');
     host.dispatchEvent(new CustomEvent('clear', { bubbles: true, composed: true }));
     expect(cleared.hits).toEqual([host]);
+});
+
+test('an href-bearing web component is a client-navigation target', () => {
+    document.body.innerHTML = `<w-btn id="atlas" href="/atlas">Atlas</w-btn>`;
+    const button = /** @type {Element} */ (document.getElementById('atlas'));
+    const event = new windowInstance.Event('click', { bubbles: true, composed: true });
+    button.dispatchEvent(/** @type {any} */ (event));
+    expect(findNavigationTarget(event)).toBe(button);
 });
