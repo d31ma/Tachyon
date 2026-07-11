@@ -126,11 +126,10 @@ const __tc_isBrowserEnv = () => typeof window !== 'undefined'
 const __tc_defaultPlatform = Object.freeze({
     target: 'web',
     platform: 'web',
-    environment: 'browser',
-    os: 'unknown',
+    environment: 'web',
+    os: 'web',
     browserOS: 'unknown',
     native: false,
-    browser: true,
     web: true,
     desktop: false,
     mobile: false,
@@ -327,6 +326,23 @@ const tc_createHelpers = (modulePath) => {
     /** @param {() => void | Promise<void>} fn */
     const onMount = (fn) => {
         if (!isBrowser) return
+        // A controller can register after the renderer already flushed the
+        // mount queue — e.g. a Dart companion whose runtime module loads
+        // asynchronously. Late registrations run on the next microtask,
+        // mirroring how a load listener fires immediately on a loaded page.
+        if (window.__tc_onMount_flushed__) {
+            queueMicrotask(() => {
+                try {
+                    const result = fn()
+                    if (result instanceof Promise)
+                        result.catch((error) => console.error('[tachyon] onMount callback error:', error))
+                }
+                catch (error) {
+                    console.error('[tachyon] onMount callback error:', error)
+                }
+            })
+            return
+        }
         if (!window.__tc_onMount_queue__) window.__tc_onMount_queue__ = []
         window.__tc_onMount_queue__.push(fn)
     }
@@ -355,6 +371,471 @@ const tc_createHelpers = (modulePath) => {
         const publicEnv = /** @type {Record<string, unknown> | undefined} */ (window.__tc_public_env__)
         if (!publicEnv || !(key in publicEnv)) return fallback
         return /** @type {T | undefined} */ (publicEnv[key])
+    }
+
+    /** @param {string} capability */
+    const isDeviceCapabilityAuthorized = (capability) => {
+        if (!isBrowser) return false
+        const meta = [...window.document.getElementsByTagName('meta')]
+            .find((element) => element.getAttribute('name') === 'tachyon-native-capabilities')
+        const declared = meta?.getAttribute('content') ?? ''
+        return declared.split(',').map((entry) => entry.trim()).filter(Boolean).some((entry) => (
+            entry === capability || (entry.endsWith('.*') && capability.startsWith(entry.slice(0, -1)))
+        ))
+    }
+
+    // Lets portable companions describe an unavailable capability without
+    // attempting an invocation that would fail closed at the device boundary.
+    /** @param {string} capability */
+    const deviceAvailable = (capability) => isDeviceCapabilityAuthorized(capability)
+
+    /** @param {string} capability */
+    const standardCapabilityAvailable = (capability) => {
+        if (!isBrowser) return false
+        switch (capability) {
+            case 'geo.current': return nativePermissionDeclared('location') && typeof window.navigator?.geolocation?.getCurrentPosition === 'function'
+            case 'notify.show': return nativePermissionDeclared('notifications') && typeof window.Notification === 'function'
+            case 'media.getUserMedia':
+                return (nativePermissionDeclared('camera') || nativePermissionDeclared('microphone')) && typeof window.navigator?.mediaDevices?.getUserMedia === 'function'
+            case 'media.getUserMedia.camera': return nativePermissionDeclared('camera') && typeof window.navigator?.mediaDevices?.getUserMedia === 'function'
+            case 'media.getUserMedia.microphone': return nativePermissionDeclared('microphone') && typeof window.navigator?.mediaDevices?.getUserMedia === 'function'
+            case 'file.saveText': return typeof window.document?.createElement === 'function'
+            case 'capabilities.state': return typeof window.navigator?.permissions?.query === 'function'
+            case 'host.events': return typeof (/** @type {any} */ (window).__tcNativeBridge__)?.onMessage === 'function'
+            default: return false
+        }
+    }
+
+    /** @param {string} permission */
+    const nativePermissionDeclared = (permission) => {
+        if (!isBrowser) return false
+        const target = [...window.document.getElementsByTagName('meta')]
+            .find((element) => element.getAttribute('name') === 'tachyon-target')?.getAttribute('content') ?? 'web'
+        if (target === 'web') return true
+        const declared = [...window.document.getElementsByTagName('meta')]
+            .find((element) => element.getAttribute('name') === 'tachyon-device-permissions')?.getAttribute('content') ?? ''
+        return declared.split(',').map((entry) => entry.trim()).includes(permission)
+    }
+
+    /** @param {string} capability */
+    const capabilityPermissionName = (capability) => {
+        switch (capability) {
+            case 'geo.current': return 'geolocation'
+            case 'notify.show': return 'notifications'
+            case 'media.getUserMedia.camera': return 'camera'
+            case 'media.getUserMedia.microphone': return 'microphone'
+            default: return undefined
+        }
+    }
+
+    /** @param {string} capability */
+    const capabilityState = async (capability) => {
+        if (deviceAvailable(capability)) return capability === 'auth.verifyUser' ? 'prompt' : 'granted'
+        const permissionName = capabilityPermissionName(capability)
+        if (!permissionName || !isBrowser) return standardCapabilityAvailable(capability) ? 'prompt' : 'unsupported'
+        try {
+            const status = await window.navigator.permissions?.query(/** @type {PermissionDescriptor} */ ({ name: permissionName }))
+            if (status?.state === 'granted' || status?.state === 'denied' || status?.state === 'prompt') return status.state
+        }
+        catch {
+            // Safari and several WebViews implement the feature but do not
+            // expose it through the Permissions API. The feature remains
+            // requestable, so report prompt rather than pretending it is denied.
+        }
+        return standardCapabilityAvailable(capability) || capability === 'media.getUserMedia.camera' || capability === 'media.getUserMedia.microphone'
+            ? 'prompt'
+            : 'unsupported'
+    }
+
+    /** @param {string} name @param {string} text */
+    const saveText = async (name, text) => {
+        const picker = /** @type {any} */ (window).showSaveFilePicker
+        if (typeof picker === 'function') {
+            const handle = await picker({
+                suggestedName: name,
+                types: [{ description: 'Text files', accept: { 'text/plain': ['.txt', '.md', '.json', '.csv'] } }],
+            })
+            const writable = await handle.createWritable()
+            await writable.write(text)
+            await writable.close()
+            return { name: handle.name, saved: true }
+        }
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+        const href = URL.createObjectURL(blob)
+        const anchor = window.document.createElement('a')
+        anchor.href = href
+        anchor.download = name
+        anchor.style.display = 'none'
+        window.document.body.append(anchor)
+        anchor.click()
+        anchor.remove()
+        URL.revokeObjectURL(href)
+        return { name, saved: true }
+    }
+
+    /** @param {PositionOptions | undefined} options */
+    const currentPosition = async (options = undefined) => {
+        if (!nativePermissionDeclared('location'))
+            throw new Error('Geolocation requires the location device permission in package.json')
+        if (!window.navigator?.geolocation?.getCurrentPosition)
+            throw new Error('Geolocation is unavailable in this environment')
+        return await new Promise((resolve, reject) => window.navigator.geolocation.getCurrentPosition(
+            (position) => resolve({
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                altitude: position.coords.altitude,
+                altitudeAccuracy: position.coords.altitudeAccuracy,
+                heading: position.coords.heading,
+                speed: position.coords.speed,
+                timestamp: position.timestamp,
+            }),
+            reject,
+            options,
+        ))
+    }
+
+    /** @param {string} title @param {NotificationOptions | undefined} options */
+    const showNotification = async (title, options = undefined) => {
+        if (!nativePermissionDeclared('notifications'))
+            throw new Error('Notifications require the notifications device permission in package.json')
+        if (typeof window.Notification !== 'function')
+            throw new Error('Notifications are unavailable in this environment')
+        const permission = window.Notification.permission === 'default'
+            ? await window.Notification.requestPermission()
+            : window.Notification.permission
+        if (permission !== 'granted') throw new Error('Notification permission was not granted')
+        new window.Notification(title, options)
+        return { shown: true }
+    }
+
+    /** @param {string} event @param {(payload: unknown) => void} handler */
+    const subscribeHostEvent = (event, handler) => {
+        const bridge = /** @type {{ onMessage?: (handler: (message: unknown) => void) => () => void } | undefined} */ (/** @type {any} */ (window).__tcNativeBridge__)
+        if (typeof bridge?.onMessage !== 'function')
+            throw new Error('Host events are unavailable in this environment')
+        return bridge.onMessage((message) => {
+            const value = /** @type {{ type?: string, event?: string, payload?: unknown }} */ (message)
+            if (value?.type === 'tac:host-event' && value.event === event) handler(value.payload)
+        })
+    }
+
+    /**
+     * Permissioned device boundary shared by JavaScript companions and
+     * generated language adapters. A native host may provide richer behavior;
+     * browsers receive only standards-based fallbacks.
+     * @param {string} capability
+     * @param {unknown} [payload]
+     * @returns {Promise<unknown>}
+     */
+    const device = async (capability, payload = {}) => {
+        if (!isDeviceCapabilityAuthorized(capability)) {
+            throw new Error(`Tac device capability '${capability}' is not implemented by this bundle target`)
+        }
+        const bridge = /** @type {{ invoke?: Function } | undefined} */ (/** @type {any} */ (window).__tcNativeBridge__)
+        if (typeof bridge?.invoke === 'function')
+            return await bridge.invoke(capability, payload, { source: modulePath })
+        const data = payload && typeof payload === 'object' ? /** @type {Record<string, unknown>} */ (payload) : {}
+        if (capability === 'app.info') {
+            return {
+                name: window.document.title || 'Tachyon App',
+                runtime: 'web',
+                href: window.location.href,
+                userAgent: window.navigator?.userAgent || '',
+                language: window.navigator?.language || '',
+                online: Boolean(window.navigator?.onLine),
+            }
+        }
+        if (capability === 'clipboard.readText' && window.navigator?.clipboard?.readText)
+            return await window.navigator.clipboard.readText()
+        if (capability === 'clipboard.writeText' && window.navigator?.clipboard?.writeText) {
+            await window.navigator.clipboard.writeText(String(data.text ?? ''))
+            return { written: true }
+        }
+        if (capability === 'openUrl') {
+            const url = String(data.url ?? '')
+            if (!/^https?:\/\//i.test(url)) throw new Error('openUrl requires an http(s) URL')
+            window.open(url, '_blank', 'noopener,noreferrer')
+            return { opened: true }
+        }
+        if (capability === 'share.text' && typeof window.navigator?.share === 'function') {
+            await window.navigator.share({
+                text: String(data.text ?? ''),
+                title: String(data.title ?? ''),
+            })
+            return { shared: true }
+        }
+        if (capability === 'haptics.impact' && typeof window.navigator?.vibrate === 'function') {
+            window.navigator.vibrate(10)
+            return { impacted: true }
+        }
+        const filePicker = /** @type {any} */ (window).showOpenFilePicker
+        if (capability === 'file.openText' && typeof filePicker === 'function') {
+            const [handle] = await filePicker({
+                multiple: false,
+                types: [{ description: 'Text files', accept: { 'text/*': ['.txt', '.md', '.json', '.csv'] } }],
+            })
+            const file = await handle.getFile()
+            return { name: file.name, text: await file.text() }
+        }
+        throw new Error(`Tac device capability '${capability}' is not available in this environment`)
+    }
+
+    // A language-neutral facade over browser APIs. Generated companions can use
+    // this without assuming JavaScript globals exist in their source language.
+    const web = Object.freeze({
+        fetch: (/** @type {RequestInfo | URL} */ input, /** @type {RequestInit | undefined} */ init) => localFirstFetch(input, init),
+        storage: Object.freeze({
+            local: Object.freeze({
+                get: (/** @type {string} */ key, /** @type {unknown} */ fallback) => readLocalValue(key, fallback),
+                set: (/** @type {string} */ key, /** @type {unknown} */ value) => writeLocalValue(key, value),
+                remove: (/** @type {string} */ key) => writeLocalValue(key, undefined),
+            }),
+            session: Object.freeze({
+                get: (/** @type {string} */ key, /** @type {unknown} */ fallback) => readSessionValue(key, fallback),
+                set: (/** @type {string} */ key, /** @type {unknown} */ value) => writeSessionValue(key, value),
+                remove: (/** @type {string} */ key) => writeSessionValue(key, undefined),
+            }),
+        }),
+        navigator: Object.freeze({
+            online: () => Boolean(isBrowser && window.navigator?.onLine),
+            language: () => isBrowser ? (window.navigator?.language || '') : '',
+            userAgent: () => isBrowser ? (window.navigator?.userAgent || '') : '',
+        }),
+        location: Object.freeze({
+            href: () => isBrowser ? window.location.href : '',
+            origin: () => isBrowser ? window.location.origin : '',
+        }),
+        clipboard: Object.freeze({
+            readText: async () => {
+                if (!isBrowser || !window.navigator?.clipboard?.readText)
+                    throw new Error('Clipboard read is unavailable in this browser')
+                return await window.navigator.clipboard.readText()
+            },
+            writeText: async (/** @type {string} */ text) => {
+                if (!isBrowser || !window.navigator?.clipboard?.writeText)
+                    throw new Error('Clipboard write is unavailable in this browser')
+                await window.navigator.clipboard.writeText(String(text))
+            },
+        }),
+        sleep: async (/** @type {number} */ milliseconds) => {
+            await new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(milliseconds) || 0)))
+        },
+    })
+
+    /**
+     * Resolves the bundled FYLO browser client only at call time. The compiler
+     * imports its side-effect module for companions that reference `Fylo`, so
+     * this works uniformly in browser and secure native-WebView builds without
+     * exposing OPFS handles or Tac internals to application source.
+     * @param {string} collection
+     */
+    const fyloCollection = (collection) => {
+        const client = isBrowser ? /** @type {any} */ (window).fylo : undefined
+        if (!client)
+            throw new Error('FYLO is unavailable during prerender; call it from a mounted Tac companion.')
+        if (typeof client.collection === 'function')
+            return client.collection(String(collection))
+        const facade = client[String(collection)]
+        if (!facade)
+            throw new Error(`FYLO collection '${String(collection)}' is unavailable`)
+        return facade
+    }
+
+    // Language compilers lower their native-shaped APIs to this internal object.
+    // It deliberately reuses the public Web facade and the permissioned device
+    // bridge so there is one policy implementation to audit.
+    const native = Object.freeze({
+        capabilities: Object.freeze({
+            supports: (/** @type {string} */ capability) => {
+                const portable = new Set([
+                    'web.fetch', 'web.localStorage', 'web.sessionStorage',
+                    'web.navigator', 'web.location', 'fylo.collection',
+                ])
+                return portable.has(capability) || deviceAvailable(capability) || standardCapabilityAvailable(capability)
+            },
+            state: capabilityState,
+        }),
+        app: Object.freeze({
+            available: () => deviceAvailable('app.info'),
+            info: () => device('app.info'),
+        }),
+        clipboard: Object.freeze({
+            available: () => deviceAvailable('clipboard.readText') || deviceAvailable('clipboard.writeText'),
+            readText: () => device('clipboard.readText'),
+            writeText: (/** @type {string} */ text) => device('clipboard.writeText', { text }),
+        }),
+        fileSystem: Object.freeze({
+            readText: (/** @type {string} */ path) => device('fs.readText', { path }),
+            writeText: (/** @type {string} */ path, /** @type {string} */ text) => device('fs.writeText', { path, text }),
+            readDir: (/** @type {string} */ path) => device('fs.readDir', { path }),
+            paths: () => device('fs.paths'),
+        }),
+        shell: Object.freeze({
+            exec: (/** @type {string} */ command, /** @type {string[]} */ args = [], /** @type {string | undefined} */ cwd = undefined) => device('shell.exec', { command, args, cwd }),
+        }),
+        browser: Object.freeze({
+            available: () => deviceAvailable('openUrl'),
+            open: (/** @type {string} */ url) => device('openUrl', { url }),
+        }),
+        share: Object.freeze({
+            text: (/** @type {string} */ text, /** @type {string} */ title = '') => device('share.text', { text, title }),
+        }),
+        haptics: Object.freeze({
+            impact: () => device('haptics.impact'),
+        }),
+        filePicker: Object.freeze({
+            available: () => deviceAvailable('file.openText'),
+            openText: () => device('file.openText'),
+            saveText,
+        }),
+        secrets: Object.freeze({
+            get: (/** @type {string} */ key) => device('secrets.get', { key }),
+            set: async (/** @type {string} */ key, /** @type {string} */ value) => { await device('secrets.set', { key, value }) },
+            delete: async (/** @type {string} */ key) => { await device('secrets.delete', { key }) },
+        }),
+        auth: Object.freeze({
+            verifyUser: (/** @type {string} */ reason) => device('auth.verifyUser', { reason }),
+        }),
+        geolocation: Object.freeze({ current: currentPosition }),
+        notifications: Object.freeze({ show: showNotification }),
+        media: Object.freeze({
+            getUserMedia: (/** @type {MediaStreamConstraints} */ constraints) => {
+                if (constraints?.video && !nativePermissionDeclared('camera'))
+                    throw new Error('Camera capture requires the camera device permission in package.json')
+                if (constraints?.audio && !nativePermissionDeclared('microphone'))
+                    throw new Error('Microphone capture requires the microphone device permission in package.json')
+                if (!window.navigator?.mediaDevices?.getUserMedia)
+                    throw new Error('Media capture is unavailable in this environment')
+                return window.navigator.mediaDevices.getUserMedia(constraints)
+            },
+        }),
+        host: Object.freeze({ on: subscribeHostEvent }),
+        fylo: Object.freeze({
+            collection: fyloCollection,
+        }),
+        web: Object.freeze({
+            localStorage: Object.freeze({
+                getItem: (/** @type {string} */ key, /** @type {unknown} */ fallback) => web.storage.local.get(key, fallback),
+                setItem: (/** @type {string} */ key, /** @type {unknown} */ value) => web.storage.local.set(key, value),
+                removeItem: (/** @type {string} */ key) => web.storage.local.remove(key),
+            }),
+            sessionStorage: Object.freeze({
+                getItem: (/** @type {string} */ key, /** @type {unknown} */ fallback) => web.storage.session.get(key, fallback),
+                setItem: (/** @type {string} */ key, /** @type {unknown} */ value) => web.storage.session.set(key, value),
+                removeItem: (/** @type {string} */ key) => web.storage.session.remove(key),
+            }),
+            navigator: web.navigator,
+            location: web.location,
+            fetch: web.fetch,
+        }),
+    })
+
+    /** @param {string} operation @param {unknown} [payload] */
+    const nativeCall = async (operation, payload = {}) => {
+        const data = payload && typeof payload === 'object' ? /** @type {Record<string, unknown>} */ (payload) : {}
+        switch (operation) {
+            case 'app.info': return await native.app.info()
+            case 'clipboard.readText': return await native.clipboard.readText()
+            case 'clipboard.writeText': return await native.clipboard.writeText(String(data.text ?? ''))
+            case 'fs.readText': return await native.fileSystem.readText(String(data.path ?? ''))
+            case 'fs.writeText': return await native.fileSystem.writeText(String(data.path ?? ''), String(data.text ?? ''))
+            case 'fs.readDir': return await native.fileSystem.readDir(String(data.path ?? ''))
+            case 'fs.paths': return await native.fileSystem.paths()
+            case 'shell.exec': return await native.shell.exec(String(data.command ?? ''), Array.isArray(data.args) ? data.args.map(String) : [], typeof data.cwd === 'string' ? data.cwd : undefined)
+            case 'browser.open': return await native.browser.open(String(data.url ?? ''))
+            case 'share.text': return await native.share.text(String(data.text ?? ''), String(data.title ?? ''))
+            case 'haptics.impact': return await native.haptics.impact()
+            case 'filePicker.openText': return await native.filePicker.openText()
+            case 'filePicker.saveText': return await native.filePicker.saveText(String(data.name ?? 'untitled.txt'), String(data.text ?? ''))
+            case 'secrets.get': return await native.secrets.get(String(data.key ?? ''))
+            case 'secrets.set': return await native.secrets.set(String(data.key ?? ''), String(data.value ?? ''))
+            case 'secrets.delete': return await native.secrets.delete(String(data.key ?? ''))
+            case 'auth.verifyUser': return await native.auth.verifyUser(String(data.reason ?? 'Verify your identity'))
+            case 'geo.current': return await native.geolocation.current(/** @type {PositionOptions | undefined} */ (data.options))
+            case 'notify.show': return await native.notifications.show(String(data.title ?? ''), /** @type {NotificationOptions | undefined} */ (data.options))
+            case 'media.getUserMedia': return await native.media.getUserMedia(/** @type {MediaStreamConstraints} */ (data.constraints))
+            case 'capabilities.state': return await native.capabilities.state(String(data.capability ?? ''))
+            case 'web.fetch': {
+                const input = String(data.input ?? data.url ?? '')
+                if (!input) throw new Error('web.fetch requires a request URL')
+                return await native.web.fetch(input, /** @type {RequestInit | undefined} */ (data.init))
+            }
+            case 'web.localStorage.getItem': return native.web.localStorage.getItem(String(data.key ?? ''), data.fallback)
+            case 'web.localStorage.setItem': return native.web.localStorage.setItem(String(data.key ?? ''), data.value)
+            case 'web.localStorage.removeItem': return native.web.localStorage.removeItem(String(data.key ?? ''))
+            case 'web.sessionStorage.getItem': return native.web.sessionStorage.getItem(String(data.key ?? ''), data.fallback)
+            case 'web.sessionStorage.setItem': return native.web.sessionStorage.setItem(String(data.key ?? ''), data.value)
+            case 'web.sessionStorage.removeItem': return native.web.sessionStorage.removeItem(String(data.key ?? ''))
+            case 'web.navigator.language': return native.web.navigator.language()
+            case 'web.navigator.online': return native.web.navigator.online()
+            case 'web.location.href': return native.web.location.href()
+            case 'web.location.origin': return native.web.location.origin()
+            case 'fylo.collection.find':
+            case 'fylo.collection.get':
+            case 'fylo.collection.create':
+            case 'fylo.collection.patch':
+            case 'fylo.collection.del':
+            case 'fylo.collection.delete':
+            case 'fylo.collection.list':
+            case 'fylo.collection.put':
+            case 'fylo.collection.restore':
+            case 'fylo.collection.latest':
+            case 'fylo.collection.inspect':
+            case 'fylo.collection.rebuild': {
+                const method = operation.slice('fylo.collection.'.length)
+                const resolvedMethod = method === 'delete' ? 'del' : method
+                const facade = fyloCollection(String(data.collection ?? ''))
+                const invoke = facade[resolvedMethod]
+                if (typeof invoke !== 'function')
+                    throw new Error(`FYLO collection method '${resolvedMethod}' is unavailable`)
+                const args = Array.isArray(data.args) ? data.args : []
+                return await invoke.apply(facade, args)
+            }
+            case 'capabilities.supports': return native.capabilities.supports(String(data.capability ?? ''))
+            default: throw new Error(`Unknown native shim operation '${operation}'`)
+        }
+    }
+
+    /** @param {string} operation */
+    const nativeAvailable = (operation) => {
+        switch (operation) {
+            case 'app.info': return native.app.available()
+            case 'clipboard.readText':
+            case 'clipboard.writeText': return native.clipboard.available()
+            case 'fs.readText':
+            case 'fs.writeText':
+            case 'fs.readDir':
+            case 'fs.paths':
+            case 'shell.exec': return deviceAvailable(operation)
+            case 'browser.open': return native.browser.available()
+            case 'share.text':
+            case 'haptics.impact': return deviceAvailable(operation)
+            case 'filePicker.openText': return native.filePicker.available()
+            case 'filePicker.saveText': return standardCapabilityAvailable('file.saveText')
+            case 'secrets.get':
+            case 'secrets.set':
+            case 'secrets.delete':
+            case 'auth.verifyUser': return deviceAvailable(operation)
+            case 'geo.current': return standardCapabilityAvailable('geo.current')
+            case 'notify.show': return standardCapabilityAvailable('notify.show')
+            case 'media.getUserMedia': return standardCapabilityAvailable('media.getUserMedia')
+            case 'capabilities.state': return standardCapabilityAvailable('capabilities.state')
+            default: return false
+        }
+    }
+
+    /** @param {string} operation @param {string | undefined} payload @param {(value: unknown) => void} resolve @param {(reason: unknown) => void} reject */
+    const nativeCallback = (operation, payload, resolve, reject) => {
+        let decoded = /** @type {unknown} */ ({})
+        try {
+            decoded = payload ? JSON.parse(payload) : {}
+        }
+        catch (error) {
+            reject(error)
+            return
+        }
+        void nativeCall(operation, decoded).then(resolve, reject)
     }
 
     /**
@@ -700,6 +1181,10 @@ const tc_createHelpers = (modulePath) => {
             bindPersistentFields(controller, props)
         },
         env,
+        __native: native,
+        __nativeCall: nativeCall,
+        __nativeAvailable: nativeAvailable,
+        __nativeCallback: nativeCallback,
         props,
         /** @param {RequestInfo | URL} input @param {RequestInit} [init] */
         fetch: (input, init) => localFirstFetch(input, init),

@@ -2,16 +2,11 @@
 
 export default class {
   /** @type {string} */
-  workerReport = 'asking the worker…'
+  companionReport = 'the companion ABI is ready'
 
   @onMount
-  async probeWorker() {
-    try {
-      const response = await fetch('tac://language/rust', { cache: 'reload' })
-      const payload = await response.json()
-      this.workerReport = `a ${payload.method} request of ${payload.result} bytes (counted inside tac.wasm)`
-    } catch {
-      this.workerReport = 'worker unavailable in this environment'
-    }
+  reportCompanion() {
+    const { platform, os } = this.tac.platform
+    this.companionReport = `${platform} platform controller on the ${os} environment`
   }
 }

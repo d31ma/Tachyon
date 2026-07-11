@@ -1,23 +1,19 @@
 <w-card variant="outlined" class="panel-card">
-  <w-card-item title="Polyglot workers" subtitle="Rust, JavaScript and TypeScript workers — each compiled in-house to WebAssembly — process the same local-first shared data.">
+  <w-card-item title="Polyglot companions" subtitle="This parent is a live tac.ts controller. Its sibling cards below are real, separately bundled companions in every other supported companion language.">
   </w-card-item>
   <w-card-text>
     <div class="w-row ga-2 poly-status">
-      <w-chip size="small">{loadingState()}</w-chip>
-      <logic :if="sourceNote">
-        <w-chip size="small" color="success">{sourceNote}</w-chip>
-      </logic>
+      <w-chip size="small" color="success">tac.ts {loadingState()}</w-chip>
+      <w-chip size="small">{sourceNote}</w-chip>
+      <w-btn size="sm" variant="outlined" on:click="wave()">Wave from TypeScript</w-btn>
     </div>
-
-    <ul class="poly-results">
-      <loop :for="run of workerResults">
-        <li>
-          <w-chip size="x-small">{run.language}</w-chip>
-          <code>{run.method}</code>
-          <span class="poly-result" :title="formatResult(run.result)">{formatResult(run.result)}</span>
-        </li>
-      </loop>
-    </ul>
-    <p class="poly-hint">Each row is a fetch("tac://language/…") call answered by a Web Worker running tac.wasm — no server round-trip.</p>
+    <p class="poly-hint">Each card below owns a sibling <code>tac.&lt;ext&gt;</code> source file compiled to one reactive controller ABI. Together they exercise the full portable surface: Web Storage and <code>navigator</code>/<code>location</code> prelude calls, local-first <code>fetch()</code>, OPFS-backed FYLO CRUD, capability probing, persisted <code>$$</code> fields, and cross-language <code>@publish</code>/<code>@subscribe</code> signals — press any Wave button and every card updates, whatever language it is written in.</p>
+    <div class="poly-language-grid" aria-label="Live companion language gallery">
+      <language-javascript />
+      <language-dart />
+      <language-kotlin />
+      <language-swift />
+      <language-csharp />
+    </div>
   </w-card-text>
 </w-card>

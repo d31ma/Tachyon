@@ -398,6 +398,93 @@ describe('render-template browser-side (with window)', () => {
         expect(r.missing).toBe('/fallback');
         delete (/** @type {any} */ (windowInstance)).__tc_public_env__;
     });
+    test('does not expose legacy Tac device or Web facades to app authors', async () => {
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const helpers = __tc_helpers__.createTacHelpers({})
+            __tc_test__.device = typeof helpers.device
+            __tc_test__.web = typeof helpers.web
+            __tc_test__.deviceAvailable = typeof helpers.deviceAvailable
+        `);
+        await factory();
+        expect(r.device).toBe('undefined');
+        expect(r.web).toBe('undefined');
+        expect(r.deviceAvailable).toBe('undefined');
+    });
+    test('backs generated native shims with browser APIs and the capability bridge', async () => {
+        const meta = windowInstance.document.createElement('meta');
+        meta.name = 'tachyon-native-capabilities';
+        meta.content = 'app.info,clipboard.writeText,share.text,haptics.impact,secrets.get,secrets.set,secrets.delete,auth.verifyUser';
+        windowInstance.document.head.append(meta);
+        (/** @type {any} */ (windowInstance)).__tcNativeBridge__ = {
+            async invoke(capability, payload) {
+                return capability === 'app.info' ? { name: 'Tachyon' } : { capability, payload };
+            },
+        };
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const helpers = __tc_helpers__.createTacHelpers({})
+            helpers.__native.web.localStorage.setItem('native-shim', 'ready')
+            __tc_test__.stored = helpers.__native.web.localStorage.getItem('native-shim', 'missing')
+            __tc_test__.available = helpers.__native.app.available()
+            __tc_test__.capability = helpers.__native.capabilities.supports('clipboard.writeText')
+            __tc_test__.portableCapability = helpers.__native.capabilities.supports('web.fetch')
+            __tc_test__.app = await helpers.__nativeCall('app.info')
+            __tc_test__.clipboard = await helpers.__nativeCall('clipboard.writeText', { text: 'Tac' })
+            __tc_test__.share = await helpers.__nativeCall('share.text', { text: 'Tac' })
+            __tc_test__.haptics = await helpers.__nativeCall('haptics.impact')
+            __tc_test__.secret = await helpers.__nativeCall('secrets.get', { key: 'token' })
+            __tc_test__.verify = await helpers.__nativeCall('auth.verifyUser', { reason: 'Unlock notes' })
+            __tc_test__.callback = await new Promise((resolve, reject) => {
+                helpers.__nativeCallback('clipboard.writeText', JSON.stringify({ text: 'Dart' }), resolve, reject)
+            })
+        `);
+        await factory();
+        expect(r.stored).toBe('ready');
+        expect(r.available).toBe(true);
+        expect(r.capability).toBe(true);
+        expect(r.portableCapability).toBe(true);
+        expect(r.app).toEqual({ name: 'Tachyon' });
+        expect(r.clipboard).toEqual({ capability: 'clipboard.writeText', payload: { text: 'Tac' } });
+        expect(r.share).toEqual({ capability: 'share.text', payload: { text: 'Tac', title: '' } });
+        expect(r.haptics).toEqual({ capability: 'haptics.impact', payload: {} });
+        expect(r.secret).toEqual({ capability: 'secrets.get', payload: { key: 'token' } });
+        expect(r.verify).toEqual({ capability: 'auth.verifyUser', payload: { reason: 'Unlock notes' } });
+        expect(r.callback).toEqual({ capability: 'clipboard.writeText', payload: { text: 'Dart' } });
+        windowInstance.localStorage.removeItem('native-shim');
+        meta.remove();
+        delete (/** @type {any} */ (windowInstance)).__tcNativeBridge__;
+    });
+
+    test('backs generated FYLO shims with the in-bundle browser client', async () => {
+        const previousFylo = /** @type {any} */ (windowInstance).fylo;
+        /** @type {any} */ (windowInstance).fylo = {
+            collection(name) {
+                return {
+                    async find(query) { return { collection: name, query, docs: [] }; },
+                };
+            },
+        };
+        try {
+            const r = testResults();
+            const factory = await buildTestFactory(`
+                const helpers = __tc_helpers__.createTacHelpers({})
+                __tc_test__.result = await helpers.__native.fylo.collection('notes').find({ limit: 1 })
+                __tc_test__.callback = await new Promise((resolve, reject) => helpers.__nativeCallback(
+                    'fylo.collection.find',
+                    JSON.stringify({ collection: 'notes', args: [{ limit: 2 }] }),
+                    resolve,
+                    reject,
+                ))
+            `);
+            await factory();
+            expect(r.result).toEqual({ collection: 'notes', query: { limit: 1 }, docs: [] });
+            expect(r.callback).toEqual({ collection: 'notes', query: { limit: 2 }, docs: [] });
+        }
+        finally {
+            /** @type {any} */ (windowInstance).fylo = previousFylo;
+        }
+    });
     test('persistent $ fields restore value from sessionStorage', async () => {
         windowInstance.sessionStorage.setItem('tac:__TY_MODULE_PATH__:fixture:$draft', JSON.stringify({ id: 7 }));
         const r = testResults();

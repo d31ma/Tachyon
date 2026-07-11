@@ -118,7 +118,7 @@ w-app-bar {
   }
 }
 
-body[data-environment="desktop"] {
+body[data-platform="desktop"] {
   font-size: 15px;
 }
 
@@ -180,13 +180,13 @@ body[data-environment="desktop"] {
 }
 
 /* Native desktop bundles hide it too — the window is the app, not a web
-   page. Browsers (data-environment="browser") keep their scrollbars. */
-html:has(body[data-environment="desktop"]) {
+   page. Browsers (data-platform="web") keep their scrollbars. */
+html:has(body[data-platform="desktop"]) {
   scrollbar-width: none;
 }
 
-body[data-environment="desktop"]::-webkit-scrollbar,
-body[data-environment="desktop"] ::-webkit-scrollbar {
+body[data-platform="desktop"]::-webkit-scrollbar,
+body[data-platform="desktop"] ::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;

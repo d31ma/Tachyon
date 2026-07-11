@@ -307,7 +307,7 @@ export default class FyloBrowser extends Tac {
     <div class="fylo-hero">
         <p class="eyebrow md-typescale-label-large">Fylo Browser</p>
         <h1><code>/_fylo</code></h1>
-        <p class="lede">Native database browser for any collection stored by <code>@d31ma/fylo</code>.</p>
+        <p class="lede">Native database browser for any collection stored by the <code>fylo</code> binary.</p>
         <span class="chip">${rootLabelText}</span>
     </div>
 

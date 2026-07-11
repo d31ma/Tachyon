@@ -12,7 +12,7 @@ export default class {
     { id: 'template', label: 'Tac template' },
     { id: 'companion', label: 'Companion' },
     { id: 'route', label: 'Yon route' },
-    { id: 'worker', label: 'Tac worker' },
+    { id: 'polyglot', label: 'Polyglot companion' },
   ]
 
   samples = {
@@ -50,16 +50,15 @@ export default class {
       '  }',
       '}',
     ].join('\n'),
-    worker: [
-      '// client/workers/language/rust/tac.rs',
-      'impl Handler {',
-      '    pub fn POST(request: Request) -> String {',
-      '        "processed " + request.len() + " bytes"',
-      '    }',
-      '}',
+    polyglot: [
+      '// client/components/counter/tac.swift',
+      'final class Counter: Tac {',
+      '  var count: Int = 0',
       '',
-      '// invoked from any Tac script:',
-      'await fetch("tac://language/rust", { method: "POST", body })',
+      '  func increment() {',
+      '    self.count += 1',
+      '  }',
+      '}',
     ].join('\n'),
   }
 

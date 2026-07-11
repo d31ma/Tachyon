@@ -1,0 +1,19 @@
+<nav class="atlas-sidebar-nav" aria-label="Atlas sections">
+  <a href="/atlas/overview" class="atlas-sidebar-home">Capability atlas</a>
+
+  <ul class="atlas-sidebar-list">
+    <loop :for="section of sections">
+      <li>
+        <a :href="'/atlas/' + section.slug" :class="section.slug === activeSlug ? 'active' : ''" :aria-current="section.slug === activeSlug ? 'page' : null">
+          <span class="atlas-sidebar-index">{section.index}</span>
+          <span class="atlas-sidebar-text">
+            <span class="atlas-sidebar-label">{section.label}</span>
+            <span class="atlas-sidebar-summary">{section.summary}</span>
+          </span>
+        </a>
+      </li>
+    </loop>
+  </ul>
+
+  <a href="/docs" class="atlas-sidebar-home atlas-sidebar-docs">Read the docs</a>
+</nav>

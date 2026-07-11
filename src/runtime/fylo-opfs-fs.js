@@ -1,6 +1,6 @@
 // @ts-check
 //
-// OPFS-backed `node:fs/promises` (the subset @d31ma/fylo uses).
+// OPFS-backed `node:fs/promises` used by the vendored FYLO browser engine.
 //
 // This is the Virtual File System that lets the *real* FYLO engine run inside a
 // browser Web Worker unchanged: bundle FYLO with `node:fs/promises` aliased to
@@ -18,7 +18,7 @@
 // also needs a Bun-runtime shim: FYLO reads/hashes/IDs via Bun.file,
 // Bun.CryptoHasher (synchronous SHA), Bun.mmap, Bun.randomUUIDv7, Bun.JSONL,
 // Bun.sleep, Bun.spawn. The cleaner long-term fix is to abstract FYLO's
-// runtime/storage backend in @d31ma/fylo itself. Until then the browser store
+// runtime/storage backend in FYLO itself. Until then the browser store
 // remains fylo-local.js (a JS reimplementation over OPFS sync access handles).
 
 /** @type {Promise<FileSystemDirectoryHandle> | null} */

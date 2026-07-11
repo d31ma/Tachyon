@@ -12,7 +12,7 @@ export default class {
       title: 'Polyglot backends',
       tag: 'Tac + Yon',
       href: '/atlas',
-      body: 'Yon keeps backend routes file-routed and language-flexible, while this site dogfoods a frontend-only shape with Tac Workers running local WebAssembly in your browser.',
+      body: 'Yon keeps backend routes file-routed and language-flexible, while this site dogfoods a frontend-only shape with Tac companions running directly beside their templates.',
     },
     {
       title: 'Reactive companions',
@@ -21,16 +21,22 @@ export default class {
       body: 'Plain classes beside each template. Assigning a field rerenders the component subtree; $ and $$ prefixes persist state to sessionStorage and localStorage.',
     },
     {
-      title: 'Tac Workers',
-      tag: 'Wasm',
-      href: '/docs/workers',
-      body: 'Browser-local backends written in Rust, JavaScript or TypeScript, compiled by Tachyon, validated by OPTIONS.schema.json, and invoked with fetch("tac://…").',
+      title: 'Polyglot companions',
+      tag: 'Tac',
+      href: '/docs/polyglot',
+      body: 'Use JavaScript, TypeScript, Dart, Rust, Kotlin, Swift or C# beside a Tac template. Every supported companion receives the same reactive controller and device API.',
     },
     {
-      title: 'Device targets',
+      title: 'Permissioned device APIs',
       tag: 'Native',
-      href: '/docs/devices',
-      body: 'Build web, macOS, Windows, Linux, iOS and Android outputs from the same client tree. Runtime globals expose environment, platform, target and os.',
+      href: '/docs/platform-apis',
+      body: 'Use secure storage and user verification where the host can guarantee them, then opt into camera, microphone, location and notifications in package.json. The same companion API stays honest on every target.',
+    },
+    {
+      title: 'Camera, location and export',
+      tag: 'Web standards',
+      href: '/docs/platform-apis',
+      body: 'Capture media with getUserMedia, request one-shot location, show notifications and save text through browser standards. Capability and permission state make the fallback explicit before an app asks.',
     },
     {
       title: 'Local-first data',
@@ -42,7 +48,7 @@ export default class {
       title: 'Observable by default',
       tag: 'Ops',
       href: '/atlas',
-      body: 'Generated OpenAPI 3.1 docs and OTel spans on the server — while this site times its own workers and stores the spans as FYLO documents in your browser.',
+      body: 'Generated OpenAPI 3.1 docs and OTel spans on the server — while this site times companion fetches and stores the spans as FYLO documents in your browser.',
     },
   ]
 }

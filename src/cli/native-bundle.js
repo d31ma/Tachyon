@@ -3,6 +3,7 @@
 import path from 'path';
 import { readFile, rename, rm } from 'fs/promises';
 import { generateNativeHost } from '../compiler/native/index.js';
+import { resolveNativeAppConfig } from '../compiler/native/config.js';
 import { isNativeTarget, readTargetArg, resolveSingleBundleTarget } from '../shared/native-targets.js';
 import logger from '../server/observability/logger.js';
 
@@ -55,8 +56,9 @@ const nativeLogger = logger.child({ scope: 'cli:native-bundle' });
 
 async function main() {
     const appName = await resolveAppName();
+    const nativeConfig = await resolveNativeAppConfig();
     nativeLogger.info('Generating native host', { target, assetRoot, outputRoot: assetRoot });
-    await generateNativeHost({ target, assetRoot, outputRoot, appName });
+    await generateNativeHost({ target, assetRoot, outputRoot, appName, ...nativeConfig });
     // Native targets ship at dist/<target>/. Replace the web-bundle assets with
     // the generated host (its assets are embedded under Resources/).
     await rm(assetRoot, { recursive: true, force: true });

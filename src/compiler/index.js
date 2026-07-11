@@ -8,24 +8,21 @@ import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'fs/pro
 import { tmpdir } from 'os';
 import path from "path";
 import { pathToFileURL } from "url";
-import { compileRustWorker } from "./wasm/rust-compiler.js";
-import { compileJavaScriptWorker, compileTypeScriptWorker } from "./wasm/javascript-compiler.js";
-import { buildRuntimeModule } from "./wasm/tac-wasm-compiler.js";
 import { EVENT_CAPTURE_SCRIPT } from "../runtime/event-capture-script.js";
-import { compileNativeWorkerExecutable } from "./native/worker-compiler.js";
 import TachyonRuntimeCache from "../shared/runtime-cache.js";
+import DartCompanionCompiler from './dart-companion.js';
+import TacSubsetCompanionCompiler from './subset-companion.js';
+import { nativeHostCapabilities } from './native/host-capabilities.js';
 /**
  * @typedef {import("bun").BunRequest} BunRequest
  * @typedef {import("bun").BunPlugin} BunPlugin
  * @typedef {{ path: string, allowSelf: boolean }} WrapperPageEntry
  * @typedef {Record<string, WrapperPageEntry>} WrapperPageMap
  * @typedef {'esm' | 'global'} OutputFormat
- * @typedef {'ecmascript'} CompanionTarget
- * @typedef {'rust' | 'javascript' | 'typescript'} TacWorkerLanguage
- * @typedef {{ extension: string, target: 'ecmascript' }} CompanionProvider
+ * @typedef {'ecmascript' | 'dart' | 'subset'} CompanionTarget
+ * @typedef {'rust' | 'kotlin' | 'swift' | 'csharp'} TacSubsetLanguage
+ * @typedef {{ extension: string, language: string, target: CompanionTarget, portable: true }} CompanionProvider
  * @typedef {{ sourcePath: string, importPath: string, provider: CompanionProvider }} CompanionScript
- * @typedef {{ extension: string, language: TacWorkerLanguage, targets: import('../shared/native-targets.js').BundleTarget[] }} TacWorkerProvider
- * @typedef {{ sourcePath: string, route: string, provider: TacWorkerProvider }} TacWorkerScript
  * @typedef {{ html: string, hasSlot: boolean, script?: string, scriptLang: string, companion?: CompanionScript, companionImportPath?: string }} TemplateData
  * @typedef {{ static?: string, element?: string }} TemplateNode
  * @typedef {Record<string, string>} AttributeMap
@@ -59,7 +56,6 @@ const EMBEDDED_FRAMEWORK_FILES = [
     'runtime/fylo-global.js',
     'runtime/fylo-browser-sync.js',
     'runtime/browser-cache.js',
-    'runtime/tac-worker.js',
     'vendor/fylo/fylo-web.mjs',
 ];
 function isEmbeddedFrameworkRuntime() {
@@ -89,7 +85,6 @@ async function loadEmbeddedFrameworkSource(relativePath) {
         case 'runtime/fylo-global.js': return textModule(import('../runtime/fylo-global.js', { with: { type: 'text' } }));
         case 'runtime/fylo-browser-sync.js': return textModule(import('../runtime/fylo-browser-sync.js', { with: { type: 'text' } }));
         case 'runtime/browser-cache.js': return textModule(import('../runtime/browser-cache.js', { with: { type: 'text' } }));
-        case 'runtime/tac-worker.js': return textModule(import('../runtime/tac-worker.js', { with: { type: 'text' } }));
         case 'vendor/fylo/fylo-web.mjs': return textModule(import('../vendor/fylo/fylo-web.mjs', { with: { type: 'text' } }));
         default: throw new Error(`Unknown embedded Tachyon framework file: ${relativePath}`);
     }
@@ -159,14 +154,13 @@ export default class Compiler {
     static mainEntryCandidates = ['imports.ts', 'imports.js'];
     /** @type {CompanionProvider[]} */
     static companionProviders = [
-        { extension: '.js', target: 'ecmascript' },
-        { extension: '.ts', target: 'ecmascript' },
-    ];
-    /** @type {TacWorkerProvider[]} */
-    static workerProviders = [
-        { extension: '.rs', language: 'rust', targets: ['web', 'macos', 'windows', 'linux', 'ios', 'android'] },
-        { extension: '.js', language: 'javascript', targets: ['web'] },
-        { extension: '.ts', language: 'typescript', targets: ['web'] },
+        { extension: '.js', language: 'javascript', target: 'ecmascript', portable: true },
+        { extension: '.ts', language: 'typescript', target: 'ecmascript', portable: true },
+        { extension: '.dart', language: 'dart', target: 'dart', portable: true },
+        { extension: '.rs', language: 'rust', target: 'subset', portable: true },
+        { extension: '.kt', language: 'kotlin', target: 'subset', portable: true },
+        { extension: '.swift', language: 'swift', target: 'subset', portable: true },
+        { extension: '.cs', language: 'csharp', target: 'subset', portable: true },
     ];
     /** @type {string[]} */
     static companionScriptExtensions = Compiler.companionProviders.map((provider) => provider.extension);
@@ -234,9 +228,6 @@ export default class Compiler {
         'missing-glyph',
     ]);
     static routeTitleFallback = "Tachyon";
-    /** @type {Set<string>} Routes for native worker binaries that need executable permissions after static export. */
-    static nativeWorkerBinaryRoutes = new Set();
-
     /** @param {string} value */
     static escapeRegExp(value) {
         return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -300,45 +291,17 @@ export default class Compiler {
             .filter(Boolean));
     }
     /**
-     * Raw OS worker capabilities (`fs.*`, `shell.*`, `process.*`) the build is
-     * authorized to invoke. This is deployment policy — not a request/response
-     * contract — so it lives in the `TAC_DANGEROUS_CAPABILITIES` env var rather
-     * than in `OPTIONS.schema.json`. The resolved list is baked into the worker
-     * runtime at compile time (browser workers have no `process.env`).
-     * @returns {string[]}
-     */
-    static dangerousCapabilities() {
-        return (process.env.TAC_DANGEROUS_CAPABILITIES || '')
-            .split(',')
-            .map((capability) => capability.trim())
-            .filter(Boolean);
-    }
-    /**
-     * Native capabilities the build authorizes Tac workers to invoke. This is
-     * deployment policy, not a request/response contract, so it lives in the
-     * `TAC_NATIVE_CAPABILITIES` env var rather than in `OPTIONS.schema.json`.
-     * The resolved list is baked into the worker runtime at compile time
-     * (browser workers have no `process.env`).
+     * Safe capabilities are enabled by default. Raw filesystem and shell
+     * capabilities are supplied by the validated package configuration for
+     * the active build.
      * @returns {string[]}
      */
     static nativeCapabilities() {
-        return (process.env.TAC_NATIVE_CAPABILITIES || '')
+        const requested = (process.env.TAC_NATIVE_CAPABILITIES ?? '')
             .split(',')
             .map((capability) => capability.trim())
             .filter(Boolean);
-    }
-    /**
-     * Returns the Tac worker response-schema bucket for an HTTP status code.
-     * Workers only need three buckets: `ok` (2xx), `clientError` (4xx), and
-     * `serverError` (5xx). 1xx and 3xx responses are not validated.
-     * @param {number} status
-     * @returns {'ok' | 'clientError' | 'serverError' | undefined}
-     */
-    static httpStatusName(status) {
-        if (status >= 200 && status < 300) return 'ok';
-        if (status >= 400 && status < 500) return 'clientError';
-        if (status >= 500 && status < 600) return 'serverError';
-        return undefined;
+        return [...nativeHostCapabilities(Compiler.currentBundleTarget(), requested)].sort();
     }
     /**
      * Returns true when the current bundle target is a native platform.
@@ -363,40 +326,6 @@ export default class Compiler {
      */
     static currentTargetContext() {
         return targetContext(Compiler.currentBundleTarget());
-    }
-    /**
-     * Native WebView bundles can still run browser/WASM workers. A provider is
-     * therefore available to native targets when it supports either that native
-     * target directly or the browser fallback target.
-     * @param {TacWorkerProvider} provider
-     * @param {import('../shared/native-targets.js').BundleTarget} [target]
-     * @returns {boolean}
-     */
-    static workerProviderAvailableForTarget(provider, target = Compiler.currentBundleTarget()) {
-        return provider.targets.includes(target) || (isNativeTarget(target) && provider.targets.includes('web'));
-    }
-    /**
-     * Returns true when a worker provider supports the given bundle target.
-     * @param {TacWorkerProvider} provider
-     * @param {import('../shared/native-targets.js').BundleTarget} [target]
-     * @returns {boolean}
-     */
-    static workerProviderSupportsTarget(provider, target = Compiler.currentBundleTarget()) {
-        return provider.targets.includes(target);
-    }
-    /** @param {string} workerRoute */
-    static workerRuntimeModulePath(workerRoute) {
-        const depth = workerRoute.split('/').filter(Boolean).length;
-        return `${'../'.repeat(depth)}tac-runtime.wasm`;
-    }
-    /** @param {string} binaryRoute */
-    static nativeWorkerRouteFromBinaryRoute(binaryRoute) {
-        return binaryRoute
-            .replace(/^\/workers\//, '')
-            .replace(/\/[^/]+$/, '');
-    }
-    static nativeWorkerRoutes() {
-        return [...new Set([...Compiler.nativeWorkerBinaryRoutes].map((route) => Compiler.nativeWorkerRouteFromBinaryRoute(route)))].sort();
     }
     /**
      * Asset base prefix for the current target. Native apps load from the
@@ -692,18 +621,11 @@ export default class Compiler {
         Compiler.wrapperPages = {};
         Compiler.warnedUnknownTags.clear();
         Compiler.warnedBareHandlers.clear();
-        Compiler.nativeWorkerBinaryRoutes.clear();
         await Router.validatePageRoutes();
         // Components must be registered before pages compile so that
         // compMapping is fully populated when import statements are generated.
         await Compiler.bundleComponents();
         await Compiler.bundlePages();
-        await Compiler.bundleWorkers();
-        // Register shared Tac runtime module (split WASM compilation)
-        const runtimeBytes = buildRuntimeModule();
-        Router.reqRoutes['/workers/tac-runtime.wasm'] = {
-            GET: () => staticRouteResponse('/workers/tac-runtime.wasm', runtimeBytes, 'application/wasm')
-        };
         await Compiler.bundleBrowserRuntimeAssets();
         await Promise.all([
             Compiler.bundleDependencies(),
@@ -878,6 +800,16 @@ export default class Compiler {
             ? sourcePath.slice(0, -'.html'.length)
             : sourcePath;
     }
+    /**
+     * Tac companion artifacts are deliberately target-neutral. Each selected
+     * native host implements the device bridge, so a language is never tied to
+     * the operating system used to package the final application.
+     * @param {CompanionProvider} provider
+     * @param {string} _target
+     */
+    static companionProviderSupportsTarget(provider, _target = Compiler.currentBundleTarget()) {
+        return provider.portable;
+    }
     /** @param {string} sourcePath */
     static async getCompanionScript(sourcePath) {
         const basePath = Compiler.templateBasePath(sourcePath);
@@ -1018,22 +950,13 @@ export default class Compiler {
         return true;
     }
     /**
-     * Detect companions that call `fetch('tac://...')` so the build can inject
-     * the Tac-aware `fetch` shadow (which routes `tac://` URLs to Tac Workers
-     * and delegates everything else to the platform fetch).
+     * Non-JavaScript companions use the implicit `fylo` facade. Their generated
+     * module imports the bundled browser client for its window registration side
+     * effect; it never resolves a package from npm.
      * @param {string} source
      */
-    static referencesTacFetch(source) {
-        if (!source.includes('tac://'))
-            return false;
-        const stripped = source
-            .replace(/\/\*[\s\S]*?\*\//g, '')
-            .replace(/\/\/.*$/gm, '');
-        if (!/\bfetch\s*\(/.test(stripped))
-            return false;
-        const importPattern = /^\s*import\s+[\s\S]*?\bfetch\b[\s\S]*?\bfrom\b/m;
-        const declarationPattern = /^\s*(?:const|let|var|function)\s+fetch\b/m;
-        return !(importPattern.test(stripped) || declarationPattern.test(stripped));
+    static referencesFyloFacade(source) {
+        return /\b(?:Fylo|fylo)\b/.test(Compiler.maskCommentsAndStrings(source));
     }
     /** @param {string} css @param {string} dir @param {string} route */
     static buildCompanionStyle(css, dir, route) {
@@ -1160,7 +1083,6 @@ export default class Compiler {
             const roots = [
                 Router.pagesPath,
                 Router.componentsPath,
-                Router.workersPath,
                 Router.assetsPath,
                 Router.sharedDataPath,
                 Router.sharedScriptsPath,
@@ -1223,7 +1145,6 @@ export default class Compiler {
                 `    <meta name="tachyon-platform" content="${targetInfo.platform}">`,
                 `    <meta name="tachyon-environment" content="${targetInfo.environment}">`,
                 `    <meta name="tachyon-os" content="${targetInfo.os}">`,
-                `    <meta name="tachyon-native-workers" content="${Compiler.nativeWorkerRoutes().join(',')}">`,
                 `    <meta name="tachyon-native-capabilities" content="${nativeCapabilities}">`,
                 '</head>',
             ].join('\n'));
@@ -1882,9 +1803,11 @@ export default class Compiler {
                             if (!existing || !existing.has(resolvedComponent)) {
                                 const keyword = existing ? 'const' : 'const';
                                 const componentPublicPath = `/components/${filepath}`;
-                                const importPath = Compiler.isNativeBundle() && modulePublicPath
-                                    ? Compiler.relativeModuleImportPath(modulePublicPath, componentPublicPath)
-                                    : componentPublicPath;
+                                // Keep generated component routes external to
+                                // Bun. Tac resolves their absolute route at
+                                // runtime for web and converts it to a relative
+                                // filesystem import for native bundles.
+                                const importPath = componentPublicPath;
                                 parsed.push({ static: `${keyword} ${resolvedComponent.replaceAll('-', '_')} = await __tc_helpers__.loadTacModule('${importPath}')` });
                                 if (existing)
                                     existing.add(resolvedComponent);
@@ -2057,9 +1980,7 @@ export default class Compiler {
             if (seenBindings.has(bindingName)) continue;
             seenBindings.add(bindingName);
             const componentPublicPath = `/components/${filepath}`;
-            const importPath = Compiler.isNativeBundle()
-                ? Compiler.relativeModuleImportPath(publicPath, componentPublicPath)
-                : componentPublicPath;
+            const importPath = componentPublicPath;
             moduleImports.push(`${bindingName}: (p) => import(${JSON.stringify(importPath)}).then(async (m) => { const f = m.default || m; return await f(p) })`);
             factoryBindings.push(bindingName);
         }
@@ -2099,6 +2020,7 @@ with (__tc_scope__) {
     const rerender = __tc_helpers__.rerender;
     const subscribe = __tc_helpers__.subscribe;
     const env = __tc_helpers__.env;
+    const device = __tc_helpers__.device;
     const fylo = __tc_helpers__.fylo;
 
     ${delegatedEventNames.length ? `__tc_helpers__.delegateEvents(${JSON.stringify(delegatedEventNames)});` : ''}
@@ -2252,12 +2174,84 @@ ${transformed}
         });
     }
     /**
+     * JavaScript and TypeScript keep their browser globals. Tac injects the
+     * remaining portable platform names (`app`, `clipboard`, `fileSystem`,
+     * `shell`, `browser`, `share`, `haptics`, `secrets`, `auth`, and `capabilities`) without exposing a framework
+     * namespace in app source.
+     * @param {string} source
+     */
+    static lowerJavaScriptNativeShims(source) {
+        return source
+            .replace(/\bapp\.isAvailable\(\)/g, 'this.tac.__native.app.available()')
+            .replace(/\bapp\.info\(\)/g, 'this.tac.__native.app.info()')
+            .replace(/\bclipboard\.writeText\(/g, 'this.tac.__native.clipboard.writeText(')
+            .replace(/\bclipboard\.readText\(\)/g, 'this.tac.__native.clipboard.readText()')
+            .replace(/\bfileSystem\.readText\(/g, 'this.tac.__native.fileSystem.readText(')
+            .replace(/\bfileSystem\.writeText\(/g, 'this.tac.__native.fileSystem.writeText(')
+            .replace(/\bfileSystem\.readDir\(/g, 'this.tac.__native.fileSystem.readDir(')
+            .replace(/\bfileSystem\.paths\(\)/g, 'this.tac.__native.fileSystem.paths()')
+            .replace(/\bshell\.exec\(/g, 'this.tac.__native.shell.exec(')
+            .replace(/\bbrowser\.open\(/g, 'this.tac.__native.browser.open(')
+            .replace(/\bshare\.text\(/g, 'this.tac.__native.share.text(')
+            .replace(/\bhaptics\.impact\(\)/g, 'this.tac.__native.haptics.impact()')
+            .replace(/\bfilePicker\.openText\(\)/g, 'this.tac.__native.filePicker.openText()')
+            .replace(/\bfilePicker\.saveText\(/g, 'this.tac.__native.filePicker.saveText(')
+            .replace(/\bsecrets\.get\(/g, 'this.tac.__native.secrets.get(')
+            .replace(/\bsecrets\.set\(/g, 'this.tac.__native.secrets.set(')
+            .replace(/\bsecrets\.delete\(/g, 'this.tac.__native.secrets.delete(')
+            .replace(/\bauth\.verifyUser\(/g, 'this.tac.__native.auth.verifyUser(')
+            .replace(/\bgeolocation\.current\(/g, 'this.tac.__native.geolocation.current(')
+            .replace(/\bnotifications\.show\(/g, 'this.tac.__native.notifications.show(')
+            .replace(/\bmedia\.getUserMedia\(/g, 'this.tac.__native.media.getUserMedia(')
+            .replace(/\bhost\.on\(/g, 'this.tac.__native.host.on(')
+            .replace(/\bcapabilities\.supports\(/g, 'this.tac.__native.capabilities.supports(')
+            .replace(/\bcapabilities\.state\(/g, 'this.tac.__native.capabilities.state(')
+    }
+    /** @param {string} source @param {string} sourcePath */
+    static assertNoLegacyJavaScriptPlatformWrappers(source, sourcePath) {
+        if (/\b(?:App|Browser|FilePicker)\./.test(Compiler.maskCommentsAndStrings(source)))
+            throw new Error(`Tac companion '${Compiler.toSourceLabel(sourcePath)}' uses a removed platform wrapper. Use app, browser, or filePicker from the implicit prelude instead.`);
+    }
+    /**
      * @param {string} sourcePath
      * @returns {BunPlugin}
      */
     static createCompanionScriptPlugin(sourcePath) {
         const filter = Compiler.createFilePathFilter(sourcePath);
-        const tacInline = `var __tc_noopPlatform__=Object.freeze({target:"web",platform:"web",environment:"browser",os:"unknown",browserOS:"unknown",native:!1,browser:!0,web:!0,desktop:!1,mobile:!1});var __tc_noopHelpers__={isBrowser:!1,isServer:!0,bindPersistentFields:()=>{},env:(_,f)=>f,platform:__tc_noopPlatform__,props:{},fetch:(i,n)=>fetch(i,n),onMount:()=>{},publish:()=>!1,rerender:()=>{},subscribe:(_,c)=>typeof c=="function"?()=>{}:c};class Tac{props;tac;constructor(props={},tac=__tc_noopHelpers__){this.props=props,this.tac=tac}}`;
+        const tacInline = `
+const __tc_noopPlatform__ = Object.freeze({ target: 'web', platform: 'web', environment: 'web', os: 'web', browserOS: 'unknown', native: false, web: true, desktop: false, mobile: false });
+const __tc_nativeUnavailable__ = async (operation) => { throw new Error(\`Native shim operation '\${operation}' is unavailable outside a bundled Tac app\`) };
+const __tc_noopHelpers__ = {
+    isBrowser: false, isServer: true, bindPersistentFields: () => {}, env: (_key, fallback) => fallback,
+    platform: __tc_noopPlatform__, props: {}, fetch: (input, init) => fetch(input, init),
+    __native: {
+        capabilities: { supports: () => false, state: async () => 'unsupported' },
+        app: { available: () => false, info: () => __tc_nativeUnavailable__('app.info') },
+        clipboard: { available: () => false, readText: () => __tc_nativeUnavailable__('clipboard.readText'), writeText: () => __tc_nativeUnavailable__('clipboard.writeText') },
+        fileSystem: { readText: () => __tc_nativeUnavailable__('fs.readText'), writeText: () => __tc_nativeUnavailable__('fs.writeText'), readDir: () => __tc_nativeUnavailable__('fs.readDir'), paths: () => __tc_nativeUnavailable__('fs.paths') },
+        shell: { exec: () => __tc_nativeUnavailable__('shell.exec') },
+        browser: { available: () => false, open: () => __tc_nativeUnavailable__('browser.open') },
+        share: { text: () => __tc_nativeUnavailable__('share.text') },
+        haptics: { impact: () => __tc_nativeUnavailable__('haptics.impact') },
+        filePicker: { available: () => false, openText: () => __tc_nativeUnavailable__('filePicker.openText'), saveText: () => __tc_nativeUnavailable__('filePicker.saveText') },
+        secrets: { get: () => __tc_nativeUnavailable__('secrets.get'), set: () => __tc_nativeUnavailable__('secrets.set'), delete: () => __tc_nativeUnavailable__('secrets.delete') },
+        auth: { verifyUser: () => __tc_nativeUnavailable__('auth.verifyUser') },
+        geolocation: { current: () => __tc_nativeUnavailable__('geo.current') },
+        notifications: { show: () => __tc_nativeUnavailable__('notify.show') },
+        media: { getUserMedia: () => __tc_nativeUnavailable__('media.getUserMedia') },
+        host: { on: () => () => {} },
+        web: {
+            localStorage: { getItem: (_key, fallback) => fallback, setItem: () => {}, removeItem: () => {} },
+            sessionStorage: { getItem: (_key, fallback) => fallback, setItem: () => {}, removeItem: () => {} },
+            navigator: { language: () => '', online: () => false, userAgent: () => '' },
+            location: { href: () => '', origin: () => '' }, fetch: (input, init) => fetch(input, init),
+        },
+    },
+    __nativeCall: __tc_nativeUnavailable__, onMount: () => {}, publish: () => false, rerender: () => {},
+    subscribe: (_name, callbackOrFallback) => typeof callbackOrFallback === 'function' ? () => {} : callbackOrFallback,
+};
+class Tac { props; tac; constructor(props = {}, tac = __tc_noopHelpers__) { this.props = props; this.tac = tac; } }
+`;
         return /** @type {BunPlugin} */ ({
             name: `tachyon-tac-companion:${sourcePath}`,
             target: /** @type {import("bun").Target} */ ('browser'),
@@ -2265,6 +2259,7 @@ ${transformed}
                 build.onLoad({ filter }, async () => {
                     let contents = await Bun.file(sourcePath).text();
                     Compiler.assertNoRemovedDecorators(contents, sourcePath);
+                    Compiler.assertNoLegacyJavaScriptPlatformWrappers(contents, sourcePath);
                     const decoratorNames = Compiler.findReferencedDecorators(contents);
                     if (decoratorNames.length > 0) {
                         const decoratorsEntryPath = await frameworkFilePath('runtime/decorators.js');
@@ -2276,11 +2271,7 @@ ${transformed}
                         const importPath = Compiler.toRelativeImportPath(sourcePath, fyloGlobalEntryPath);
                         contents = `import { fylo } from ${JSON.stringify(importPath)};\n${contents}`;
                     }
-                    if (Compiler.referencesTacFetch(contents)) {
-                        const tacWorkerEntryPath = await frameworkFilePath('runtime/tac-worker.js');
-                        const importPath = Compiler.toRelativeImportPath(sourcePath, tacWorkerEntryPath);
-                        contents = `import { fetch } from ${JSON.stringify(importPath)};\n${contents}`;
-                    }
+                    contents = Compiler.lowerJavaScriptNativeShims(contents);
                     contents = Compiler.injectTacBaseClass(contents);
                     if (Compiler.shouldInjectTacImport(contents)) {
                         contents = `${tacInline}\n${contents}`;
@@ -2294,6 +2285,85 @@ ${transformed}
         });
     }
     /**
+     * Compiles a Dart companion into the same controller constructor shape as
+     * JavaScript and TypeScript companions. The compiler content-addresses
+     * its output, so repeat loads are cache hits unless the source or Dart
+     * version changed — no per-plugin memo that could serve stale output.
+     * @param {string} sourcePath
+     * @returns {BunPlugin}
+     */
+    static createDartCompanionPlugin(sourcePath) {
+        const filter = Compiler.createFilePathFilter(sourcePath);
+        const compiler = new DartCompanionCompiler();
+        return /** @type {BunPlugin} */ ({
+            name: `tachyon-tac-dart-companion:${sourcePath}`,
+            target: /** @type {import("bun").Target} */ ('browser'),
+            setup(build) {
+                build.onLoad({ filter }, async () => {
+                    const source = await Bun.file(sourcePath).text();
+                    const compiled = await compiler.compile(sourcePath);
+                    const runtimeRoute = Compiler.dartCompanionRuntimeRoute(sourcePath);
+                    Router.reqRoutes[runtimeRoute] = {
+                        GET: () => jsResponse(runtimeRoute, compiled.runtimeCode),
+                    };
+                    let contents = compiler.createJavaScriptAdapter(compiled.contract, compiled.factoryName, './tac.dart.js');
+                    if (Compiler.referencesFyloFacade(source)) {
+                        const fyloGlobalEntryPath = await frameworkFilePath('runtime/fylo-global.js');
+                        const importPath = Compiler.toRelativeImportPath(sourcePath, fyloGlobalEntryPath);
+                        contents = `import ${JSON.stringify(importPath)};\n${contents}`;
+                    }
+                    return {
+                        contents,
+                        loader: 'js',
+                    };
+                });
+            },
+        });
+    }
+    /**
+     * Compiles a language-native Tac subset into the same controller ABI used
+     * by JavaScript, TypeScript, and Dart companions.
+     * @param {string} sourcePath
+     * @param {TacSubsetLanguage} language
+     * @returns {BunPlugin}
+     */
+    static createSubsetCompanionPlugin(sourcePath, language) {
+        const filter = Compiler.createFilePathFilter(sourcePath);
+        const compiler = new TacSubsetCompanionCompiler(language);
+        return /** @type {BunPlugin} */ ({
+            name: `tachyon-tac-${language}-companion:${sourcePath}`,
+            target: /** @type {import("bun").Target} */ ('browser'),
+            setup(build) {
+                build.onLoad({ filter }, async () => {
+                    const source = await Bun.file(sourcePath).text();
+                    let contents = compiler.compile(source, sourcePath).code;
+                    if (Compiler.referencesFyloFacade(source)) {
+                        const fyloGlobalEntryPath = await frameworkFilePath('runtime/fylo-global.js');
+                        const importPath = Compiler.toRelativeImportPath(sourcePath, fyloGlobalEntryPath);
+                        contents = `import ${JSON.stringify(importPath)};\n${contents}`;
+                    }
+                    return {
+                        contents,
+                        loader: 'js',
+                    };
+                });
+            },
+        });
+    }
+    /** @param {string} sourcePath */
+    static dartCompanionRuntimeRoute(sourcePath) {
+        const candidates = [
+            [Router.pagesPath, 'pages'],
+            [Router.componentsPath, 'components'],
+        ];
+        for (const [root, kind] of candidates) {
+            const relative = path.relative(root, sourcePath);
+            if (!relative.startsWith('..') && !path.isAbsolute(relative))
+                return `/${kind}/${relative.replaceAll(path.sep, '/')}.js`;
+        }
+        throw new Error(`Dart Tac companion '${sourcePath}' must live under client/pages or client/components.`);
+    }
+    /**
      * @param {TemplateData} templateData
      * @param {string} sourcePath
      * @returns {BunPlugin[]}
@@ -2302,6 +2372,13 @@ ${transformed}
         if (templateData.companion) {
             if (templateData.companion.provider.target === 'ecmascript')
                 return [Compiler.createCompanionScriptPlugin(templateData.companion.sourcePath)];
+            if (templateData.companion.provider.target === 'dart')
+                return [Compiler.createDartCompanionPlugin(templateData.companion.sourcePath)];
+            if (templateData.companion.provider.target === 'subset')
+                return [Compiler.createSubsetCompanionPlugin(
+                    templateData.companion.sourcePath,
+                    /** @type {TacSubsetLanguage} */ (templateData.companion.provider.language),
+                )];
         }
         if (templateData.companionImportPath) {
             const companionPath = path.resolve(path.dirname(sourcePath), templateData.companionImportPath);
@@ -2309,1261 +2386,6 @@ ${transformed}
         }
         return [];
     }
-    /** @param {string} route */
-    static validateWorkerRoute(route) {
-        const normalized = route.replaceAll('\\', '/');
-        const segments = normalized.split('/');
-        if (segments.length < 2 || segments.at(-1)?.startsWith('tac.') !== true) {
-            throw new Error(`Invalid Tac worker path '${route}'. Workers must live under client/workers/**/tac.<language>.`);
-        }
-        const validSegment = /^[a-z][a-z0-9-]*$/;
-        if (!segments.slice(0, -1).every((segment) => validSegment.test(segment))) {
-            throw new Error(`Invalid Tac worker path '${route}'. Worker route folders must be lowercase alphanumeric or hyphenated.`);
-        }
-    }
-
-    /** @param {string} route */
-    static workerRouteName(route) {
-        const normalized = route.replaceAll('\\', '/');
-        const parts = normalized.split('/');
-        parts.pop();
-        return parts.join('/');
-    }
-
-    /** @param {string} sourcePath */
-    static getWorkerProvider(sourcePath) {
-        const extension = path.extname(sourcePath).toLowerCase();
-        return Compiler.workerProviders.find((provider) => provider.extension === extension) ?? null;
-    }
-
-    /**
-     * In-house Tac→Wasm frontends keyed by language. Each lowers handler-shaped
-     * source (a `class Handler` with HTTP-verb methods, within the supported
-     * subset) to worker-ABI wasm with no external toolchain (no rustc/clang).
-     * Tac workers support Rust, JavaScript, and TypeScript.
-     * @type {Partial<Record<string, (source: string) => Uint8Array>>}
-     */
-    static subsetFrontends = {
-        rust: compileRustWorker,
-        javascript: compileJavaScriptWorker,
-        typescript: compileTypeScriptWorker,
-    };
-
-    /** @returns {string[]} Languages that have an in-house subset frontend. */
-    static subsetLanguages() {
-        return Object.keys(Compiler.subsetFrontends);
-    }
-
-    /** @returns {string[]} In-house subset frontends exposed to Tac workers. */
-    static workerSubsetLanguages() {
-        return Compiler.workerProviders
-            .map((provider) => provider.language)
-            .filter((language) => Compiler.subsetFrontends[language]);
-    }
-
-    /**
-     * Compile handler-shaped source to worker-ABI wasm with the in-house
-     * compiler. Throws if the language has no frontend or the source exceeds the
-     * supported subset (callers may treat a throw as "fall back to subprocess").
-     * @param {string} language
-     * @param {string} source
-     * @returns {Uint8Array}
-     */
-    static compileSubsetHandlerSource(language, source) {
-        const compile = Compiler.subsetFrontends[language];
-        if (!compile)
-            throw new Error(`No in-house frontend for '${language}'; supported: ${Compiler.subsetLanguages().join(', ')}.`);
-        return compile(source);
-    }
-
-    /**
-     * Compile a Tac Worker source file to wasm using Tachyon's in-house
-     * compiler - no external toolchain (rustc/clang/emcc) required.
-     * @param {TacWorkerScript} worker
-     * @returns {Promise<Uint8Array>}
-     */
-    static async compileWorkerSource(worker) {
-        const compile = Compiler.subsetFrontends[worker.provider.language];
-        if (!compile) {
-            throw new Error([
-                `Tac worker '${Compiler.toSourceLabel(worker.sourcePath)}' uses '${worker.provider.language}',`,
-                `but the in-house Tac Worker compiler currently supports: ${Compiler.workerSubsetLanguages().join(', ')}.`,
-                `The route is reserved for a future ${worker.provider.language} frontend.`,
-            ].join(' '));
-        }
-        const source = await readFile(worker.sourcePath, 'utf8');
-        try {
-            return compile(source);
-        }
-        catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
-            throw new Error(`Failed to compile Tac worker '${Compiler.toSourceLabel(worker.sourcePath)}': ${detail}`);
-        }
-    }
-
-    /** @param {string} route @param {unknown} [schema] */
-    static createWorkerRuntimeSource(route, wasmName = 'tac.wasm', schema = null) {
-        const sourceLabel = JSON.stringify(route);
-        const schemaSource = JSON.stringify(schema);
-        const wasmUrlLiteral = JSON.stringify(`./${wasmName}`);
-        const runtimeUrlLiteral = JSON.stringify(Compiler.workerRuntimeModulePath(route));
-        const targetsSource = JSON.stringify(Compiler.bundleTargets());
-        const dangerousSource = JSON.stringify(Compiler.dangerousCapabilities());
-        const nativeSource = JSON.stringify(Compiler.nativeCapabilities());
-        return `const __tac_worker_source__ = ${sourceLabel};
-const __tac_worker_schema__ = ${schemaSource};
-const __tac_dangerous_caps__ = ${dangerousSource};
-const __tac_native_caps__ = ${nativeSource};
-const __tac_bundle_targets__ = ${targetsSource};
-const __tac_text_encoder__ = new TextEncoder();
-const __tac_text_decoder__ = new TextDecoder();
-
-function __tac_platform_value__(key) {
-    const nav = typeof navigator !== 'undefined' ? navigator : null;
-    const ua = String(nav?.userAgent || '').toLowerCase();
-    const navigatorPlatform = String(nav?.userAgentData?.platform || nav?.platform || '').toLowerCase();
-    const os = navigatorPlatform.includes('mac') || ua.includes('mac os') ? 'macos'
-        : navigatorPlatform.includes('win') || ua.includes('windows') ? 'windows'
-        : navigatorPlatform.includes('linux') || ua.includes('linux') ? 'linux'
-        : ua.includes('android') ? 'android'
-        : ua.includes('iphone') || ua.includes('ipad') || ua.includes('ios') ? 'ios'
-        : navigatorPlatform || 'unknown';
-    const platform = __tac_bundle_targets__[0] || 'web';
-    const environment = ['macos', 'windows', 'linux'].includes(platform) ? 'desktop'
-        : ['ios', 'android'].includes(platform) ? 'mobile'
-        : 'browser';
-    const values = {
-        os,
-        arch: 'wasm32',
-        runtime: 'browser-worker',
-        platform,
-        environment,
-        target: platform,
-        targets: __tac_bundle_targets__.join(','),
-        cpuCores: String(nav?.hardwareConcurrency ?? ''),
-        language: String(nav?.language ?? ''),
-        timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })(),
-        online: nav && 'onLine' in nav ? String(nav.onLine) : '',
-        touch: nav && 'maxTouchPoints' in nav ? String(nav.maxTouchPoints > 0) : '',
-    };
-    return values[key] ?? '';
-}
-
-function __tac_is_plain_object__(value) {
-    return value && typeof value === 'object' && !Array.isArray(value);
-}
-
-	function __tac_schema_key_is_regex__(key) {
-	    return key.startsWith('^');
-	}
-
-	function __tac_has_value__(value) {
-	    return value !== null && value !== undefined;
-	}
-
-	function __tac_schema_data_key__(key) {
-	    return key.endsWith('?') ? key.slice(0, -1) : key;
-	}
-
-	function __tac_schema_key_is_nullable__(key) {
-	    return key.endsWith('?');
-	}
-
-	function __tac_is_record_schema__(schema) {
-	    const keys = Object.keys(schema);
-	    return keys.length === 1 && __tac_schema_key_is_regex__(keys[0]);
-	}
-
-	function __tac_regex__(pattern, path) {
-	    if (typeof pattern !== 'string' || pattern.length === 0) {
-	        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema value at ' + path + ' must be a non-empty CHEX regex string');
-	    }
-	    if (pattern.length > 500) {
-	        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema regex at ' + path + ' exceeds 500 characters');
-	    }
-	    try {
-	        return new RegExp(pattern);
-	    }
-	    catch {
-	        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema regex at ' + path + ' is invalid');
-	    }
-	}
-
-	function __tac_validate_leaf__(value, pattern, path) {
-	    if (!__tac_regex__(pattern, path).test(String(value))) {
-	        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema mismatch at ' + path);
-	    }
-	}
-
-	function __tac_validate_value__(value, schema, path) {
-	    if (typeof schema === 'string') {
-	        __tac_validate_leaf__(value, schema, path);
-	        return;
-	    }
-	    if (Array.isArray(schema)) {
-	        if (schema.length !== 1) {
-	            throw new Error('Tac worker ' + __tac_worker_source__ + ' array schema at ' + path + ' must contain exactly one item template');
-	        }
-	        if (!Array.isArray(value)) {
-	            throw new Error('Tac worker ' + __tac_worker_source__ + ' expected an array at ' + path);
-	        }
-	        for (let i = 0; i < value.length; i += 1) __tac_validate_value__(value[i], schema[0], path + '[' + i + ']');
-	        return;
-	    }
-	    if (__tac_is_plain_object__(schema)) {
-	        __tac_validate_object__(value, schema, path);
-	        return;
-	    }
-	    throw new Error('Tac worker ' + __tac_worker_source__ + ' schema value at ' + path + ' must be a CHEX regex string, array, or object');
-	}
-
-	function __tac_validate_record__(value, schema, path) {
-	    if (!__tac_is_plain_object__(value)) {
-	        throw new Error('Tac worker ' + __tac_worker_source__ + ' expected an object at ' + path);
-	    }
-	    const keyPattern = Object.keys(schema)[0];
-	    const valuePattern = schema[keyPattern];
-	    if (typeof valuePattern !== 'string') {
-	        throw new Error('Tac worker ' + __tac_worker_source__ + ' record schema at ' + path + ' must use a regex string value');
-	    }
-	    for (const [key, childValue] of Object.entries(value)) {
-	        __tac_validate_leaf__(key, keyPattern, path + '.<key:' + key + '>');
-	        __tac_validate_leaf__(childValue, valuePattern, path + '.' + key);
-	    }
-	}
-
-	function __tac_validate_object__(value, schema, path) {
-	    if (__tac_is_record_schema__(schema)) {
-	        __tac_validate_record__(value, schema, path);
-	        return;
-	    }
-	    if (!__tac_is_plain_object__(schema) || Object.keys(schema).length === 0) {
-	        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema at ' + path + ' must define at least one property');
-	    }
-	    if (!__tac_is_plain_object__(value)) {
-	        throw new Error('Tac worker ' + __tac_worker_source__ + ' expected an object at ' + path);
-	    }
-	    for (const dataKey of Object.keys(value)) {
-	        if (Object.prototype.hasOwnProperty.call(schema, dataKey) || Object.prototype.hasOwnProperty.call(schema, dataKey + '?')) continue;
-	        throw new Error('Tac worker ' + __tac_worker_source__ + ' unknown property at ' + path + '.' + dataKey);
-	    }
-	    for (const [rawKey, childSchema] of Object.entries(schema)) {
-	        const key = __tac_schema_data_key__(rawKey);
-	        const childPath = path + '.' + key;
-	        const childValue = value[key];
-	        if (!__tac_has_value__(childValue) && __tac_schema_key_is_nullable__(rawKey)) continue;
-	        if (!__tac_has_value__(childValue)) {
-	            throw new Error('Tac worker ' + __tac_worker_source__ + ' missing required key at ' + childPath);
-	        }
-	        __tac_validate_value__(childValue, childSchema, childPath);
-	    }
-	}
-
-function __tac_declared_request_sections__(request, schema) {
-    const subset = {};
-    for (const rawKey of Object.keys(schema || {})) {
-        const key = rawKey.endsWith('?') ? rawKey.slice(0, -1) : rawKey;
-        if (Object.prototype.hasOwnProperty.call(request, key)) subset[key] = request[key];
-    }
-    return subset;
-}
-
-function __tac_validate_request__(method, request) {
-    const methodSchema = __tac_worker_schema__ && __tac_worker_schema__[method];
-    const payloadSchema = methodSchema && methodSchema.payload;
-    if (!payloadSchema) return;
-    __tac_validate_value__(__tac_declared_request_sections__(request, payloadSchema), payloadSchema, 'payload');
-}
-
-function __tac_status_name__(status) {
-    if (status >= 200 && status < 300) return 'ok';
-    if (status >= 400 && status < 500) return 'clientError';
-    if (status >= 500 && status < 600) return 'serverError';
-    return undefined;
-}
-
-function __tac_validate_response__(method, response) {
-    const methodSchema = __tac_worker_schema__ && __tac_worker_schema__[method];
-    if (!methodSchema) return;
-    const status = response && typeof response === 'object' ? response.status : undefined;
-    const statusNumber = typeof status === 'number' ? status : 200;
-    const name = __tac_status_name__(statusNumber);
-    let responseSchema;
-    if (statusNumber >= 200 && statusNumber < 300) {
-        responseSchema = methodSchema[name] || methodSchema.ok;
-    } else if (name) {
-        responseSchema = methodSchema[name];
-    }
-    if (!responseSchema) return;
-    __tac_validate_value__(response && response.body !== undefined ? response.body : response, responseSchema, name || 'response');
-}
-
-${Compiler._workerNativeCapabilitySource()}
-
-class TacWorkerRuntime {
-    constructor() {
-        this.exports = null;
-        this.ready = this.instantiate();
-    }
-
-    async instantiate() {
-        let wasmMemory;
-        const memoryView = () => {
-            if (!(wasmMemory instanceof WebAssembly.Memory)) {
-                throw new Error('Tac worker ' + __tac_worker_source__ + ' memory is not available yet');
-            }
-            return new Uint8Array(wasmMemory.buffer);
-        };
-        const runtime = this;
-        const lookupField = (kind, keyPtr, keyLen) => {
-            const key = __tac_text_decoder__.decode(memoryView().subarray(keyPtr, keyPtr + keyLen));
-            const source = runtime.currentRequest && typeof runtime.currentRequest === 'object' ? runtime.currentRequest[kind] : undefined;
-            const value = source && typeof source === 'object' ? source[key] : undefined;
-            const text = value == null ? '' : (typeof value === 'string' ? value : String(value));
-            const bytes = __tac_text_encoder__.encode(text);
-            const exports = runtime.requireRuntime();
-            const dataPtr = exports.alloc(bytes.length || 1);
-            const header = exports.alloc(8);
-            new Uint8Array(exports.memory.buffer).set(bytes, dataPtr);
-            const view = new DataView(exports.memory.buffer);
-            view.setInt32(header, dataPtr, true);
-            view.setInt32(header + 4, bytes.length, true);
-            return header;
-        };
-        const envImports = {
-            req_query: (keyPtr, keyLen) => lookupField('query', keyPtr, keyLen),
-            req_path: (keyPtr, keyLen) => lookupField('paths', keyPtr, keyLen),
-            req_header: (keyPtr, keyLen) => lookupField('headers', keyPtr, keyLen),
-            req_platform: (keyPtr, keyLen) => {
-                const key = __tac_text_decoder__.decode(memoryView().subarray(keyPtr, keyPtr + keyLen));
-                const text = __tac_platform_value__(key);
-                const bytes = __tac_text_encoder__.encode(text);
-                const exports = runtime.requireRuntime();
-                const dataPtr = exports.alloc(bytes.length || 1);
-                const header = exports.alloc(8);
-                new Uint8Array(exports.memory.buffer).set(bytes, dataPtr);
-                const view = new DataView(exports.memory.buffer);
-                view.setInt32(header, dataPtr, true);
-                view.setInt32(header + 4, bytes.length, true);
-                return header;
-            },
-            abort(_messagePtr, _filePtr, line, column) {
-                throw new Error('Tac worker ' + __tac_worker_source__ + ' aborted at ' + line + ':' + column);
-            },
-            memcpy(dest, src, len) {
-                memoryView().copyWithin(dest, src, src + len);
-                return dest;
-            },
-            memmove(dest, src, len) {
-                memoryView().copyWithin(dest, src, src + len);
-                return dest;
-            },
-            memset(dest, value, len) {
-                memoryView().fill(value & 255, dest, dest + len);
-                return dest;
-            },
-        };
-        const wasiImports = {
-            args_get() { return 0; },
-            args_sizes_get() { return 0; },
-            clock_time_get() { return 0; },
-            environ_get() { return 0; },
-            environ_sizes_get() { return 0; },
-            fd_close() { return 0; },
-            fd_fdstat_get() { return 0; },
-            fd_seek() { return 0; },
-            fd_write() { return 0; },
-            poll_oneoff() { return 0; },
-            proc_exit(code) {
-                throw new Error('Tac worker ' + __tac_worker_source__ + ' exited with code ' + code);
-            },
-            random_get() { return 0; },
-        };
-        // Load shared runtime module first
-        const runtimeUrl = new URL(${runtimeUrlLiteral}, import.meta.url);
-        const runtimeResponse = await fetch(runtimeUrl);
-        let runtimeResult;
-        if (WebAssembly.instantiateStreaming && runtimeResponse.headers.get('Content-Type')?.includes('application/wasm')) {
-            runtimeResult = await WebAssembly.instantiateStreaming(runtimeResponse, { wasi_snapshot_preview1: wasiImports });
-        } else {
-            runtimeResult = await WebAssembly.instantiate(await runtimeResponse.arrayBuffer(), { wasi_snapshot_preview1: wasiImports });
-        }
-        const runtimeExports = runtimeResult.instance.exports;
-        if (!(runtimeExports.memory instanceof WebAssembly.Memory)) {
-            throw new Error('Tac worker ' + __tac_worker_source__ + ' runtime must export memory');
-        }
-        wasmMemory = runtimeExports.memory;
-        // Load handler module with runtime imports
-        const wasmUrl = new URL(${wasmUrlLiteral}, import.meta.url);
-        const response = await fetch(wasmUrl);
-        let result;
-        const handlerImports = {
-            env: {
-                memory: runtimeExports.memory,
-                alloc: runtimeExports.alloc,
-                dealloc: runtimeExports.dealloc,
-                copy: runtimeExports.copy,
-                itoa: runtimeExports.itoa,
-                mkStr: runtimeExports.mkStr,
-                intToStr: runtimeExports.intToStr,
-                strCat: runtimeExports.strCat,
-                jsonEscape: runtimeExports.jsonEscape,
-                quoteStr: runtimeExports.quoteStr,
-                idiv: runtimeExports.idiv,
-                imod: runtimeExports.imod,
-                setHeap: runtimeExports.setHeap,
-                ...envImports,
-            },
-        };
-        if (WebAssembly.instantiateStreaming && response.headers.get('Content-Type')?.includes('application/wasm')) {
-            result = await WebAssembly.instantiateStreaming(response, handlerImports);
-        }
-        else {
-            result = await WebAssembly.instantiate(await response.arrayBuffer(), handlerImports);
-        }
-        const instance = result.instance ?? result;
-        this.runtimeExports = runtimeExports;
-        this.handlerExports = instance.exports;
-        for (const name of ['call', 'output_ptr', 'output_len']) {
-            if (typeof this.handlerExports[name] !== 'function') {
-                throw new Error('Tac worker ' + __tac_worker_source__ + ' must export ' + name + '()');
-            }
-        }
-    }
-
-    requireRuntime() {
-        if (!this.runtimeExports) throw new Error('Tac worker ' + __tac_worker_source__ + ' runtime has not finished loading');
-        return this.runtimeExports;
-    }
-
-    requireHandler() {
-        if (!this.handlerExports) throw new Error('Tac worker ' + __tac_worker_source__ + ' has not finished loading');
-        return this.handlerExports;
-    }
-
-    writeJson(value) {
-        return this.writeText(JSON.stringify(value ?? null));
-    }
-
-    writeText(text) {
-        const runtime = this.requireRuntime();
-        const bytes = __tac_text_encoder__.encode(String(text));
-        const ptr = runtime.alloc(bytes.length || 1);
-        if (!ptr) throw new Error('Tac worker ' + __tac_worker_source__ + ' failed to allocate ' + bytes.length + ' bytes');
-        new Uint8Array(runtime.memory.buffer).set(bytes, ptr);
-        return { ptr, len: bytes.length };
-    }
-
-    dealloc(input) {
-        const runtime = this.requireRuntime();
-        if (input && typeof runtime.dealloc === 'function') runtime.dealloc(input.ptr, input.len);
-    }
-
-    readOutput() {
-        const handler = this.requireHandler();
-        const runtime = this.requireRuntime();
-        const ptr = handler.output_ptr();
-        const len = handler.output_len();
-        if (!len) return {};
-        const memory = new Uint8Array(runtime.memory.buffer);
-        const text = __tac_text_decoder__.decode(memory.subarray(ptr, ptr + len));
-        try {
-            return JSON.parse(text);
-        }
-        catch (error) {
-            throw new Error('Tac worker ' + __tac_worker_source__ + ' produced invalid JSON output: ' + text.slice(0, 200));
-        }
-    }
-
-    call(method, request) {
-        const handler = this.requireHandler();
-        __tac_validate_request__(method, request ?? {});
-        this.currentRequest = request; // backs req_query/req_path/req_header imports
-        const rawBody = request && typeof request === 'object' ? request.body : undefined;
-        const bodyText = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody ?? null);
-        const methodInput = this.writeJson(method);
-        const requestInput = this.writeJson(request);
-        const bodyInput = this.writeText(bodyText);
-        try {
-            handler.call(methodInput.ptr, methodInput.len, requestInput.ptr, requestInput.len, bodyInput.ptr, bodyInput.len);
-            const response = this.readOutput();
-            __tac_validate_response__(method, response);
-            return response;
-        }
-        finally {
-            this.dealloc(methodInput);
-            this.dealloc(requestInput);
-            this.dealloc(bodyInput);
-            this.currentRequest = null;
-        }
-    }
-}
-
-const runtime = new TacWorkerRuntime();
-
-self.onmessage = async (event) => {
-    const data = event.data ?? {};
-    if (__tac_handle_native_response__(data)) return;
-    const { id, method, request } = data;
-    try {
-        await runtime.ready;
-        const response = await __tac_resolve_native_response__(runtime.call(String(method || ''), request ?? {}));
-        __tac_validate_response__(String(method || ''), response);
-        self.postMessage({ id, ok: true, response });
-    }
-    catch (error) {
-        self.postMessage({
-            id,
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-        });
-    }
-};
-`;
-    }
-
-    /** @param {string} route @param {{ preferNative?: boolean }} [options] */
-    static async bundleWorkerFile(route, options = {}) {
-        route = route.replaceAll('\\', '/');
-        Compiler.validateWorkerRoute(route);
-        const sourcePath = path.join(Router.workersPath, route);
-        const provider = Compiler.getWorkerProvider(sourcePath);
-        if (!provider)
-            return;
-        if (Compiler.isNativeBundle() && options.preferNative !== false) {
-            const didBundleNative = await Compiler.bundleNativeWorkerFile(route);
-            if (didBundleNative)
-                return;
-            Compiler.compilerLogger.info('Using browser/WASM Tac worker fallback for native target', {
-                target: Compiler.currentBundleTarget(),
-                worker: route,
-                language: provider.language,
-            });
-            try {
-                await Compiler.bundleWorkerFile(route, { preferNative: false });
-            } catch (error) {
-                Compiler.compilerLogger.warn('Skipping Tac worker because native and browser/WASM compilation are both unavailable', {
-                    target: Compiler.currentBundleTarget(),
-                    worker: route,
-                    language: provider.language,
-                    reason: error instanceof Error ? error.message : String(error),
-                });
-            }
-            return;
-        }
-        const workerRoute = Compiler.workerRouteName(route);
-        /** @type {TacWorkerScript} */
-        const worker = { sourcePath, route: workerRoute, provider };
-        const wasmBytes = await Compiler.compileWorkerSource(worker);
-        const publicBase = `/workers/${workerRoute}`;
-        const wasmName = `${provider.extension.slice(1)}.wasm`;
-        const wasmRoute = `${publicBase}/${wasmName}`;
-        const workerScriptRoute = `${publicBase}/tac.worker.js`;
-        const schemaPath = path.join(path.dirname(sourcePath), Router.optionsFileName);
-        const schema = await pathExists(schemaPath)
-            ? JSON.parse(await readFile(schemaPath, 'utf8'))
-            : null;
-        const workerScript = Compiler.createWorkerRuntimeSource(workerRoute, wasmName, schema);
-        Router.reqRoutes[wasmRoute] = {
-            GET: () => staticRouteResponse(wasmRoute, wasmBytes, 'application/wasm')
-        };
-        Router.reqRoutes[workerScriptRoute] = {
-            GET: () => jsResponse(workerScriptRoute, workerScript)
-        };
-        if (schema) {
-            const optionsRoute = `${publicBase}/${Router.optionsFileName}`;
-            Router.reqRoutes[optionsRoute] = {
-                GET: () => staticRouteResponse(optionsRoute, JSON.stringify(schema, null, 2), 'application/json')
-            };
-        }
-    }
-
-    /**
-     * Bundle a Tac worker source file for a native target. The implementation is
-     * target-specific: desktop targets compile to a native subprocess, while
-     * mobile targets embed the source into the native host project.
-     *
-     * Mobile host-native compilation is implemented by the native host generator.
-     * @param {string} route
-     * @returns {Promise<boolean>} true when a native worker executable was emitted
-     */
-    static async bundleNativeWorkerFile(route) {
-        route = route.replaceAll('\\', '/');
-        const target = Compiler.currentBundleTarget();
-        const sourcePath = path.join(Router.workersPath, route);
-        const provider = Compiler.getWorkerProvider(sourcePath);
-        if (!provider)
-            return false;
-
-        /** @type {TacWorkerScript} */
-        const worker = { sourcePath, route: Compiler.workerRouteName(route), provider };
-
-        if (['macos', 'windows', 'linux'].includes(target)) {
-            if (!Compiler.workerProviderSupportsTarget(provider, target))
-                return false;
-            const workerRoute = worker.route;
-            const publicBase = `/workers/${workerRoute}`;
-            const ext = provider.extension.slice(1);
-            const binaryName = process.platform === 'win32' ? `${ext}.exe` : ext;
-            const binaryRoute = `${publicBase}/${binaryName}`;
-            const schemaPath = path.join(path.dirname(sourcePath), Router.optionsFileName);
-            const schema = await pathExists(schemaPath)
-                ? JSON.parse(await readFile(schemaPath, 'utf8'))
-                : null;
-
-            const outputPath = path.join(tmpdir(), `tachyon-native-worker-${workerRoute.replace(/\//g, '-')}-${ext}`);
-            try {
-                await compileNativeWorkerExecutable(worker, outputPath, { target });
-            } catch (error) {
-                if (error instanceof Error && error.message.startsWith('Native executable workers for '))
-                    return false;
-                throw error;
-            }
-            const bytes = await readFile(outputPath);
-
-            Router.reqRoutes[binaryRoute] = {
-                GET: () => staticRouteResponse(binaryRoute, bytes, 'application/octet-stream')
-            };
-            Compiler.nativeWorkerBinaryRoutes.add(binaryRoute);
-            if (schema) {
-                const optionsRoute = `${publicBase}/${Router.optionsFileName}`;
-                Router.reqRoutes[optionsRoute] = {
-                    GET: () => staticRouteResponse(optionsRoute, JSON.stringify(schema, null, 2), 'application/json')
-                };
-            }
-            return true;
-        }
-
-        // Mobile hosts currently execute Tac workers through their browser/WASM runtime.
-        return false;
-    }
-
-    static async bundleWorkers() {
-        if (!await pathExists(Router.workersPath))
-            return;
-        const target = Compiler.currentBundleTarget();
-        const providersByExtension = new Map(Compiler.workerProviders.map((provider) => [provider.extension, provider]));
-        // Group tac.* files by directory so siblings can share a route.
-        /** @type {Map<string, string[]>} */
-        const groups = new Map();
-        for (const route of new Bun.Glob('**/tac.*').scanSync({ cwd: Router.workersPath })) {
-            const ext = path.extname(route).toLowerCase();
-            const provider = providersByExtension.get(ext);
-            if (!provider || !Compiler.workerProviderAvailableForTarget(provider, target))
-                continue;
-            const dir = path.posix.dirname(route);
-            if (!groups.has(dir)) groups.set(dir, []);
-            groups.get(dir)?.push(route);
-        }
-        for (const [, files] of groups) {
-            if (files.length === 1) {
-                await Compiler.bundleWorkerFile(files[0]);
-            } else {
-                await Compiler.bundleWorkerGroup(files);
-            }
-        }
-    }
-
-    /**
-     * Bundle multiple tac.<ext> files from the same directory into one worker
-     * route. Each file compiles to its own WASM module; the runtime dispatches
-     * by HTTP method to the correct module. Method overlap across files is
-     * rejected.
-     * @param {string[]} files — relative paths from workersPath (e.g. ['api/tac.rs', 'api/tac.ts'])
-     */
-    static async bundleWorkerGroup(files) {
-        if (Compiler.isNativeBundle()) {
-            Compiler.compilerLogger.info('Using browser/WASM fallback for mixed Tac worker group on native target', {
-                target: Compiler.currentBundleTarget(),
-                workers: files,
-            });
-        }
-        const dir = path.posix.dirname(files[0].replaceAll('\\', '/'));
-        const workerRoute = Compiler.workerRouteName(dir === '.' ? files[0] : `${dir}/tac.x`);
-        const publicBase = `/workers/${workerRoute}`;
-        const schemaPath = path.join(Router.workersPath, dir, Router.optionsFileName);
-        const schema = await pathExists(schemaPath)
-            ? JSON.parse(await readFile(schemaPath, 'utf8'))
-            : null;
-
-        // Compile each file and detect its declared HTTP methods.
-        /** @type {Array<{ file: string, ext: string, bytes: Uint8Array, methods: Set<string> }>} */
-        const modules = [];
-        /** @type {Set<string>} */
-        const seenMethods = new Set();
-
-        for (const file of files) {
-            const ext = path.extname(file).toLowerCase();
-            const sourcePath = path.join(Router.workersPath, file);
-            const provider = Compiler.getWorkerProvider(sourcePath);
-            if (!provider) continue;
-
-            /** @type {TacWorkerScript} */
-            const worker = { sourcePath, route: workerRoute, provider };
-            const bytes = await Compiler.compileWorkerSource(worker);
-
-            // Detect methods from source (same class Handler convention as server handlers).
-            const source = await readFile(sourcePath, 'utf8');
-            const methods = Compiler.detectWorkerMethods(source, provider.language);
-
-            // Check for method overlap with previously-seen files.
-            const overlapping = [...methods].filter((m) => seenMethods.has(m));
-            if (overlapping.length > 0) {
-                throw new Error(
-                    `Method conflict for worker '${dir}' — ` +
-                    `'${path.basename(file)}' declares [${overlapping.join(', ')}] ` +
-                    `which are already declared by another tac.* file in the same directory. ` +
-                    `Each HTTP method may only appear in one worker file per route.`
-                );
-            }
-            for (const m of methods) seenMethods.add(m);
-
-            const wasmRoute = `${publicBase}/${ext.slice(1)}.wasm`;
-            Router.reqRoutes[wasmRoute] = {
-                GET: () => staticRouteResponse(wasmRoute, bytes, 'application/wasm')
-            };
-
-            modules.push({ file, ext, bytes, methods });
-        }
-
-        if (modules.length === 0) return;
-
-        // Generate multi-module runtime
-        const workerScript = Compiler.createMultiModuleWorkerRuntime(workerRoute, modules, schema);
-        const workerScriptRoute = `${publicBase}/tac.worker.js`;
-        Router.reqRoutes[workerScriptRoute] = {
-            GET: () => jsResponse(workerScriptRoute, workerScript)
-        };
-
-        if (schema) {
-            const optionsRoute = `${publicBase}/${Router.optionsFileName}`;
-            Router.reqRoutes[optionsRoute] = {
-                GET: () => staticRouteResponse(optionsRoute, JSON.stringify(schema, null, 2), 'application/json')
-            };
-        }
-    }
-
-    /**
-     * Bundle multiple Tac worker source files for a native target.
-     *
-     * Currently a no-op that warns once per group; native worker compilation
-     * will be wired in a follow-up change.
-     * @param {string[]} files
-     */
-    static async bundleNativeWorkerGroup(files) {
-        const target = Compiler.currentBundleTarget();
-        Compiler.compilerLogger.warn('Native Tac worker groups are not yet implemented; skipping workers for native target', {
-            target,
-            workers: files,
-        });
-    }
-
-    /**
-     * Detect HTTP methods declared by a Tac worker source file using the same
-     * `class Handler` convention as server handlers.
-     * @param {string} source
-     * @param {string} language
-     * @returns {Set<string>}
-     */
-    static detectWorkerMethods(source, language) {
-        const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
-        /** @type {Set<string>} */
-        const methods = new Set();
-        for (const method of HTTP_METHODS) {
-            let pattern;
-            if (language === 'rust') {
-                pattern = new RegExp(`\\b(?:pub\\s+)?fn\\s+${method}\\s*\\(`);
-            } else {
-                // Tac worker JS/TS: `METHOD(request)` or `METHOD(request) {` inside
-                // `class Handler` — no `static` keyword, unlike server handlers.
-                pattern = new RegExp(`(?:^|\\n)\\s*${method}\\s*\\(`);
-            }
-            if (pattern.test(source)) methods.add(method);
-        }
-        return methods;
-    }
-
-    /**
-     * Generate the tac.worker.js runtime for a multi-module worker (multiple
-     * tac.<ext> files in the same directory). Each module is loaded separately;
-     * the runtime dispatches by HTTP method to the correct module.
-     * @param {string} route
-     * @param {Array<{ file: string, ext: string, bytes: Uint8Array, methods: Set<string> }>} modules
-     * @param {Record<string, unknown> | null} schema
-     * @returns {string}
-     */
-    static createMultiModuleWorkerRuntime(route, modules, schema = null) {
-        const sourceLabel = JSON.stringify(route);
-        const schemaSource = JSON.stringify(schema);
-        const runtimeUrlLiteral = JSON.stringify(Compiler.workerRuntimeModulePath(route));
-        const targetsSource = JSON.stringify(Compiler.bundleTargets());
-        const dangerousSource = JSON.stringify(Compiler.dangerousCapabilities());
-        const nativeSource = JSON.stringify(Compiler.nativeCapabilities());
-        // Build a method → module index lookup table.
-        const methodMap = /** @type {Record<string, number>} */ ({});
-        const moduleUrls = modules.map((mod, i) => {
-            for (const method of mod.methods) methodMap[method] = i;
-            return `./${mod.ext.slice(1)}.wasm`;
-        });
-        const methodTableJson = JSON.stringify(methodMap);
-        const urlsJson = JSON.stringify(moduleUrls);
-
-        return `const __tac_worker_source__ = ${sourceLabel};
-const __tac_worker_schema__ = ${schemaSource};
-const __tac_dangerous_caps__ = ${dangerousSource};
-const __tac_native_caps__ = ${nativeSource};
-const __tac_bundle_targets__ = ${targetsSource};
-const __tac_text_encoder__ = new TextEncoder();
-const __tac_text_decoder__ = new TextDecoder();
-const __tac_method_table__ = ${methodTableJson};
-const __tac_module_urls__ = ${urlsJson};
-
-function __tac_platform_value__(key) {
-    const nav = typeof navigator !== 'undefined' ? navigator : null;
-    const ua = String(nav?.userAgent || '').toLowerCase();
-    const navigatorPlatform = String(nav?.userAgentData?.platform || nav?.platform || '').toLowerCase();
-    const os = navigatorPlatform.includes('mac') || ua.includes('mac os') ? 'macos'
-        : navigatorPlatform.includes('win') || ua.includes('windows') ? 'windows'
-        : navigatorPlatform.includes('linux') || ua.includes('linux') ? 'linux'
-        : ua.includes('android') ? 'android'
-        : ua.includes('iphone') || ua.includes('ipad') || ua.includes('ios') ? 'ios'
-        : navigatorPlatform || 'unknown';
-    const platform = __tac_bundle_targets__[0] || 'web';
-    const environment = ['macos', 'windows', 'linux'].includes(platform) ? 'desktop'
-        : ['ios', 'android'].includes(platform) ? 'mobile'
-        : 'browser';
-    const values = {
-        os,
-        arch: 'wasm32',
-        runtime: 'browser-worker',
-        platform,
-        environment,
-        target: platform,
-        targets: __tac_bundle_targets__.join(','),
-        cpuCores: String(nav?.hardwareConcurrency ?? ''),
-        language: String(nav?.language ?? ''),
-        timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })(),
-        online: nav && 'onLine' in nav ? String(nav.onLine) : '',
-        touch: nav && 'maxTouchPoints' in nav ? String(nav.maxTouchPoints > 0) : '',
-    };
-    return values[key] ?? '';
-}
-
-// ── Schema validation (shared) ───────────────────────────────────────
-${Compiler._workerSchemaValidationSource()}
-
-// ── Status name mapping (shared) ─────────────────────────────────────
-${Compiler._workerStatusNameSource()}
-
-// ── Native capability broker (shared) ────────────────────────────────
-${Compiler._workerNativeCapabilitySource()}
-
-// ── Multi-module worker runtime ──────────────────────────────────────
-class TacWorkerRuntime {
-    constructor() {
-        /** @type {Array<{ runtimeExports: WebAssembly.Exports, handlerExports: WebAssembly.Exports } | null>} */
-        this.modules = [];
-        this.ready = this.init();
-        this.currentRequest = null;
-    }
-
-    async init() {
-        const wasiImports = {
-            args_get() { return 0; },
-            args_sizes_get() { return 0; },
-            clock_time_get() { return 0; },
-            environ_get() { return 0; },
-            environ_sizes_get() { return 0; },
-            fd_close() { return 0; },
-            fd_fdstat_get() { return 0; },
-            fd_seek() { return 0; },
-            fd_write() { return 0; },
-            poll_oneoff() { return 0; },
-            proc_exit(code) {
-                throw new Error('Tac worker ' + __tac_worker_source__ + ' exited with code ' + code);
-            },
-            random_get() { return 0; },
-        };
-        const runtimeUrl = new URL(${runtimeUrlLiteral}, import.meta.url);
-        const runtimeResponse = await fetch(runtimeUrl);
-        let compiledRuntime;
-        if (WebAssembly.instantiateStreaming && runtimeResponse.headers.get('Content-Type')?.includes('application/wasm')) {
-            const runtimeBytes = await runtimeResponse.arrayBuffer();
-            compiledRuntime = await WebAssembly.compile(runtimeBytes);
-        } else {
-            compiledRuntime = await WebAssembly.compile(await runtimeResponse.arrayBuffer());
-        }
-        for (const url of __tac_module_urls__) {
-            const runtimeInstance = await WebAssembly.instantiate(compiledRuntime, { wasi_snapshot_preview1: wasiImports });
-            const runtimeExports = runtimeInstance.exports;
-            if (!(runtimeExports.memory instanceof WebAssembly.Memory)) {
-                throw new Error('Tac worker ' + __tac_worker_source__ + ' runtime must export memory');
-            }
-            const envImports = {
-                req_query: (keyPtr, keyLen) => this.lookupField(runtimeExports, 'query', keyPtr, keyLen),
-                req_path: (keyPtr, keyLen) => this.lookupField(runtimeExports, 'paths', keyPtr, keyLen),
-                req_header: (keyPtr, keyLen) => this.lookupField(runtimeExports, 'headers', keyPtr, keyLen),
-                req_platform: (keyPtr, keyLen) => this.writeStringValue(runtimeExports, __tac_platform_value__(this.readString(runtimeExports, keyPtr, keyLen))),
-                abort(_msg, _file, _line, _column) {
-                    throw new Error('Tac worker ' + __tac_worker_source__ + ' abort');
-                },
-            };
-            const wasmUrl = new URL(url, import.meta.url);
-            const response = await fetch(wasmUrl);
-            let result;
-            const handlerImports = {
-                env: {
-                    memory: runtimeExports.memory,
-                    alloc: runtimeExports.alloc,
-                    dealloc: runtimeExports.dealloc,
-                    copy: runtimeExports.copy,
-                    itoa: runtimeExports.itoa,
-                    mkStr: runtimeExports.mkStr,
-                    intToStr: runtimeExports.intToStr,
-                    strCat: runtimeExports.strCat,
-                    jsonEscape: runtimeExports.jsonEscape,
-                    quoteStr: runtimeExports.quoteStr,
-                    idiv: runtimeExports.idiv,
-                    imod: runtimeExports.imod,
-                    setHeap: runtimeExports.setHeap,
-                    ...envImports,
-                },
-            };
-            if (WebAssembly.instantiateStreaming && response.headers.get('Content-Type')?.includes('application/wasm')) {
-                result = await WebAssembly.instantiateStreaming(response, handlerImports);
-            } else {
-                result = await WebAssembly.instantiate(await response.arrayBuffer(), handlerImports);
-            }
-            const instance = result.instance ?? result;
-            for (const name of ['call', 'output_ptr', 'output_len']) {
-                if (typeof instance.exports[name] !== 'function') {
-                    throw new Error('Tac worker ' + __tac_worker_source__ + ' must export ' + name + '()');
-                }
-            }
-            this.modules.push({ runtimeExports, handlerExports: instance.exports });
-        }
-    }
-
-    requireModule(method) {
-        const idx = __tac_method_table__[method];
-        if (idx === undefined) return null;
-        const module = this.modules[idx];
-        if (!module) throw new Error('Tac worker ' + __tac_worker_source__ + ' module ' + idx + ' has not finished loading');
-        return module;
-    }
-
-    writeJson(runtimeExports, value) {
-        return this.writeText(runtimeExports, JSON.stringify(value ?? null));
-    }
-
-    writeText(runtimeExports, text) {
-        const bytes = __tac_text_encoder__.encode(String(text));
-        const ptr = runtimeExports.alloc(bytes.length || 1);
-        if (!ptr) throw new Error('Tac worker ' + __tac_worker_source__ + ' failed to allocate ' + bytes.length + ' bytes');
-        new Uint8Array(runtimeExports.memory.buffer).set(bytes, ptr);
-        return { ptr, len: bytes.length };
-    }
-
-    readString(runtimeExports, ptr, len) {
-        return __tac_text_decoder__.decode(new Uint8Array(runtimeExports.memory.buffer).subarray(ptr, ptr + len));
-    }
-
-    writeStringValue(runtimeExports, text) {
-        const bytes = __tac_text_encoder__.encode(String(text));
-        const dataPtr = runtimeExports.alloc(bytes.length || 1);
-        const header = runtimeExports.alloc(8);
-        new Uint8Array(runtimeExports.memory.buffer).set(bytes, dataPtr);
-        const view = new DataView(runtimeExports.memory.buffer);
-        view.setInt32(header, dataPtr, true);
-        view.setInt32(header + 4, bytes.length, true);
-        return header;
-    }
-
-    lookupField(runtimeExports, kind, keyPtr, keyLen) {
-        const key = this.readString(runtimeExports, keyPtr, keyLen);
-        const source = this.currentRequest && typeof this.currentRequest === 'object' ? this.currentRequest[kind] : undefined;
-        const value = source && typeof source === 'object' ? source[key] : undefined;
-        return this.writeStringValue(runtimeExports, value == null ? '' : String(value));
-    }
-
-    dealloc(runtimeExports, input) {
-        if (input && typeof runtimeExports.dealloc === 'function') runtimeExports.dealloc(input.ptr, input.len);
-    }
-
-    readOutput(module) {
-        const ptr = module.handlerExports.output_ptr();
-        const len = module.handlerExports.output_len();
-        if (!len) return {};
-        const memory = new Uint8Array(module.runtimeExports.memory.buffer);
-        const text = __tac_text_decoder__.decode(memory.subarray(ptr, ptr + len));
-        try { return JSON.parse(text); } catch { return {}; }
-    }
-
-    call(method, request) {
-        __tac_validate_request__(method, request ?? {});
-        const module = this.requireModule(method);
-        if (!module) return { status: 404, body: { method, ok: false, error: { message: 'Unknown method: ' + method } } };
-        const { runtimeExports, handlerExports } = module;
-        const methodInput = this.writeJson(runtimeExports, method);
-        const requestInput = this.writeJson(runtimeExports, request);
-        const rawBody = request && typeof request === 'object' ? request.body : undefined;
-        const bodyText = typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody ?? null);
-        const bodyInput = this.writeText(runtimeExports, bodyText);
-        try {
-            this.currentRequest = request;
-            handlerExports.call(methodInput.ptr, methodInput.len, requestInput.ptr, requestInput.len, bodyInput.ptr, bodyInput.len);
-            const output = this.readOutput(module);
-            __tac_validate_response__(method, output);
-            return output;
-        } finally {
-            this.dealloc(runtimeExports, methodInput);
-            this.dealloc(runtimeExports, requestInput);
-            this.dealloc(runtimeExports, bodyInput);
-            this.currentRequest = null;
-        }
-    }
-}
-
-const runtime = new TacWorkerRuntime();
-
-self.onmessage = async (event) => {
-    const data = event.data ?? {};
-    if (__tac_handle_native_response__(data)) return;
-    const { id, method, request } = data;
-    try {
-        await runtime.ready;
-        const response = await __tac_resolve_native_response__(runtime.call(String(method || ''), request ?? {}));
-        __tac_validate_response__(String(method || ''), response);
-        self.postMessage({ id, ok: true, response });
-    } catch (error) {
-        self.postMessage({
-            id,
-            ok: false,
-            error: error instanceof Error ? error.message : String(error),
-        });
-    }
-};
-`;
-    }
-
-    /**
-     * Extracted schema validation helpers shared by single and multi-module
-     * worker runtimes. Returns the JavaScript source string.
-     * @returns {string}
-     */
-    static _workerSchemaValidationSource() {
-        return `function __tac_is_plain_object__(value) {
-    return value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function __tac_schema_key_is_regex__(key) {
-    return key.startsWith('^');
-}
-
-function __tac_has_value__(value) {
-    return value !== null && value !== undefined;
-}
-
-function __tac_schema_data_key__(key) {
-    return key.endsWith('?') ? key.slice(0, -1) : key;
-}
-
-function __tac_schema_key_is_nullable__(key) {
-    return key.endsWith('?');
-}
-
-function __tac_is_record_schema__(schema) {
-    const keys = Object.keys(schema);
-    return keys.length === 1 && __tac_schema_key_is_regex__(keys[0]);
-}
-
-function __tac_regex__(pattern, path) {
-    if (typeof pattern !== 'string' || pattern.length === 0) {
-        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema value at ' + path + ' must be a non-empty CHEX regex string');
-    }
-    if (pattern.length > 500) {
-        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema regex at ' + path + ' exceeds 500 characters');
-    }
-    try { return new RegExp(pattern); }
-    catch { throw new Error('Tac worker ' + __tac_worker_source__ + ' schema regex at ' + path + ' is invalid'); }
-}
-
-function __tac_validate_leaf__(value, pattern, path) {
-    if (!__tac_regex__(pattern, path).test(String(value))) {
-        throw new Error('Tac worker ' + __tac_worker_source__ + ' schema mismatch at ' + path);
-    }
-}
-
-function __tac_validate_value__(value, schema, path) {
-    if (typeof schema === 'string') { __tac_validate_leaf__(value, schema, path); return; }
-    if (Array.isArray(schema)) {
-        if (schema.length !== 1) throw new Error('Tac worker ' + __tac_worker_source__ + ' array schema at ' + path + ' must contain exactly one item template');
-        if (!Array.isArray(value)) throw new Error('Tac worker ' + __tac_worker_source__ + ' expected an array at ' + path);
-        for (let i = 0; i < value.length; i += 1) __tac_validate_value__(value[i], schema[0], path + '[' + i + ']');
-        return;
-    }
-    if (__tac_is_plain_object__(schema)) { __tac_validate_object__(value, schema, path); return; }
-    throw new Error('Tac worker ' + __tac_worker_source__ + ' schema value at ' + path + ' must be a CHEX regex string, array, or object');
-}
-
-function __tac_validate_record__(value, schema, path) {
-    if (!__tac_is_plain_object__(value)) throw new Error('Tac worker ' + __tac_worker_source__ + ' expected an object at ' + path);
-    const [[keyPattern, valueSchema]] = Object.entries(schema);
-    const keyRegex = __tac_regex__(String(keyPattern), path + ' keys');
-    for (const [key, entry] of Object.entries(value)) {
-        if (!keyRegex.test(key)) throw new Error('Tac worker ' + __tac_worker_source__ + ' schema mismatch at ' + path + '.' + key + ' (key does not match ' + String(keyPattern) + ')');
-        if (valueSchema === 'any') continue;
-        __tac_validate_value__(entry, valueSchema, path + '.' + key);
-    }
-}
-
-function __tac_validate_object__(value, schema, path) {
-    if (!__tac_is_plain_object__(value)) throw new Error('Tac worker ' + __tac_worker_source__ + ' expected an object at ' + path);
-    for (const key of Object.keys(schema)) {
-        if (__tac_is_record_schema__(schema)) { __tac_validate_record__(value, schema, path); return; }
-        const dataKey = __tac_schema_data_key__(key);
-        const fieldValue = value[dataKey];
-        if (__tac_has_value__(fieldValue)) {
-            __tac_validate_value__(fieldValue, schema[key], path + '.' + dataKey);
-        } else if (!__tac_schema_key_is_nullable__(key)) {
-            throw new Error('Tac worker ' + __tac_worker_source__ + ' missing required field ' + dataKey + ' at ' + path);
-        }
-    }
-}
-
-function __tac_declared_request_sections__(request, schema) {
-    const subset = {};
-    for (const rawKey of Object.keys(schema || {})) {
-        const key = __tac_schema_data_key__(rawKey);
-        if (Object.prototype.hasOwnProperty.call(request, key)) subset[key] = request[key];
-    }
-    return subset;
-}
-
-function __tac_validate_request__(method, request) {
-    const methodSchema = __tac_worker_schema__ && __tac_worker_schema__[method];
-    const payloadSchema = methodSchema && methodSchema.payload;
-    if (!payloadSchema) return;
-    __tac_validate_value__(__tac_declared_request_sections__(request, payloadSchema), payloadSchema, 'payload');
-}
-
-function __tac_validate_response__(method, response) {
-    const methodSchema = __tac_worker_schema__ && __tac_worker_schema__[method];
-    if (!methodSchema) return;
-    const status = response && typeof response === 'object' ? response.status : undefined;
-    const statusNumber = typeof status === 'number' ? status : 200;
-    const name = __tac_status_name__(statusNumber);
-    let responseSchema;
-    if (statusNumber >= 200 && statusNumber < 300) {
-        responseSchema = methodSchema[name] || methodSchema.ok;
-    } else if (name) {
-        responseSchema = methodSchema[name];
-    }
-    if (!responseSchema) return;
-    __tac_validate_value__(response && response.body !== undefined ? response.body : response, responseSchema, name || 'response');
-}`;
-    }
-
-    /**
-     * Status-code-to-name helper injected into generated Tac worker runtimes.
-     * Workers validate responses against three buckets: `ok` (2xx),
-     * `clientError` (4xx), and `serverError` (5xx). 1xx and 3xx responses are
-     * not validated.
-     * @returns {string}
-     */
-    static _workerStatusNameSource() {
-        return `function __tac_status_name__(status) {
-    if (status >= 200 && status < 300) return 'ok';
-    if (status >= 400 && status < 500) return 'clientError';
-    if (status >= 500 && status < 600) return 'serverError';
-    return undefined;
-}`;
-    }
-
-    /**
-     * Native capability helpers injected into generated Tac worker runtimes.
-     * @returns {string}
-     */
-    static _workerNativeCapabilitySource() {
-        return `const __tac_native_pending__ = new Map();
-let __tac_native_sequence__ = 0;
-
-function __tac_assert_native_capability__(capability) {
-    if (!capability || typeof capability !== 'string') {
-        throw new Error('Tac worker ' + __tac_worker_source__ + ' native request requires a string capability');
-    }
-    const authorized = __tac_native_caps__.some((entry) => {
-        if (entry === capability) return true;
-        return entry.endsWith('.*') && capability.startsWith(entry.slice(0, -1));
-    });
-    if (!authorized) {
-        throw new Error('Tac worker ' + __tac_worker_source__ + ' native capability ' + capability + ' is not authorized; add it to TAC_NATIVE_CAPABILITIES');
-    }
-    if (/^(fs\\.|shell\\.|process\\.)/.test(capability) && !__tac_dangerous_caps__.includes(capability)) {
-        throw new Error('Tac worker ' + __tac_worker_source__ + ' raw OS capability ' + capability + ' is not authorized; add it to TAC_DANGEROUS_CAPABILITIES');
-    }
-}
-
-function __tac_native_request_from_response__(response) {
-    const body = response && typeof response === 'object' ? response.body : undefined;
-    const result = body && typeof body === 'object' ? body.result : undefined;
-    const candidate = body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, '$tacNative')
-        ? body.$tacNative
-        : result && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, '$tacNative')
-            ? result.$tacNative
-        : response && typeof response === 'object' && Object.prototype.hasOwnProperty.call(response, '$tacNative')
-            ? response.$tacNative
-            : null;
-    if (!candidate || typeof candidate !== 'object') return null;
-    return {
-        capability: String(candidate.capability || ''),
-        payload: candidate.payload === undefined ? {} : candidate.payload,
-        status: Number(candidate.status || response.status || 200),
-        headers: candidate.headers && typeof candidate.headers === 'object' ? candidate.headers : {},
-    };
-}
-
-function __tac_handle_native_response__(message) {
-    if (!message || typeof message !== 'object' || message.type !== 'tac:native-response') return false;
-    const nativeId = Number(message.nativeId);
-    const pending = __tac_native_pending__.get(nativeId);
-    if (!pending) return true;
-    __tac_native_pending__.delete(nativeId);
-    if (message.ok) pending.resolve(message.value);
-    else pending.reject(new Error(String(message.error || 'Tac native capability failed')));
-    return true;
-}
-
-function __tac_call_native__(capability, payload) {
-    __tac_assert_native_capability__(capability);
-    const nativeId = ++__tac_native_sequence__;
-    return new Promise((resolve, reject) => {
-        __tac_native_pending__.set(nativeId, { resolve, reject });
-        self.postMessage({
-            type: 'tac:native-request',
-            nativeId,
-            source: __tac_worker_source__,
-            capability,
-            payload,
-        });
-    });
-}
-
-async function __tac_resolve_native_response__(response) {
-    const nativeRequest = __tac_native_request_from_response__(response);
-    if (!nativeRequest) return response;
-    const value = await __tac_call_native__(nativeRequest.capability, nativeRequest.payload);
-    return {
-        status: nativeRequest.status || 200,
-        headers: {
-            'Content-Type': 'application/json',
-            ...nativeRequest.headers,
-        },
-        body: value,
-    };
-}`;
-    }
-
     // ── Build & register a single template module ──────────────────────────────
     /**
      * @param {TemplateData} templateData

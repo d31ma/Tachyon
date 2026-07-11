@@ -47,8 +47,8 @@ function isExecutableFile(filePath) {
 
 /**
  * Methods for generic executable handlers come from an adjacent
- * OPTIONS.schema.json (the same sidecar convention Tac workers use) — the
- * framework cannot parse an arbitrary language's source for them.
+ * OPTIONS.schema.json — the framework cannot parse an arbitrary language's
+ * source for supported methods.
  * @param {string} handler
  * @returns {Set<string>}
  */

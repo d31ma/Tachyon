@@ -83,24 +83,25 @@ describe('bundle output', () => {
         expect(await exists('dist/web/tachyon-sw.js')).toBe(true)
     }, 120000)
 
-    test('compiles the web-scoped Tac Workers that mimic the backend', async () => {
+    test('compiles the polyglot companion panel without a client worker endpoint', async () => {
         await ensureBundle()
 
-        // Tac workers support Rust, JavaScript, and TypeScript.
-        for (const language of ['rust', 'javascript', 'typescript']) {
-            expect(await exists(`dist/web/workers/language/${language}/tac.worker.js`)).toBe(true)
-        }
+        expect(await exists('dist/web/components/panel/polyglot/tac.js')).toBe(true)
+        expect(await exists('dist/web/components/panel/portablebridge/tac.js')).toBe(true)
+        for (const language of ['javascript', 'dart', 'kotlin', 'swift', 'csharp'])
+            expect(await exists(`dist/web/components/language/${language}/tac.js`)).toBe(true)
+        expect(await exists('dist/web/workers')).toBe(false)
     }, 120000)
 })
 
 describe('frontend-only sources', () => {
-    test('panels use workers and the in-browser fylo client, not server routes', async () => {
+    test('panels use companions and the in-browser fylo client, not server routes', async () => {
         const diagnostics = await read('client/components/panel/diagnostics/tac.ts')
         const inventory = await read('client/components/panel/inventory/tac.ts')
         const realtime = await read('client/components/panel/realtime/tac.js')
         const telemetry = await read('client/components/panel/telemetry/tac.ts')
 
-        expect(diagnostics).toContain("tac://language/rust")
+        expect(diagnostics).toContain('companion ABI ready')
         expect(inventory).toContain("fylo['atlas-items']")
         expect(realtime).toContain('BroadcastChannel')
         expect(telemetry).toContain("fylo['atlas-spans']")
@@ -108,6 +109,37 @@ describe('frontend-only sources', () => {
             expect(source).not.toContain("fetch('/language")
             expect(source).not.toContain("fetch('/realtime")
         }
+    })
+
+    test('demonstrates the unprefixed Rust platform prelude', async () => {
+        const portableBridge = await read('client/components/panel/portablebridge/tac.rs')
+
+        expect(portableBridge).toContain('local_storage().set_item')
+        expect(portableBridge).toContain('navigator().language()')
+        expect(portableBridge).toContain('fylo().collection')
+        expect(portableBridge).toContain('app().is_available()')
+        expect(portableBridge).toContain('app().info()')
+        expect(portableBridge).toContain('capabilities().state("geo.current")')
+        expect(portableBridge).toContain('secrets.get')
+        expect(portableBridge).not.toContain('self.tac.')
+    })
+
+    test('uses every supported companion language in the live component tree', async () => {
+        const polyglot = await read('client/components/panel/polyglot/tac.html')
+        const files = [
+            'client/components/panel/polyglot/tac.ts',
+            'client/components/panel/portablebridge/tac.rs',
+            'client/components/language/javascript/tac.js',
+            'client/components/language/dart/tac.dart',
+            'client/components/language/kotlin/tac.kt',
+            'client/components/language/swift/tac.swift',
+            'client/components/language/csharp/tac.cs',
+        ]
+
+        for (const path of files)
+            expect(await exists(path)).toBe(true)
+        for (const tag of ['language-javascript', 'language-dart', 'language-kotlin', 'language-swift', 'language-csharp'])
+            expect(polyglot).toContain(`<${tag}`)
     })
 })
 
@@ -145,9 +177,20 @@ describe('docs content', () => {
         const text = JSON.stringify(cookbook)
 
         expect(cookbook.summary).toContain('frontend-only')
-        expect(text).toContain('tac://')
+        expect(text).toContain('tac.kt')
         expect(text).toContain('fylo.users')
         expect(text).toContain('server/middleware/yon.<ext>')
         expect(text).toContain('environment')
+    })
+
+    test('documents permissioned device APIs and the native declaration', async () => {
+        const docs = JSON.parse(await read('client/shared/data/docs.json'))
+        const platformApis = docs.topics['platform-apis']
+        const text = JSON.stringify(platformApis)
+
+        expect(text).toContain('devicePermissions')
+        expect(text).toContain('auth.verifyUser')
+        expect(text).toContain('media.getUserMedia')
+        expect(text).toContain('host.on')
     })
 })

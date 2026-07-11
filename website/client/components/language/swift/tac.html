@@ -1,0 +1,12 @@
+<w-card variant="outlined" class="language-card">
+  <w-card-item title="Swift" subtitle="Swift Tac subset"></w-card-item>
+  <w-card-text>
+    <div class="w-row ga-2"><w-chip size="small" color="success">tac.swift</w-chip><code>{status}</code></div>
+    <p><code>capabilities.supports(...)</code> probe: <strong>{portable}</strong></p>
+    <p>Local-first <code>fetch()</code>: <strong>{fetchStatus}</strong>; last wave from <strong>{lastWave}</strong>.</p>
+    <div class="w-row ga-2">
+      <w-btn size="sm" variant="outlined" on:click="probeFetch()">Fetch this page</w-btn>
+      <w-btn size="sm" variant="outlined" on:click="wave()">Wave from Swift</w-btn>
+    </div>
+  </w-card-text>
+</w-card>

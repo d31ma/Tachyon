@@ -1,5 +1,36 @@
+.atlas-shell {
+  display: grid;
+  grid-template-columns: 17rem minmax(0, 1fr);
+  max-width: 88rem;
+  min-height: calc(100vh - 3.5rem);
+  margin: 0 auto;
+  padding-inline: clamp(0.5rem, 1vw, 0.75rem);
+}
+
+.atlas-sidebar {
+  position: sticky;
+  top: 3.5rem;
+  align-self: start;
+  height: calc(100vh - 3.5rem);
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--w-space-6) var(--w-space-4) var(--w-space-8) 0;
+  scrollbar-gutter: stable;
+}
+
+.atlas-main {
+  min-width: 0;
+  width: 100%;
+  padding: var(--w-space-8) 0 var(--w-space-12) clamp(var(--w-space-8), 3vw, var(--w-space-12));
+  overflow-wrap: anywhere;
+}
+
+.atlas-page {
+  min-width: 0;
+}
+
 .atlas-hero {
-  padding-block: 2.5rem 1.5rem;
+  padding-block: 0.5rem 1.5rem;
 }
 
 .atlas-kicker {
@@ -28,16 +59,8 @@
   flex-wrap: wrap;
 }
 
-.atlas-jump {
-  display: flex;
-  gap: 0.5rem;
-  overflow-x: auto;
-  padding-block: 0.5rem 1.25rem;
-  scrollbar-width: thin;
-}
-
 .atlas-section {
-  padding-block: 1.75rem;
+  padding-block: 0.25rem 1.75rem;
 }
 
 .atlas-section header {
@@ -72,6 +95,20 @@
   font-size: var(--w-font-sm);
 }
 
-.atlas-jump w-chip {
-  cursor: pointer;
+@media (max-width: 1024px) {
+  .atlas-shell {
+    display: block;
+    padding-inline: clamp(1rem, 4vw, 1.5rem);
+  }
+
+  .atlas-sidebar {
+    position: static;
+    height: auto;
+    max-height: none;
+    padding: var(--w-space-5) 0 var(--w-space-4);
+  }
+
+  .atlas-main {
+    padding: var(--w-space-4) 0 var(--w-space-10);
+  }
 }

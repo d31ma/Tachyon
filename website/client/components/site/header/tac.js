@@ -8,11 +8,12 @@ export default class extends Tac {
   @onMount
   stampPlatform() {
     // Dogfood the platform-aware Tac globals: the shell adapts per
-    // environment (browser / desktop / mobile) through CSS hooks on <body>.
-    // Theme cycling is DuVay's own [w-theme-toggle] behavior, so the header
-    // never rerenders and its light-DOM components stay upgraded.
-    document.body.dataset.environment = this.tac.platform.environment
+    // platform (desktop / mobile / web) through CSS hooks on <body>, with
+    // the concrete environment/os (windows/macos/linux/android/ios/web)
+    // alongside. Theme cycling is DuVay's own [w-theme-toggle] behavior, so
+    // the header never rerenders and its light-DOM components stay upgraded.
     document.body.dataset.platform = this.tac.platform.platform
+    document.body.dataset.os = this.tac.platform.os
     this.closeMobileMenuAfterNavigation()
   }
 

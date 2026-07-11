@@ -13,25 +13,16 @@ afterEach(async () => {
 });
 
 describe('Compiler companion providers', () => {
-    test('exposes only the TS/JS and Rust Tac worker languages', () => {
-        expect(Compiler.workerProviders).toEqual([
-            { extension: '.rs', language: 'rust', targets: ['web', 'macos', 'windows', 'linux', 'ios', 'android'] },
-            { extension: '.js', language: 'javascript', targets: ['web'] },
-            { extension: '.ts', language: 'typescript', targets: ['web'] },
+    test('exposes portable companion providers instead of a client worker API', () => {
+        expect(Compiler.companionProviders).toEqual([
+            { extension: '.js', language: 'javascript', target: 'ecmascript', portable: true },
+            { extension: '.ts', language: 'typescript', target: 'ecmascript', portable: true },
+            { extension: '.dart', language: 'dart', target: 'dart', portable: true },
+            { extension: '.rs', language: 'rust', target: 'subset', portable: true },
+            { extension: '.kt', language: 'kotlin', target: 'subset', portable: true },
+            { extension: '.swift', language: 'swift', target: 'subset', portable: true },
+            { extension: '.cs', language: 'csharp', target: 'subset', portable: true },
         ]);
-
-        expect(Compiler.workerSubsetLanguages().sort()).toEqual([
-            'javascript',
-            'rust',
-            'typescript',
-        ]);
-        expect(Compiler.subsetLanguages().sort()).toEqual(['javascript', 'rust', 'typescript']);
-
-        // Everything else — including the previously-supported C#, C++, Swift,
-        // Kotlin — is no longer a worker language.
-        for (const extension of ['.c', '.cpp', '.cs', '.go', '.py', '.zig', '.swift', '.kt']) {
-            expect(Compiler.getWorkerProvider(`/tmp/tac${extension}`)).toBeNull();
-        }
     });
 
     test('discovers JavaScript companions through provider metadata', async () => {
@@ -47,7 +38,7 @@ describe('Compiler companion providers', () => {
 
         expect(companion?.sourcePath).toBe(companionPath);
         expect(companion?.importPath).toBe('./tac.js');
-        expect(companion?.provider).toEqual({ extension: '.js', target: 'ecmascript' });
+        expect(companion?.provider).toEqual({ extension: '.js', language: 'javascript', target: 'ecmascript', portable: true });
         expect(await Compiler.getCompanionScriptPath(templatePath)).toBe(companionPath);
     });
 
@@ -64,56 +55,83 @@ describe('Compiler companion providers', () => {
 
         expect(companion?.sourcePath).toBe(companionPath);
         expect(companion?.importPath).toBe('./tac.ts');
-        expect(companion?.provider).toEqual({ extension: '.ts', target: 'ecmascript' });
+        expect(companion?.provider).toEqual({ extension: '.ts', language: 'typescript', target: 'ecmascript', portable: true });
     });
 
-    test('ignores removed non-JavaScript companion formats', async () => {
+    test('discovers Dart companions when no JavaScript companion is present', async () => {
+        const root = await mkdtemp(path.join(tmpdir(), 'tachyon-dart-companion-provider-'));
+        tempDirs.push(root);
+        await mkdir(path.join(root, 'client', 'components', 'counter'), { recursive: true });
+        const templatePath = path.join(root, 'client', 'components', 'counter', 'tac.html');
+        const companionPath = path.join(root, 'client', 'components', 'counter', 'tac.dart');
+        await writeFile(templatePath, '<article>{count}</article>');
+        await writeFile(companionPath, 'class Counter extends Tac { int count = 0; }');
+
+        const companion = await Compiler.getCompanionScript(templatePath);
+
+        expect(companion?.sourcePath).toBe(companionPath);
+        expect(companion?.importPath).toBe('./tac.dart');
+        expect(companion?.provider).toEqual({ extension: '.dart', language: 'dart', target: 'dart', portable: true });
+    });
+
+    test('treats every supported companion language as portable across bundle targets', () => {
+        for (const provider of Compiler.companionProviders) {
+            for (const target of ['web', 'macos', 'windows', 'linux', 'ios', 'android']) {
+                expect(Compiler.companionProviderSupportsTarget(provider, target)).toBe(true);
+            }
+        }
+    });
+
+    test('lowers JavaScript implicit platform APIs without requiring a Tac API in source', () => {
+        const output = Compiler.lowerJavaScriptNativeShims(`
+export default class {
+    async inspect() {
+        const info = await app.info()
+        await browser.open('https://tachyon.del.ma')
+        await clipboard.writeText('ready')
+        await fileSystem.writeText('/tmp/ready.txt', 'ready')
+        await shell.exec('echo', ['ready'])
+        await share.text('ready')
+        await haptics.impact()
+        return capabilities.supports('app.info') ? info : null
+    }
+}
+`);
+
+        expect(output).toContain('await this.tac.__native.app.info()');
+        expect(output).toContain("await this.tac.__native.browser.open('https://tachyon.del.ma')");
+        expect(output).toContain("await this.tac.__native.clipboard.writeText('ready')");
+        expect(output).toContain("await this.tac.__native.fileSystem.writeText('/tmp/ready.txt', 'ready')");
+        expect(output).toContain("await this.tac.__native.shell.exec('echo', ['ready'])");
+        expect(output).toContain("await this.tac.__native.share.text('ready')");
+        expect(output).toContain('await this.tac.__native.haptics.impact()');
+        expect(output).toContain("this.tac.__native.capabilities.supports('app.info')");
+        expect(output).not.toContain('await app.info()');
+    });
+
+    test('rejects removed JavaScript wrapper names', () => {
+        expect(() => Compiler.assertNoLegacyJavaScriptPlatformWrappers(
+            'export default class { open() { return Browser.open("https://tachyon.del.ma") } }',
+            '/app/client/pages/tac.js',
+        )).toThrow('removed platform wrapper');
+    });
+
+    test('discovers each in-house language subset companion', async () => {
         const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
         tempDirs.push(root);
         await mkdir(path.join(root, 'client', 'components', 'raw'), { recursive: true });
         const templatePath = path.join(root, 'client', 'components', 'raw', 'tac.html');
         await writeFile(templatePath, '<span>{label}</span>');
-        await writeFile(path.join(root, 'client', 'components', 'raw', 'tac.rs'), '/* rust source */');
-        await writeFile(path.join(root, 'client', 'components', 'raw', 'tac.cpp'), '/* cpp source */');
-
-        expect(await Compiler.getCompanionScript(templatePath)).toBeNull();
-        expect(await Compiler.getCompanionScriptPath(templatePath)).toBeNull();
-    });
-
-    test('returns null when no provider matches a companion file', async () => {
-        const root = await mkdtemp(path.join(tmpdir(), 'tachyon-companion-provider-'));
-        tempDirs.push(root);
-        await mkdir(path.join(root, 'client', 'components', 'panel'), { recursive: true });
-        const templatePath = path.join(root, 'client', 'components', 'panel', 'tac.html');
-        await writeFile(templatePath, '<section>Panel</section>');
-
-        expect(await Compiler.getCompanionScript(templatePath)).toBeNull();
-        expect(await Compiler.getCompanionScriptPath(templatePath)).toBeNull();
-    });
-
-    test('detects app-authored tac protocol fetch usage for automatic shadow imports', () => {
-        expect(Compiler.referencesTacFetch(`
-            export default class extends Tac {
-                async run() {
-                    return fetch('tac://language', { method: 'POST' })
-                }
-            }
-        `)).toBe(true);
-    });
-
-    test('does not inject the tac fetch shadow when fetch is app-owned or no tac url is used', () => {
-        // App-declared fetch should win over the injected shadow.
-        expect(Compiler.referencesTacFetch(`
-            import { fetch } from './custom-fetch.js'
-            export default class extends Tac {
-                async run() { return fetch('tac://language') }
-            }
-        `)).toBe(false);
-        // Plain fetch without any tac:// URL must not trigger injection.
-        expect(Compiler.referencesTacFetch(`
-            export default class extends Tac {
-                async run() { return fetch('/api/data') }
-            }
-        `)).toBe(false);
+        for (const [extension, language] of [
+            ['.rs', 'rust'],
+            ['.kt', 'kotlin'],
+            ['.swift', 'swift'],
+            ['.cs', 'csharp'],
+        ]) {
+            await writeFile(path.join(root, 'client', 'components', 'raw', `tac${extension}`), 'placeholder');
+            const companion = await Compiler.getCompanionScript(templatePath);
+            expect(companion?.provider).toEqual({ extension, language, target: 'subset', portable: true });
+            await rm(path.join(root, 'client', 'components', 'raw', `tac${extension}`));
+        }
     });
 });

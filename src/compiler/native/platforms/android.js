@@ -42,22 +42,34 @@ export default class AndroidGenerator extends PlatformGenerator {
 
     mainActivity() {
         const bridgeScript = this.getBridgeScript().replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+        const allowedCapabilities = this.nativeCapabilities.map(({ capability }) => JSON.stringify(capability)).join(', ');
         return `package ${this.appId}
 
 import android.app.Activity
+import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
+import android.content.pm.PackageManager
+import android.webkit.GeolocationPermissions
 import android.os.Bundle
 import android.view.View
-import android.webkit.JavascriptInterface
+import android.view.HapticFeedbackConstants
+import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.webkit.ServiceWorkerClientCompat
+import androidx.webkit.JavaScriptReplyProxy
+import androidx.webkit.WebMessageCompat
 import androidx.webkit.ServiceWorkerControllerCompat
 import androidx.webkit.WebViewAssetLoader
+import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 import org.json.JSONObject
@@ -69,6 +81,8 @@ class MainActivity : Activity() {
         // because in-page style properties do not survive navigation.
         @Volatile var safeAreaScript: String = ""
     }
+
+    private lateinit var deviceWebChromeClient: DeviceWebChromeClient
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,8 +124,8 @@ class MainActivity : Activity() {
 
         // Serve the bundled assets from WebViewAssetLoader's trusted https
         // origin instead of file://. A real (non-opaque) origin is what makes
-        // Web Workers (tac:// Tac Workers), OPFS (the FYLO browser mirror),
-        // and service workers available inside the host — and it resolves the
+        // OPFS (the FYLO browser mirror) and service workers available inside
+        // the host — and it resolves the
         // bundle's absolute asset paths (/shared/...) naturally.
         // The domain is set explicitly: relying on the library default has
         // bitten us (resolved builds have shipped a different default), and
@@ -141,11 +155,86 @@ class MainActivity : Activity() {
             )
         }
 
-        webView.webChromeClient = WebChromeClient()
+        deviceWebChromeClient = DeviceWebChromeClient(this)
+        webView.webChromeClient = deviceWebChromeClient
         webView.webViewClient = TachyonWebViewClient(assetLoader, "${bridgeScript}")
-        webView.addJavascriptInterface(NativeBridge(webView), "__tcNativeHost__")
+        val nativeBridge = NativeBridge(webView)
+        WebViewCompat.addWebMessageListener(
+            webView,
+            "__tcNativeHost__",
+            setOf("https://appassets.androidapp.com"),
+            object : WebViewCompat.WebMessageListener {
+                override fun onPostMessage(
+                    view: WebView,
+                    message: WebMessageCompat,
+                    sourceOrigin: Uri,
+                    isMainFrame: Boolean,
+                    replyProxy: JavaScriptReplyProxy,
+                ) {
+                    if (!isMainFrame || sourceOrigin.scheme != "https" || sourceOrigin.host != "appassets.androidapp.com") return
+                    nativeBridge.postMessage(message.data ?: "")
+                }
+            },
+        )
 
         webView.loadUrl("https://appassets.androidapp.com/")
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        deviceWebChromeClient.onDevicePermissionResult(requestCode, grantResults.all { it == PackageManager.PERMISSION_GRANTED })
+    }
+}
+
+class DeviceWebChromeClient(private val activity: Activity) : WebChromeClient() {
+    companion object {
+        const val MEDIA_PERMISSION_REQUEST = 731
+        const val LOCATION_PERMISSION_REQUEST = 732
+    }
+
+    private var pendingMediaRequest: Pair<PermissionRequest, Array<String>>? = null
+    private var pendingLocationRequest: Pair<String, GeolocationPermissions.Callback>? = null
+
+    override fun onPermissionRequest(request: PermissionRequest) {
+        val permissions = mutableListOf<String>()
+        val allowedResources = request.resources.filter {
+            it == PermissionRequest.RESOURCE_VIDEO_CAPTURE || it == PermissionRequest.RESOURCE_AUDIO_CAPTURE
+        }.toTypedArray()
+        if (allowedResources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)) permissions.add(Manifest.permission.CAMERA)
+        if (allowedResources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) permissions.add(Manifest.permission.RECORD_AUDIO)
+        if (permissions.isEmpty()) { request.deny(); return }
+        if (permissions.all { activity.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }) {
+            request.grant(allowedResources)
+            return
+        }
+        pendingMediaRequest?.first?.deny()
+        pendingMediaRequest = request to allowedResources
+        activity.requestPermissions(permissions.toTypedArray(), MEDIA_PERMISSION_REQUEST)
+    }
+
+    override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
+        if (activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            callback.invoke(origin, true, false)
+            return
+        }
+        pendingLocationRequest?.second?.invoke(pendingLocationRequest!!.first, false, false)
+        pendingLocationRequest = origin to callback
+        activity.requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), LOCATION_PERMISSION_REQUEST)
+    }
+
+    fun onDevicePermissionResult(requestCode: Int, granted: Boolean) {
+        when (requestCode) {
+            MEDIA_PERMISSION_REQUEST -> {
+                val request = pendingMediaRequest
+                pendingMediaRequest = null
+                if (granted) request?.first?.grant(request.second) else request?.first?.deny()
+            }
+            LOCATION_PERMISSION_REQUEST -> {
+                val request = pendingLocationRequest
+                pendingLocationRequest = null
+                request?.second?.invoke(request.first, granted, false)
+            }
+        }
     }
 }
 
@@ -170,6 +259,7 @@ class TachyonWebViewClient(
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
         val url = request.url
         if (url.host == "appassets.androidapp.com") return false
+        if (url.scheme != "http" && url.scheme != "https") return true
         return try {
             view.context.startActivity(Intent(Intent.ACTION_VIEW, url))
             true
@@ -180,7 +270,8 @@ class TachyonWebViewClient(
 }
 
 class NativeBridge(private val webView: WebView) {
-    @JavascriptInterface
+    private val allowedCapabilities = setOf(${allowedCapabilities})
+
     fun postMessage(message: String) {
         val response = try {
             val envelope = JSONObject(message)
@@ -190,6 +281,7 @@ class NativeBridge(private val webView: WebView) {
                 val id = envelope.optInt("id", 0)
                 val capability = envelope.optString("capability")
                 val payload = envelope.optJSONObject("payload") ?: JSONObject()
+                if (!allowedCapabilities.contains(capability)) throw IllegalStateException("Native capability is not enabled: $capability")
                 successResponse(id, handle(capability, payload))
             }
         } catch (error: Throwable) {
@@ -207,6 +299,37 @@ class NativeBridge(private val webView: WebView) {
                 .put("name", "${this.appName}")
                 .put("runtime", "android-webview")
                 .put("package", webView.context.packageName)
+            "clipboard.readText" -> {
+                val clipboard = webView.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.primaryClip?.takeIf { it.itemCount > 0 }
+                    ?.getItemAt(0)?.coerceToText(webView.context)?.toString() ?: ""
+            }
+            "clipboard.writeText" -> {
+                val text = payload.optString("text", "")
+                val clipboard = webView.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Tachyon", text))
+                JSONObject().put("written", true)
+            }
+            "openUrl" -> {
+                val url = requireString(payload, "url")
+                val uri = android.net.Uri.parse(url)
+                if (uri.scheme != "http" && uri.scheme != "https") throw IllegalArgumentException("openUrl requires an http(s) URL")
+                webView.context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                JSONObject().put("opened", true)
+            }
+            "share.text" -> {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, payload.optString("text", ""))
+                    putExtra(Intent.EXTRA_TITLE, payload.optString("title", ""))
+                }
+                webView.context.startActivity(Intent.createChooser(send, payload.optString("title", "Share")))
+                JSONObject().put("shared", true)
+            }
+            "haptics.impact" -> {
+                webView.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                JSONObject().put("impacted", true)
+            }
             "fs.readText" -> {
                 val path = requireString(payload, "path")
                 JSONObject().put("path", path).put("text", File(path).readText())
@@ -227,6 +350,10 @@ class NativeBridge(private val webView: WebView) {
                 }
                 JSONObject().put("path", path).put("entries", entries)
             }
+            "fs.paths" -> JSONObject()
+                .put("appData", webView.context.filesDir.absolutePath)
+                .put("cache", webView.context.cacheDir.absolutePath)
+                .put("documents", webView.context.getExternalFilesDir(null)?.absolutePath ?: webView.context.filesDir.absolutePath)
             "ui.statusBarStyle" -> {
                 // "light-content" = light icons for dark pages,
                 // "dark-content" = dark icons for light pages.
@@ -282,19 +409,26 @@ class NativeBridge(private val webView: WebView) {
     }
 
     manifestXml() {
+        const permissions = [
+            '<uses-permission android:name="android.permission.INTERNET" />',
+            this.requestedDevicePermissions.has('camera') ? '<uses-permission android:name="android.permission.CAMERA" />' : '',
+            this.requestedDevicePermissions.has('microphone') ? '<uses-permission android:name="android.permission.RECORD_AUDIO" />' : '',
+            this.requestedDevicePermissions.has('location') ? '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' : '',
+            this.requestedDevicePermissions.has('notifications') ? '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' : '',
+        ].filter(Boolean).join('\n    ');
         return `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="${this.appId}">
 
-    <uses-permission android:name="android.permission.INTERNET" />
+    ${permissions}
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

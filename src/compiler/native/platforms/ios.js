@@ -47,6 +47,11 @@ export default class IOSGenerator extends PlatformGenerator {
      * `WebBundle/index.html` inside the app bundle.
      */
     xcodegenSpec() {
+        const permissionProperties = [
+            this.requestedDevicePermissions.has('camera') ? '        NSCameraUsageDescription: "Allow camera access for media capture."' : '',
+            this.requestedDevicePermissions.has('microphone') ? '        NSMicrophoneUsageDescription: "Allow microphone access for media capture."' : '',
+            this.requestedDevicePermissions.has('location') ? '        NSLocationWhenInUseUsageDescription: "Allow location access while using the app."' : '',
+        ].filter(Boolean).join('\n');
         return `name: ${this.appName}
 options:
   createIntermediateGroups: true
@@ -67,6 +72,7 @@ targets:
         CFBundleShortVersionString: "${this.version}"
         CFBundleVersion: "1"
         UILaunchScreen: {}
+${permissionProperties}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${this.appId}
@@ -100,13 +106,17 @@ struct ContentView: View {
 
     webViewSource() {
         const bridgeScript = this.getBridgeScript().replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
-        return `import SwiftUI
+        const allowedCapabilities = JSON.stringify(this.nativeCapabilities.map(({ capability }) => capability));
+return `import SwiftUI
 import UIKit
 import WebKit
+import LocalAuthentication
+import Security
 
 class TachyonMessageHandler: NSObject, WKScriptMessageHandler {
     static let shared = TachyonMessageHandler()
     weak var webView: WKWebView?
+    private let allowedCapabilities = Set(${allowedCapabilities})
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let text = message.body as? String,
@@ -119,6 +129,23 @@ class TachyonMessageHandler: NSObject, WKScriptMessageHandler {
         let id = envelope["id"] as? Int ?? 0
         let capability = envelope["capability"] as? String ?? ""
         let payload = envelope["payload"] as? [String: Any] ?? [:]
+        guard message.frameInfo.isMainFrame else {
+            reply(id: id, ok: false, value: nil, error: "Native bridge requests must come from the main frame")
+            return
+        }
+        guard allowedCapabilities.contains(capability) else {
+            reply(id: id, ok: false, value: nil, error: "Native capability is not enabled: " + capability)
+            return
+        }
+        if capability == "auth.verifyUser" {
+            verifyUser(reason: String(describing: payload["reason"] ?? "Verify your identity")) { result in
+                switch result {
+                case .success(let value): self.reply(id: id, ok: true, value: value, error: nil)
+                case .failure(let error): self.reply(id: id, ok: false, value: nil, error: String(describing: error))
+                }
+            }
+            return
+        }
         do {
             let value = try handle(capability: capability, payload: payload)
             reply(id: id, ok: true, value: value, error: nil)
@@ -135,6 +162,31 @@ class TachyonMessageHandler: NSObject, WKScriptMessageHandler {
                 "runtime": "ios-wkwebview",
                 "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
             ]
+        case "clipboard.readText":
+            return UIPasteboard.general.string ?? ""
+        case "clipboard.writeText":
+            UIPasteboard.general.string = String(describing: payload["text"] ?? "")
+            return ["written": true]
+        case "openUrl":
+            let rawURL = try requireString(payload["url"], "url")
+            guard let url = URL(string: rawURL), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+                throw NativeBridgeError.message("openUrl requires an http(s) URL")
+            }
+            UIApplication.shared.open(url)
+            return ["opened": true]
+        case "share.text":
+            guard let root = webView?.window?.rootViewController else {
+                throw NativeBridgeError.message("Share sheet requires an active view controller")
+            }
+            let text = String(describing: payload["text"] ?? "")
+            let controller = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+            root.present(controller, animated: true)
+            return ["shared": true]
+        case "haptics.impact":
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.prepare()
+            generator.impactOccurred()
+            return ["impacted": true]
         case "fs.readText":
             let filePath = try requireString(payload["path"], "path")
             return ["path": filePath, "text": try String(contentsOfFile: filePath, encoding: .utf8)]
@@ -153,6 +205,21 @@ class TachyonMessageHandler: NSObject, WKScriptMessageHandler {
                 return ["name": name, "type": isDirectory.boolValue ? "directory" : "file"]
             }
             return ["path": dirPath, "entries": entries]
+        case "fs.paths":
+            let manager = FileManager.default
+            return [
+                "appData": manager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory(),
+                "cache": manager.urls(for: .cachesDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory(),
+                "documents": manager.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory()
+            ]
+        case "secrets.get":
+            return try readSecret(key: requireString(payload["key"], "key")) ?? NSNull()
+        case "secrets.set":
+            try writeSecret(key: requireString(payload["key"], "key"), value: requireString(payload["value"], "value"))
+            return ["stored": true]
+        case "secrets.delete":
+            try deleteSecret(key: requireString(payload["key"], "key"))
+            return ["deleted": true]
         case "shell.exec":
             throw NativeBridgeError.message("shell.exec is not available on iOS native hosts")
         default:
@@ -165,6 +232,67 @@ class TachyonMessageHandler: NSObject, WKScriptMessageHandler {
             throw NativeBridgeError.message("Native capability payload requires non-empty string: " + key)
         }
         return text
+    }
+
+    func secretQuery(_ key: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Bundle.main.bundleIdentifier ?? "ma.del.tachyon",
+            kSecAttrAccount as String: key,
+        ]
+    }
+
+    func readSecret(key: String) throws -> String? {
+        var query = secretQuery(key)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data, let value = String(data: data, encoding: .utf8) else {
+            throw NativeBridgeError.message("Unable to read secure storage item")
+        }
+        return value
+    }
+
+    func writeSecret(key: String, value: String) throws {
+        let data = Data(value.utf8)
+        let query = secretQuery(key)
+        let updateStatus = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else { throw NativeBridgeError.message("Unable to update secure storage item") }
+        var insert = query
+        insert[kSecValueData as String] = data
+        guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else {
+            throw NativeBridgeError.message("Unable to create secure storage item")
+        }
+    }
+
+    func deleteSecret(key: String) throws {
+        let status = SecItemDelete(secretQuery(key) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw NativeBridgeError.message("Unable to delete secure storage item")
+        }
+    }
+
+    func verifyUser(reason: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        let context = LAContext()
+        var policyError: NSError?
+        let biometric = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &policyError)
+        let policy: LAPolicy = biometric ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication
+        guard context.canEvaluatePolicy(policy, error: &policyError) else {
+            completion(.failure(policyError ?? NativeBridgeError.message("User verification is unavailable")))
+            return
+        }
+        context.evaluatePolicy(policy, localizedReason: reason) { verified, error in
+            DispatchQueue.main.async {
+                if verified {
+                    completion(.success(["verified": true, "method": biometric ? "biometric" : "device-credential"]))
+                } else {
+                    completion(.failure(error ?? NativeBridgeError.message("User verification was not completed")))
+                }
+            }
+        }
     }
 
     func reply(id: Int, ok: Bool, value: Any?, error: String?) {
@@ -191,7 +319,7 @@ enum NativeBridgeError: Error {
 
 // Serves the bundled WebBundle/ from the custom "tachyon" scheme. Unlike
 // file:// (an opaque origin), a scheme-handled origin is a secure context,
-// which is what unlocks Web Workers (Tac Workers), OPFS (the FYLO browser
+// which is what unlocks browser storage APIs, OPFS (the FYLO browser
 // mirror) and module scripts inside WKWebView — the iOS counterpart of the
 // Android host's WebViewAssetLoader origin. Serves directory indexes and
 // extension-less deep links the same way.
@@ -285,7 +413,7 @@ struct TachyonWebView: UIViewRepresentable {
         let script = WKUserScript(
             source: "${bridgeScript}",
             injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
+            forMainFrameOnly: true
         )
         config.userContentController.addUserScript(script)
 
@@ -332,7 +460,7 @@ iOS apps must be built and signed with Xcode. Follow these steps:
   breaks flat iOS bundle detection at install time).
 - \`TachyonWebView.swift\` serves \`WebBundle/\` through a \`WKURLSchemeHandler\`
   at \`tachyon://localhost/\` — a secure-context origin, so Web Workers
-  (Tac Workers) and OPFS (the FYLO browser mirror) work like they do in the
+  and OPFS (the FYLO browser mirror) work like they do in the
   Android host's WebViewAssetLoader origin. Service workers remain
   unavailable in WKWebView; the runtime degrades gracefully without them.
 - \`window.__tcNativeBridge__\` exposes a minimal JS↔native message contract.

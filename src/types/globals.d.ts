@@ -41,14 +41,61 @@ declare global {
   const environment: TacPlatformContext['environment'];
   const os: TacPlatformContext['os'];
   const target: TacPlatformContext['target'];
-  type Json = unknown;
-  interface TacWorkerRequest {
-    len(): number;
-    body(): string;
-    json(): Json;
-    platform(key: 'platform' | 'environment' | 'os' | 'arch' | 'runtime' | 'target' | 'targets' | 'cpuCores' | 'language' | 'timezone' | 'online' | 'touch' | string): string;
-  }
-  function json(value: string | Json): Json;
+  /** Implicit portable platform prelude available in JS/TS companion scripts. */
+  const app: {
+    isAvailable(): boolean;
+    info(): Promise<Record<string, unknown>>;
+  };
+  const clipboard: {
+    readText(): Promise<string>;
+    writeText(text: string): Promise<unknown>;
+  };
+  const fileSystem: {
+    readText(path: string): Promise<{ path: string; text: string }>;
+    writeText(path: string, text: string): Promise<{ path: string; bytes: number; written: boolean }>;
+    readDir(path: string): Promise<{ path: string; entries: Array<{ name: string; type: 'file' | 'directory' }> }>;
+    paths(): Promise<{ appData: string; cache: string; documents?: string }>;
+  };
+  const shell: {
+    exec(command: string, args?: string[], cwd?: string): Promise<{ command: string; args: string[]; exitCode: number; stdout: string; stderr: string }>;
+  };
+  const browser: {
+    open(url: string): Promise<{ opened: boolean }>;
+  };
+  const share: {
+    text(text: string, title?: string): Promise<{ shared: boolean }>;
+  };
+  const haptics: {
+    impact(): Promise<{ impacted: boolean }>;
+  };
+  const filePicker: {
+    openText(): Promise<{ name: string; text: string }>;
+    saveText(name: string, text: string): Promise<{ name: string; saved: boolean }>;
+  };
+  const secrets: {
+    get(key: string): Promise<string | null>;
+    set(key: string, value: string): Promise<void>;
+    delete(key: string): Promise<void>;
+  };
+  const auth: {
+    verifyUser(reason: string): Promise<{ verified: boolean; method: 'biometric' | 'device-credential' }>;
+  };
+  const geolocation: {
+    current(options?: PositionOptions): Promise<{ latitude: number; longitude: number; accuracy: number; altitude: number | null; altitudeAccuracy: number | null; heading: number | null; speed: number | null; timestamp: number }>;
+  };
+  const notifications: {
+    show(title: string, options?: NotificationOptions): Promise<{ shown: boolean }>;
+  };
+  const media: {
+    getUserMedia(constraints: MediaStreamConstraints): Promise<MediaStream>;
+  };
+  const host: {
+    on(event: string, handler: (payload: unknown) => void): () => void;
+  };
+  const capabilities: {
+    supports(capability: string): boolean;
+    state(capability: string): Promise<'granted' | 'denied' | 'prompt' | 'unsupported'>;
+  };
   /**
    * FYLO collection query helper — globally available in Tac companion scripts
    * and on `window` for plain script tags. Bootstrapped by
@@ -76,6 +123,7 @@ declare global {
 
   interface Window {
     __tc_fetch_cache_db__?: IDBDatabase | null;
+    __tc_onMount_flushed__?: boolean;
     __tc_onMount_queue__?: Array<() => void | Promise<void>>;
     __tc_public_env__?: Record<string, unknown>;
     __tc_rerender?: (componentRootId?: string) => void;
@@ -174,6 +222,7 @@ declare global {
     put(id: string, doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; error?: string }>;
     patch(id: string, doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; error?: string }>;
     del(id: string): Promise<{ ok?: boolean; error?: string }>;
+    delete(id: string): Promise<{ ok?: boolean; error?: string }>;
     createCollection(): Promise<{ ok?: boolean; error?: string }>;
     dropCollection(): Promise<{ ok?: boolean; error?: string }>;
     inspect(): Promise<unknown>;
@@ -197,6 +246,7 @@ declare global {
     collections(): Promise<FyloCollectionsResponse>;
     meta(): Promise<{ root: string; readOnly: boolean; revealed: boolean; path: string } | null>;
     sql(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown>;
+    collection(collection: string): FyloCollectionProxy;
     request(apiPath: string, init?: RequestInit & { cache?: FyloCachePolicy }): Promise<Response>;
     createCollection(collection: string): Promise<{ ok?: boolean; error?: string }>;
     dropCollection(collection: string): Promise<{ ok?: boolean; error?: string }>;

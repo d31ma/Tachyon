@@ -88,7 +88,6 @@ export default class Router {
     static routesPath = Router.resolveWorkspacePath('YON_ROUTES_PATH', ['server/routes']);
     static pagesPath = Router.resolveWorkspacePath('YON_PAGES_PATH', ['client/pages']);
     static componentsPath = Router.resolveWorkspacePath('YON_COMPONENTS_PATH', ['client/components']);
-    static workersPath = Router.resolveWorkspacePath('YON_WORKERS_PATH', ['client/workers']);
     static assetsPath = Router.resolveWorkspacePath('YON_ASSETS_PATH', ['client/shared/assets']);
     static sharedDataPath = Router.resolveWorkspacePath('YON_SHARED_DATA_PATH', ['client/shared/data']);
     static sharedScriptsPath = Router.resolveWorkspacePath('YON_SHARED_SCRIPTS_PATH', ['client/shared/scripts']);

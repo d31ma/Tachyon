@@ -33,7 +33,43 @@ const ROUTES = {
     '/atlas': {
         file: 'atlas/index.html',
         title: 'Capability atlas — Tachyon',
-        description: "A living tour of Tachyon's reactive interfaces, native web capabilities, polyglot Wasm workers, durable browser data and observable client flows — running entirely in the browser with no server behind it.",
+        description: "A living tour of Tachyon's reactive interfaces, native web capabilities, polyglot companions, durable browser data and observable client flows — running entirely in the browser with no server behind it.",
+        noindex: true, // empty shell — it redirects to /atlas/overview
+    },
+    '/atlas/overview': {
+        file: 'atlas/overview/index.html',
+        title: 'Overview — Tachyon capability atlas',
+        description: "What the Tachyon capability atlas is, with live stats for the panels running in your browser.",
+    },
+    '/atlas/compose': {
+        file: 'atlas/compose/index.html',
+        title: 'Compose — Tachyon capability atlas',
+        description: 'Native HTML semantics, expressive CSS and reactive Tac state working together.',
+    },
+    '/atlas/react': {
+        file: 'atlas/react/index.html',
+        title: 'React — Tachyon capability atlas',
+        description: 'Automatic rerenders, browser persistence, and live event streams from the public web and between your own tabs.',
+    },
+    '/atlas/connect': {
+        file: 'atlas/connect/index.html',
+        title: 'Connect — Tachyon capability atlas',
+        description: 'Polyglot Tac companions compiled to one portable controller ABI beside their templates.',
+    },
+    '/atlas/store': {
+        file: 'atlas/store/index.html',
+        title: 'Store — Tachyon capability atlas',
+        description: "FYLO document collections mirrored into your browser's origin-private file system.",
+    },
+    '/atlas/observe': {
+        file: 'atlas/observe/index.html',
+        title: 'Observe — Tachyon capability atlas',
+        description: 'Companion fetches timed client-side and persisted as telemetry spans into a local FYLO collection.',
+    },
+    '/atlas/extend': {
+        file: 'atlas/extend/index.html',
+        title: 'Extend — Tachyon capability atlas',
+        description: 'Scoped and lazily loaded JavaScript and TypeScript Tac companions.',
     },
     '/docs': {
         file: 'docs/index.html',

@@ -14,17 +14,19 @@ const ASSET_PREFIX = '__TACHYON_ASSET_PREFIX__';
  * @typedef {Record<string, Record<string, string>>} RouteManifest
  * @typedef {(elemId?: string | null, event?: unknown, compId?: string | null) => Promise<string>} TacRender
  * @typedef {(props?: unknown) => Promise<TacRender> | TacRender} TacFactory
- * @typedef {'web' | 'macos' | 'windows' | 'linux' | 'android' | 'ios'} TacPlatform
- * @typedef {'browser' | 'desktop' | 'mobile'} TacEnvironment
- * @typedef {'macos' | 'windows' | 'linux' | 'android' | 'ios' | 'unknown'} TacOperatingSystem
+ * Rooted terminology: `platform` is the form factor (desktop | mobile | web);
+ * `environment` and `os` are synonyms for the concrete host
+ * (windows | macos | linux | android | ios | web); `target` is the bundle output.
+ * @typedef {'desktop' | 'mobile' | 'web'} TacPlatform
+ * @typedef {'macos' | 'windows' | 'linux' | 'android' | 'ios' | 'web'} TacOperatingSystem
+ * @typedef {'macos' | 'windows' | 'linux' | 'android' | 'ios' | 'unknown'} TacDetectedOS
  * @typedef {{
  *   target: 'web' | 'macos' | 'windows' | 'linux' | 'android' | 'ios',
  *   platform: TacPlatform,
- *   environment: TacEnvironment,
+ *   environment: TacOperatingSystem,
  *   os: TacOperatingSystem,
- *   browserOS: TacOperatingSystem,
+ *   browserOS: TacDetectedOS,
  *   native: boolean,
- *   browser: boolean,
  *   web: boolean,
  *   desktop: boolean,
  *   mobile: boolean
@@ -44,7 +46,7 @@ const ASSET_PREFIX = '__TACHYON_ASSET_PREFIX__';
  * }} TacGlobal
  */
 
-/** @returns {TacOperatingSystem} */
+/** @returns {TacDetectedOS} */
 function detectBrowserOS() {
     const nav = /** @type {(Navigator & { userAgentData?: { platform?: string } }) | null} */ (typeof navigator !== 'undefined' ? navigator : null);
     const ua = String(nav?.userAgent || '').toLowerCase();
@@ -67,32 +69,31 @@ function readMetaContent(name, fallback) {
         : fallback;
 }
 
-/** @param {string} target */
-function environmentForTarget(target) {
+/** @param {string} target @returns {TacPlatform} */
+function platformForTarget(target) {
     if (target === 'macos' || target === 'windows' || target === 'linux') return 'desktop';
     if (target === 'ios' || target === 'android') return 'mobile';
-    return 'browser';
+    return 'web';
 }
 
 /** @returns {TacPlatformContext} */
 function resolvePlatformContext() {
     const browserOS = detectBrowserOS();
     const target = /** @type {TacPlatformContext['target']} */ (readMetaContent('tachyon-target', 'web'));
-    const platform = /** @type {TacPlatform} */ (readMetaContent('tachyon-platform', target));
-    const environment = /** @type {TacEnvironment} */ (readMetaContent('tachyon-environment', environmentForTarget(platform)));
-    const bakedOS = /** @type {TacOperatingSystem} */ (readMetaContent('tachyon-os', target === 'web' ? 'unknown' : target));
-    const os = target === 'web' ? browserOS : bakedOS;
+    const platform = /** @type {TacPlatform} */ (readMetaContent('tachyon-platform', platformForTarget(target)));
+    // `environment` and `os` are synonyms: the OS for native bundles, 'web'
+    // for browser bundles. The detected visitor OS stays on `browserOS`.
+    const os = /** @type {TacOperatingSystem} */ (readMetaContent('tachyon-os', target === 'web' ? 'web' : target));
     return Object.freeze({
         target,
         platform,
-        environment,
+        environment: os,
         os,
         browserOS,
         native: target !== 'web',
-        browser: environment === 'browser',
-        web: environment === 'browser',
-        desktop: environment === 'desktop',
-        mobile: environment === 'mobile',
+        web: platform === 'web',
+        desktop: platform === 'desktop',
+        mobile: platform === 'mobile',
     });
 }
 
@@ -388,7 +389,8 @@ for (const eventName of ['input', 'change', 'sl-input', 'sl-change']) {
         const element = event.target instanceof Element ? event.target : null;
         if (!element || !element.id || !element.hasAttribute('value'))
             return;
-        rerender(element.id, createValueEventDetail(/** @type {Element & { value?: unknown }} */ (element), event));
+        const eventDetail = createValueEventDetail(/** @type {Element & { value?: unknown }} */ (element), event);
+        void enqueueRenderPass(() => rerender(element.id, eventDetail));
     });
 }
 
@@ -399,7 +401,7 @@ window.addEventListener('popstate', () => navigate(currentNavigationTarget()));
  * @param {unknown} eventDetail
  */
 function dispatchAction(element, eventDetail) {
-    rerender(element.id, eventDetail);
+    void enqueueRenderPass(() => rerender(element.id, eventDetail));
 }
 
 /** @param {string} elementId */
@@ -431,6 +433,21 @@ async function rerenderComponent(host, entry, triggerId, eventDetail) {
         preserveElement: (element) => lazyRenders.has(element.id),
     });
     postPatch();
+}
+
+/**
+ * Render passes share module-level state (render contexts, id generation, the
+ * component registry), so two interleaved passes can transiently blank a
+ * subtree — e.g. a signal fanning out to several components at once. Every
+ * external trigger funnels through one chain so passes run strictly in order.
+ * @type {Promise<void>}
+ */
+let renderChain = Promise.resolve();
+/** @param {() => Promise<void> | void} pass */
+function enqueueRenderPass(pass) {
+    const next = renderChain.then(pass, pass);
+    renderChain = next.then(() => undefined, () => undefined);
+    return next;
 }
 
 /**
@@ -657,6 +674,9 @@ function postPatch() {
     }
 
     const queue = /** @type {Array<() => void | Promise<void>> | undefined} */ (window.__tc_onMount_queue__);
+    // Controllers that register onMount after this flush (e.g. async-loaded
+    // Dart companions) run immediately instead of waiting for a next patch.
+    window.__tc_onMount_flushed__ = true;
     if (queue?.length) {
         window.__tc_onMount_queue__ = [];
         for (const fn of queue) {
@@ -813,7 +833,7 @@ Object.assign(tac, {
 // state change re-renders only its own subtree; the page root (no host id) and
 // non-scopable hosts fall back to a full page refresh.
 /** @param {string} [hostId] */
-window.__tc_rerender = (hostId) => {
+window.__tc_rerender = (hostId) => enqueueRenderPass(() => {
     if (hostId) {
         const host = document.getElementById(hostId);
         const entry = componentRegistry.scopable(hostId);
@@ -821,7 +841,7 @@ window.__tc_rerender = (hostId) => {
             return rerenderComponent(host, entry, null);
     }
     return refreshCurrentView();
-};
+});
 
 // ── HMR soft-reload ───────────────────────────────────────────────────
 // Called by hot-reload-client.js instead of location.reload(). Invalidates

@@ -34,6 +34,7 @@ import { tacBrowserCache } from './browser-cache.js';
  *   clearCredentials(): void,
  *   sql(strings: TemplateStringsArray, ...values: unknown[]): Promise<any>,
  *   request(apiPath: string, init?: RequestInit): Promise<Response>,
+ *   collection(collection: string): FyloCollection,
  *   createCollection(collection: string): Promise<{ ok?: boolean, error?: string }>,
  *   dropCollection(collection: string): Promise<{ ok?: boolean, error?: string }>,
  *   inspectCollection(collection: string): Promise<unknown>,
@@ -363,6 +364,11 @@ export function createFyloClient(basePath) {
                 }
             },
 
+            /** Alias matching FYLO's language-client collection facade. */
+            async delete(/** @type {string} */ id) {
+                return this.del(id);
+            },
+
             /** List documents (same as find with no filters). */
             async list(limit = 25, options = {}) {
                 return this.find({ limit }, options);
@@ -670,6 +676,18 @@ export function createFyloClient(basePath) {
         enabled: false,
         /** @type {string | undefined} */
         root: undefined,
+        /**
+         * Named collection facade for static-language companions. Dynamic
+         * JavaScript can continue to use `fylo.users`; generated companions
+         * need an identifier-independent form that survives compilation.
+         * @param {string} collection
+         * @returns {FyloCollection}
+         */
+        collection(collection) {
+            const name = String(collection);
+            if (!collectionFacades[name]) collectionFacades[name] = createCollectionFacade(name);
+            return /** @type {FyloCollection} */ (collectionFacades[name]);
+        },
         async collections() {
             try {
                 const response = await fetchAPI('/api/collections', { cache: 'reload' });

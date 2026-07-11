@@ -33,15 +33,21 @@ export default class WindowsGenerator extends PlatformGenerator {
         const appName = this.appName.replace(/"/g, '\\"');
         const nativeHostScript = `window.__tcNativeHost__ = { postMessage(message) { window.chrome.webview.postMessage(typeof message === 'string' ? message : JSON.stringify(message)); } };\\n${this.getBridgeScript()}`;
         const bridgeScript = nativeHostScript.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+        const allowedCapabilityExpression = this.nativeCapabilities
+            .map(({ capability }) => `capability == ${JSON.stringify(capability)}`)
+            .join(' || ') || 'false';
         return `#include <windows.h>
 #include <wrl.h>
 #include <WebView2.h>
+#include <shellapi.h>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <future>
 #include <sstream>
 #include <string>
+#include <stdexcept>
 #include <vector>
 #include <shlwapi.h>
 
@@ -49,6 +55,7 @@ export default class WindowsGenerator extends PlatformGenerator {
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
 #pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "shell32.lib")
 
 using namespace Microsoft::WRL;
 
@@ -94,6 +101,50 @@ static std::wstring Widen(const std::string& value) {
     std::wstring result(size, L'\\0');
     MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), size);
     return result;
+}
+
+static std::string ReadClipboardText() {
+    if (!OpenClipboard(nullptr)) throw std::runtime_error("Unable to open the Windows clipboard");
+    HANDLE handle = GetClipboardData(CF_UNICODETEXT);
+    if (!handle) {
+        CloseClipboard();
+        return "";
+    }
+    const wchar_t* text = static_cast<const wchar_t*>(GlobalLock(handle));
+    std::string result = text ? Narrow(text) : "";
+    if (text) GlobalUnlock(handle);
+    CloseClipboard();
+    return result;
+}
+
+static void WriteClipboardText(const std::string& value) {
+    std::wstring text = Widen(value);
+    if (!OpenClipboard(nullptr)) throw std::runtime_error("Unable to open the Windows clipboard");
+    EmptyClipboard();
+    SIZE_T bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!memory) {
+        CloseClipboard();
+        throw std::runtime_error("Unable to allocate Windows clipboard memory");
+    }
+    void* target = GlobalLock(memory);
+    std::memcpy(target, text.c_str(), bytes);
+    GlobalUnlock(memory);
+    if (!SetClipboardData(CF_UNICODETEXT, memory)) {
+        GlobalFree(memory);
+        CloseClipboard();
+        throw std::runtime_error("Unable to update the Windows clipboard");
+    }
+    CloseClipboard();
+}
+
+static void OpenExternalUrl(const std::string& value) {
+    if (value.rfind("http://", 0) != 0 && value.rfind("https://", 0) != 0)
+        throw std::runtime_error("openUrl requires an http(s) URL");
+    std::wstring url = Widen(value);
+    HINSTANCE result = ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(result) <= 32)
+        throw std::runtime_error("Unable to open the external URL");
 }
 
 static std::string JsonEscape(const std::string& value) {
@@ -351,108 +402,23 @@ static std::string RunShellCommand(const std::string& command, const std::vector
     return "{\\"command\\":\\"" + JsonEscape(command) + "\\",\\"args\\":" + argsJson + ",\\"cwd\\":\\"" + JsonEscape(cwd) + "\\",\\"exitCode\\":" + std::to_string(exitCode) + ",\\"stdout\\":\\"" + JsonEscape(stdoutText) + "\\",\\"stderr\\":\\"" + JsonEscape(stderrText) + "\\"}";
 }
 
-static bool IsWorkerMetadataFile(const std::string& name) {
-    if (name.size() > 5 && name.compare(name.size() - 5, 5, ".json") == 0) return true;
-    if (name.size() > 7 && name.compare(name.size() - 7, 7, ".schema") == 0) return true;
-    return false;
-}
-
-static std::string FindWorkerExecutable(const std::string& route) {
-    std::filesystem::path workerDir = std::filesystem::path(Narrow(GetResourcePath())) / "workers" / route;
-    if (!std::filesystem::is_directory(workerDir)) return "";
-    for (const auto& entry : std::filesystem::directory_iterator(workerDir)) {
-        if (!entry.is_regular_file()) continue;
-        std::string name = entry.path().filename().string();
-        if (IsWorkerMetadataFile(name)) continue;
-        return entry.path().string();
-    }
-    return "";
-}
-
-static std::string RunWorkerJson(const std::string& route, const std::string& method, const std::string& requestJson) {
-    std::string executablePath = FindWorkerExecutable(route);
-    if (executablePath.empty()) return "";
-
-    SECURITY_ATTRIBUTES security = {};
-    security.nLength = sizeof(SECURITY_ATTRIBUTES);
-    security.bInheritHandle = TRUE;
-
-    HANDLE stdoutRead = nullptr;
-    HANDLE stdoutWrite = nullptr;
-    HANDLE stderrRead = nullptr;
-    HANDLE stderrWrite = nullptr;
-    HANDLE stdinRead = nullptr;
-    HANDLE stdinWrite = nullptr;
-    if (!CreatePipe(&stdoutRead, &stdoutWrite, &security, 0) ||
-        !CreatePipe(&stderrRead, &stderrWrite, &security, 0) ||
-        !CreatePipe(&stdinRead, &stdinWrite, &security, 0)) {
-        return "";
-    }
-    SetHandleInformation(stdoutRead, HANDLE_FLAG_INHERIT, 0);
-    SetHandleInformation(stderrRead, HANDLE_FLAG_INHERIT, 0);
-    SetHandleInformation(stdinWrite, HANDLE_FLAG_INHERIT, 0);
-
-    std::string commandLine = QuoteProcessArg(executablePath);
-
-    STARTUPINFOA startup = {};
-    startup.cb = sizeof(STARTUPINFOA);
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdOutput = stdoutWrite;
-    startup.hStdError = stderrWrite;
-    startup.hStdInput = stdinRead;
-
-    PROCESS_INFORMATION process = {};
-    std::string mutableCommandLine = commandLine;
-    BOOL created = CreateProcessA(
-        nullptr,
-        mutableCommandLine.data(),
-        nullptr,
-        nullptr,
-        TRUE,
-        CREATE_NO_WINDOW,
-        nullptr,
-        nullptr,
-        &startup,
-        &process
-    );
-    CloseHandle(stdoutWrite);
-    CloseHandle(stderrWrite);
-    CloseHandle(stdinRead);
-    if (!created) {
-        CloseHandle(stdoutRead);
-        CloseHandle(stderrRead);
-        CloseHandle(stdinWrite);
-        return "";
-    }
-
-    std::string envelope = "{\\"method\\":\\"" + method + "\\",\\"request\\":" + (requestJson.empty() ? "{}" : requestJson) + "}";
-    DWORD written = 0;
-    WriteFile(stdinWrite, envelope.data(), static_cast<DWORD>(envelope.size()), &written, nullptr);
-    CloseHandle(stdinWrite);
-
-    auto stdoutFuture = std::async(std::launch::async, ReadPipe, stdoutRead);
-    auto stderrFuture = std::async(std::launch::async, ReadPipe, stderrRead);
-    WaitForSingleObject(process.hProcess, INFINITE);
-    DWORD exitCode = 0;
-    GetExitCodeProcess(process.hProcess, &exitCode);
-    std::string stdoutText = stdoutFuture.get();
-    std::string stderrText = stderrFuture.get();
-    CloseHandle(stdoutRead);
-    CloseHandle(stderrRead);
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
-
-    if (exitCode != 0) return "";
-    return stdoutText;
-}
-
 static std::string HandleNativeCapability(const std::string& message) {
     int id = ExtractJsonInt(message, "id");
     std::string capability = ExtractJsonString(message, "capability");
     std::string value;
     try {
+        if (!(${allowedCapabilityExpression}))
+            throw std::runtime_error("Native capability is not enabled: " + capability);
         if (capability == "app.info") {
             value = "{\\"name\\":\\"" + JsonEscape("${appName}") + "\\",\\"runtime\\":\\"windows-webview2\\"}";
+        } else if (capability == "clipboard.readText") {
+            value = "\\\"" + JsonEscape(ReadClipboardText()) + "\\\"";
+        } else if (capability == "clipboard.writeText") {
+            WriteClipboardText(ExtractJsonString(message, "text"));
+            value = "{\\\"written\\\":true}";
+        } else if (capability == "openUrl") {
+            OpenExternalUrl(ExtractJsonString(message, "url"));
+            value = "{\\\"opened\\\":true}";
         } else if (capability == "fs.readText") {
             std::string filePath = ExtractJsonString(message, "path");
             value = "{\\"path\\":\\"" + JsonEscape(filePath) + "\\",\\"text\\":\\"" + JsonEscape(ReadTextFile(filePath)) + "\\"}";
@@ -478,18 +444,6 @@ static std::string HandleNativeCapability(const std::string& message) {
                 ExtractJsonStringArray(message, "args"),
                 ExtractJsonString(message, "cwd")
             );
-        } else if (capability == "tachyon.worker") {
-            std::string route = ExtractJsonString(message, "route");
-            std::string method = ExtractJsonString(message, "method");
-            std::string requestJson = ExtractJsonValue(message, "request");
-            if (route.empty() || method.empty()) {
-                return "{\\"type\\":\\"tac:native-response\\",\\"id\\":" + std::to_string(id) + ",\\"ok\\":false,\\"error\\":\\"Tachyon worker requires route and method\\"}";
-            }
-            std::string workerResult = RunWorkerJson(route, method, requestJson);
-            if (workerResult.empty()) {
-                return "{\\"type\\":\\"tac:native-response\\",\\"id\\":" + std::to_string(id) + ",\\"ok\\":false,\\"error\\":\\"Unable to execute worker\\"}";
-            }
-            return "{\\"type\\":\\"tac:native-response\\",\\"id\\":" + std::to_string(id) + ",\\"ok\\":true,\\"value\\":" + workerResult + "}";
         } else {
             return "{\\"type\\":\\"tac:native-response\\",\\"id\\":" + std::to_string(id) + ",\\"ok\\":false,\\"error\\":\\"Unsupported native capability\\"}";
         }

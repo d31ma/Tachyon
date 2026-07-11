@@ -199,6 +199,7 @@ describe('fylo browser sync client', () => {
         testGlobal().__tc_native_fetch__ = fetchStub;
 
         const { fylo } = await importFylo();
+        expect(fylo.collection('users')).toBe(fylo.users);
         await fylo.createCollection('users');
         await fylo.users.batchPut([{ name: 'Ada' }, { name: 'Grace' }]);
         await fylo.users.patchMany({ query: { role: 'eq.admin' }, patch: { active: true } });

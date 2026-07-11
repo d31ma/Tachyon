@@ -4,37 +4,37 @@ export default class {
   targets = [
     {
       name: 'Web',
-      environment: 'browser',
+      platform: 'web platform',
       description: 'Static-ready browser output with PWA assets.',
       command: 'ty bundle --target web\n# writes dist/web',
     },
     {
       name: 'macOS',
-      environment: 'desktop',
+      platform: 'desktop platform',
       description: 'Swift WKWebView host with bundled Tac assets.',
       command: 'ty bundle --target macos\nty preview --target macos',
     },
     {
       name: 'Windows',
-      environment: 'desktop',
+      platform: 'desktop platform',
       description: 'WebView2 desktop host for Windows machines.',
       command: 'ty bundle --target windows\nty preview --target windows',
     },
     {
       name: 'Linux',
-      environment: 'desktop',
+      platform: 'desktop platform',
       description: 'GTK/WebKitGTK host for Linux desktops.',
       command: 'ty bundle --target linux\nty preview --target linux',
     },
     {
       name: 'iOS',
-      environment: 'mobile',
+      platform: 'mobile platform',
       description: 'Xcode-ready iOS WKWebView project.',
       command: 'ty bundle --target ios\nty preview --target ios',
     },
     {
       name: 'Android',
-      environment: 'mobile',
+      platform: 'mobile platform',
       description: 'Android Studio-ready WebView project.',
       command: 'ty bundle --target android\nty preview --target android',
     },
