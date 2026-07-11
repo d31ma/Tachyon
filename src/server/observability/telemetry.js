@@ -227,17 +227,7 @@ class TelemetrySanitizer {
     }
 }
 
-class TelemetryStore {
-    /**
-     * @param {PersistedTraceDocument} _span
-     * @returns {Promise<void>}
-     */
-    async persistSpan(_span) {
-        throw new Error('TelemetryStore.persistSpan() must be implemented by a subclass');
-    }
-}
-
-class FyloTelemetryStore extends TelemetryStore {
+class FyloTelemetryStore {
     /** @type {Promise<Fylo & Record<string, any>> | null} */
     static fyloPromise = null;
     /** @type {Promise<void> | null} */
@@ -296,7 +286,9 @@ class FyloTelemetryStore extends TelemetryStore {
     }
 }
 
-class SpanFactory {
+export default class Telemetry {
+    static store = new FyloTelemetryStore();
+
     /**
      * @returns {Record<string, unknown>}
      */
@@ -365,14 +357,14 @@ class SpanFactory {
                     values: value
                         .map((entry) => TelemetrySanitizer.value(entry))
                         .filter((entry) => entry !== undefined)
-                        .map((entry) => SpanFactory.anyValue(entry)),
+                        .map((entry) => Telemetry.anyValue(entry)),
                 },
             };
         }
         if (value && typeof value === 'object') {
             return {
                 kvlistValue: {
-                    values: SpanFactory.keyValues(/** @type {Record<string, unknown>} */ (value)),
+                    values: Telemetry.keyValues(/** @type {Record<string, unknown>} */ (value)),
                 },
             };
         }
@@ -387,7 +379,7 @@ class SpanFactory {
         return Object.entries(TelemetrySanitizer.attributes(attributes))
             .map(([key, value]) => value === undefined ? null : {
                 key,
-                value: SpanFactory.anyValue(value),
+                value: Telemetry.anyValue(value),
             })
             .filter((entry) => entry !== null);
     }
@@ -419,7 +411,7 @@ class SpanFactory {
      * @param {{ requestId: string, route: string, method: string, path: string, protocol: string, host: string, ipAddress?: string }} input
      * @returns {SpanHandle | null}
      */
-    static createRequestSpan(request, input) {
+    static startRequestSpan(request, input) {
         if (!TelemetryConfig.enabled()) {
             return null;
         }
@@ -433,7 +425,7 @@ class SpanFactory {
             name: `${input.method} ${input.route}`,
             kind: 'server',
             startedAtMs: Date.now(),
-            attributes: SpanFactory.spanAttributes({
+            attributes: Telemetry.spanAttributes({
                 'http.request.method': input.method,
                 'http.route': input.route,
                 'url.path': input.path,
@@ -446,32 +438,6 @@ class SpanFactory {
     }
 
     /**
-     * @param {SpanHandle | null} parent
-     * @param {string} name
-     * @param {'internal'} kind
-     * @param {string | null} requestId
-     * @param {Record<string, unknown>} [attributes]
-     * @returns {SpanHandle | null}
-     */
-    static createSpan(parent, name, kind, requestId, attributes = {}) {
-        if (!TelemetryConfig.enabled() || !parent) {
-            return null;
-        }
-        return {
-            traceId: parent.traceId,
-            spanId: TraceContextParser.spanId(),
-            parentSpanId: parent.spanId,
-            traceFlags: parent.traceFlags,
-            traceState: parent.traceState,
-            name,
-            kind,
-            startedAtMs: Date.now(),
-            attributes: SpanFactory.spanAttributes(attributes, requestId),
-            events: [],
-        };
-    }
-
-    /**
      * @param {{ traceId?: string, spanId?: string, traceFlags?: string, traceState?: string } | null | undefined} context
      * @param {string} name
      * @param {'internal'} kind
@@ -479,7 +445,7 @@ class SpanFactory {
      * @param {Record<string, unknown>} [attributes]
      * @returns {SpanHandle | null}
      */
-    static createChildSpan(context, name, kind, requestId, attributes = {}) {
+    static startChildSpan(context, name, kind, requestId, attributes = {}) {
         if (!TelemetryConfig.enabled() || !context?.traceId || !context?.spanId) {
             return null;
         }
@@ -492,25 +458,9 @@ class SpanFactory {
             name,
             kind,
             startedAtMs: Date.now(),
-            attributes: SpanFactory.spanAttributes(attributes, requestId),
+            attributes: Telemetry.spanAttributes(attributes, requestId),
             events: [],
         };
-    }
-
-    /**
-     * @param {SpanHandle | null} span
-     * @param {string} name
-     * @param {Record<string, unknown>} [attributes]
-     */
-    static addEvent(span, name, attributes = {}) {
-        if (!span) {
-            return;
-        }
-        span.events.push({
-            name,
-            timestampMs: Date.now(),
-            attributes: TelemetrySanitizer.attributes(attributes),
-        });
     }
 
     /**
@@ -534,7 +484,7 @@ class SpanFactory {
         return {
             resourceSpans: [{
                 resource: {
-                    attributes: SpanFactory.keyValues(SpanFactory.resourceAttributes()),
+                    attributes: Telemetry.keyValues(Telemetry.resourceAttributes()),
                     droppedAttributesCount: 0,
                 },
                 scopeSpans: [{
@@ -549,26 +499,26 @@ class SpanFactory {
                         spanId: span.spanId,
                         traceState: span.traceState,
                         parentSpanId: span.parentSpanId || '',
-                        flags: SpanFactory.flagsFromTraceFlags(span.traceFlags),
+                        flags: Telemetry.flagsFromTraceFlags(span.traceFlags),
                         name: span.name,
                         kind: SPAN_KIND[span.kind],
-                        startTimeUnixNano: SpanFactory.unixNano(span.startedAtMs),
-                        endTimeUnixNano: SpanFactory.unixNano(endedAtMs),
-                        attributes: SpanFactory.keyValues({
+                        startTimeUnixNano: Telemetry.unixNano(span.startedAtMs),
+                        endTimeUnixNano: Telemetry.unixNano(endedAtMs),
+                        attributes: Telemetry.keyValues({
                             ...span.attributes,
                             ...input.attributes,
                         }),
                         droppedAttributesCount: 0,
                         events: span.events.map((event) => ({
-                            timeUnixNano: SpanFactory.unixNano(event.timestampMs),
+                            timeUnixNano: Telemetry.unixNano(event.timestampMs),
                             name: event.name,
-                            attributes: SpanFactory.keyValues(event.attributes || {}),
+                            attributes: Telemetry.keyValues(event.attributes || {}),
                             droppedAttributesCount: 0,
                         })),
                         droppedEventsCount: 0,
                         links: [],
                         droppedLinksCount: 0,
-                        status: SpanFactory.status(input.statusCode, input.statusMessage),
+                        status: Telemetry.status(input.statusCode, input.statusMessage),
                     }],
                 }],
             }],
@@ -581,7 +531,7 @@ class SpanFactory {
      * @returns {PersistedTraceDocument}
      */
     static toDocument(span, input) {
-        const tracesData = SpanFactory.buildTracesData(span, input);
+        const tracesData = Telemetry.buildTracesData(span, input);
         const persistedSpan = tracesData.resourceSpans[0]?.scopeSpans[0]?.spans[0] || {};
         const requestId = span.attributes['tachyon.request.id'];
         return {
@@ -596,67 +546,6 @@ class SpanFactory {
             endTimeUnixNano: typeof persistedSpan.endTimeUnixNano === 'string' ? persistedSpan.endTimeUnixNano : '0',
             otlpJson: JSON.stringify(tracesData),
         };
-    }
-}
-
-export default class Telemetry {
-    static store = new FyloTelemetryStore();
-
-    /**
-     * @returns {boolean}
-     */
-    static enabled() {
-        return TelemetryConfig.enabled();
-    }
-
-    /**
-     * @param {Request} request
-     * @param {{ requestId: string, route: string, method: string, path: string, protocol: string, host: string, ipAddress?: string }} input
-     * @returns {SpanHandle | null}
-     */
-    static startRequestSpan(request, input) {
-        return SpanFactory.createRequestSpan(request, input);
-    }
-
-    /**
-     * @param {SpanHandle | null} parent
-     * @param {string} name
-     * @param {'internal'} kind
-     * @param {string | null} requestId
-     * @param {Record<string, unknown>} [attributes]
-     * @returns {SpanHandle | null}
-     */
-    static startSpan(parent, name, kind, requestId, attributes = {}) {
-        return SpanFactory.createSpan(parent, name, kind, requestId, attributes);
-    }
-
-    /**
-     * @param {{ traceId?: string, spanId?: string, traceFlags?: string, traceState?: string } | null | undefined} context
-     * @param {string} name
-     * @param {'internal'} kind
-     * @param {string | null} requestId
-     * @param {Record<string, unknown>} [attributes]
-     * @returns {SpanHandle | null}
-     */
-    static startChildSpan(context, name, kind, requestId, attributes = {}) {
-        return SpanFactory.createChildSpan(context, name, kind, requestId, attributes);
-    }
-
-    /**
-     * @param {SpanHandle | null} span
-     * @param {string} name
-     * @param {Record<string, unknown>} [attributes]
-     */
-    static addEvent(span, name, attributes = {}) {
-        SpanFactory.addEvent(span, name, attributes);
-    }
-
-    /**
-     * @param {SpanHandle | null} span
-     * @returns {string | null}
-     */
-    static traceparent(span) {
-        return SpanFactory.traceparent(span);
     }
 
     /**
@@ -688,7 +577,7 @@ export default class Telemetry {
         if (!span) {
             return;
         }
-        const doc = SpanFactory.toDocument(span, input);
+        const doc = Telemetry.toDocument(span, input);
         try {
             await Telemetry.store.persistSpan(doc);
         }

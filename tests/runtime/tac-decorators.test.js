@@ -33,6 +33,35 @@ function createHelpers() {
         bindPersistentFields() { },
         env: (key, fallback) => /** @type {any} */ (envs.has(key) ? envs.get(key) : fallback),
         fetch: async () => new Response(''),
+        web: {
+            fetch: async () => new Response(''),
+            storage: {
+                local: { get: (_key, fallback) => fallback, set: () => { }, remove: () => { } },
+                session: { get: (_key, fallback) => fallback, set: () => { }, remove: () => { } },
+            },
+            navigator: { online: () => false, language: () => '', userAgent: () => '' },
+            location: { href: () => '', origin: () => '' },
+            clipboard: { readText: async () => '', writeText: async () => { } },
+            sleep: async () => { },
+        },
+        deviceAvailable: () => false,
+        device: async () => ({}),
+        __native: {
+            app: { available: () => false, info: async () => ({}) },
+            clipboard: { available: () => false, readText: async () => '', writeText: async () => ({}) },
+            browser: { available: () => false, open: async () => ({}) },
+            filePicker: { available: () => false, openText: async () => ({}) },
+            web: {
+                localStorage: { getItem: (_key, fallback) => fallback, setItem: () => { }, removeItem: () => { } },
+                sessionStorage: { getItem: (_key, fallback) => fallback, setItem: () => { }, removeItem: () => { } },
+                navigator: { language: () => '', online: () => false, userAgent: () => '' },
+                location: { href: () => '', origin: () => '' },
+                fetch: async () => new Response(''),
+            },
+        },
+        __nativeCall: async () => undefined,
+        __nativeAvailable: () => false,
+        __nativeCallback: (_operation, _payload, resolve) => resolve(undefined),
         onMount: (fn) => { mountFns.push(fn); },
         publish: (name, value, options = {}) => {
             if (options.retain) values.set(name, value);

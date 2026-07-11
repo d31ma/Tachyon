@@ -1,7 +1,7 @@
 // @ts-check
 import { expect, test } from 'bun:test';
 import { checkNativePreviewRequirements, formatNativePreviewCheckFailure } from '../../src/shared/native-preview-checks.js';
-import { environmentForTarget, platformForTarget, resolveBundleTargets, resolveSingleBundleTarget, targetContext } from '../../src/shared/native-targets.js';
+import { osForTarget, platformForTarget, resolveBundleTargets, resolveSingleBundleTarget, targetContext } from '../../src/shared/native-targets.js';
 
 test('bundle target resolver normalizes aliases and all targets', () => {
     expect(resolveSingleBundleTarget('browser')).toBe('web');
@@ -10,16 +10,16 @@ test('bundle target resolver normalizes aliases and all targets', () => {
     expect(resolveBundleTargets('all')).toEqual(['web', 'macos', 'windows', 'linux', 'android', 'ios']);
 });
 
-test('bundle target context exposes concrete platforms and environment families', () => {
+test('bundle target context uses the rooted terminology: platform is the form factor, environment/os the host', () => {
     expect(platformForTarget('web')).toBe('web');
-    expect(environmentForTarget('web')).toBe('browser');
+    expect(osForTarget('web')).toBe('web');
     for (const target of ['linux', 'windows', 'macos']) {
-        expect(platformForTarget(target)).toBe(target);
-        expect(environmentForTarget(target)).toBe('desktop');
+        expect(platformForTarget(target)).toBe('desktop');
+        expect(osForTarget(target)).toBe(target);
         expect(targetContext(/** @type {any} */ (target))).toMatchObject({
             target,
-            platform: target,
-            environment: 'desktop',
+            platform: 'desktop',
+            environment: target,
             os: target,
             native: true,
             desktop: true,
@@ -28,12 +28,12 @@ test('bundle target context exposes concrete platforms and environment families'
         });
     }
     for (const target of ['ios', 'android']) {
-        expect(platformForTarget(target)).toBe(target);
-        expect(environmentForTarget(target)).toBe('mobile');
+        expect(platformForTarget(target)).toBe('mobile');
+        expect(osForTarget(target)).toBe(target);
         expect(targetContext(/** @type {any} */ (target))).toMatchObject({
             target,
-            platform: target,
-            environment: 'mobile',
+            platform: 'mobile',
+            environment: target,
             os: target,
             native: true,
             desktop: false,
@@ -44,8 +44,8 @@ test('bundle target context exposes concrete platforms and environment families'
     expect(targetContext('web')).toMatchObject({
         target: 'web',
         platform: 'web',
-        environment: 'browser',
-        os: 'unknown',
+        environment: 'web',
+        os: 'web',
         native: false,
         web: true,
     });

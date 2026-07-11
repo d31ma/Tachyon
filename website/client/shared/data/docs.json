@@ -5,7 +5,8 @@
     "devices",
     "templates",
     "companions",
-    "workers",
+    "polyglot",
+    "platform-apis",
     "storage",
     "yon",
     "operations",
@@ -15,22 +16,37 @@
     {
       "title": "Start",
       "summary": "Install, project shape, routing and target choices.",
-      "topics": ["introduction", "routing", "devices"]
+      "topics": [
+        "introduction",
+        "routing",
+        "devices"
+      ]
     },
     {
       "title": "Tac frontend",
-      "summary": "Templates, companions, workers and browser-local data.",
-      "topics": ["templates", "companions", "workers", "storage"]
+      "summary": "Templates, polyglot companions and browser-local data.",
+      "topics": [
+        "templates",
+        "companions",
+        "polyglot",
+        "platform-apis",
+        "storage"
+      ]
     },
     {
       "title": "Yon backend",
       "summary": "Routes, middleware, validation, FYLO and observability.",
-      "topics": ["yon", "operations"]
+      "topics": [
+        "yon",
+        "operations"
+      ]
     },
     {
       "title": "Cookbook",
       "summary": "Production-shaped recipes that combine Tac, Yon and FYLO.",
-      "topics": ["cookbook"]
+      "topics": [
+        "cookbook"
+      ]
     }
   ],
   "topics": {
@@ -45,8 +61,8 @@
         },
         {
           "heading": "Layout",
-          "body": "Pages live in client/pages, components in client/components, workers in client/workers, and backend routes in server/routes. Shared browser assets and data live under client/shared.",
-          "code": "client/\n  pages/tac.html\n  components/hero/tac.html\n  workers/language/rust/tac.rs\n  shared/assets/  shared/data/\nserver/\n  routes/posts/yon.js"
+          "body": "Pages live in client/pages, components in client/components, and backend routes in server/routes. A companion file sits beside its tac.html template; shared browser assets and data live under client/shared.",
+          "code": "client/\n  pages/tac.html\n  components/hero/tac.html\n  components/hero/tac.swift\n  shared/assets/  shared/data/\nserver/\n  routes/posts/yon.js"
         }
       ]
     },
@@ -182,33 +198,34 @@
         }
       ]
     },
-    "workers": {
-      "title": "Tac Workers",
-      "summary": "Browser-local worker backends shaped like Yon routes, compiled in-house to WebAssembly with no external toolchain, and invoked with fetch(\"tac://…\").",
+    "polyglot": {
+      "title": "Polyglot companions",
+      "summary": "Tac companions are colocated controllers for templates. They are portable across web, desktop and mobile outputs and do not require a client worker endpoint.",
       "sections": [
         {
-          "heading": "Author like a route",
-          "body": "A worker at client/workers/language/rust/tac.rs exposes verb methods. The current Tac compiler ships Rust, JavaScript and TypeScript worker providers. Rust is the cross-target provider; JavaScript and TypeScript are web-scoped providers that can run through the browser fallback where a native host supports it.",
-          "code": "impl Handler {\n    pub fn POST(request: Request) -> String {\n        \"processed \" + request.len() + \" bytes\"\n    }\n}"
+          "heading": "Choose a companion language",
+          "body": "A component or page may use tac.js, tac.ts, tac.dart, tac.rs, tac.kt, tac.swift, or tac.cs beside its tac.html file. JavaScript and TypeScript use Bun, Dart uses the managed Dart bridge, and Rust, Kotlin, Swift, and C# use Tachyon's portable companion subset.",
+          "code": "client/components/counter/\n  tac.html\n  tac.swift\n\nfinal class Counter: Tac {\n  var count: Int = 0\n  func increment() { self.count += 1 }\n}"
         },
         {
-          "heading": "Invoke with fetch",
-          "body": "The request verb selects the handler method, and heavy routes can opt into a worker pool. A small platform boundary exposes curated facts like os, arch and timezone through request.platform().",
-          "code": "const res = await fetch('tac://language/rust?pool=4', {\n  method: 'POST',\n  body: text,\n})\nconst payload = await res.json()"
+          "heading": "Use native-shaped shims",
+          "body": "Companion source never calls Tac transport APIs. Every language gets an implicit platform prelude for local/session storage, browser context, local-first FYLO collections and capability-checked device calls. Raw filesystem and desktop shell operations require an explicit package allowlist. Raw OPFS handles remain private to FYLO's bundled browser engine.",
+          "code": "// Rust\nlocal_storage().set_item(\"theme\", \"calm\");\nlet notes = await fylo().collection(\"notes\").find({});\nif capabilities().supports(\"fs.readDir\") {\n  let entries = await file_system().read_dir(\".\");\n}\n\n// Swift\nlet notes = await fylo.collection(\"notes\").find({})\nawait clipboard.writeText(\"Ready\")\n\n// Dart\nfinal notes = await fylo.collection('notes').find({});"
         },
         {
-          "heading": "Schemas",
-          "body": "An OPTIONS.schema.json beside the worker validates request and response payloads in the bundled browser runtime, so frontend workers keep the same contract-first shape as Yon routes."
+          "heading": "Contracts stay on the server",
+          "body": "OPTIONS.schema.json remains the Yon route contract for incoming requests and outgoing responses. Tac companions are UI controllers, so they call normal HTTP endpoints through the local-first fetch binding rather than declaring a second route protocol."
         },
         {
-          "heading": "Peer boundary",
-          "body": "When the app opts in with TAC_NATIVE_CAPABILITIES=peer.*, Tac workers can ask the page runtime for brokered WebRTC data-channel operations. The app still owns signaling and TURN infrastructure."
+          "heading": "Device boundary",
+          "body": "Safe capabilities are enabled automatically. Android and iOS hosts implement native clipboard, HTTP(S) external URLs, share sheets, haptic feedback and sandbox path discovery; macOS, Windows and Linux service their safe desktop families as well. Raw filesystem access must be listed in tachyon.nativeCapabilities, and shell.exec is an additional desktop-only opt-in. Browser builds use standards-based fallbacks or fail closed when a capability is unavailable.",
+          "code": "// Rust\nif capabilities().supports(\"share.text\") {\n  await share().text(\"Ready\");\n  await haptics().impact();\n}\nif capabilities().supports(\"shell.exec\") {\n  await shell().exec(\"git\", [\"status\", \"--short\"]);\n}\n\n# ty bundle --target android,ios"
         }
       ]
     },
     "devices": {
       "title": "Devices and targets",
-      "summary": "Tac builds one client source tree into browser, desktop and mobile outputs. The selected target is embedded into the shell and exposed to templates, scripts and workers.",
+      "summary": "Tac builds one client source tree into browser, desktop and mobile outputs. The rooted terminology: platform is the form factor (desktop/mobile/web); environment and os are synonyms for the concrete host (windows/macos/linux/android/ios/web); target is the bundle output.",
       "sections": [
         {
           "heading": "Targets",
@@ -222,12 +239,12 @@
         },
         {
           "heading": "Runtime globals",
-          "body": "Templates can read environment, platform, target and os without imports. Scripts can read the structured context at this.tac.platform, and workers can read the same facts with request.platform(\"key\").",
-          "code": "<switch :value=\"environment\">\n  <case :when=\"'desktop'\">Desktop {platform}</case>\n  <case :when=\"'mobile'\">Mobile {platform}</case>\n  <case default>Browser {platform}</case>\n</switch>\n\nconst mode = this.tac.platform.environment"
+          "body": "Templates can read platform, environment, os and target without imports. Every companion language can read the same structured context through its Tac runtime binding.",
+          "code": "<switch :value=\"platform\">\n  <case :when=\"'desktop'\">Desktop bundle on {os}</case>\n  <case :when=\"'mobile'\">Mobile bundle on {os}</case>\n  <case default>Web platform</case>\n</switch>\n\nconst platform = this.tac.platform.platform  // desktop | mobile | web\nconst os = this.tac.platform.os              // windows | macos | linux | android | ios | web"
         },
         {
-          "heading": "Environment model",
-          "body": "web maps to environment=browser. macos, windows and linux map to environment=desktop. ios and android map to environment=mobile. Native targets keep platform equal to the selected OS; the web target detects the visitor OS separately when the browser exposes it."
+          "heading": "Rooted terminology",
+          "body": "platform is the form factor: macos, windows and linux targets are the desktop platform; ios and android are the mobile platform; web is the web platform. environment and os are synonyms for the concrete host: the operating system for native bundles, web for browser bundles (the detected visitor OS stays on browserOS). target names the bundle output. Companion language names the language a Tac companion is written in: JavaScript, TypeScript, Dart, Rust, Kotlin, Swift or C#."
         }
       ]
     },
@@ -237,7 +254,7 @@
       "sections": [
         {
           "heading": "Local-first browser reads",
-          "body": "Inside Tac scripts, fetch() caches successful GET responses into IndexedDB, and the compiler-injected fylo client mirrors documents into OPFS with cache-first, network-first, reload and no-store policies.",
+          "body": "Inside Tac scripts, fetch() caches successful GET responses into IndexedDB. Every companion language can use the bundled FYLO browser engine through its implicit fylo collection facade; it mirrors documents into OPFS with cache-first, network-first, reload and no-store policies.",
           "code": "const result = await fylo.users.find(\n  { order: 'email.asc' },\n  { cache: 'network-first' },\n)\nthis.users = (result.docs ?? []).map((entry) => entry.doc)"
         },
         {
@@ -252,17 +269,17 @@
     },
     "cookbook": {
       "title": "Cookbook",
-      "summary": "Concrete recipes for building Tachyon apps without leaving the frontend-first workflow. This website is frontend-only, so these patterns can be explored with Tac workers and the browser FYLO client before a Yon server exists.",
+      "summary": "Concrete recipes for building Tachyon apps without leaving the frontend-first workflow. This website is frontend-only, so these patterns can be explored with Tac companions and the browser FYLO client before a Yon server exists.",
       "sections": [
         {
           "heading": "Frontend-only prototype",
-          "body": "Start with client/ and db/ only. Tac renders pages and components, workers mimic compute-heavy endpoints through tac:// URLs, and the browser FYLO client stores documents locally. When you later add server/routes, the UI contract can stay the same.",
-          "code": "client/\n  pages/tac.html\n  components/panel/users/tac.html\n  workers/language/rust/tac.rs\n  shared/data/docs.json\ndb/\n  schemas/users/manifest.json"
+          "body": "Start with client/ and db/ only. Tac renders pages and components, companions provide the reactive UI controller, and the browser FYLO client stores documents locally. When you later add server/routes, the UI contract can stay the same.",
+          "code": "client/\n  pages/tac.html\n  components/panel/users/tac.html\n  components/panel/users/tac.kt\n  shared/data/docs.json\ndb/\n  schemas/users/manifest.json"
         },
         {
           "heading": "Local-first collection",
-          "body": "Use fylo.<collection> from a Tac companion to read and write documents through the browser mirror. The wrapper keeps IndexedDB and OPFS as the local cache, then can synchronize with Yon /_fylo routes when a backend is present.",
-          "code": "const users = fylo.users\nconst created = await users.create({ name: 'Ada', role: 'author' })\nconst result = await users.find({ order: 'name.asc' }, { cache: 'network-first' })\nthis.users = result.docs.map((entry) => entry.doc)"
+          "body": "JavaScript and TypeScript can use fylo.users or fylo.collection('users'). Dart, Kotlin, Swift and C# use fylo.collection('users'); Rust uses fylo().collection('users'). Tachyon lowers each form to the same browser mirror. The engine keeps OPFS private and can synchronize with Yon /_fylo routes when a backend is present.",
+          "code": "// JavaScript / TypeScript\nconst result = await fylo.collection('users').find({ order: 'name.asc' })\n\n// Dart / Kotlin / Swift\nfinal result = await fylo.collection('users').find({})\n\n// Rust\nlet result = await fylo().collection(\"users\").find({});"
         },
         {
           "heading": "Signal-driven UI",
@@ -297,6 +314,41 @@
         {
           "heading": "Security",
           "body": "Security headers on every response, hashed Basic Auth, request limits and handler timeouts, origin-aware CORS rejection, and schema validation are all on by default in production."
+        }
+      ]
+    },
+    "platform-apis": {
+      "title": "Platform APIs",
+      "summary": "Every capability a Tac companion can call, which targets service it natively, and how each companion language spells it. One permissioned host bridge backs all of them.",
+      "sections": [
+        {
+          "heading": "The capability catalog per target",
+          "body": "Safe host capabilities are enabled automatically for their bundle target and embedded into the app shell at bundle time. Anything outside the catalog fails closed with a named error instead of reaching the host. Browser-standard capabilities use the standard API on every target; sensitive native capabilities are enabled only where the generated host has a concrete implementation.",
+          "code": "capability               web   macOS  Windows  Linux  iOS  Android\nweb.fetch                 Y      Y       Y       Y      Y      Y\nfylo.collection           Y      Y       Y       Y      Y      Y\napp.info                  -      Y       Y       Y      Y      Y\nclipboard.*               -      Y       Y       Y      Y      Y\nfs.read/write/readDir     -      opt-in  opt-in  opt-in opt-in opt-in\nfs.paths                  -      Y       -       -      Y      Y\nshell.exec                -      opt-in  opt-in  opt-in -      -\nsecrets.get/set/delete    -      Y       -       -      Y      -\nauth.verifyUser           -      Y       -       -      Y      -\nfilePicker.saveText       Y      Y       Y       Y      Y      Y\ngeolocation.current       Y      Y       Y       Y      Y      Y\nnotifications.show        Y      Y       Y       Y      Y      Y\nmedia.getUserMedia        Y      Y       Y       Y      Y      Y\ncapabilities.state        Y      Y       Y       Y      Y      Y\n\n`filePicker.openText` remains available when the host/browser implements it."
+        },
+        {
+          "heading": "Web APIs in every language",
+          "body": "The portable web families work on every target, including plain browser builds. JavaScript and TypeScript keep their browser globals; Dart, Kotlin and Swift share one camelCase prelude; Rust and C# use their native casing. The compiler lowers every spelling to the same bridge.",
+          "code": "family      JS / TS                  Dart / Kotlin / Swift      Rust                          C#\nstorage     localStorage.setItem     localStorage.setItem       local_storage().set_item      LocalStorage.SetItem\nsession     sessionStorage.getItem   sessionStorage.getItem     session_storage().get_item    SessionStorage.GetItem\nfetch       fetch(url)               fetch(url)                 fetch(url)                    FetchAsync(url)\nlanguage    navigator.language       navigator.language()       navigator().language()        Navigator.Language()\nonline      navigator.onLine         navigator.isOnline()       navigator().is_online()       Navigator.IsOnline()\nlocation    location.origin          location.origin()          location().origin()           Location.Origin()\nFYLO        fylo.collection(name)    fylo.collection(name)      fylo().collection(name)       Fylo.Collection(name)"
+        },
+        {
+          "heading": "Device APIs in every language",
+          "body": "Device families cross the permissioned host bridge. Every companion language, including JavaScript and TypeScript, receives the same implicit prelude - the compiler lowers each spelling to one bridge. Every call that returns data or crosses the device boundary is asynchronous - await it. `host.on` is currently JavaScript/TypeScript-only because event callbacks are language-runtime-specific.",
+          "code": "family       JS / TS                     Dart / Kotlin / Swift       Rust                            C#\nsecure store secrets.get(key)            secrets.get(key)            secrets().get(key)              Secrets.GetAsync(key)\nuser verify  auth.verifyUser(reason)     auth.verifyUser(reason)     auth().verify_user(reason)      Auth.VerifyUserAsync(reason)\nsave text    filePicker.saveText(n, t)   filePicker.saveText(n, t)   file_picker().save_text(n, t)   FilePicker.SaveTextAsync(n, t)\nlocation     geolocation.current()        geolocation.current()        geolocation().current()         Geolocation.CurrentAsync()\nnotify       notifications.show(title)   notifications.show(title)   notifications().show(title)     Notifications.ShowAsync(title)\nmedia        media.getUserMedia(input)   media.getUserMedia(input)   media().get_user_media(input)   Media.GetUserMediaAsync(input)\npermission   capabilities.state(op)      capabilities.state(op)      capabilities().state(op)        Capabilities.StateAsync(op)"
+        },
+        {
+          "heading": "What each target services natively",
+          "body": "Web keeps the portable families and rejects unavailable device calls by name. Native hosts service their safe capability catalog automatically. Raw filesystem operations are opt-in on every native target; shell.exec is opt-in on desktop only. The generated host enforces the same allowlist as the compiled facade, and openUrl accepts HTTP(S) only. Distribute apps with raw capabilities only when all bundled companion code is trusted.",
+          "code": "// Rust - gate desktop-only and mobile-only families before calling\nif capabilities().supports(\"shell.exec\") {\n    let result = await shell().exec(\"git\", [\"status\", \"--short\"]);\n}\nif capabilities().supports(\"share.text\") {\n    await share().text(\"Sent from a Tac companion\");\n}"
+        },
+        {
+          "heading": "Feature detection and async rules",
+          "body": "`capabilities.supports` answers whether a bundle/environment carries an operation. `capabilities.state` adds the browser permission state (`granted`, `denied`, `prompt`, or `unsupported`) so apps do not discover denial through an exception. Native hosts declare camera, microphone, location, and notification permissions explicitly in `package.json`; declarations do not grant access or trigger a prompt.",
+          "code": "// package.json\n{ \"tachyon\": {\n  \"devicePermissions\": [\"camera\", \"microphone\", \"location\", \"notifications\"],\n  \"nativeCapabilities\": [\"fs.readText\", \"fs.readDir\"]\n} }\n\nif (await capabilities.state(\"geo.current\") !== \"denied\") {\n  const position = await geolocation.current();\n}"
+        },
+        {
+          "heading": "Lifecycle and scope boundaries",
+          "body": "`host.on(\"app.ready\", handler)` is the typed, buffered host-event channel for JavaScript/TypeScript. It is ready for future deep links and notification actions without turning each API into a bespoke callback. Secure storage and user verification currently use Keychain and LocalAuthentication on macOS/iOS; unsupported targets fail closed. Contacts, calendar, Bluetooth, NFC, USB, push delivery, and window management remain separate, platform-specific families."
         }
       ]
     }

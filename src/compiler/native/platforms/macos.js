@@ -35,12 +35,15 @@ export default class MacOSGenerator extends PlatformGenerator {
     swiftSource() {
         const appName = this.appName.replace(/"/g, '\\"');
         const bridgeScript = this.getBridgeScript().replace(/`/g, '\\`').replace(/\\/g, '\\\\');
-        return `import Cocoa
+        const allowedCapabilities = JSON.stringify(this.nativeCapabilities.map(({ capability }) => capability));
+return `import Cocoa
 import WebKit
+import LocalAuthentication
+import Security
 
 // Serves Contents/Resources from the custom "tachyon" scheme. Unlike
 // file:// (an opaque origin), a scheme-handled origin is a secure context,
-// which is what unlocks Web Workers (Tac Workers), OPFS (the FYLO browser
+// which is what unlocks browser storage APIs, OPFS (the FYLO browser
 // mirror) and module scripts inside WKWebView — matching the iOS and
 // Android hosts. Serves directory indexes and extension-less deep links.
 class TachyonSchemeHandler: NSObject, WKURLSchemeHandler {
@@ -119,7 +122,7 @@ class TachyonNavigationDelegate: NSObject, WKNavigationDelegate {
             decisionHandler(.cancel)
             return
         }
-        decisionHandler(.allow)
+        decisionHandler(.cancel)
     }
 }
 
@@ -134,7 +137,7 @@ class ViewController: NSViewController {
         let script = WKUserScript(
             source: "${this.escapeSwiftString(bridgeScript)}",
             injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
+            forMainFrameOnly: true
         )
         config.userContentController.addUserScript(script)
 
@@ -156,6 +159,7 @@ class ViewController: NSViewController {
 class MessageHandler: NSObject, WKScriptMessageHandler {
     static let shared = MessageHandler()
     weak var webView: WKWebView?
+    private let allowedCapabilities = Set(${allowedCapabilities})
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let text = message.body as? String,
@@ -168,6 +172,23 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
         let id = envelope["id"] as? Int ?? 0
         let capability = envelope["capability"] as? String ?? ""
         let payload = envelope["payload"] as? [String: Any] ?? [:]
+        guard message.frameInfo.isMainFrame else {
+            reply(id: id, ok: false, value: nil, error: "Native bridge requests must come from the main frame")
+            return
+        }
+        guard allowedCapabilities.contains(capability) else {
+            reply(id: id, ok: false, value: nil, error: "Native capability is not enabled: " + capability)
+            return
+        }
+        if capability == "auth.verifyUser" {
+            verifyUser(reason: String(describing: payload["reason"] ?? "Verify your identity")) { result in
+                switch result {
+                case .success(let value): self.reply(id: id, ok: true, value: value, error: nil)
+                case .failure(let error): self.reply(id: id, ok: false, value: nil, error: String(describing: error))
+                }
+            }
+            return
+        }
         do {
             let value = try handle(capability: capability, payload: payload)
             reply(id: id, ok: true, value: value, error: nil)
@@ -184,6 +205,20 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
                 "runtime": "macos-wkwebview",
                 "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
             ]
+        case "clipboard.readText":
+            return NSPasteboard.general.string(forType: .string) ?? ""
+        case "clipboard.writeText":
+            let text = String(describing: payload["text"] ?? "")
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            return ["written": true]
+        case "openUrl":
+            let rawURL = try requireString(payload["url"], "url")
+            guard let url = URL(string: rawURL), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+                throw NativeBridgeError.message("openUrl requires an http(s) URL")
+            }
+            NSWorkspace.shared.open(url)
+            return ["opened": true]
         case "fs.readText":
             let filePath = try requireString(payload["path"], "path")
             return ["path": filePath, "text": try String(contentsOfFile: filePath, encoding: .utf8)]
@@ -202,16 +237,26 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
                 return ["name": name, "type": isDirectory.boolValue ? "directory" : "file"]
             }
             return ["path": dirPath, "entries": entries]
+        case "fs.paths":
+            let manager = FileManager.default
+            return [
+                "appData": manager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory(),
+                "cache": manager.urls(for: .cachesDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory(),
+                "documents": manager.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory()
+            ]
+        case "secrets.get":
+            return try readSecret(key: requireString(payload["key"], "key")) ?? NSNull()
+        case "secrets.set":
+            try writeSecret(key: requireString(payload["key"], "key"), value: requireString(payload["value"], "value"))
+            return ["stored": true]
+        case "secrets.delete":
+            try deleteSecret(key: requireString(payload["key"], "key"))
+            return ["deleted": true]
         case "shell.exec":
             let command = try requireString(payload["command"], "command")
             let args = payload["args"] as? [String] ?? []
             let cwd = payload["cwd"] as? String
             return try runProcess(command: command, args: args, cwd: cwd)
-        case "tachyon.worker":
-            let route = try requireString(payload["route"], "route")
-            let method = payload["method"] as? String ?? "GET"
-            let request = payload["request"] as? [String: Any] ?? [:]
-            return try runWorker(route: route, method: method, request: request)
         default:
             throw NativeBridgeError.message("Unsupported native capability: " + capability)
         }
@@ -222,6 +267,67 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
             throw NativeBridgeError.message("Native capability payload requires non-empty string: " + key)
         }
         return text
+    }
+
+    func secretQuery(_ key: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Bundle.main.bundleIdentifier ?? "ma.del.tachyon",
+            kSecAttrAccount as String: key,
+        ]
+    }
+
+    func readSecret(key: String) throws -> String? {
+        var query = secretQuery(key)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data, let value = String(data: data, encoding: .utf8) else {
+            throw NativeBridgeError.message("Unable to read secure storage item")
+        }
+        return value
+    }
+
+    func writeSecret(key: String, value: String) throws {
+        let data = Data(value.utf8)
+        let query = secretQuery(key)
+        let updateStatus = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else { throw NativeBridgeError.message("Unable to update secure storage item") }
+        var insert = query
+        insert[kSecValueData as String] = data
+        guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else {
+            throw NativeBridgeError.message("Unable to create secure storage item")
+        }
+    }
+
+    func deleteSecret(key: String) throws {
+        let status = SecItemDelete(secretQuery(key) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw NativeBridgeError.message("Unable to delete secure storage item")
+        }
+    }
+
+    func verifyUser(reason: String, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        let context = LAContext()
+        var policyError: NSError?
+        let biometric = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &policyError)
+        let policy: LAPolicy = biometric ? .deviceOwnerAuthenticationWithBiometrics : .deviceOwnerAuthentication
+        guard context.canEvaluatePolicy(policy, error: &policyError) else {
+            completion(.failure(policyError ?? NativeBridgeError.message("User verification is unavailable")))
+            return
+        }
+        context.evaluatePolicy(policy, localizedReason: reason) { verified, error in
+            DispatchQueue.main.async {
+                if verified {
+                    completion(.success(["verified": true, "method": biometric ? "biometric" : "device-credential"]))
+                } else {
+                    completion(.failure(error ?? NativeBridgeError.message("User verification was not completed")))
+                }
+            }
+        }
     }
 
     func runProcess(command: String, args: [String], cwd: String?) throws -> [String: Any] {
@@ -247,51 +353,6 @@ class MessageHandler: NSObject, WKScriptMessageHandler {
             "stdout": stdoutText,
             "stderr": stderrText
         ]
-    }
-
-    func runWorker(route: String, method: String, request: [String: Any]) throws -> Any {
-        guard let resourcesURL = Bundle.main.resourceURL else {
-            throw NativeBridgeError.message("Resources directory not found")
-        }
-        let workerDir = resourcesURL.appendingPathComponent("workers", isDirectory: true).appendingPathComponent(route, isDirectory: true)
-        let fileManager = FileManager.default
-        guard let entries = try? fileManager.contentsOfDirectory(atPath: workerDir.path) else {
-            throw NativeBridgeError.message("Worker directory not found: " + route)
-        }
-        guard let executable = entries.first(where: { !$0.hasSuffix(".json") && !$0.hasSuffix(".schema") && !$0.hasPrefix(".") }) else {
-            throw NativeBridgeError.message("No worker executable found for route: " + route)
-        }
-        let executableURL = workerDir.appendingPathComponent(executable)
-        guard fileManager.isExecutableFile(atPath: executableURL.path) else {
-            throw NativeBridgeError.message("Worker executable is not executable: " + executable)
-        }
-
-        let envelope: [String: Any] = ["method": method, "request": request]
-        let inputData = try JSONSerialization.data(withJSONObject: envelope)
-
-        let process = Process()
-        process.executableURL = executableURL
-        let stdin = Pipe()
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardInput = stdin
-        process.standardOutput = stdout
-        process.standardError = stderr
-        try process.run()
-        stdin.fileHandleForWriting.write(inputData)
-        stdin.fileHandleForWriting.closeFile()
-        process.waitUntilExit()
-
-        let stdoutText = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        if process.terminationStatus != 0 {
-            let stderrText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw NativeBridgeError.message("Worker exited with code \\(process.terminationStatus): \\(stderrText)")
-        }
-        guard let data = stdoutText.data(using: .utf8),
-              let response = try? JSONSerialization.jsonObject(with: data) else {
-            throw NativeBridgeError.message("Worker returned invalid JSON: " + stdoutText)
-        }
-        return response
     }
 
     func reply(id: Int, ok: Bool, value: Any?, error: String?) {
@@ -407,6 +468,11 @@ enum TachyonMain {
     }
 
     infoPlist() {
+        const permissionProperties = [
+            this.requestedDevicePermissions.has('camera') ? '    <key>NSCameraUsageDescription</key>\n    <string>Allow camera access for media capture.</string>' : '',
+            this.requestedDevicePermissions.has('microphone') ? '    <key>NSMicrophoneUsageDescription</key>\n    <string>Allow microphone access for media capture.</string>' : '',
+            this.requestedDevicePermissions.has('location') ? '    <key>NSLocationUsageDescription</key>\n    <string>Allow location access while using the app.</string>' : '',
+        ].filter(Boolean).join('\n');
         return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -435,19 +501,19 @@ enum TachyonMain {
     <string>11.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+${permissionProperties}
 </dict>
 </plist>
 `;
     }
 
     entitlements() {
-        const sandboxValue = this.hasRawOsCapabilities() ? '<false/>' : '<true/>';
         return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>com.apple.security.app-sandbox</key>
-    ${sandboxValue}
+    <false/>
     <key>com.apple.security.network.client</key>
     <true/>
     <key>com.apple.security.files.user-selected.read-write</key>

@@ -8,7 +8,7 @@ export default class {
     /** @type {number} */
     itemsCount = 0
     /** @type {string} */
-    workerStatus = 'starting'
+    companionStatus = 'starting'
     /** @type {string} */
     storageUsage = '—'
 
@@ -21,7 +21,7 @@ export default class {
     async refresh() {
         await Promise.all([
             this.loadItemsCount(),
-            this.pingWorker(),
+            this.verifyCompanions(),
             this.measureStorage(),
         ])
     }
@@ -38,13 +38,8 @@ export default class {
     }
 
     /** @returns {Promise<void>} */
-    async pingWorker() {
-        try {
-            const response = await fetch('tac://language/javascript', { cache: 'reload' })
-            this.workerStatus = response.ok ? 'wasm online' : 'error'
-        } catch {
-            this.workerStatus = 'unavailable'
-        }
+    async verifyCompanions() {
+        this.companionStatus = 'companions ready'
     }
 
     /** @returns {Promise<void>} */

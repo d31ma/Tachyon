@@ -1,10 +1,10 @@
 # Tachyon Website
 
 Living Tachyon showcase for the in-repo `@d31ma/tachyon` package. This app is
-**frontend-only**: there is no `server/` and no `db/`. Tac Workers compiled
-in-house to WebAssembly mimic the backend, and the compiler-injected FYLO
-browser client mimics the database with document collections mirrored into the
-origin-private file system (OPFS).
+**frontend-only**: there is no `server/` and no `db/`. Tac companions run beside
+their templates, and the compiler-injected FYLO browser client provides local
+data through document collections mirrored into the origin-private file system
+(OPFS).
 
 The interface is built with DUVAY Light-DOM web components. Its versioned CSS,
 component bundle, behaviors script, and license are vendored under
@@ -15,12 +15,12 @@ without a CDN inside a `default-src 'self'` content-security policy.
 
 - `/` — marketing landing page: hero, feature cards, Yon backend runtime
   overview, device target matrix, and quickstart code tabs.
-- `/atlas` — the guided capability atlas, running entirely in the browser:
-  native inputs, a reactive canvas studio, Wikimedia SSE streaming,
-  tab-to-tab realtime over BroadcastChannel with OPFS-replayed history, a Rust
-  worker answering every HTTP verb from tac.wasm, polyglot worker runs, FYLO
-  cache policies and mutations, a document lifecycle demo, and client-side
-  telemetry spans stored as FYLO documents.
+- `/atlas` — a redirect into the guided capability atlas. The indexable
+  sections live at `/atlas/overview`, `/atlas/compose`, `/atlas/react`,
+  `/atlas/connect`, `/atlas/store`, `/atlas/observe`, and `/atlas/extend`.
+  Together they cover native inputs, a reactive canvas studio, Wikimedia SSE
+  streaming, tab-to-tab realtime with OPFS-replayed history, portable polyglot
+  companions, FYLO cache policies, document lifecycle, and client telemetry.
 - `/docs` — a wrapper page (`<slot />`) hosting dynamic `_topic` routes fed
   from `client/shared/data/docs.json`.
 
@@ -76,7 +76,7 @@ The site is installable: `client/shared/assets/manifest.webmanifest` is
 auto-linked into every shell (with its `theme_color` meta), icons live beside
 it (`icon.svg`, `icon-192.png`, `icon-512.png`, `favicon.svg`), and Tachyon's
 built-in service worker caches assets for offline use on non-loopback hosts.
-Being frontend-only, the installed app keeps working offline — workers and
+Being frontend-only, the installed app keeps working offline — companions and
 the OPFS database need no network.
 
 ## Notes

@@ -1,0 +1,62 @@
+.portable-bridge {
+  container-type: inline-size;
+}
+
+.portable-status {
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+
+.portable-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.portable-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.portable-grid > div {
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--w-color-primary) 24%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--w-color-primary) 5%, transparent);
+}
+
+.portable-grid > .portable-permission-config {
+  grid-column: 1 / -1;
+  background: color-mix(in srgb, var(--w-color-primary) 8%, transparent);
+}
+
+.portable-permission-config pre {
+  overflow-x: auto;
+  margin: 0.65rem 0;
+  padding: 0.7rem;
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--w-color-primary) 12%, transparent);
+  font-size: 0.78rem;
+}
+
+.portable-grid p {
+  margin: 0.35rem 0 0;
+  color: var(--w-text-subtle);
+  font-size: var(--w-font-sm);
+  line-height: 1.55;
+}
+
+@container (max-width: 34rem) {
+  .portable-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .portable-grid { grid-template-columns: 1fr; }
+
+  .portable-grid > .portable-permission-config {
+    grid-column: auto;
+  }
+}

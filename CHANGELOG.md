@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.28.06] - 2026-07-11
+
+### Added
+
+- Tac components and pages can use portable Dart, Rust, Kotlin, Swift, and C#
+  companions alongside JavaScript and TypeScript. Every language lowers to the
+  same reactive controller ABI and implicit browser/FYLO/device prelude.
+- The native capability surface now includes sandbox path discovery, secure
+  storage and local user verification on Apple hosts, browser-standard file
+  save, geolocation, notifications and media capture, permission-state
+  inspection, and the buffered `app.ready` host event.
+- Native camera, microphone, location, and notification privacy declarations
+  can be configured with `tachyon.devicePermissions` in `package.json`.
+- Raw native operations can be enabled individually with
+  `tachyon.nativeCapabilities`: `fs.readText`, `fs.writeText`, `fs.readDir`,
+  and desktop-only `shell.exec`.
+- The website now has a sectioned capability atlas with dedicated overview,
+  compose, react, connect, store, observe, and extend routes, plus a live
+  portable-bridge panel covering the permission and capability model.
+
+### Changed
+
+- Tac companions are now target-neutral UI controllers instead of client
+  worker endpoints. The client worker/WASM compiler and runtime have been
+  removed; portable companions use normal bundled modules on web, desktop,
+  iOS, and Android.
+- Native filesystem and shell access is disabled by default. Package
+  declarations are validated strictly, filtered by target support, embedded
+  into generated metadata, and enforced independently by the JavaScript
+  facade and native handler.
+- Native external URL operations accept HTTP(S) only. Android bridge delivery
+  is restricted to the trusted appassets origin and main frame, Apple and
+  Linux bridge scripts are main-frame-only, and Android media requests grant
+  only camera/audio resources explicitly recognized by the host.
+- Android native hosts disable application backup and cleartext network
+  traffic by default.
+- The website's `/atlas` route is now a redirect shell; each indexable Atlas
+  section has its own canonical route and responsive one-column mobile layout.
+
+### Fixed
+
+- Dart toolchain provisioning and portable companion diagnostics now produce
+  deterministic, actionable failures for unsupported source constructs.
+- Native configuration no longer silently discards misspelled permission or
+  capability names; invalid declarations fail the build before replacing an
+  existing bundle.
+- Android no longer grants unrelated WebView permission resources when a page
+  requests camera or microphone access.
+
 ## [26.28.01] - 2026-07-06
 
 ### Fixed

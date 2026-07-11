@@ -1,7 +1,7 @@
 {
   "name": "Tachyon — full-stack ty framework",
   "short_name": "Tachyon",
-  "description": "A polyglot, file-system-routed full-stack framework distributed through the ty binary. This showcase runs entirely in your browser: Tac Workers are its backend and the FYLO OPFS mirror is its database.",
+  "description": "A polyglot, file-system-routed full-stack framework distributed through the ty binary. This showcase runs entirely in your browser with Tac companions and the FYLO OPFS mirror.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

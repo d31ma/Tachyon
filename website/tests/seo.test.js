@@ -46,12 +46,18 @@ describe('enterprise SEO is baked into the prerendered output', () => {
         expect(robots).toContain('Sitemap: https://tachyon.dev/sitemap.xml');
     });
 
-    test('sitemap.xml lists exactly the three indexable routes', async () => {
+    test('sitemap.xml lists every indexable route and excludes redirect shells', async () => {
         const sitemap = await read('dist/web/sitemap.xml');
         const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
         expect(locs).toEqual([
             'https://tachyon.dev/',
-            'https://tachyon.dev/atlas',
+            'https://tachyon.dev/atlas/overview',
+            'https://tachyon.dev/atlas/compose',
+            'https://tachyon.dev/atlas/react',
+            'https://tachyon.dev/atlas/connect',
+            'https://tachyon.dev/atlas/store',
+            'https://tachyon.dev/atlas/observe',
+            'https://tachyon.dev/atlas/extend',
             'https://tachyon.dev/docs',
         ]);
     });

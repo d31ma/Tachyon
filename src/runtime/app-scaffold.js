@@ -22,8 +22,6 @@ YON_TRUST_PROXY=
 YON_CONTENT_SECURITY_POLICY=default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'
 TAC_FORMAT=esm
 TAC_PUBLIC_ENV=
-TAC_DANGEROUS_CAPABILITIES=
-TAC_NATIVE_CAPABILITIES=
 YON_MAX_BODY_BYTES=1048576
 YON_HANDLER_TIMEOUT_MS=30000
 YON_RATE_LIMIT_MAX=
@@ -48,7 +46,6 @@ YON_DATA_BROWSER_REVEAL=false
 YON_CORS_ORIGIN=
 YON_PAGES_PATH=client/pages
 YON_COMPONENTS_PATH=client/components
-YON_WORKERS_PATH=client/workers
 YON_ASSETS_PATH=client/shared/assets
 YON_ROUTES_PATH=server/routes
 YON_SHARED_SCRIPTS_PATH=client/shared/scripts
@@ -143,7 +140,6 @@ document.documentElement.setAttribute('data-theme', 'light')
 `,
     'client/shared/assets/.gitkeep': ``,
     'client/shared/data/.gitkeep': ``,
-    'client/workers/.gitkeep': ``,
     'server/routes/yon.js': `export class Handler {
   static async GET() {
     return { ok: true, framework: 'Tachyon' }
@@ -162,7 +158,7 @@ This folder is the default FYLO root for the application. Tachyon drives the
 \`\`\`
 db/
 ├── schemas/       # Versioned schemas consumed by FYLO strict validation
-└── .collections/  # FYLO document store, managed exclusively by @d31ma/fylo
+└── .collections/  # FYLO document store, managed exclusively by the FYLO binary
 \`\`\`
 
 ## schemas/

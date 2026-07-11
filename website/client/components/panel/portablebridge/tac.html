@@ -1,0 +1,58 @@
+<w-card variant="outlined" class="panel-card portable-bridge">
+  <w-card-item title="Rust companion: permissioned device APIs" subtitle="This colocated tac.rs companion uses the same capability and permission contracts as JavaScript — no framework bridge names in application source.">
+  </w-card-item>
+  <w-card-text>
+    <div class="w-row ga-2 portable-status">
+      <w-chip size="small" color="primary">{web_status}</w-chip>
+      <w-chip size="small">storage: {stored_value}</w-chip>
+    </div>
+
+    <div class="portable-actions">
+      <w-btn size="sm" variant="outlined" on:click="inspect_web()">Refresh Web APIs</w-btn>
+      <w-btn size="sm" variant="filled" on:click="inspect_device()">Read device info</w-btn>
+      <w-btn size="sm" variant="outlined" on:click="inspect_filesystem()">Inspect native files</w-btn>
+      <w-btn size="sm" variant="filled" on:click="test_mobile()">Test mobile bridge</w-btn>
+      <w-btn size="sm" variant="outlined" on:click="inspect_permissions()">Inspect permission model</w-btn>
+      <w-btn size="sm" variant="outlined" on:click="copy_report()">Copy bridge report</w-btn>
+    </div>
+
+    <div class="portable-grid">
+      <div>
+        <strong>Web API shim</strong>
+        <p><code>local_storage().set_item(...)</code> and <code>fylo().collection(...)</code> use browser APIs and the OPFS-backed FYLO engine without a target permission.</p>
+      </div>
+      <div>
+        <strong>Device API shim</strong>
+        <p><code>app().info()</code> looks like a native SDK call but remains explicit and policy-gated: <span>{device_status}</span></p>
+      </div>
+      <div>
+        <strong>Mobile host bridge</strong>
+        <p><code>share().text(...)</code> and <code>haptics().impact()</code> invoke Android and iOS SDKs from this Rust companion: <span>{mobile_status}</span></p>
+      </div>
+      <div>
+        <strong>Raw filesystem bridge</strong>
+        <p><code>file_system().read_dir(...)</code> requires an explicit native capability and fails closed everywhere else: <span>{file_status}</span></p>
+      </div>
+      <div>
+        <strong>Clipboard bridge</strong>
+        <p><code>clipboard().write_text(...)</code> is gated by the same capability catalog as every host API: <span>{clipboard_status}</span></p>
+      </div>
+      <div>
+        <strong>Permission state</strong>
+        <p><code>capabilities().state("geo.current")</code> distinguishes an unsupported environment from <em>prompt</em>, <em>denied</em> and <em>granted</em>: <span>{permission_status}</span></p>
+      </div>
+      <div>
+        <strong>Secure storage and user presence</strong>
+        <p><code>secrets()</code> and <code>auth().verify_user(...)</code> are offered only by hosts with a real secure store and local-auth contract: <span>{security_status}</span></p>
+      </div>
+      <div class="portable-permission-config">
+        <strong>Native permission declaration</strong>
+        <pre><code>&#123; "tachyon": &#123;
+  "devicePermissions": ["camera", "microphone", "location", "notifications"],
+  "nativeCapabilities": ["fs.readText", "fs.readDir"]
+&#125; &#125;</code></pre>
+        <p>Device declarations generate privacy metadata; raw capabilities form the host allowlist. Neither grants access or shows a prompt by itself.</p>
+      </div>
+    </div>
+  </w-card-text>
+</w-card>

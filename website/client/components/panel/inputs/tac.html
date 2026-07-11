@@ -67,8 +67,8 @@
           </select>
         </label>
         <label>Datalist
-          <input type="text" list="tac-runtime-options" placeholder="Choose a runtime" :value="fields.runtime" on:input="updateField('runtime', $event.target.value)" />
-          <datalist id="tac-runtime-options">
+          <input type="text" list="tac-platform-options" placeholder="Choose a platform" :value="fields.runtime" on:input="updateField('runtime', $event.target.value)" />
+          <datalist id="tac-platform-options">
             <option value="Tachyon"></option>
             <option value="Browser APIs"></option>
             <option value="FYLO"></option>

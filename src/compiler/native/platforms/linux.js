@@ -29,6 +29,9 @@ export default class LinuxGenerator extends PlatformGenerator {
     cSource() {
         const appName = this.appName.replace(/"/g, '\\"');
         const bridgeScript = this.getBridgeScript().replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+        const allowedCapabilityExpression = this.nativeCapabilities
+            .map(({ capability }) => `strcmp(capability, ${JSON.stringify(capability)}) == 0`)
+            .join(' || ') || '0';
         return `#include <gtk/gtk.h>
 #include <webkit2/webkit2.h>
 #include <dirent.h>
@@ -326,149 +329,6 @@ static char* run_shell_command_json(const char* command, char** args, int arg_co
     return value;
 }
 
-static int is_worker_metadata_file(const char* name) {
-    size_t len = strlen(name);
-    if (len > 5 && strcmp(name + len - 5, ".json") == 0) return 1;
-    if (len > 7 && strcmp(name + len - 7, ".schema") == 0) return 1;
-    return 0;
-}
-
-static char* find_worker_executable(const char* route) {
-    char* resource_dir = get_resource_dir();
-    char* worker_dir = malloc(PATH_MAX);
-    snprintf(worker_dir, PATH_MAX, "%s/Resources/workers/%s", resource_dir, route);
-    DIR* dir = opendir(worker_dir);
-    if (!dir) {
-        free(worker_dir);
-        return NULL;
-    }
-    char* executable = NULL;
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
-        if (is_worker_metadata_file(entry->d_name)) continue;
-        executable = strdup(entry->d_name);
-        break;
-    }
-    closedir(dir);
-    free(worker_dir);
-    return executable;
-}
-
-static char* run_worker_json(const char* route, const char* method, const char* request_json) {
-    char* executable = find_worker_executable(route);
-    if (!executable) return NULL;
-
-    char* resource_dir = get_resource_dir();
-    char* executable_path = malloc(PATH_MAX);
-    snprintf(executable_path, PATH_MAX, "%s/Resources/workers/%s/%s", resource_dir, route, executable);
-    free(executable);
-
-    if (access(executable_path, X_OK) != 0) {
-        free(executable_path);
-        return NULL;
-    }
-
-    int stdout_pipe[2];
-    int stderr_pipe[2];
-    int stdin_pipe[2];
-    if (pipe(stdout_pipe) != 0 || pipe(stderr_pipe) != 0 || pipe(stdin_pipe) != 0) {
-        free(executable_path);
-        return NULL;
-    }
-
-    pid_t pid = fork();
-    if (pid == 0) {
-        close(stdout_pipe[0]);
-        close(stderr_pipe[0]);
-        close(stdin_pipe[1]);
-        dup2(stdin_pipe[0], STDIN_FILENO);
-        dup2(stdout_pipe[1], STDOUT_FILENO);
-        dup2(stderr_pipe[1], STDERR_FILENO);
-        close(stdin_pipe[0]);
-        close(stdout_pipe[1]);
-        close(stderr_pipe[1]);
-        execl(executable_path, executable_path, NULL);
-        _exit(127);
-    }
-    close(stdout_pipe[1]);
-    close(stderr_pipe[1]);
-    close(stdin_pipe[0]);
-    free(executable_path);
-
-    GString* input = g_string_new("");
-    g_string_append_printf(input, "{\\"method\\":\\"%s\\",\\"request\\":%s}", method, request_json ? request_json : "{}");
-    write(stdin_pipe[1], input->str, input->len);
-    close(stdin_pipe[1]);
-    g_string_free(input, TRUE);
-
-    GString* stdout_text = g_string_new("");
-    GString* stderr_text = g_string_new("");
-    int stdout_open = 1;
-    int stderr_open = 1;
-    while (stdout_open || stderr_open) {
-        fd_set read_fds;
-        FD_ZERO(&read_fds);
-        int max_fd = -1;
-        if (stdout_open) {
-            FD_SET(stdout_pipe[0], &read_fds);
-            if (stdout_pipe[0] > max_fd) max_fd = stdout_pipe[0];
-        }
-        if (stderr_open) {
-            FD_SET(stderr_pipe[0], &read_fds);
-            if (stderr_pipe[0] > max_fd) max_fd = stderr_pipe[0];
-        }
-        if (select(max_fd + 1, &read_fds, NULL, NULL, NULL) <= 0) break;
-        if (stdout_open && FD_ISSET(stdout_pipe[0], &read_fds)) {
-            char buffer[512];
-            ssize_t read_count = read(stdout_pipe[0], buffer, sizeof(buffer));
-            if (read_count > 0) g_string_append_len(stdout_text, buffer, read_count);
-            else stdout_open = 0;
-        }
-        if (stderr_open && FD_ISSET(stderr_pipe[0], &read_fds)) {
-            char buffer[512];
-            ssize_t read_count = read(stderr_pipe[0], buffer, sizeof(buffer));
-            if (read_count > 0) g_string_append_len(stderr_text, buffer, read_count);
-            else stderr_open = 0;
-        }
-    }
-    close(stdout_pipe[0]);
-    close(stderr_pipe[0]);
-    int status = 0;
-    waitpid(pid, &status, 0);
-
-    if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
-        g_string_free(stdout_text, TRUE);
-        g_string_free(stderr_text, TRUE);
-        return NULL;
-    }
-
-    char* result = strdup(stdout_text->str);
-    g_string_free(stdout_text, TRUE);
-    g_string_free(stderr_text, TRUE);
-    return result;
-}
-
-static void send_response(WebKitWebView* web_view, int id, int ok, const char* value_json, const char* error) {
-    char* escaped_error = json_escape(error ? error : "Native capability failed");
-    char* response = g_strdup_printf(
-        ok
-            ? "{\\"type\\":\\"tac:native-response\\",\\"id\\":%d,\\"ok\\":true,\\"value\\":%s}"
-            : "{\\"type\\":\\"tac:native-response\\",\\"id\\":%d,\\"ok\\":false,\\"error\\":\\"%s\\"}",
-        id,
-        ok ? (value_json ? value_json : "null") : escaped_error
-    );
-    char* escaped = g_strescape(response, "'");
-    char* script = g_strdup_printf(
-        "if(window.__tcNativeBridge__.messageHandler)window.__tcNativeBridge__.messageHandler('%s')",
-        escaped);
-    webkit_web_view_evaluate_javascript(web_view, script, -1, NULL, NULL, NULL, NULL, NULL);
-    g_free(script);
-    g_free(escaped);
-    g_free(response);
-    free(escaped_error);
-}
-
 static void handle_native_message(WebKitWebView* web_view, const char* message) {
     int id = extract_json_int(message, "id");
     char* capability = extract_json_string(message, "capability");
@@ -476,10 +336,42 @@ static void handle_native_message(WebKitWebView* web_view, const char* message) 
         send_response(web_view, id, 0, NULL, "Missing native capability");
         return;
     }
+    if (!(${allowedCapabilityExpression})) {
+        send_response(web_view, id, 0, NULL, "Native capability is not enabled");
+        free(capability);
+        return;
+    }
     if (strcmp(capability, "app.info") == 0) {
         char* value = g_strdup_printf("{\\"name\\":\\"%s\\",\\"runtime\\":\\"linux-webkitgtk\\"}", APP_NAME);
         send_response(web_view, id, 1, value, NULL);
         g_free(value);
+    } else if (strcmp(capability, "clipboard.readText") == 0) {
+        GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+        gchar* text = gtk_clipboard_wait_for_text(clipboard);
+        char* escaped = json_escape(text ? text : "");
+        char* value = g_strdup_printf("\\\"%s\\\"", escaped);
+        send_response(web_view, id, 1, value, NULL);
+        g_free(text);
+        free(escaped);
+        g_free(value);
+    } else if (strcmp(capability, "clipboard.writeText") == 0) {
+        char* text = extract_json_string(message, "text");
+        GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+        gtk_clipboard_set_text(clipboard, text ? text : "", -1);
+        send_response(web_view, id, 1, "{\\\"written\\\":true}", NULL);
+        free(text);
+    } else if (strcmp(capability, "openUrl") == 0) {
+        char* url = extract_json_string(message, "url");
+        GError* error = NULL;
+        gboolean safe_url = url && (strncmp(url, "http://", 7) == 0 || strncmp(url, "https://", 8) == 0);
+        gboolean opened = safe_url && gtk_show_uri_on_window(NULL, url, GDK_CURRENT_TIME, &error);
+        if (!opened) {
+            send_response(web_view, id, 0, NULL, error ? error->message : safe_url ? "Unable to open the external URL" : "openUrl requires an http(s) URL");
+        } else {
+            send_response(web_view, id, 1, "{\\\"opened\\\":true}", NULL);
+        }
+        if (error) g_error_free(error);
+        free(url);
     } else if (strcmp(capability, "fs.readText") == 0) {
         char* file_path = extract_json_string(message, "path");
         char* text = file_path ? read_text_file(file_path) : NULL;
@@ -555,24 +447,6 @@ static void handle_native_message(WebKitWebView* web_view, const char* message) 
             free(cwd);
             free(command);
         }
-    } else if (strcmp(capability, "tachyon.worker") == 0) {
-        char* route = extract_json_string(message, "route");
-        char* method = extract_json_string(message, "method");
-        char* request_json = extract_json_value(message, "request");
-        if (!route || !method) {
-            send_response(web_view, id, 0, NULL, "Tachyon worker requires route and method");
-        } else {
-            char* value = run_worker_json(route, method, request_json ? request_json : "{}");
-            if (!value) {
-                send_response(web_view, id, 0, NULL, "Unable to execute worker");
-            } else {
-                send_response(web_view, id, 1, value, NULL);
-                free(value);
-            }
-        }
-        free(route);
-        free(method);
-        free(request_json);
     } else {
         send_response(web_view, id, 0, NULL, "Unsupported native capability");
     }
@@ -606,7 +480,7 @@ int main(int argc, char* argv[]) {
     WebKitUserContentManager* contentManager = webkit_web_view_get_user_content_manager(webView);
     WebKitUserScript* script = webkit_user_script_new(
         "${bridgeScript}",
-        WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+        WEBKIT_USER_CONTENT_INJECT_TOP_FRAME,
         WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START,
         NULL, NULL);
     webkit_user_content_manager_add_script(contentManager, script);

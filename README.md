@@ -16,11 +16,11 @@
 
 - Polyglot backend handlers with executable files and shebangs
 - Tac pages and components with `tac.html` templates
-- Companion `*.js`, `*.ts`, and `*.css` files beside templates
+- Companion `tac.js`, `tac.ts`, `tac.dart`, `tac.rs`, `tac.kt`, `tac.swift`, `tac.cs`, and `tac.css` files beside templates
 - OOP-style companion classes with `export default class`; Tachyon injects the Tac base class during bundling
-- Browser-local Tac Workers compiled in-house to `tac.wasm` (no external toolchain), invoked with `fetch("tac://...")`
+- Portable polyglot Tac companions that use one reactive controller ABI on every target
 - Automatic persistence for `$`-prefixed (sessionStorage) and `$$`-prefixed (localStorage) instance fields
-- Local-first browser `fetch()` plus worker-owned OPFS-backed FYLO document mirrors for Tac page/component scripts
+- Local-first browser `fetch()` plus OPFS-backed FYLO document mirrors for Tac page/component scripts
 - Explicit browser env allowlisting through `TAC_PUBLIC_ENV` and `this.env(...)`
 - Static export with prerendered `dist/**/index.html`
 - Platform-aware Tac globals for `web`, desktop (`macos`, `windows`, `linux`), and mobile (`ios`, `android`) targets
@@ -116,10 +116,6 @@ client/
     styles/
     assets/
     data/
-  workers/
-    language/
-      rust/
-        tac.rs
 
 server/
   routes/
@@ -133,18 +129,18 @@ Scaffolds are JavaScript-first and use strict JSDoc rather than TypeScript sourc
 The runtime still supports TypeScript companion scripts when you want them.
 
 The website app in [website/](website/) is the canonical Tac showcase. It is
-frontend-only: Tac Workers mimic the backend and the in-browser FYLO client
+frontend-only: Tac companions power the interface and the in-browser FYLO client
 (OPFS) mimics the database, so the same static bundle works on every target:
 
 - a guided capability atlas joining native HTML/CSS/JavaScript surfaces with
-  working Tac, worker, and FYLO flows rather than isolated code snippets
+  working Tac companion and FYLO flows rather than isolated code snippets
 - reactive page state
 - accessible native controls and a reactive canvas studio with semantic
   `progress`, `meter`, `output`, `time`, and `details` elements
 - persisted `$` (sessionStorage) and `$$` (localStorage) fields
 - local-first fetches and OPFS-backed FYLO document collections with CRUD,
   cache policies, and live same-tab subscriptions
-- browser-local Tac Workers answering every HTTP verb from `tac.wasm`
+- portable Tac companions running beside templates on every target
 - frontend-only external SSE streaming and tab-to-tab realtime with durable,
   OPFS-replayed history
 - client-side telemetry spans stored as FYLO documents
@@ -171,8 +167,6 @@ YON_LOG_LEVEL=info
 YON_LOG_FORMAT=pretty
 YON_TRUST_PROXY=
 TAC_FORMAT=esm
-TAC_DANGEROUS_CAPABILITIES=
-TAC_NATIVE_CAPABILITIES=
 
 YON_ALLOW_HEADERS=Content-Type,Authorization
 YON_ALLOW_ORIGINS=
@@ -198,7 +192,6 @@ YON_RATE_LIMIT_WINDOW_MS=
 YON_ROUTES_PATH=server/routes
 YON_PAGES_PATH=client/pages
 YON_COMPONENTS_PATH=client/components
-YON_WORKERS_PATH=client/workers
 YON_ASSETS_PATH=client/shared/assets
 YON_SHARED_SCRIPTS_PATH=client/shared/scripts
 YON_SHARED_STYLES_PATH=client/shared/styles
@@ -226,7 +219,7 @@ YON_REALTIME_MAX_EVENT_BYTES=65536
 > - Set both `YON_RATE_LIMIT_MAX` and `YON_RATE_LIMIT_WINDOW_MS` to enable the built-in in-memory limiter.
 > - For distributed deployments, export a custom `rateLimiter` from `middleware.js`.
 > - Prefer `YON_BASIC_AUTH_HASH` over plaintext `YON_BASIC_AUTH` in production.
-> - FYLO-owned storage settings use the `FYLO_*` prefix because they are consumed by `@d31ma/fylo`.
+> - FYLO-owned storage settings use the `FYLO_*` prefix because they are consumed by the FYLO release binary.
 > - Tachyon-owned runtime settings use `YON_*` or `TAC_*`; avoid mixed prefixes such as `YON_FYLO_*`.
 
 Generate a Bun password hash with:
@@ -392,7 +385,7 @@ demonstrate the polyglot handler model. The Rust and C++ handlers use the
 generated dependency-free `YonJson` adapter; each route runs as a process, and
 compiled-language handlers compile on first request and cache the result — the
 `server/` source ships as-is, with no separate build step or binary-only
-deployment. The in-house WASM compiler now serves Tac frontend workers only.
+deployment.
 
 Yon imposes no list of supported languages. A `yon.<ext>` handler runs by its
 extension: `.go` runs via `go run`, `.rb` via `ruby`, and so on — a default
@@ -478,7 +471,7 @@ Every handler receives this request object:
 ```
 
 If an inbound `X-Request-Id` header is present, Yon preserves it for upstream
-correlation. Otherwise Yon generates a TTID request ID through `@d31ma/fylo`.
+correlation. Otherwise Yon generates a TTID request ID through its bundled TTID runtime.
 
 Yon invokes `Handler` classes through small runtime adapters. Dynamic runtimes
 load the route module directly; compiled/static runtimes generate tiny build
@@ -586,10 +579,21 @@ client/components/
     tac.css
 ```
 
-Companion scripts can be JavaScript or TypeScript:
+Companion scripts are portable controller artifacts. JavaScript, TypeScript,
+Dart, Rust, Kotlin, Swift, and C# companions can be bundled for web, macOS,
+Windows, Linux, iOS, and Android; the selected native host owns device
+integration rather than the companion language:
 
 - `tac.js`
 - `tac.ts`
+- `tac.dart`
+- `tac.rs`
+- `tac.kt`
+- `tac.swift`
+- `tac.cs`
+
+The same source can therefore ship to every target without being tied to the
+operating system that hosts the final binary.
 
 Tac uses one component naming convention: each component folder segment is
 lowercase alphanumeric and has a `tac.html` template. The component tag is
@@ -806,17 +810,169 @@ Companion authors only need to think about their class state and methods.
 Internal runtime helper plumbing is attached by the framework and does not need
 to be imported, typed, or threaded through user code.
 
-Available helpers through `Tac`:
+Available helpers through `this.tac`:
 
-- `this.env(key, fallback?)`
-- `this.fetch(input, init)`
-- `this.onMount(fn)`
-- `this.publish(name, value, options?)`
-- `this.rerender()`
-- `this.subscribe(name, callbackOrFallback?, options?)`
-- `this.isBrowser`
-- `this.isServer`
-- `this.props`
+- `this.tac.env(key, fallback?)`
+- `this.tac.fetch(input, init)`
+- `this.tac.onMount(fn)`
+- `this.tac.publish(name, value, options?)`
+- `this.tac.rerender()`
+- `this.tac.subscribe(name, callbackOrFallback?, options?)`
+- `this.tac.isBrowser`, `this.tac.isServer`, and `this.props`
+
+### Dart Companions
+
+`tac.dart` is an import-free Tac companion. It defines one class extending
+`Tac`, uses the implicit constructor, and exposes public fields and methods to
+the sibling template. Dart annotations use Dart syntax while keeping the Tac
+semantics of signals and lifecycle methods:
+
+```dart
+class Counter extends Tac {
+  @publish('counter.changed')
+  int count = 0;
+
+  @onMount()
+  void ready() {
+    count = 1;
+  }
+
+  @subscribe('counter.reset')
+  void reset(dynamic value) {
+    count = value as int;
+  }
+
+  void increment() {
+    count += 1;
+  }
+}
+```
+
+Tachyon compiles the source to an internal `tac.dart.js` runtime beside the
+normal generated `tac.js` controller in `dist/<target>/`. The source file and
+runtime bridge stay out of the public component API. A host Dart SDK is used
+when present; otherwise Tachyon downloads a pinned, SHA-256-verified SDK into
+its own cache on the first Dart bundle. No app-level Dart configuration is
+required.
+
+### Device Capabilities
+
+Tac keeps browser and device transport private. Every companion receives an
+implicit platform prelude: no `Tac` object, imports, or bridge handles appear
+in application code. JavaScript and TypeScript retain their browser globals;
+the other languages use the same capabilities with native casing. The compiler
+lowers those calls to one permissioned host bridge. Native hosts service device
+requests with operating-system APIs, while browser builds use standards-based
+implementations when available.
+
+```js
+localStorage.setItem('theme', 'calm')
+const language = navigator.language
+```
+
+```rust
+local_storage().set_item("theme", "calm");
+let language = navigator().language();
+
+if app().is_available() {
+    let info = await app().info();
+}
+```
+
+```dart
+await clipboard.writeText('Copied from Tac');
+await localStorage.setItem('theme', 'calm');
+```
+
+The portable prelude is deliberately small and coherent: `fetch`, local and
+session storage, navigator/location metadata, clipboard, FYLO collections,
+app metadata, external URLs, text-file selection, raw native filesystem access,
+desktop shell execution, mobile sharing/haptics, and `capabilities` checks.
+Its spelling follows the source language:
+
+- Rust: `local_storage()`, `session_storage()`, `fetch()`, `clipboard()`,
+  `file_system()`, `shell()`, `app()`, `browser()`, `file_picker()`, `fylo()`,
+  and `capabilities()`.
+- Kotlin and Swift: `localStorage`, `sessionStorage`, `fetch`, `clipboard`,
+  `fileSystem`, `shell`, `app`, `browser`, `filePicker`, `fylo`, and
+  `capabilities`.
+- C#: `LocalStorage`, `SessionStorage`, `FetchAsync`, `Clipboard`, `App`,
+  `FileSystem`, `Shell`, `Browser`, `FilePicker`, `Fylo`, and `Capabilities`.
+- Dart: `localStorage`, `sessionStorage`, `fetch`, `clipboard`, `app`,
+  `fileSystem`, `shell`, `browser`, `filePicker`, `fylo`, and `capabilities`.
+
+Android and iOS bundles service `clipboard`, `browser`, `share`, `haptics`,
+and sandbox-path discovery through their native SDKs. These remain portable source APIs: Rust uses
+`share().text(...)` and `haptics().impact()`, Kotlin/Swift/Dart use
+`share.text(...)` and `haptics.impact()`, and C# uses `Share.TextAsync(...)`
+and `Haptics.ImpactAsync()`. Enable them explicitly:
+
+```bash
+ty bundle --target android,ios
+```
+
+Camera/microphone capture, geolocation, notifications, file save, secure
+storage, and user verification are also available through the portable
+prelude. Media, location, and notifications use browser-standard APIs inside
+the native WebView and require explicit host privacy declarations. Secure
+storage and user verification currently use Keychain and LocalAuthentication
+on macOS and iOS. Contacts, calendar, Bluetooth, NFC, USB, push delivery, and
+window management remain outside the portable set.
+
+macOS, Windows, and Linux bundles service `app`, `clipboard`, and `browser`
+through their native hosts as well. This means the same companion call reaches
+`NSPasteboard`/`NSWorkspace`, the Windows Clipboard/Shell APIs, or GTK/WebKitGTK
+instead of relying on a browser fallback. Desktop sharing, notifications,
+window management, and OS-specific integrations remain separate capability
+families because there is no reliable common contract yet.
+
+Clipboard reads are asynchronous in portable companions because a browser or
+native host may require a permission prompt. Use `await` for any shim call that
+returns data or crosses the device boundary.
+
+Safe host capabilities are enabled automatically for their target. Use
+`capabilities` to detect whether a portable operation exists on the current
+bundle:
+
+```bash
+if capabilities().supports("clipboard.writeText") {
+    await clipboard().write_text("Ready");
+}
+```
+
+The bridge, not the companion language, handles target permission prompts and
+rejects capabilities unavailable on the current platform.
+
+Raw filesystem and shell operations are disabled by default. Opt in to the
+minimum required set in `package.json`; the bundle validates the declaration,
+bakes the same allowlist into the frontend and native host, and rejects direct
+bridge calls that are not enabled. `shell.exec` is supported only on macOS,
+Windows, and Linux. Distribute raw-capability apps only with trusted companion
+code, and still use feature detection for target-specific operations.
+
+```json
+{
+  "tachyon": {
+    "devicePermissions": ["camera", "microphone", "location", "notifications"],
+    "nativeCapabilities": ["fs.readText", "fs.readDir"]
+  }
+}
+```
+
+```rust
+if capabilities().supports("fs.readDir") {
+    let entries = await file_system().read_dir(".");
+}
+if capabilities().supports("shell.exec") {
+    let result = await shell().exec("git", ["status", "--short"]);
+}
+```
+
+`nativeCapabilities` accepts `fs.readText`, `fs.writeText`, `fs.readDir`, and
+`shell.exec`. Unknown names and non-array declarations fail the build instead
+of being ignored. External URL requests accept HTTP(S) only, and native bridge
+messages are constrained to the generated app's main frame/origin where the
+platform exposes that distinction.
 
 ### Decorator Form
 
@@ -947,261 +1103,94 @@ Important boundary:
 
 There is no secure way to give a browser script a secret and also keep that secret hidden from the browser.
 
-### Tac Workers
+### Polyglot Tac Companions
 
-Tac Workers let page and component scripts call a browser-local worker backend
-with the same authoring feel as Yon routes:
+Each `tac.html` page or component may have one colocated companion. Tac resolves
+the first supported file in this order: `tac.js`, `tac.ts`, `tac.dart`,
+`tac.rs`, `tac.kt`, `tac.swift`, or `tac.cs`. Every companion is portable:
+the same source bundles to web, macOS, Windows, Linux, iOS, and Android.
 
 ```text
-client/workers/
-  language/
-    rust/
-      tac.rs
-    javascript/
-      tac.js
-    typescript/
-      tac.ts
-    apple/
-      tac.swift
-    android/
-      tac.kt
-    windows/
-      tac.cs
+client/components/counter/
+  tac.html
+  tac.swift
+  tac.css
 ```
 
-The worker is shaped exactly like a Yon route handler - `impl Handler` with
-methods named after HTTP verbs:
+JavaScript and TypeScript companions are bundled by Bun. Dart uses Tachyon's
+managed Dart bridge. Rust, Kotlin, Swift, and C# use Tachyon's in-house,
+import-free Tac companion subset, which lowers a language-native controller to
+the same reactive controller ABI. No companion language SDK is required on the
+app-author's machine for that subset.
 
-```rust
-// client/workers/language/rust/tac.rs
-impl Handler {
-    pub fn GET(request: Request) -> i32 { request.len() }
-    pub fn POST(request: Request) -> String { /* ... */ }
-    pub fn PATCH(request: Request) -> Json { json(request.body()) }
-}
-```
+```swift
+final class Counter: Tac {
+  @publish("counter.changed")
+  var count: Int = 0
 
-Page and component scripts invoke it with the native `fetch` API - the request
-verb selects the handler method (default `GET`):
-
-```js
-export default class {
-  summary = ''
-
-  async summarize(text) {
-    const response = await fetch('tac://language/rust', { method: 'POST', body: { text } })
-    const payload = await response.json()
-    this.summary = payload.body.result
+  func increment() {
+    self.count += 1
   }
 }
 ```
 
-At bundle time, Tachyon compiles each worker source into sibling runtime assets
-under each selected target directory. For the default web target, that means
-`dist/web/workers/**`:
+#### Portable companion subset reference
 
-```text
-dist/web/workers/language/rust/tac.worker.js
-dist/web/workers/language/rust/rs.wasm
-dist/web/workers/language/javascript/tac.worker.js
-dist/web/workers/language/javascript/js.wasm
-dist/web/workers/language/typescript/tac.worker.js
-dist/web/workers/language/typescript/ts.wasm
+The subset supports one Tac controller, literal field defaults, methods,
+arithmetic, `if`/`else` and `while`, `@publish`, `@subscribe`, `@onMount`,
+`this.tac.fetch`, `this.tac.platform`, plus the language-native Web and device
+shims above. It intentionally rejects imports and arbitrary standard-library
+or OS access. This keeps source portable; platform hosts own device operations
+and enable their safe capability catalog by default.
+
+The subset languages are **Tac dialects, not full languages**. Two rules keep
+that honest:
+
+- **JavaScript semantics on every target.** Companion code runs as JavaScript,
+  so numbers are JS numbers regardless of declared types: `7 / 2` is `3.5`
+  even in a Rust or C# companion, there is no integer overflow, and string
+  comparison is JS string comparison. The golden cross-language tests pin this
+  behavior.
+- **Out-of-subset constructs fail the build by name** with a
+  `path:line:column` diagnostic instead of emitting broken or misleading
+  JavaScript. Refused constructs per language:
+  - Rust: `match`, `trait`, `enum`, `mod`, `unsafe`, `loop`, `for`, `dyn`, `where`, `macro_rules`
+  - Kotlin: `when`, `for`, `object`, `interface`, `sealed`, `lateinit`, `init`
+  - Swift: `guard`, `switch`, `for`, `protocol`, `extension`, `enum`, `struct`, `defer`, `deinit`
+  - C#: `switch`, `foreach`, `namespace`, `interface`, `struct`, `delegate`, `lock`, `goto`, `yield`
+
+  (Kotlin/Swift `for` is rejected because its iteration semantics do not map
+  onto JavaScript's; use `while`.)
+
+String literals and comments are opaque to the compiler: prelude-shaped text
+such as `"navigator.isOnline()"` inside a string is never rewritten, and a
+keyword like `for` inside a string is not an error.
+
+**Editor support:** copy the matching prelude stub from
+[src/runtime/companion-preludes/](src/runtime/companion-preludes/) next to
+your companion so your editor resolves the implicit prelude symbols
+(`localStorage`, `fylo`, `Tac`, ...). The stubs are never compiled or bundled.
+The Kotlin dialect is a strict subset of real Kotlin — a companion plus
+`TacPrelude.kt` compiles under `kotlinc`, and CI verifies the showcase
+companion that way. Rust and Swift companions use Tac annotations their real
+compilers reject, and C# companions use dialect forms such as `{}` query
+arguments, so those stubs aid symbol resolution only.
+
+```bash
+ty bundle --target all
 ```
 
-`fetch('tac://language/rust', init)` resolves to the generated
-`/workers/language/rust/tac.worker.js` module, runs the matching verb method in
-a Web Worker, and returns a normal browser `Response`. Every non-`tac://` URL is
-delegated to the platform `fetch`, so local-first caching is unaffected.
-
-Tac caches one browser Worker per route by default. Heavy compute paths can opt
-into a Tachyon-managed route pool without changing the worker source:
-
-```js
-await fetch('tac://language/rust?pool=4', { method: 'POST', body })
-await fetch('tac://language/rust', {
-  method: 'POST',
-  headers: { 'X-Tac-Workers': '4' },
-  body,
-})
-await fetch('tac://language/rust', {
-  method: 'POST',
-  tac: { poolSize: 4 },
-  body,
-})
-```
-
-Pool sizes are clamped between `1` and `16`. Tachyon reuses the route pool and
-dispatches calls to the least-busy worker with round-robin tie breaking, which
-keeps concurrent Wasm work off the UI thread and spreads bursts before Tachyon
-adds true shared-memory Wasm threading.
-
-Browser worker compilation is fully in-house. Tachyon parses the supported
-handler subset directly and emits Wasm exposing the worker ABI
-(`memory`, `alloc`, optional `dealloc`, `call`, `output_ptr`, `output_len`).
-Tac supports five worker language families with strict target scopes:
-
-- **Rust** (`tac.rs`): web, macOS, Windows, Linux, iOS, and Android
-- **JavaScript/TypeScript** (`tac.js`, `tac.ts`): web
-- **Swift** (`tac.swift`): macOS and iOS
-- **Kotlin** (`tac.kt`): Android
-- **C#** (`tac.cs`): Windows
-
-Native WebView bundles may use the browser/Wasm path for web-scoped workers.
-Files whose language does not support the selected target are not bundled.
-
-How the in-house compiler works:
-
-1. Tachyon finds `client/workers/**/tac.<language>` during `ty bundle`.
-2. The applicable language frontend tokenizes/parses only Tachyon's documented
-   handler subset, not the full language.
-3. That parser emits a shared handler AST: methods named after HTTP verbs,
-   typed expressions, local bindings, loops, conditionals, and request helpers.
-4. `tac-handler-codegen.js` type-checks the AST, rejects unsupported methods or
-   type mismatches, and emits Wasm through Tachyon's own encoder.
-5. The generated `tac.worker.js` loads `tac.wasm`, dispatches the fetch method
-   to the matching handler method, and returns a normal `Response`.
-
-Worker contracts may also live beside the source as `OPTIONS.schema.json`, just
-like Yon backend routes:
-
-```text
-client/workers/language/rust/
-  tac.rs
-  OPTIONS.schema.json
-```
-
-When present, Tachyon emits the schema to
-`dist/<target>/workers/<route>/OPTIONS.schema.json`, embeds it in the generated
-worker runtime, validates declared request sections before calling Wasm, and
-validates the response body for the matching status code before resolving the
-`fetch`.
-The browser worker validator follows Tachyon's strict CHEX-style contract
-shape: string leaves are regex patterns, data values are coerced to strings for
-matching, objects reject unknown properties, keys may be nullable with `?`,
-arrays must contain exactly one scalar or object template, and record
-descriptors are single-key objects whose key starts with `^`.
-
-Worker methods can return i32-backed integer aliases, `bool`,
-`String`/`string`/`str`, or `Json`/`json`. Boolean responses are emitted as
-real JSON `true`/`false` values. String responses are JSON-escaped
-automatically. Json responses are copied into `body.result` as raw JSON, so
-`json(request.body())` can echo a JSON object or array as a real structured
-value. `request.json()` returns the whole request envelope as raw JSON for
-handlers that need the method/body metadata together.
-
-Handlers can read request fields by key with `request.query("k")`,
-`request.path("k")`, and `request.header("k")` (each returns a `String`, empty
-when the key is absent). These resolve through a host-provided runtime import —
-the host does the JSON lookup, so the wasm carries no JSON parser. A JSON object
-literal `{ "key": value, ... }` builds a structured `Json` response directly to
-JSON text (values rendered by type: integers as numbers, `bool` as
-`true`/`false`, `String` quoted and escaped, `Json` embedded raw), so wasm
-routes can return validated object responses without a JSON library inside the
-module.
-
-Tac Workers also expose a deliberately small platform boundary through
-`request.platform("key")`. This is the only OS-like surface available to
-browser-local Wasm workers; page and component scripts do not get a separate
-Tac OS API. The generated worker host resolves curated, non-secret facts such as
-`"os"`, `"arch"`, `"runtime"`, `"target"`, `"targets"`, `"cpuCores"`,
-`"language"`, `"timezone"`, `"online"`, and `"touch"`. In browsers this is
-backed by standard Web Worker globals and therefore works across macOS,
-Windows, Linux, Android, and iOS within each browser's sandbox. It does not
-grant arbitrary filesystem, process, device, or network system calls.
-
-```rust
-impl Handler {
-    pub fn GET(request: Request) -> String {
-        "running on " + request.platform("os")
-    }
+```swift
+final class CopyStatus: Tac {
+  func copy() {
+    clipboard.writeText("Ready")
+  }
 }
 ```
 
-For native OS capabilities, Tac workers use a fail-closed bridge modeled after
-Electron/Tauri's privileged-host pattern. A worker does not receive raw OS
-access. Instead it returns a `$tacNative` envelope, and the generated worker
-runtime brokers that request to the page/native host only if the capability is
-listed in the `TAC_NATIVE_CAPABILITIES` environment variable at compile time.
-
-```bash
-TAC_NATIVE_CAPABILITIES=app.info,clipboard.readText
-```
-
-```rust
-impl Handler {
-    pub fn PATCH(request: Request) -> Json {
-        json(request.body())
-    }
-}
-```
-
-```js
-await fetch('tac://native', {
-  method: 'PATCH',
-  body: JSON.stringify({
-    $tacNative: {
-      capability: 'app.info',
-      payload: {}
-    }
-  })
-})
-```
-
-The brokered capability set includes `app.info`, `clipboard.readText`,
-`clipboard.writeText`, `openUrl`, and `file.openText`. Browser builds use
-web-platform fallbacks where available; native WebView builds can route the
-same request through `window.__tcNativeBridge__.invoke(...)`.
-
-Raw OS capabilities (`fs.*`, `shell.*`, `process.*`) require two independent
-authorizations at compile time: they must appear in both
-`TAC_NATIVE_CAPABILITIES` and `TAC_DANGEROUS_CAPABILITIES`:
-
-```bash
-TAC_NATIVE_CAPABILITIES=fs.readText
-TAC_DANGEROUS_CAPABILITIES=fs.readText
-```
-
-A raw OS capability invoked without both allowlist entries is rejected at runtime.
-Both lists are resolved at compile time and baked into the worker, since browser
-workers have no `process.env`.
-
-Initial raw capabilities are `fs.readText`, `fs.writeText`, `fs.readDir`, and
-`shell.exec`. They are intended for trusted native hosts only. The browser
-sandbox cannot execute these directly; it must either run in a host that exposes
-Bun/Node-style OS APIs or delegate through a native WebView bridge. Raw sockets,
-secrets, and process management beyond `shell.exec` remain disabled.
-`shell.exec` accepts `{ "command": "...", "args": ["..."], "cwd": "..." }`
-and returns `{ command, args, cwd, exitCode, stdout, stderr }`.
-
-Integer aliases are intentionally backed by the same signed 32-bit Wasm lane
-today. Use them for familiar authoring syntax, not native-width overflow
-semantics. Float/double primitives are not exposed yet; they need a dedicated
-f64 arithmetic and JSON formatting path before Tachyon can claim production
-support for them.
-
-Supported in-house Wasm subset by language:
-
-- Rust: `impl Handler`, `pub fn VERB(request: Request) -> i8|i16|i32|u8|u16|u32|isize|usize|bool|String|Json`,
-  `let`/`let mut`, assignment, arithmetic, comparisons, logical `! && ||`,
-  `if/else` expressions, `while`, string literals + `+`, `request.len()`,
-  `request.body()`, `request.json()`, and `json(...)`.
-- C#: `class Handler` static methods returning integer aliases, `bool`,
-  `string`/`String`, or `Json`, declarations, assignment, arithmetic,
-  comparisons, logical `! && ||`, ternary `?:`, `while`, string literals + `+`,
-  `request.len()`, `request.body()`, `request.json()`, and `json(...)`.
-- JavaScript: `class Handler` methods named after HTTP verbs, optional
-  `static`, JSDoc `@returns {number|boolean|string|json}` when inference is not
-  enough, `const`/`let`/`var`, assignment, arithmetic, comparisons, logical
-  `! && ||`, ternary `?:`, `while`, string literals + `+`, `request.len()`,
-  `request.body()`, `request.json()`, and `json(...)`.
-- TypeScript: `class Handler` or `export default class Handler`, methods named
-  after HTTP verbs with a `TacWorkerRequest` parameter and return annotations
-  `number|boolean|string|Json|json`, typed locals, assignment, arithmetic,
-  comparisons, logical `! && ||`, ternary `?:`, `while`, string literals + `+`,
-  `request.len()`, `request.body()`, `request.json()`, and `json(...)`.
-
----
+Tac companions are the only frontend compute surface. Keep
+`OPTIONS.schema.json` beside Yon handlers, where it validates real HTTP
+requests and responses.
 
 ## API Docs
 
@@ -1489,22 +1478,19 @@ Targets are case-insensitive. Supported values are `web`, `macos`, `windows`,
 Each target is emitted as a self-contained app under `dist/<target>/`, so a
 multi-target build creates directories such as `dist/web`, `dist/ios`,
 `dist/android`, `dist/macos`, `dist/windows`, and `dist/linux`.
-Wasm workers can read the selected target with `request.platform("target")` or
-the full comma list with `request.platform("targets")`.
-
 Tac page and component scripts can read the same bundle context through
-`this.tac.platform`, and templates can use the string globals `environment`,
-`platform`, `target`, and `os` without imports:
+`this.tac.platform`, and templates can use the string globals `platform`,
+`environment`, `os`, and `target` without imports:
 
 ```html
-<logic :if="environment === 'desktop'">
-  <p>Running the {platform} desktop bundle.</p>
+<logic :if="platform === 'desktop'">
+  <p>Running the {os} desktop bundle.</p>
 </logic>
-<logic :else-if="environment === 'mobile'">
-  <p>Running the {platform} mobile bundle.</p>
+<logic :else-if="platform === 'mobile'">
+  <p>Running the {os} mobile bundle.</p>
 </logic>
 <logic else>
-  <p>Running the {platform} bundle in a browser environment.</p>
+  <p>Running on the web platform.</p>
 </logic>
 ```
 
@@ -1512,17 +1498,25 @@ Tac page and component scripts can read the same bundle context through
 // client/pages/tac.js
 export default class {
   get layoutClass() {
-    return `shell-${this.tac.platform.environment}`
+    return `shell-${this.tac.platform.platform}`
   }
 }
 ```
 
-The `platform` value is one of `web`, `macos`, `windows`, `linux`, `ios`, or
-`android`. The `environment` value is `browser`, `desktop`, or `mobile`.
-`macos`, `windows`, and `linux` use the `desktop` environment; `ios` and
-`android` use the `mobile` environment; `web` uses the `browser` environment.
-The web platform also detects the visitor OS at runtime when the browser
-exposes enough user-agent information.
+Tachyon's rooted terminology, used identically in code, docs, and the website:
+
+- **Platform** — the form factor: `desktop`, `mobile`, or `web`. `macos`,
+  `windows`, and `linux` targets are the desktop platform; `ios` and `android`
+  are the mobile platform; `web` is the web platform.
+- **Environment / OS** (synonyms) — the concrete host: `windows`, `macos`,
+  `linux`, `android`, `ios`, or `web`. Native bundles report their operating
+  system; browser bundles report `web`, with the detected visitor OS available
+  separately as `browserOS` when the browser exposes enough user-agent
+  information.
+- **Target** — the bundle output: `web`, `macos`, `windows`, `linux`,
+  `android`, or `ios`.
+- **Companion language** — the language a Tac companion is written in:
+  JavaScript, TypeScript, Dart, Rust, Kotlin, Swift, or C#.
 
 For native targets, `ty bundle` produces a native webview host at
 `dist/<target>/`:
@@ -1599,8 +1593,6 @@ dist/
     shared/modules/*.js
     shared/assets/*
     shared/data/*
-    workers/language/rust/tac.worker.js
-    workers/language/rust/tac.wasm
     fylo-browser-worker.js
     spa-renderer.js
     imports.js

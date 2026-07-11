@@ -7,8 +7,8 @@
     </div>
 
     <p class="footer-note">
-      <logic :if="environment === 'desktop'">Running the {platform} desktop bundle.</logic><logic :else-if="environment === 'mobile'">Running the {platform} mobile bundle.</logic><logic else>Running the {platform} bundle in a browser environment.</logic>
-      This site is frontend-only: Tac Workers are its backend, the FYLO OPFS mirror is its database, and the theme, fetch cache and documents all live in your browser.
+      <logic :if="platform === 'desktop'">Running the {os} desktop bundle.</logic><logic :else-if="platform === 'mobile'">Running the {os} mobile bundle.</logic><logic else>Running on the web platform.</logic>
+      This site is frontend-only: Tac companions power its UI, the FYLO OPFS mirror is its database, and the theme, fetch cache and documents all live in your browser.
     </p>
 
     <nav class="w-row ga-3 footer-links" aria-label="Footer">

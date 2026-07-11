@@ -11,7 +11,6 @@ const timedTest = /** @type {any} */ (test);
 const tempDirs = [];
 const bundleEntrypoint = path.join(process.cwd(), 'src', 'cli', 'bundle.js');
 const nativeEntrypoint = path.join(process.cwd(), 'src', 'cli', 'native-bundle.js');
-const originalNativeCaps = process.env.TAC_NATIVE_CAPABILITIES;
 
 /** @param {ReadableStream<Uint8Array> | null | undefined} stream */
 async function decode(stream) {
@@ -71,42 +70,19 @@ async function createFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-native-bundle-'));
     tempDirs.push(root);
     await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
-    await mkdir(path.join(root, 'client', 'workers', 'native'), { recursive: true });
-    await mkdir(path.join(root, 'client', 'workers', 'unsupported'), { recursive: true });
     await writeFile(path.join(root, 'package.json'), JSON.stringify({
         name: 'native-fixture',
         private: true,
     }, null, 2));
     await writeFile(path.join(root, 'client', 'pages', 'tac.html'), '<main><h1>Native Fixture</h1></main>');
-    await writeFile(path.join(root, 'client', 'workers', 'native', 'tac.rs'), `
-impl Handler {
-    pub fn PATCH(request: Request) -> Json { json(request.body()) }
-}
-`);
-    await writeFile(path.join(root, 'client', 'workers', 'native', 'OPTIONS.schema.json'), JSON.stringify({
-        PATCH: {
-            payload: { body: '^[\\s\\S]*$' },
-            response: { result: '^[\\s\\S]*$' },
-        },
-    }, null, 2));
-    await writeFile(path.join(root, 'client', 'workers', 'unsupported', 'tac.go'), `
-type Handler struct{}
-
-func (Handler) GET(request Request) int32 { return request.Len() }
-`);
     return root;
 }
 
 afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-    if (originalNativeCaps === undefined)
-        delete process.env.TAC_NATIVE_CAPABILITIES;
-    else
-        process.env.TAC_NATIVE_CAPABILITIES = originalNativeCaps;
 });
 
 timedTest('tac.bundle ships a macOS native host at dist/<target>', { timeout: 30000 }, async () => {
-    process.env.TAC_NATIVE_CAPABILITIES = 'app.info';
     const cwd = await createFixture();
     await runCli(cwd, ['bun', bundleEntrypoint, '--target', 'macos']);
 
@@ -119,15 +95,14 @@ timedTest('tac.bundle ships a macOS native host at dist/<target>', { timeout: 30
     expect(nativeHtml).toContain('src="./spa-renderer.js"');
     expect(nativeHtml).toContain('rel="icon" type="image/svg+xml" href="./shared/assets/favicon.svg"');
     expect(nativeHtml).toContain('<meta name="tachyon-target" content="macos">');
-    expect(nativeHtml).toContain('<meta name="tachyon-platform" content="macos">');
-    expect(nativeHtml).toContain('<meta name="tachyon-environment" content="desktop">');
+    expect(nativeHtml).toContain('<meta name="tachyon-platform" content="desktop">');
+    expect(nativeHtml).toContain('<meta name="tachyon-environment" content="macos">');
     expect(nativeHtml).toContain('<meta name="tachyon-os" content="macos">');
-    expect(nativeHtml).toContain('<meta name="tachyon-native-workers" content="native">');
-    expect(nativeHtml).toContain('<meta name="tachyon-native-capabilities" content="app.info">');
+    expect(nativeHtml).toContain('<meta name="tachyon-native-capabilities" content="app.info,auth.verifyUser,clipboard.readText,clipboard.writeText,fs.paths,openUrl,secrets.delete,secrets.get,secrets.set">');
     const spaRenderer = await readFile(path.join(cwd, 'dist', 'macos', 'Resources', 'spa-renderer.js'), 'utf8');
     expect(spaRenderer).toContain('tachyon-target');
     expect(spaRenderer).toContain('tachyon-platform');
-    expect(spaRenderer).toContain('tachyon-environment');
+    expect(spaRenderer).toContain('tachyon-os');
     expect(spaRenderer).toContain('browserOS');
     expect(spaRenderer).toContain('location.protocol==="file:"');
     expect(spaRenderer).toContain('.endsWith("/index.html")');
@@ -136,14 +111,36 @@ timedTest('tac.bundle ships a macOS native host at dist/<target>', { timeout: 30
     const hostManifest = JSON.parse(await readFile(path.join(cwd, 'dist', 'macos', 'tachyon.host.json'), 'utf8'));
     expect(hostManifest.target).toBe('macos');
     expect(hostManifest.entry).toBe('Resources/index.html');
+    expect(hostManifest.platformApiVersion).toBe(1);
+    expect(hostManifest.bridgeVersion).toBe(2);
+    expect(hostManifest.hostCapabilities).toEqual(expect.arrayContaining([
+        'app.info', 'auth.verifyUser', 'clipboard.readText', 'clipboard.writeText', 'fs.paths', 'openUrl', 'secrets.get', 'secrets.set', 'secrets.delete',
+    ]));
+    expect(hostManifest.hostCapabilities).not.toContain('shell.exec');
+    expect(hostManifest.rawHostCapabilities).toEqual([]);
+    expect(hostManifest.requestedDevicePermissions).toEqual([]);
     expect(hostManifest.capabilities).toContainEqual({
         route: '*',
         capability: 'app.info',
         descriptor: {},
     });
+    expect(hostManifest.capabilities).toContainEqual({
+        route: '*',
+        capability: 'clipboard.writeText',
+        descriptor: {},
+    });
+    expect(hostManifest.capabilities).not.toContainEqual(expect.objectContaining({ capability: 'shell.exec' }));
 
     const swiftSource = await readFile(path.join(cwd, 'dist', 'macos', 'Sources', 'TachyonApp.swift'), 'utf8');
     expect(swiftSource).toContain('WKWebView');
+    expect(swiftSource).toContain('import Security');
+    expect(swiftSource).toContain('case "secrets.get"');
+    expect(swiftSource).toContain('auth.verifyUser');
+    expect(swiftSource).toContain('NSPasteboard.general');
+    expect(swiftSource).toContain('case "openUrl"');
+    expect(swiftSource).toContain('Native capability is not enabled: ');
+    expect(swiftSource).toContain('openUrl requires an http(s) URL');
+    expect(swiftSource).toContain('forMainFrameOnly: true');
     expect(swiftSource).toContain('MessageHandler.shared.webView = webView');
     expect(swiftSource).toContain('config.setURLSchemeHandler(TachyonSchemeHandler(), forURLScheme: "tachyon")');
     expect(swiftSource).toContain('tachyon://localhost/');
@@ -187,7 +184,6 @@ timedTest('tac.bundle ships a macOS native host at dist/<target>', { timeout: 30
         ]);
         await expect(access(path.join(cwd, 'dist', 'macos', 'icon-inspect.iconset', 'icon_512x512@2x.png'))).resolves.toBeNull();
     }
-    await expect(access(path.join(cwd, 'dist', 'macos', 'Resources', 'workers', 'unsupported', 'go'))).rejects.toBeDefined();
 
     await writeFile(path.join(cwd, 'dist', 'macos', 'stale.txt'), 'stale native output');
     await runCli(cwd, ['bun', bundleEntrypoint, '--target', 'macos']);
@@ -230,6 +226,10 @@ timedTest('tac.native-bundle generates Android host from existing target assets'
     expect(activity).toContain('https://appassets.androidapp.com/');
     expect(activity).toContain('WebViewAssetLoader');
     expect(activity).toContain('"fs.readText"');
+    expect(activity).toContain('"clipboard.writeText"');
+    expect(activity).toContain('"share.text"');
+    expect(activity).toContain('HapticFeedbackConstants.CONFIRM');
+    expect(activity).toContain('class DeviceWebChromeClient');
     expect(activity).toContain('shell.exec is not available on Android native hosts');
     expect(activity).not.toContain('AppCompatActivity');
 
@@ -245,10 +245,24 @@ timedTest('tac.native-bundle generates Android host from existing target assets'
 
     const hostManifest = JSON.parse(await readFile(path.join(cwd, 'dist', 'android', 'tachyon.host.json'), 'utf8'));
     expect(hostManifest.target).toBe('android');
+    expect(hostManifest.hostCapabilities).toContain('share.text');
+    expect(hostManifest.hostCapabilities).not.toContain('fs.writeText');
+    expect(hostManifest.hostCapabilities).not.toContain('shell.exec');
+    expect(hostManifest.rawHostCapabilities).toEqual([]);
+    expect(hostManifest.requestedDevicePermissions).toEqual([]);
+    expect(activity).toContain('setOf("https://appassets.androidapp.com")');
+    expect(activity).toContain('if (!isMainFrame');
+    expect(activity).toContain('request.grant(allowedResources)');
+    expect(activity).not.toContain('request.grant(request.resources)');
 });
 
 timedTest('native hosts generate platform raw capability dispatchers', { timeout: 30000 }, async () => {
     const cwd = await createFixture();
+    await writeFile(path.join(cwd, 'package.json'), JSON.stringify({
+        name: 'native-fixture',
+        private: true,
+        tachyon: { nativeCapabilities: ['fs.readText', 'fs.writeText', 'fs.readDir', 'shell.exec'] },
+    }, null, 2));
     await runCli(cwd, ['bun', bundleEntrypoint, '--targets', 'windows,linux,ios']);
 
     const windowsSource = await readFile(path.join(cwd, 'dist', 'windows', 'src', 'main.cpp'), 'utf8');
@@ -257,7 +271,10 @@ timedTest('native hosts generate platform raw capability dispatchers', { timeout
     expect(windowsSource).toContain('shell.exec');
     expect(windowsSource).toContain('ExtractJsonStringArray');
     expect(windowsSource).toContain('CreateProcessA');
-    expect(windowsSource).toContain('tachyon.worker');
+    expect(windowsSource).toContain('ReadClipboardText');
+    expect(windowsSource).toContain('ShellExecuteW');
+    expect(windowsSource).toContain('Native capability is not enabled: ');
+    expect(windowsSource).toContain('openUrl requires an http(s) URL');
     const windowsCmake = await readFile(path.join(cwd, 'dist', 'windows', 'CMakeLists.txt'), 'utf8');
     expect(windowsCmake).toContain('src/app.rc');
     await expect(access(path.join(cwd, 'dist', 'windows', 'src', 'app.rc'))).resolves.toBeNull();
@@ -269,31 +286,75 @@ timedTest('native hosts generate platform raw capability dispatchers', { timeout
     expect(linuxSource).toContain('shell.exec');
     expect(linuxSource).toContain('extract_json_string_array');
     expect(linuxSource).toContain('execvp(command');
-    expect(linuxSource).toContain('tachyon.worker');
+    expect(linuxSource).toContain('gtk_clipboard_wait_for_text');
+    expect(linuxSource).toContain('gtk_show_uri_on_window');
+    expect(linuxSource).toContain('WEBKIT_USER_CONTENT_INJECT_TOP_FRAME');
+    expect(linuxSource).toContain('Native capability is not enabled');
     expect(linuxSource).toContain('gtk_window_set_icon_from_file');
     await expect(access(path.join(cwd, 'dist', 'linux', 'Resources', 'TachyonIcon.png'))).resolves.toBeNull();
 
     const iosSource = await readFile(path.join(cwd, 'dist', 'ios', 'Sources', 'TachyonWebView.swift'), 'utf8');
     expect(iosSource).toContain('fs.readText');
+    expect(iosSource).toContain('clipboard.writeText');
+    expect(iosSource).toContain('UIActivityViewController');
+    expect(iosSource).toContain('UIImpactFeedbackGenerator');
     expect(iosSource).toContain('shell.exec is not available on iOS native hosts');
+    expect(iosSource).toContain('Native bridge requests must come from the main frame');
     await expect(access(path.join(cwd, 'dist', 'ios', 'Assets.xcassets', 'AppIcon.appiconset', 'Contents.json'))).resolves.toBeNull();
 });
 
-timedTest('desktop native hosts bundle Rust Tac worker executables', { timeout: 60000, skip: process.platform !== 'darwin' }, async () => {
-    process.env.TAC_NATIVE_CAPABILITIES = 'app.info,tachyon.worker';
+timedTest('native raw capabilities are explicit and invalid declarations fail closed', { timeout: 30000 }, async () => {
     const cwd = await createFixture();
+    await writeFile(path.join(cwd, 'package.json'), JSON.stringify({
+        name: 'native-fixture',
+        private: true,
+        tachyon: { nativeCapabilities: ['shell.exec', 'fs.readText'] },
+    }, null, 2));
     await runCli(cwd, ['bun', bundleEntrypoint, '--target', 'macos']);
+    const manifest = JSON.parse(await readFile(path.join(cwd, 'dist', 'macos', 'tachyon.host.json'), 'utf8'));
+    expect(manifest.rawHostCapabilities).toEqual(['fs.readText', 'shell.exec']);
+    const source = await readFile(path.join(cwd, 'dist', 'macos', 'Sources', 'TachyonApp.swift'), 'utf8');
+    expect(source).toContain('private let allowedCapabilities = Set(');
+    expect(source).toContain('"fs.readText"');
+    expect(source).toContain('"shell.exec"');
 
-    const workerBinary = path.join(cwd, 'dist', 'macos', 'Resources', 'workers', 'native', 'rs');
-    await expect(access(workerBinary)).resolves.toBeNull();
-    const binaryStat = await stat(workerBinary);
-    expect(binaryStat.isFile()).toBe(true);
-    expect(binaryStat.mode & 0o111).not.toBe(0);
+    await writeFile(path.join(cwd, 'package.json'), JSON.stringify({
+        name: 'native-fixture',
+        tachyon: { appName: 'Configured App' },
+        tac: { nativeCapabilities: ['fs.readDir'] },
+    }));
+    await runCli(cwd, ['bun', bundleEntrypoint, '--target', 'macos']);
+    const legacyManifest = JSON.parse(await readFile(path.join(cwd, 'dist', 'macos', 'tachyon.host.json'), 'utf8'));
+    expect(legacyManifest.rawHostCapabilities).toEqual(['fs.readDir']);
 
-    const swiftSource = await readFile(path.join(cwd, 'dist', 'macos', 'Sources', 'TachyonApp.swift'), 'utf8');
-    expect(swiftSource).toContain('case "tachyon.worker"');
-    expect(swiftSource).toContain('runWorker(route:');
-    expect(swiftSource).toContain('process.standardInput = stdin');
-    expect(swiftSource).toContain('stdin.fileHandleForWriting.write(inputData)');
-    expect(swiftSource).not.toContain('stdout.fileHandleForWriting.write(inputData)');
+    await writeFile(path.join(cwd, 'package.json'), JSON.stringify({
+        name: 'native-fixture',
+        tachyon: { nativeCapabilities: ['process.spawn'] },
+    }));
+    await expect(runCli(cwd, ['bun', bundleEntrypoint, '--target', 'macos']))
+        .rejects.toThrow("tachyon.nativeCapabilities contains unsupported value 'process.spawn'");
+});
+
+timedTest('native device permissions are opt-in and produce platform declarations', { timeout: 30000 }, async () => {
+    const cwd = await createFixture();
+    await writeFile(path.join(cwd, 'package.json'), JSON.stringify({
+        name: 'native-fixture',
+        private: true,
+        tachyon: { devicePermissions: ['camera', 'microphone', 'location', 'notifications'] },
+    }, null, 2));
+
+    await runCli(cwd, ['bun', bundleEntrypoint, '--targets', 'android,ios']);
+
+    const androidManifest = await readFile(path.join(cwd, 'dist', 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
+    expect(androidManifest).toContain('android.permission.CAMERA');
+    expect(androidManifest).toContain('android.permission.RECORD_AUDIO');
+    expect(androidManifest).toContain('android.permission.ACCESS_FINE_LOCATION');
+    expect(androidManifest).toContain('android.permission.POST_NOTIFICATIONS');
+    const androidHost = JSON.parse(await readFile(path.join(cwd, 'dist', 'android', 'tachyon.host.json'), 'utf8'));
+    expect(androidHost.requestedDevicePermissions).toEqual(['camera', 'location', 'microphone', 'notifications']);
+
+    const iosProject = await readFile(path.join(cwd, 'dist', 'ios', 'project.yml'), 'utf8');
+    expect(iosProject).toContain('NSCameraUsageDescription');
+    expect(iosProject).toContain('NSMicrophoneUsageDescription');
+    expect(iosProject).toContain('NSLocationWhenInUseUsageDescription');
 });

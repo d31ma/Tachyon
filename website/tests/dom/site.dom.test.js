@@ -23,19 +23,26 @@ function parse(html) {
 let home
 /** @type {ReturnType<typeof parse>} */
 let atlas
+/** @type {Record<string, ReturnType<typeof parse>>} */
+let atlasSections = {}
 /** @type {ReturnType<typeof parse>} */
 let docs
+
+const ATLAS_SECTIONS = ['overview', 'compose', 'react', 'connect', 'store', 'observe', 'extend']
 
 beforeAll(async () => {
     await ensureBundle()
     home = parse(await read('dist/web/index.html'))
     atlas = parse(await read('dist/web/atlas/index.html'))
+    for (const section of ATLAS_SECTIONS)
+        atlasSections[section] = parse(await read(`dist/web/atlas/${section}/index.html`))
     docs = parse(await read('dist/web/docs/index.html'))
 }, 120000)
 
 afterAll(() => {
     home?.window.close()
     atlas?.window.close()
+    for (const section of Object.values(atlasSections)) section?.window.close()
     docs?.window.close()
 })
 
@@ -63,12 +70,13 @@ describe('homepage DOM', () => {
         const hero = home.document.querySelector('.hero h1')
         expect(hero?.textContent).toContain('Ship the whole stack')
         const cards = home.document.querySelectorAll('.features-grid w-card')
-        expect(cards.length).toBe(7)
+        expect(cards.length).toBe(8)
         expect(home.document.querySelector('.hero-install code')?.textContent).toContain('ty init my-app')
         expect(home.document.querySelector('[data-tac-scope="home-yon"]')).toBeTruthy()
         expect(home.document.querySelector('.yon-languages')?.textContent).toContain('TypeScript')
         expect(home.document.querySelector('[data-tac-scope="home-targets"]')).toBeTruthy()
         expect(home.document.querySelector('.target-terminal pre code')?.textContent).toContain('ty bundle --target all')
+        expect([...cards].map((card) => card.getAttribute('title'))).toContain('Permissioned device APIs')
     })
 
     test('links the primary destinations', () => {
@@ -88,29 +96,56 @@ describe('homepage DOM', () => {
 })
 
 describe('atlas DOM', () => {
-    test('prerenders every capability panel', () => {
-        for (const scope of [
-            'panel-inputs', 'panel-native', 'panel-helpers', 'panel-live',
-            'panel-realtime', 'panel-diagnostics', 'panel-polyglot', 'panel-desktop',
-            'panel-inventory', 'panel-fylo', 'panel-users', 'panel-showcase',
-            'panel-telemetry', 'stats-grid',
-        ]) {
-            expect(atlas.document.querySelector(`[data-tac-scope="${scope}"]`)).toBeTruthy()
+    test('uses a docs-style shell with a section sidebar on every page', () => {
+        for (const page of [atlas, ...Object.values(atlasSections)]) {
+            expect(page.document.querySelector('.atlas-shell')).toBeTruthy()
+            expect(page.document.querySelector('.atlas-sidebar')).toBeTruthy()
+            expect(page.document.querySelector('.atlas-main')).toBeTruthy()
+            expect(page.document.querySelector('[data-tac-scope="atlas-sidebar"]')).toBeTruthy()
+        }
+    })
+
+    test('the sidebar lists every section in order', () => {
+        const hrefs = [...atlasSections.overview.document.querySelectorAll('.atlas-sidebar-list a')]
+            .map((el) => el.getAttribute('href'))
+        expect(hrefs).toEqual(ATLAS_SECTIONS.map((section) => `/atlas/${section}`))
+    })
+
+    test('prerenders every capability panel on its section page', () => {
+        const panelsBySection = {
+            overview: ['stats-grid'],
+            compose: ['panel-inputs', 'panel-native'],
+            react: ['panel-helpers', 'panel-live', 'panel-realtime'],
+            connect: [
+                'panel-diagnostics', 'panel-polyglot', 'panel-portablebridge', 'panel-desktop',
+                'language-javascript', 'language-dart', 'language-kotlin', 'language-swift', 'language-csharp',
+            ],
+            store: ['panel-inventory', 'panel-fylo', 'panel-users', 'panel-showcase'],
+            observe: ['panel-telemetry'],
+        }
+        for (const [section, scopes] of Object.entries(panelsBySection)) {
+            for (const scope of scopes) {
+                expect(atlasSections[section].document.querySelector(`[data-tac-scope="${scope}"]`)).toBeTruthy()
+            }
         }
     })
 
     test('keeps semantic native elements in the studio panel', () => {
-        expect(atlas.document.querySelector('#browser-studio canvas')).toBeTruthy()
-        expect(atlas.document.querySelector('#browser-studio progress')).toBeTruthy()
-        expect(atlas.document.querySelector('#browser-studio meter')).toBeTruthy()
-        expect(atlas.document.querySelector('#browser-studio output')).toBeTruthy()
-        expect(atlas.document.querySelector('#browser-studio time')).toBeTruthy()
-        expect(atlas.document.querySelector('#browser-studio details')).toBeTruthy()
+        const compose = atlasSections.compose
+        expect(compose.document.querySelector('#browser-studio canvas')).toBeTruthy()
+        expect(compose.document.querySelector('#browser-studio progress')).toBeTruthy()
+        expect(compose.document.querySelector('#browser-studio meter')).toBeTruthy()
+        expect(compose.document.querySelector('#browser-studio output')).toBeTruthy()
+        expect(compose.document.querySelector('#browser-studio time')).toBeTruthy()
+        expect(compose.document.querySelector('#browser-studio details')).toBeTruthy()
     })
 
-    test('numbers the six atlas sections', () => {
-        const ids = [...atlas.document.querySelectorAll('.atlas-section')].map((el) => el.id)
-        expect(ids).toEqual(['compose', 'react', 'connect', 'store', 'observe', 'extend'])
+    test('each section page renders exactly its own numbered section', () => {
+        for (const section of ['compose', 'react', 'connect', 'store', 'observe', 'extend']) {
+            const ids = [...atlasSections[section].document.querySelectorAll('.atlas-section')].map((el) => el.id)
+            expect(ids).toEqual([section])
+        }
+        expect(atlasSections.overview.document.querySelector('.atlas-hero')).toBeTruthy()
     })
 })
 

@@ -1,16 +1,22 @@
 // @ts-check
 /**
+ * Rooted terminology, used identically across the framework, docs and website:
+ * - target:      the bundle output — web | macos | windows | linux | android | ios
+ * - platform:    the form factor — desktop | mobile | web
+ * - environment / os (synonyms): the concrete host — windows | macos | linux | android | ios | web
+ * - companion language: a language a Tac companion is written in (JavaScript,
+ *   TypeScript, Dart, Rust, Kotlin, Swift, C#)
+ *
  * @typedef {'web' | 'macos' | 'windows' | 'linux' | 'android' | 'ios'} BundleTarget
  * @typedef {'macos' | 'windows' | 'linux' | 'android' | 'ios'} NativeTarget
- * @typedef {'browser' | 'desktop' | 'mobile'} BundleEnvironment
- * @typedef {'macos' | 'windows' | 'linux' | 'android' | 'ios' | 'unknown'} BundleOS
+ * @typedef {'desktop' | 'mobile' | 'web'} BundlePlatform
+ * @typedef {'macos' | 'windows' | 'linux' | 'android' | 'ios' | 'web'} BundleOS
  * @typedef {{
  *   target: BundleTarget,
- *   platform: BundleTarget,
- *   environment: BundleEnvironment,
+ *   platform: BundlePlatform,
+ *   environment: BundleOS,
  *   os: BundleOS,
  *   native: boolean,
- *   browser: boolean,
  *   web: boolean,
  *   desktop: boolean,
  *   mobile: boolean
@@ -72,29 +78,24 @@ export function isMobileTarget(target) {
 }
 
 /**
+ * The form factor a target ships to: desktop, mobile, or web.
  * @param {string} target
- * @returns {BundleEnvironment}
- */
-export function environmentForTarget(target) {
-    if (isDesktopTarget(target)) return 'desktop';
-    if (isMobileTarget(target)) return 'mobile';
-    return 'browser';
-}
-
-/**
- * @param {string} target
- * @returns {BundleTarget}
+ * @returns {BundlePlatform}
  */
 export function platformForTarget(target) {
-    return BUNDLE_TARGET_SET.has(target) ? /** @type {BundleTarget} */ (target) : 'web';
+    if (isDesktopTarget(target)) return 'desktop';
+    if (isMobileTarget(target)) return 'mobile';
+    return 'web';
 }
 
 /**
+ * The concrete host environment: the operating system for native targets,
+ * 'web' for browser bundles. `environment` and `os` are synonyms everywhere.
  * @param {string} target
  * @returns {BundleOS}
  */
 export function osForTarget(target) {
-    return isNativeTarget(target) ? /** @type {BundleOS} */ (target) : 'unknown';
+    return isNativeTarget(target) ? /** @type {BundleOS} */ (target) : 'web';
 }
 
 /**
@@ -103,17 +104,16 @@ export function osForTarget(target) {
  */
 export function targetContext(target) {
     const platform = platformForTarget(target);
-    const environment = environmentForTarget(target);
+    const os = osForTarget(target);
     return {
         target,
         platform,
-        environment,
-        os: osForTarget(target),
+        environment: os,
+        os,
         native: isNativeTarget(target),
-        browser: environment === 'browser',
-        web: environment === 'browser',
-        desktop: environment === 'desktop',
-        mobile: environment === 'mobile',
+        web: platform === 'web',
+        desktop: platform === 'desktop',
+        mobile: platform === 'mobile',
     };
 }
 

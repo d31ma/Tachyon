@@ -7,9 +7,10 @@
  * platform webview. It contains no embedded Yon backend; it is frontend-only.
  */
 
-import { chmod, cp, mkdir, readFile, readdir, rm, writeFile } from 'fs/promises';
+import { chmod, cp, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import path from 'path';
 import NativeIconAssets from './icon-assets.js';
+import { nativeHostCapabilities, nativeRawHostCapabilities, TAC_NATIVE_BRIDGE_ABI_VERSION } from './host-capabilities.js';
 
 /**
  * @typedef {object} NativeHostOptions
@@ -19,6 +20,8 @@ import NativeIconAssets from './icon-assets.js';
  * @property {string} appName
  * @property {string} [appId]
  * @property {string} [version]
+ * @property {string[]} [devicePermissions]
+ * @property {string[]} [nativeCapabilities]
  */
 
 /**
@@ -41,6 +44,10 @@ export default class PlatformGenerator {
     resourcesDir;
     /** @type {Array<{ route: string, capability: string, descriptor: unknown }>} */
     nativeCapabilities;
+    /** @type {Set<string>} */
+    requestedDevicePermissions;
+    /** @type {Set<string>} */
+    requestedNativeCapabilities;
 
     /**
      * @param {NativeHostOptions} options
@@ -55,6 +62,8 @@ export default class PlatformGenerator {
         this.version = options.version || '1.0.0';
         this.resourcesDir = path.join(this.outputRoot, 'Resources');
         this.nativeCapabilities = [];
+        this.requestedDevicePermissions = new Set(options.devicePermissions ?? []);
+        this.requestedNativeCapabilities = new Set(options.nativeCapabilities ?? []);
     }
 
     /**
@@ -64,6 +73,7 @@ export default class PlatformGenerator {
     async generate() {
         await this.prepareOutputDirectory();
         await this.copyAssets();
+        await this.writeDevicePermissionMeta();
         await this.writeAppIcons();
         await this.writeHostManifest();
         await this.generateProjectFiles();
@@ -99,6 +109,18 @@ export default class PlatformGenerator {
         }).write();
     }
 
+    /** @returns {Promise<void>} */
+    async writeDevicePermissionMeta() {
+        const indexPath = path.join(this.resourcesDir, 'index.html');
+        let html;
+        try { html = await readFile(indexPath, 'utf8'); }
+        catch { return; }
+        const permissions = [...this.requestedDevicePermissions].sort().join(',');
+        const meta = `    <meta name="tachyon-device-permissions" content="${permissions}">`;
+        if (html.includes('name="tachyon-device-permissions"')) return;
+        await writeFile(indexPath, html.replace('</head>', `${meta}\n</head>`));
+    }
+
     /**
      * Writes a manifest describing the host and its runtime contract.
      * @returns {Promise<void>}
@@ -113,42 +135,30 @@ export default class PlatformGenerator {
             appId: this.appId,
             version: this.version,
             entry: 'Resources/index.html',
-            bridgeVersion: 1,
+            // The public companion prelude is language-specific, but all calls
+            // converge on this versioned message ABI at the host boundary.
+            platformApiVersion: TAC_NATIVE_BRIDGE_ABI_VERSION,
+            bridgeVersion: 2,
+            hostCapabilities: nativeHostCapabilities(this.target, [...this.requestedNativeCapabilities]),
+            rawHostCapabilities: nativeRawHostCapabilities(this.target, [...this.requestedNativeCapabilities]),
+            requestedDevicePermissions: [...this.requestedDevicePermissions].sort(),
             capabilities,
         };
         const manifestPath = path.join(this.outputRoot, 'tachyon.host.json');
         await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
     }
 
-    hasRawOsCapabilities() {
-        const authorized = new Set(
-            (process.env.TAC_DANGEROUS_CAPABILITIES || '')
-                .split(',')
-                .map((capability) => capability.trim())
-                .filter(Boolean),
-        );
-        return this.nativeCapabilities.some(({ capability }) => {
-            const raw = /^(fs\.|shell\.|process\.)/.test(capability);
-            return raw && authorized.has(capability);
-        });
-    }
-
     /**
-     * Reads the build-wide `TAC_NATIVE_CAPABILITIES` environment variable and
-     * records authorized native capabilities for host packaging/auditing. The
-     * runtime enforces the allowlist inside each worker; this manifest is for
-     * native-shell visibility.
+     * Records every operation concretely enabled for this host. Raw filesystem
+     * and desktop shell operations require an explicit package declaration.
      * @returns {Promise<Array<{ route: string, capability: string, descriptor: unknown }>>}
      */
     async collectNativeCapabilities() {
-        const caps = (process.env.TAC_NATIVE_CAPABILITIES || '')
-            .split(',')
-            .map((capability) => capability.trim())
-            .filter(Boolean);
-        return caps
+        return [...nativeHostCapabilities(this.target, [...this.requestedNativeCapabilities])]
             .map((capability) => ({ route: '*', capability, descriptor: {} }))
             .sort((left, right) => left.capability.localeCompare(right.capability));
     }
+
 
     /**
      * Returns the inline bridge script that the native host injects into the
@@ -157,9 +167,12 @@ export default class PlatformGenerator {
      * @returns {string}
      */
     getBridgeScript() {
+        const hostCapabilities = nativeHostCapabilities(this.target, [...this.requestedNativeCapabilities]);
         return `(function () {
   const pending = new Map();
   const listeners = new Set();
+  const queuedHostEvents = [];
+  const hostCapabilities = new Set(${JSON.stringify(hostCapabilities)});
   let sequence = 0;
 
   function hasNativeHost() {
@@ -207,6 +220,14 @@ export default class PlatformGenerator {
       window.open(url, '_blank', 'noopener,noreferrer');
       return { opened: true };
     }
+    if (capability === 'share.text' && navigator.share) {
+      await navigator.share({ text: String(data.text ?? ''), title: String(data.title ?? '') });
+      return { shared: true };
+    }
+    if (capability === 'haptics.impact' && navigator.vibrate) {
+      navigator.vibrate(10);
+      return { impacted: true };
+    }
     if (capability === 'file.openText' && typeof window.showOpenFilePicker === 'function') {
       const handles = await window.showOpenFilePicker({
         multiple: false,
@@ -220,7 +241,7 @@ export default class PlatformGenerator {
 
   function invoke(capability, payload = {}, options = {}) {
     const fallbackFirst = ['app.info', 'clipboard.readText', 'clipboard.writeText', 'openUrl', 'file.openText'].includes(capability);
-    if (fallbackFirst || !hasNativeHost()) return fallbackInvoke(capability, payload);
+    if (!hasNativeHost() || (fallbackFirst && !hostCapabilities.has(capability))) return fallbackInvoke(capability, payload);
     const id = ++sequence;
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -257,6 +278,10 @@ export default class PlatformGenerator {
       }
       return;
     }
+    if (message && typeof message === 'object' && message.type === 'tac:host-event' && listeners.size === 0) {
+      queuedHostEvents.push(message);
+      return;
+    }
     for (const listener of listeners) listener(message);
   }
 
@@ -266,10 +291,15 @@ export default class PlatformGenerator {
     invoke,
     onMessage(handler) {
       listeners.add(handler);
+      for (const event of queuedHostEvents.splice(0)) handler(event);
       return () => listeners.delete(handler);
     },
     messageHandler,
   };
+  // An ordered, buffered lifecycle event proves the host-event contract even
+  // before a platform adds deep links or notification actions. Native hosts
+  // use this same envelope when they initiate events later in their lifecycle.
+  setTimeout(() => messageHandler({ type: 'tac:host-event', event: 'app.ready', payload: { target: ${JSON.stringify(this.target)} } }), 0);
 })();`;
     }
 

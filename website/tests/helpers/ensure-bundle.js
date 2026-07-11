@@ -1,14 +1,21 @@
 // @ts-check
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, rm, stat } from 'node:fs/promises'
 
 const PROJECT_ROOT = import.meta.dir.replace(/[/\\]tests[/\\]helpers$/, '')
 const LOCK_DIR = `${PROJECT_ROOT}/.test-bundle-lock`
-const READY_FILE = `${PROJECT_ROOT}/.test-bundle-ready`
 const REQUIRED_OUTPUTS = [
     `${PROJECT_ROOT}/dist/web/index.html`,
     `${PROJECT_ROOT}/dist/web/atlas/index.html`,
+    `${PROJECT_ROOT}/dist/web/atlas/overview/index.html`,
+    `${PROJECT_ROOT}/dist/web/atlas/connect/index.html`,
     `${PROJECT_ROOT}/dist/web/docs/index.html`,
-    `${PROJECT_ROOT}/dist/web/workers/language/rust/tac.worker.js`,
+    `${PROJECT_ROOT}/dist/web/components/panel/polyglot/tac.js`,
+    `${PROJECT_ROOT}/dist/web/components/panel/portablebridge/tac.js`,
+    `${PROJECT_ROOT}/dist/web/components/language/javascript/tac.js`,
+    `${PROJECT_ROOT}/dist/web/components/language/dart/tac.js`,
+    `${PROJECT_ROOT}/dist/web/components/language/kotlin/tac.js`,
+    `${PROJECT_ROOT}/dist/web/components/language/swift/tac.js`,
+    `${PROJECT_ROOT}/dist/web/components/language/csharp/tac.js`,
 ]
 
 /** @type {Promise<void> | null} */
@@ -60,12 +67,9 @@ export async function ensureBundle() {
     if (bundlePromise) return bundlePromise
 
     bundlePromise = (async () => {
-        if (await outputsReady()) return
-
         try {
             await mkdir(LOCK_DIR)
             await runBundle()
-            await writeFile(READY_FILE, `${Date.now()}\n`)
         } catch (error) {
             if (error && typeof error === 'object' && /** @type {{ code?: string }} */ (error).code === 'EEXIST') {
                 await waitForUnlock()

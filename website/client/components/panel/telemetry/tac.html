@@ -1,5 +1,5 @@
 <w-card variant="outlined" class="panel-card panel-wide">
-  <w-card-item title="Telemetry without a collector" subtitle="Worker calls are timed in the page, persisted as spans into a FYLO collection, and summarized from the OPFS mirror.">
+  <w-card-item title="Telemetry without a collector" subtitle="Companion fetches are timed in the page, persisted as spans into a FYLO collection, and summarized from the OPFS mirror.">
   </w-card-item>
   <w-card-text>
     <div class="w-row ga-2 tel-status">
@@ -10,7 +10,7 @@
     </div>
 
     <div class="w-row ga-2 tel-actions">
-      <w-btn size="sm" variant="outlined" on:click="runBenchmark()" :disabled="running">Benchmark the workers</w-btn>
+      <w-btn size="sm" variant="outlined" on:click="runBenchmark()" :disabled="running">Benchmark companion fetches</w-btn>
       <w-btn size="sm" variant="text" on:click="clearSpans()">Clear spans</w-btn>
     </div>
 
@@ -33,7 +33,7 @@
       </w-table>
     </logic>
     <logic :if="spans.length === 0 && !loading">
-      <p class="tel-empty">No spans yet — run the benchmark to time each tac.wasm worker and persist the results.</p>
+      <p class="tel-empty">No spans yet — run the benchmark to time local-first companion fetches and persist the results.</p>
     </logic>
   </w-card-text>
 </w-card>

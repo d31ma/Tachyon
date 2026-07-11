@@ -3,6 +3,7 @@
 import Router from "../server/http/route-handler.js";
 import Compiler from "../compiler/index.js";
 import { generateNativeHost } from "../compiler/native/index.js";
+import { resolveNativeAppConfig } from "../compiler/native/config.js";
 import { hasNativePackager, packageNativeArtifact } from "../compiler/native/packagers.js";
 import { NATIVE_TARGET_SET, readTargetArg, resolveBundleTargets } from "../shared/native-targets.js";
 import logger from "../server/observability/logger.js";
@@ -153,9 +154,6 @@ async function buildRouteOutput(route) {
         const response = await handler();
         const outputPath = `${activeDistPath}${route}`;
         await Bun.write(Bun.file(outputPath), await response.blob());
-        if (Compiler.nativeWorkerBinaryRoutes.has(route) && process.platform !== 'win32') {
-            await chmod(outputPath, 0o755);
-        }
     }
     catch (error) {
         bundleLogger.error('Failed to build route', { route, err: error });
@@ -165,10 +163,14 @@ export async function runBuild() {
     const start = Date.now();
     const stagingPath = await mkdtemp(path.join(path.dirname(distPath), `${path.basename(distPath)}-staging-`));
     const previousTargetEnv = process.env.TAC_BUNDLE_TARGETS;
+    const previousNativeCapabilitiesEnv = process.env.TAC_NATIVE_CAPABILITIES;
     try {
         let routeCount = 0;
         const appName = await resolveAppName();
         const appVersion = await resolveAppVersion();
+        const nativeConfig = await resolveNativeAppConfig();
+        const { devicePermissions, nativeCapabilities } = nativeConfig;
+        process.env.TAC_NATIVE_CAPABILITIES = nativeCapabilities.join(',');
         /** @type {Array<{ target: BundleTarget, outputRoot: string }>} */
         const nativeHosts = [];
         for (const target of bundleTargets) {
@@ -200,6 +202,8 @@ export async function runBuild() {
                 outputRoot,
                 appName,
                 version: appVersion,
+                devicePermissions,
+                nativeCapabilities,
             });
             // Native targets ship the host at dist/<target>/. Replace the
             // standalone web bundle (already embedded in the host's Resources/)
@@ -280,6 +284,8 @@ export async function runBuild() {
     finally {
         activeDistPath = distPath;
         process.env.TAC_BUNDLE_TARGETS = previousTargetEnv ?? bundleTargets.join(',');
+        if (previousNativeCapabilitiesEnv === undefined) delete process.env.TAC_NATIVE_CAPABILITIES;
+        else process.env.TAC_NATIVE_CAPABILITIES = previousNativeCapabilitiesEnv;
     }
 }
 /** @param {string} route */
@@ -308,7 +314,6 @@ function watchedRoots() {
     return [
         Router.pagesPath,
         Router.componentsPath,
-        Router.workersPath,
         Router.assetsPath,
         Router.sharedDataPath,
         Router.sharedScriptsPath,
@@ -525,7 +530,6 @@ async function watchPaths(onChange) {
     const roots = [
         Router.pagesPath,
         Router.componentsPath,
-        Router.workersPath,
         Router.assetsPath,
         Router.sharedDataPath,
         Router.sharedScriptsPath,
@@ -633,7 +637,6 @@ export async function startBundleWatcher(options = {}) {
     bundleLogger.debug('Watched source paths', {
         pagesPath: Router.pagesPath,
         componentsPath: Router.componentsPath,
-        workersPath: Router.workersPath,
         assetsPath: Router.assetsPath,
         sharedDataPath: Router.sharedDataPath,
         sharedScriptsPath: Router.sharedScriptsPath,

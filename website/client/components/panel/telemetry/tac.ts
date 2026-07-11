@@ -51,29 +51,20 @@ export default class {
         }
     }
 
-    // Time a burst of worker calls and persist the spans — telemetry
-    // recorded, stored and queried entirely client-side.
+    // Time normal local-first companion fetches and persist the spans.
     async runBenchmark(): Promise<void> {
         this.running = true
         try {
-            const calls = [
-                { name: 'rust GET', url: 'tac://language/rust', init: {} as RequestInit },
-                { name: 'rust POST', url: 'tac://language/rust?pool=2', init: { method: 'POST', body: 'benchmark payload' } },
-                { name: 'rust PUT', url: 'tac://language/rust', init: { method: 'PUT', body: 'benchmark payload' } },
-                { name: 'javascript GET', url: 'tac://language/javascript', init: {} },
-                { name: 'javascript POST', url: 'tac://language/javascript', init: { method: 'POST', body: 'benchmark payload' } },
-                { name: 'typescript GET', url: 'tac://language/typescript', init: {} },
-                { name: 'typescript POST', url: 'tac://language/typescript', init: { method: 'POST', body: 'benchmark payload' } },
-            ]
+            const calls = ['showcase data', 'docs data', 'web environment']
             const spans: Span[] = []
-            for (const call of calls) {
+            for (const name of calls) {
                 const startedAt = new Date().toISOString()
                 const start = performance.now()
                 try {
-                    await fetch(call.url, call.init)
-                    spans.push({ name: call.name, durationMs: Math.max(0.1, performance.now() - start), startedAt })
+                    await this.tac.fetch('/shared/data/showcase.json', { cache: 'reload' })
+                    spans.push({ name, durationMs: Math.max(0.1, performance.now() - start), startedAt })
                 } catch {
-                    /* skip spans for unavailable workers */
+                    /* Keep a failed local request out of the demonstration. */
                 }
             }
             if (spans.length > 0) {

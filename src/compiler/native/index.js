@@ -25,6 +25,8 @@ import AndroidGenerator from './platforms/android.js';
  * @property {string} appName
  * @property {string} [appId]
  * @property {string} [version]
+ * @property {string[]} [devicePermissions]
+ * @property {string[]} [nativeCapabilities]
  */
 
 /** @type {Record<string, PlatformGeneratorClass>} */
@@ -73,6 +75,8 @@ export async function generateNativeHost(options) {
         appName: options.appName,
         appId: options.appId,
         version: options.version,
+        devicePermissions: options.devicePermissions,
+        nativeCapabilities: options.nativeCapabilities,
     });
 
     await generator.generate();

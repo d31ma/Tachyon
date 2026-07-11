@@ -176,7 +176,7 @@ function shellHtml() {
     <main id="fylo-app" class="fylo-shell">
         <header class="fylo-hero">
             <p class="eyebrow md-typescale-label-large">Tachyon &middot; Fylo Browser</p>
-            <h1 class="md-typescale-headline-medium">Inspect and query collections stored by <code>@d31ma/fylo</code>.</h1>
+            <h1 class="md-typescale-headline-medium">Inspect and query collections stored by the <code>fylo</code> binary.</h1>
             <p class="lede md-typescale-body-large">Read-only by default. Pass <code>YON_DATA_BROWSER_READONLY=false</code> to enable mutation endpoints. Query with <a href="https://docs.postgrest.org/en/stable/references/api/tables_views.html#horizontal-filtering" rel="noopener">PostgREST syntax</a>: <code>?field=op.value</code></p>
         </header>
         <section class="fylo-panel">

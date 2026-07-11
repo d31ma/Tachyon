@@ -1,28 +1,28 @@
 <w-card variant="outlined" class="panel-card">
-  <w-card-item title="Platform-aware globals" subtitle="Templates read environment, platform, target and os without imports; workers read the same facts through request.platform().">
+  <w-card-item title="Platform-aware globals" subtitle="Templates read platform (desktop/mobile/web), environment/os (windows/macos/linux/android/ios/web) and target without imports; companions receive the same context through this.tac.platform.">
   </w-card-item>
   <w-card-text>
     <div class="w-row ga-2 platform-chips">
-      <w-chip size="small" color="primary">environment: {environment}</w-chip>
-      <w-chip size="small">platform: {platform}</w-chip>
-      <w-chip size="small">target: {target}</w-chip>
+      <w-chip size="small" color="primary">platform: {platform}</w-chip>
       <w-chip size="small">os: {os}</w-chip>
+      <w-chip size="small">environment: {environment}</w-chip>
+      <w-chip size="small">target: {target}</w-chip>
     </div>
 
-    <switch :value="environment">
+    <switch :value="platform">
       <case :when="'desktop'">
-        <p class="platform-note">This is the {platform} desktop bundle rendered inside a native webview host.</p>
+        <p class="platform-note">This is the {os} desktop bundle rendered inside a native webview host.</p>
       </case>
       <case :when="'mobile'">
-        <p class="platform-note">This is the {platform} mobile bundle — the same client source as every other target.</p>
+        <p class="platform-note">This is the {os} mobile bundle — the same client source as every other target.</p>
       </case>
       <case default>
-        <p class="platform-note">This is the web bundle. The same client source also builds macOS, Windows, Linux, iOS and Android hosts with <code>ty bundle --target all</code>.</p>
+        <p class="platform-note">This is the web platform bundle. The same client source also builds macOS, Windows, Linux, iOS and Android hosts with <code>ty bundle --target all</code>.</p>
       </case>
     </switch>
 
     <p class="platform-worker">
-      A Rust Tac Worker sees: <strong>{workerReport}</strong>
+      The current Tac companion sees: <strong>{companionReport}</strong>
     </p>
   </w-card-text>
 </w-card>
