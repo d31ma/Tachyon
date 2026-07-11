@@ -58,7 +58,7 @@ timedTest('watch rebuilds a page incrementally without re-rendering siblings', {
     const homeIndex = path.join(root, 'dist', 'web', 'index.html');
     const docsIndex = path.join(root, 'dist', 'web', 'docs', 'index.html');
     // Initial full build lands both routes.
-    await waitFor(async () => stdout.includes('Bundle completed') && (await readFile(homeIndex, 'utf8')).includes('Alpha'));
+    await waitFor(async () => stdout.includes('Watching for changes') && (await readFile(homeIndex, 'utf8')).includes('Alpha'));
     const docsMtimeBefore = (await stat(docsIndex)).mtimeMs;
     // Edit one page; the watcher should take the incremental path.
     await writeFile(path.join(root, 'client', 'pages', 'tac.html'), '<main><h1>Beta</h1></main>');
@@ -96,7 +96,7 @@ timedTest('watch rebuilds a component module incrementally', { timeout: 25000 },
     // Components hydrate client-side from their own module, so the edit lands in
     // the component bundle, not the prerendered page HTML.
     const componentModule = path.join(root, 'dist', 'web', 'components', 'badge', 'tac.js');
-    await waitFor(async () => stdout.includes('Bundle completed') && (await readFile(componentModule, 'utf8')).includes('One'));
+    await waitFor(async () => stdout.includes('Watching for changes') && (await readFile(componentModule, 'utf8')).includes('One'));
     await writeFile(path.join(root, 'client', 'components', 'badge', 'tac.html'), '<span>Two</span>');
     await waitFor(async () => stdout.includes('(incremental)') && (await readFile(componentModule, 'utf8')).includes('Two'));
     expect(await readFile(componentModule, 'utf8')).toContain('Two');
