@@ -67,6 +67,9 @@ public struct FileSystemApi {
     public func readText(_ path: String) -> String { "" }
     public func writeText(_ path: String, _ text: String) {}
     public func readDir(_ path: String) -> Any? { nil }
+    public func stat(_ path: String) -> Any? { nil }
+    public func mkdir(_ path: String) -> Any? { nil }
+    public func remove(_ path: String) -> Any? { nil }
     public func paths() -> Any? { nil }
 }
 public let fileSystem = FileSystemApi()

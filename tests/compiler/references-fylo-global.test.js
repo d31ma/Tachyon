@@ -50,6 +50,21 @@ describe('Compiler.referencesFyloGlobal', () => {
         expect(Compiler.referencesFyloGlobal(source)).toBe(false);
     });
 
+    test('still injects the fylo import when an unrelated import precedes a later `from` (#108)', () => {
+        // Mirror of the @onMount bug: a loose `import…fylo…from` span across an
+        // unrelated import and a later `from` would drop the fylo auto-import.
+        const source = `
+            import { helper } from './util.js'
+            export default class extends Tac {
+                async load() {
+                    const rows = Array.from([])
+                    return await fylo.users.find({ limit: rows.length })
+                }
+            }
+        `;
+        expect(Compiler.referencesFyloGlobal(source)).toBe(true);
+    });
+
     test('does not match dotted member access (e.g. some.fylo)', () => {
         const source = `
             const obj = { other: 1 }

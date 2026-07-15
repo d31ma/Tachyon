@@ -13,6 +13,9 @@ export const RAW_NATIVE_CAPABILITY_NAMES = Object.freeze([
     'fs.readText',
     'fs.writeText',
     'fs.readDir',
+    'fs.stat',
+    'fs.mkdir',
+    'fs.remove',
     'shell.exec',
 ]);
 

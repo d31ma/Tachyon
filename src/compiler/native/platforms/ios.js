@@ -205,6 +205,25 @@ class TachyonMessageHandler: NSObject, WKScriptMessageHandler {
                 return ["name": name, "type": isDirectory.boolValue ? "directory" : "file"]
             }
             return ["path": dirPath, "entries": entries]
+        case "fs.stat":
+            let statPath = try requireString(payload["path"], "path")
+            var statIsDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: statPath, isDirectory: &statIsDir) {
+                let attrs = try? FileManager.default.attributesOfItem(atPath: statPath)
+                let size = (attrs?[.size] as? NSNumber)?.intValue ?? 0
+                return ["path": statPath, "exists": true, "type": statIsDir.boolValue ? "directory" : "file", "size": size]
+            }
+            return ["path": statPath, "exists": false]
+        case "fs.mkdir":
+            let mkdirPath = try requireString(payload["path"], "path")
+            try FileManager.default.createDirectory(atPath: mkdirPath, withIntermediateDirectories: true)
+            return ["path": mkdirPath, "created": true]
+        case "fs.remove":
+            let removePath = try requireString(payload["path"], "path")
+            if FileManager.default.fileExists(atPath: removePath) {
+                try FileManager.default.removeItem(atPath: removePath)
+            }
+            return ["path": removePath, "removed": true]
         case "fs.paths":
             let manager = FileManager.default
             return [

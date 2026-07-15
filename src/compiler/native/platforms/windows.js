@@ -438,6 +438,35 @@ static std::string HandleNativeCapability(const std::string& message) {
             }
             entries += "]";
             value = "{\\"path\\":\\"" + JsonEscape(dirPath) + "\\",\\"entries\\":" + entries + "}";
+        } else if (capability == "fs.stat") {
+            std::string statPath = ExtractJsonString(message, "path");
+            std::error_code ec;
+            bool exists = std::filesystem::exists(statPath, ec);
+            if (ec) throw std::runtime_error("Unable to stat path");
+            if (exists) {
+                bool isDir = std::filesystem::is_directory(statPath, ec);
+                if (ec) throw std::runtime_error("Unable to stat path");
+                std::uintmax_t size = 0;
+                if (!isDir) {
+                    size = std::filesystem::file_size(statPath, ec);
+                    if (ec) throw std::runtime_error("Unable to read file size");
+                }
+                value = "{\\"path\\":\\"" + JsonEscape(statPath) + "\\",\\"exists\\":true,\\"type\\":\\"" + (isDir ? "directory" : "file") + "\\",\\"size\\":" + std::to_string(size) + "}";
+            } else {
+                value = "{\\"path\\":\\"" + JsonEscape(statPath) + "\\",\\"exists\\":false}";
+            }
+        } else if (capability == "fs.mkdir") {
+            std::string mkdirPath = ExtractJsonString(message, "path");
+            std::error_code ec;
+            std::filesystem::create_directories(mkdirPath, ec);
+            if (ec && !std::filesystem::is_directory(mkdirPath)) throw std::runtime_error("Unable to create directory");
+            value = "{\\"path\\":\\"" + JsonEscape(mkdirPath) + "\\",\\"created\\":true}";
+        } else if (capability == "fs.remove") {
+            std::string removePath = ExtractJsonString(message, "path");
+            std::error_code ec;
+            std::filesystem::remove_all(removePath, ec);
+            if (ec) throw std::runtime_error("Unable to remove path");
+            value = "{\\"path\\":\\"" + JsonEscape(removePath) + "\\",\\"removed\\":true}";
         } else if (capability == "shell.exec") {
             value = RunShellCommand(
                 ExtractJsonString(message, "command"),

@@ -232,12 +232,22 @@ timedTest('tac.native-bundle generates Android host from existing target assets'
     expect(activity).toContain('class DeviceWebChromeClient');
     expect(activity).toContain('shell.exec is not available on Android native hosts');
     expect(activity).not.toContain('AppCompatActivity');
+    // Secure storage (Android Keystore) and user verification (framework
+    // BiometricPrompt) ship on Android at parity with iOS/macOS.
+    expect(activity).toContain('"secrets.get"');
+    expect(activity).toContain('AndroidKeyStore');
+    expect(activity).toContain('AES/GCM/NoPadding');
+    expect(activity).toContain('android.hardware.biometrics.BiometricPrompt');
+    expect(activity).toContain('private fun verifyUser(');
+    expect(activity).toContain('context is android.content.ContextWrapper');
+    expect(activity).toContain('context = context.baseContext');
 
     const gradle = await readFile(path.join(cwd, 'dist', 'android', 'app', 'build.gradle.kts'), 'utf8');
     expect(gradle).toContain('android.sourceSets["main"].assets.srcDir("$rootDir/Resources")');
     expect(gradle).not.toContain('androidx.appcompat');
     const androidManifest = await readFile(path.join(cwd, 'dist', 'android', 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
     expect(androidManifest).toContain('android:icon="@mipmap/ic_launcher"');
+    expect(androidManifest).toContain('android.permission.USE_BIOMETRIC');
     const adaptiveIcon = await readFile(path.join(cwd, 'dist', 'android', 'app', 'src', 'main', 'res', 'mipmap-anydpi-v26', 'ic_launcher.xml'), 'utf8');
     expect(adaptiveIcon).toContain('<adaptive-icon');
     expect(adaptiveIcon).toContain('@drawable/ic_launcher_background');
@@ -246,6 +256,8 @@ timedTest('tac.native-bundle generates Android host from existing target assets'
     const hostManifest = JSON.parse(await readFile(path.join(cwd, 'dist', 'android', 'tachyon.host.json'), 'utf8'));
     expect(hostManifest.target).toBe('android');
     expect(hostManifest.hostCapabilities).toContain('share.text');
+    expect(hostManifest.hostCapabilities).toContain('secrets.get');
+    expect(hostManifest.hostCapabilities).toContain('auth.verifyUser');
     expect(hostManifest.hostCapabilities).not.toContain('fs.writeText');
     expect(hostManifest.hostCapabilities).not.toContain('shell.exec');
     expect(hostManifest.rawHostCapabilities).toEqual([]);
@@ -261,13 +273,17 @@ timedTest('native hosts generate platform raw capability dispatchers', { timeout
     await writeFile(path.join(cwd, 'package.json'), JSON.stringify({
         name: 'native-fixture',
         private: true,
-        tachyon: { nativeCapabilities: ['fs.readText', 'fs.writeText', 'fs.readDir', 'shell.exec'] },
+        tachyon: { nativeCapabilities: ['fs.readText', 'fs.writeText', 'fs.readDir', 'fs.stat', 'fs.mkdir', 'fs.remove', 'shell.exec'] },
     }, null, 2));
     await runCli(cwd, ['bun', bundleEntrypoint, '--targets', 'windows,linux,ios']);
 
     const windowsSource = await readFile(path.join(cwd, 'dist', 'windows', 'src', 'main.cpp'), 'utf8');
     expect(windowsSource).toContain('HandleNativeCapability');
     expect(windowsSource).toContain('fs.readText');
+    expect(windowsSource).toContain('fs.stat');
+    expect(windowsSource).toContain('fs.mkdir');
+    expect(windowsSource).toContain('fs.remove');
+    expect(windowsSource).toContain('if (ec) throw std::runtime_error("Unable to read file size")');
     expect(windowsSource).toContain('shell.exec');
     expect(windowsSource).toContain('ExtractJsonStringArray');
     expect(windowsSource).toContain('CreateProcessA');
@@ -283,6 +299,10 @@ timedTest('native hosts generate platform raw capability dispatchers', { timeout
     const linuxSource = await readFile(path.join(cwd, 'dist', 'linux', 'src', 'main.c'), 'utf8');
     expect(linuxSource).toContain('handle_native_message');
     expect(linuxSource).toContain('fs.readText');
+    expect(linuxSource).toContain('fs.stat');
+    expect(linuxSource).toContain('remove_path_recursive');
+    expect(linuxSource).toContain('(size_t)length >= sizeof(child)');
+    expect(linuxSource).toContain('make_directory_recursive');
     expect(linuxSource).toContain('shell.exec');
     expect(linuxSource).toContain('extract_json_string_array');
     expect(linuxSource).toContain('execvp(command');
@@ -295,6 +315,9 @@ timedTest('native hosts generate platform raw capability dispatchers', { timeout
 
     const iosSource = await readFile(path.join(cwd, 'dist', 'ios', 'Sources', 'TachyonWebView.swift'), 'utf8');
     expect(iosSource).toContain('fs.readText');
+    expect(iosSource).toContain('fs.stat');
+    expect(iosSource).toContain('fs.mkdir');
+    expect(iosSource).toContain('fs.remove');
     expect(iosSource).toContain('clipboard.writeText');
     expect(iosSource).toContain('UIActivityViewController');
     expect(iosSource).toContain('UIImpactFeedbackGenerator');

@@ -41,6 +41,7 @@ export default class LinuxGenerator extends PlatformGenerator {
 #include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -201,6 +202,44 @@ static int write_text_file(const char* file_path, const char* text) {
     fwrite(text, 1, strlen(text), file);
     fclose(file);
     return 0;
+}
+
+// Recursively creates a directory and any missing parents, like mkdir -p.
+static int make_directory_recursive(const char* path) {
+    char buffer[PATH_MAX];
+    size_t length = strlen(path);
+    if (length == 0 || length >= sizeof(buffer)) return -1;
+    strcpy(buffer, path);
+    for (char* cursor = buffer + 1; *cursor; cursor++) {
+        if (*cursor == '/') {
+            *cursor = '\\0';
+            if (mkdir(buffer, 0755) != 0 && errno != EEXIST) return -1;
+            *cursor = '/';
+        }
+    }
+    if (mkdir(buffer, 0755) != 0 && errno != EEXIST) return -1;
+    return 0;
+}
+
+// Recursively removes a file or directory tree, like rm -rf.
+static int remove_path_recursive(const char* path) {
+    struct stat info;
+    if (lstat(path, &info) != 0) return errno == ENOENT ? 0 : -1;
+    if (S_ISDIR(info.st_mode)) {
+        DIR* dir = opendir(path);
+        if (!dir) return -1;
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+            char child[PATH_MAX];
+            int length = snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+            if (length < 0 || (size_t)length >= sizeof(child)) { closedir(dir); return -1; }
+            if (remove_path_recursive(child) != 0) { closedir(dir); return -1; }
+        }
+        closedir(dir);
+        return rmdir(path);
+    }
+    return unlink(path);
 }
 
 static char** extract_json_string_array(const char* json, const char* key, int* count) {
@@ -428,6 +467,49 @@ static void handle_native_message(WebKitWebView* web_view, const char* message) 
             g_free(value);
         }
         free(dir_path);
+    } else if (strcmp(capability, "fs.stat") == 0) {
+        char* stat_path = extract_json_string(message, "path");
+        if (!stat_path) {
+            send_response(web_view, id, 0, NULL, "Missing path");
+        } else {
+            char* escaped_path = json_escape(stat_path);
+            struct stat info;
+            char* value;
+            if (stat(stat_path, &info) == 0) {
+                int is_dir = S_ISDIR(info.st_mode);
+                value = g_strdup_printf("{\\"path\\":\\"%s\\",\\"exists\\":true,\\"type\\":\\"%s\\",\\"size\\":%lld}", escaped_path, is_dir ? "directory" : "file", (long long)info.st_size);
+            } else {
+                value = g_strdup_printf("{\\"path\\":\\"%s\\",\\"exists\\":false}", escaped_path);
+            }
+            send_response(web_view, id, 1, value, NULL);
+            free(escaped_path);
+            g_free(value);
+        }
+        free(stat_path);
+    } else if (strcmp(capability, "fs.mkdir") == 0) {
+        char* mkdir_path = extract_json_string(message, "path");
+        if (!mkdir_path || make_directory_recursive(mkdir_path) != 0) {
+            send_response(web_view, id, 0, NULL, "Unable to create directory");
+        } else {
+            char* escaped_path = json_escape(mkdir_path);
+            char* value = g_strdup_printf("{\\"path\\":\\"%s\\",\\"created\\":true}", escaped_path);
+            send_response(web_view, id, 1, value, NULL);
+            free(escaped_path);
+            g_free(value);
+        }
+        free(mkdir_path);
+    } else if (strcmp(capability, "fs.remove") == 0) {
+        char* remove_path = extract_json_string(message, "path");
+        if (!remove_path || remove_path_recursive(remove_path) != 0) {
+            send_response(web_view, id, 0, NULL, "Unable to remove path");
+        } else {
+            char* escaped_path = json_escape(remove_path);
+            char* value = g_strdup_printf("{\\"path\\":\\"%s\\",\\"removed\\":true}", escaped_path);
+            send_response(web_view, id, 1, value, NULL);
+            free(escaped_path);
+            g_free(value);
+        }
+        free(remove_path);
     } else if (strcmp(capability, "shell.exec") == 0) {
         char* command = extract_json_string(message, "command");
         if (!command) {

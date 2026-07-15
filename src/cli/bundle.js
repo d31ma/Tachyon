@@ -23,6 +23,10 @@ let activeDistPath = distPath;
 const watchMode = process.argv.includes('--watch');
 const skipInitialBuild = process.argv.includes('--skip-initial-build');
 const skipNativeHost = process.argv.includes('--skip-native-host');
+// Fail the build when generated output still contains constructs a strict CSP
+// blocks without 'unsafe-eval' (#109). Also on via TAC_CSP_CHECK=1.
+const cspCheck = process.argv.includes('--csp-check')
+    || process.env.TAC_CSP_CHECK === '1' || process.env.TAC_CSP_CHECK === 'true';
 // Artifact export (.apk / .ipa): on for production bundles, opt-in elsewhere
 // with --package, opt-out with --skip-package. Missing toolchains downgrade
 // to a logged skip — the generated host project is always usable by hand.
@@ -123,6 +127,23 @@ async function runPostBundleHook(distRoot = activeDistPath) {
         targets: bundleTargets,
         targetRoots: Object.fromEntries(bundleTargets.map((target) => [target, path.join(distRoot, target)])),
     });
+}
+/**
+ * Fails the build when any generated bundle still contains a construct a strict
+ * Content-Security-Policy blocks without `'unsafe-eval'`. Enabled by
+ * `--csp-check` / `TAC_CSP_CHECK` (#109).
+ * @param {string} root Staged output root to audit before the live swap.
+ */
+async function assertCspSafeOutput(root) {
+    const findings = await Compiler.auditCspSafety(root);
+    if (findings.length === 0) {
+        bundleLogger.info('CSP check passed: no unsafe-eval constructs in generated output');
+        return;
+    }
+    for (const { file, construct, count } of findings)
+        bundleLogger.error('CSP unsafe-eval construct in generated output', { file, construct, count });
+    const total = findings.reduce((sum, finding) => sum + finding.count, 0);
+    throw new Error(`CSP check failed: ${total} unsafe-eval construct(s) across ${findings.length} location(s). A strict "script-src 'self'" cannot load this bundle.`);
 }
 /**
  * @template T
@@ -240,6 +261,11 @@ export async function runBuild() {
                 throw error;
             }
         }
+        // Validate the staged output before replacing any live target. This
+        // keeps a failed CSP gate atomic and avoids auditing sibling targets
+        // left behind by earlier, unrelated builds.
+        if (cspCheck)
+            await assertCspSafeOutput(stagingPath);
         // Swap in only what this run built: each staged top-level entry
         // (the dist/<target> dirs, plus anything a postBundle hook wrote at
         // the staging root) replaces its live counterpart individually, so

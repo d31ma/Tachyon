@@ -193,6 +193,21 @@ impl Bridge {
         }
     });
 
+    test('lowers the extended filesystem family (stat, mkdir, remove) for every companion language', () => {
+        const examples = [
+            ['rust', `struct Bridge {} impl Bridge { async fn run(&mut self) { file_system().stat("/tmp/a"); file_system().mkdir("/tmp/b"); file_system().remove("/tmp/c"); } }`],
+            ['kotlin', `class Bridge : Tac() { fun run() { fileSystem.stat("/tmp/a"); fileSystem.mkdir("/tmp/b"); fileSystem.remove("/tmp/c") } }`],
+            ['swift', `final class Bridge: Tac { func run() { fileSystem.stat("/tmp/a"); fileSystem.mkdir("/tmp/b"); fileSystem.remove("/tmp/c") } }`],
+            ['csharp', `public class Bridge : Tac { public void Run() { FileSystem.StatAsync("/tmp/a"); FileSystem.MkdirAsync("/tmp/b"); FileSystem.RemoveAsync("/tmp/c"); } }`],
+        ];
+        for (const [language, source] of examples) {
+            const output = new TacSubsetCompanionCompiler(/** @type {'rust' | 'kotlin' | 'swift' | 'csharp'} */ (language)).compile(source, `/app/client/components/bridge/tac.${language}`).code;
+            expect(output).toContain('__native.fileSystem.stat("/tmp/a")');
+            expect(output).toContain('__native.fileSystem.mkdir("/tmp/b")');
+            expect(output).toContain('__native.fileSystem.remove("/tmp/c")');
+        }
+    });
+
     test('lowers the language-shaped FYLO collection facade for every portable companion language', () => {
         const examples = [
             ['rust', `struct Store { status: String } impl Store { fn new() -> Self { Self { status: "idle" } } async fn refresh(&mut self) { self.status = await fylo().collection("notes").find({}); } }`, 'this.tac.__native.fylo.collection("notes").find({})'],

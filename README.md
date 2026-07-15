@@ -915,9 +915,10 @@ Camera/microphone capture, geolocation, notifications, file save, secure
 storage, and user verification are also available through the portable
 prelude. Media, location, and notifications use browser-standard APIs inside
 the native WebView and require explicit host privacy declarations. Secure
-storage and user verification currently use Keychain and LocalAuthentication
-on macOS and iOS. Contacts, calendar, Bluetooth, NFC, USB, push delivery, and
-window management remain outside the portable set.
+storage and user verification use Keychain plus LocalAuthentication on macOS
+and iOS, and Android Keystore plus `BiometricPrompt` on Android. Contacts,
+calendar, Bluetooth, NFC, USB, push delivery, and window management remain
+outside the portable set.
 
 macOS, Windows, and Linux bundles service `app`, `clipboard`, and `browser`
 through their native hosts as well. This means the same companion call reaches
@@ -954,7 +955,7 @@ code, and still use feature detection for target-specific operations.
 {
   "tachyon": {
     "devicePermissions": ["camera", "microphone", "location", "notifications"],
-    "nativeCapabilities": ["fs.readText", "fs.readDir"]
+    "nativeCapabilities": ["fs.readText", "fs.readDir", "fs.stat", "fs.mkdir"]
   }
 }
 ```
@@ -963,16 +964,21 @@ code, and still use feature detection for target-specific operations.
 if capabilities().supports("fs.readDir") {
     let entries = await file_system().read_dir(".");
 }
+if capabilities().supports("fs.stat") {
+    let metadata = await file_system().stat("./notes.txt");
+}
 if capabilities().supports("shell.exec") {
     let result = await shell().exec("git", ["status", "--short"]);
 }
 ```
 
-`nativeCapabilities` accepts `fs.readText`, `fs.writeText`, `fs.readDir`, and
-`shell.exec`. Unknown names and non-array declarations fail the build instead
-of being ignored. External URL requests accept HTTP(S) only, and native bridge
-messages are constrained to the generated app's main frame/origin where the
-platform exposes that distinction.
+`nativeCapabilities` accepts `fs.readText`, `fs.writeText`, `fs.readDir`,
+`fs.stat`, `fs.mkdir`, `fs.remove`, and `shell.exec`. `fs.remove` deletes files
+or directories recursively, so enable it only for trusted companion code.
+Unknown names and non-array declarations fail the build instead of being
+ignored. External URL requests accept HTTP(S) only, and native bridge messages
+are constrained to the generated app's main frame/origin where the platform
+exposes that distinction.
 
 ### Decorator Form
 
@@ -1624,6 +1630,7 @@ dist/
 <tr><th align="left">Command</th><th align="left">Description</th></tr>
 <tr><td><code>ty serve</code></td><td>Detects <code>client/</code> and <code>server/</code> contents, serves frontend, backend, or full-stack app</td></tr>
 <tr><td><code>ty bundle</code></td><td>Builds <code>dist/</code></td></tr>
+<tr><td><code>ty bundle --csp-check</code></td><td>Fails before the atomic output swap when staged JavaScript requires CSP <code>'unsafe-eval'</code></td></tr>
 <tr><td><code>ty bundle --target MacOS</code></td><td>Builds a macOS <code>WKWebView</code> host at <code>dist/macos</code></td></tr>
 <tr><td><code>ty bundle --target linux</code></td><td>Builds a Linux WebKitGTK host at <code>dist/linux</code></td></tr>
 <tr><td><code>ty bundle --target android</code></td><td>Builds an Android WebView host at <code>dist/android</code></td></tr>
