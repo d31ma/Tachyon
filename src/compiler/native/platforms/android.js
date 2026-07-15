@@ -309,7 +309,11 @@ class NativeBridge(private val webView: WebView) {
     }
 
     private fun verifyUser(id: Int, reason: String) {
-        val activity = webView.context as? Activity
+        var context = webView.context
+        while (context is android.content.ContextWrapper && context !is Activity) {
+            context = context.baseContext
+        }
+        val activity = context as? Activity
         if (activity == null) {
             sendResponse(errorResponse(id, "User verification requires an Activity context"))
             return

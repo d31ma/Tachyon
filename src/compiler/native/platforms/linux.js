@@ -232,7 +232,8 @@ static int remove_path_recursive(const char* path) {
         while ((entry = readdir(dir)) != NULL) {
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
             char child[PATH_MAX];
-            snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+            int length = snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+            if (length < 0 || (size_t)length >= sizeof(child)) { closedir(dir); return -1; }
             if (remove_path_recursive(child) != 0) { closedir(dir); return -1; }
         }
         closedir(dir);

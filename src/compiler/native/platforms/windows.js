@@ -441,9 +441,16 @@ static std::string HandleNativeCapability(const std::string& message) {
         } else if (capability == "fs.stat") {
             std::string statPath = ExtractJsonString(message, "path");
             std::error_code ec;
-            if (std::filesystem::exists(statPath, ec)) {
+            bool exists = std::filesystem::exists(statPath, ec);
+            if (ec) throw std::runtime_error("Unable to stat path");
+            if (exists) {
                 bool isDir = std::filesystem::is_directory(statPath, ec);
-                std::uintmax_t size = isDir ? 0 : std::filesystem::file_size(statPath, ec);
+                if (ec) throw std::runtime_error("Unable to stat path");
+                std::uintmax_t size = 0;
+                if (!isDir) {
+                    size = std::filesystem::file_size(statPath, ec);
+                    if (ec) throw std::runtime_error("Unable to read file size");
+                }
                 value = "{\\"path\\":\\"" + JsonEscape(statPath) + "\\",\\"exists\\":true,\\"type\\":\\"" + (isDir ? "directory" : "file") + "\\",\\"size\\":" + std::to_string(size) + "}";
             } else {
                 value = "{\\"path\\":\\"" + JsonEscape(statPath) + "\\",\\"exists\\":false}";

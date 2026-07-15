@@ -239,6 +239,8 @@ timedTest('tac.native-bundle generates Android host from existing target assets'
     expect(activity).toContain('AES/GCM/NoPadding');
     expect(activity).toContain('android.hardware.biometrics.BiometricPrompt');
     expect(activity).toContain('private fun verifyUser(');
+    expect(activity).toContain('context is android.content.ContextWrapper');
+    expect(activity).toContain('context = context.baseContext');
 
     const gradle = await readFile(path.join(cwd, 'dist', 'android', 'app', 'build.gradle.kts'), 'utf8');
     expect(gradle).toContain('android.sourceSets["main"].assets.srcDir("$rootDir/Resources")');
@@ -281,6 +283,7 @@ timedTest('native hosts generate platform raw capability dispatchers', { timeout
     expect(windowsSource).toContain('fs.stat');
     expect(windowsSource).toContain('fs.mkdir');
     expect(windowsSource).toContain('fs.remove');
+    expect(windowsSource).toContain('if (ec) throw std::runtime_error("Unable to read file size")');
     expect(windowsSource).toContain('shell.exec');
     expect(windowsSource).toContain('ExtractJsonStringArray');
     expect(windowsSource).toContain('CreateProcessA');
@@ -298,6 +301,7 @@ timedTest('native hosts generate platform raw capability dispatchers', { timeout
     expect(linuxSource).toContain('fs.readText');
     expect(linuxSource).toContain('fs.stat');
     expect(linuxSource).toContain('remove_path_recursive');
+    expect(linuxSource).toContain('(size_t)length >= sizeof(child)');
     expect(linuxSource).toContain('make_directory_recursive');
     expect(linuxSource).toContain('shell.exec');
     expect(linuxSource).toContain('extract_json_string_array');
