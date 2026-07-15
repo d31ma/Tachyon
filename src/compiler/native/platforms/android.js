@@ -51,6 +51,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.net.Uri
 import android.content.pm.PackageManager
@@ -273,24 +274,77 @@ class NativeBridge(private val webView: WebView) {
     private val allowedCapabilities = setOf(${allowedCapabilities})
 
     fun postMessage(message: String) {
-        val response = try {
+        var requestId = 0
+        try {
             val envelope = JSONObject(message)
             if (envelope.optString("type") != "tac:native-request") {
-                errorResponse(0, "Invalid native request envelope")
-            } else {
-                val id = envelope.optInt("id", 0)
-                val capability = envelope.optString("capability")
-                val payload = envelope.optJSONObject("payload") ?: JSONObject()
-                if (!allowedCapabilities.contains(capability)) throw IllegalStateException("Native capability is not enabled: $capability")
-                successResponse(id, handle(capability, payload))
+                sendResponse(errorResponse(0, "Invalid native request envelope"))
+                return
             }
+            requestId = envelope.optInt("id", 0)
+            val capability = envelope.optString("capability")
+            val payload = envelope.optJSONObject("payload") ?: JSONObject()
+            if (!allowedCapabilities.contains(capability)) {
+                sendResponse(errorResponse(requestId, "Native capability is not enabled: $capability"))
+                return
+            }
+            // User verification is asynchronous (it shows a system prompt), so
+            // it completes the response from its own callback rather than the
+            // synchronous handle() path.
+            if (capability == "auth.verifyUser") {
+                verifyUser(requestId, payload.optString("reason", "Verify your identity"))
+                return
+            }
+            sendResponse(successResponse(requestId, handle(capability, payload)))
         } catch (error: Throwable) {
-            errorResponse(0, error.message ?: "Native capability failed")
+            sendResponse(errorResponse(requestId, error.message ?: "Native capability failed"))
         }
+    }
+
+    private fun sendResponse(response: JSONObject) {
         val script = "if(window.__tcNativeBridge__.messageHandler)window.__tcNativeBridge__.messageHandler(" + JSONObject.quote(response.toString()) + ")"
         webView.post {
             webView.evaluateJavascript(script, null)
         }
+    }
+
+    private fun verifyUser(id: Int, reason: String) {
+        val activity = webView.context as? Activity
+        if (activity == null) {
+            sendResponse(errorResponse(id, "User verification requires an Activity context"))
+            return
+        }
+        if (android.os.Build.VERSION.SDK_INT < 28) {
+            sendResponse(errorResponse(id, "User verification requires Android 9 (API 28) or newer"))
+            return
+        }
+        val builder = android.hardware.biometrics.BiometricPrompt.Builder(activity)
+            .setTitle("Verify it's you")
+            .setDescription(reason)
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            builder.setAllowedAuthenticators(
+                android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            builder.setDeviceCredentialAllowed(true)
+        }
+        builder.build().authenticate(
+            android.os.CancellationSignal(),
+            activity.mainExecutor,
+            object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult) {
+                    sendResponse(successResponse(id, JSONObject().put("verified", true)))
+                }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    sendResponse(errorResponse(id, errString.toString()))
+                }
+                // A single non-match keeps the prompt open; only a terminal
+                // error or success completes the request.
+                override fun onAuthenticationFailed() {}
+            }
+        )
     }
 
     private fun handle(capability: String, payload: JSONObject): Any {
@@ -350,6 +404,22 @@ class NativeBridge(private val webView: WebView) {
                 }
                 JSONObject().put("path", path).put("entries", entries)
             }
+            "fs.stat" -> {
+                val file = File(requireString(payload, "path"))
+                val result = JSONObject().put("path", file.path).put("exists", file.exists())
+                if (file.exists()) result.put("type", if (file.isDirectory) "directory" else "file").put("size", file.length())
+                result
+            }
+            "fs.mkdir" -> {
+                val file = File(requireString(payload, "path"))
+                if (!file.exists() && !file.mkdirs()) throw IllegalStateException("Unable to create directory: " + file.path)
+                JSONObject().put("path", file.path).put("created", true)
+            }
+            "fs.remove" -> {
+                val file = File(requireString(payload, "path"))
+                if (file.exists() && !file.deleteRecursively()) throw IllegalStateException("Unable to remove path: " + file.path)
+                JSONObject().put("path", file.path).put("removed", true)
+            }
             "fs.paths" -> JSONObject()
                 .put("appData", webView.context.filesDir.absolutePath)
                 .put("cache", webView.context.cacheDir.absolutePath)
@@ -371,6 +441,15 @@ class NativeBridge(private val webView: WebView) {
                 }
                 JSONObject().put("style", style)
             }
+            "secrets.get" -> readSecret(requireString(payload, "key")) ?: JSONObject.NULL
+            "secrets.set" -> {
+                writeSecret(requireString(payload, "key"), requireString(payload, "value"))
+                JSONObject().put("stored", true)
+            }
+            "secrets.delete" -> {
+                secretPrefs().edit().remove(requireString(payload, "key")).apply()
+                JSONObject().put("deleted", true)
+            }
             "shell.exec" -> throw IllegalStateException("shell.exec is not available on Android native hosts")
             else -> throw IllegalStateException("Unsupported native capability: $capability")
         }
@@ -380,6 +459,50 @@ class NativeBridge(private val webView: WebView) {
         val value = payload.optString(key, "")
         if (value.isEmpty()) throw IllegalArgumentException("Native capability payload requires non-empty string: $key")
         return value
+    }
+
+    // Secure storage: values are encrypted with an AES/GCM key held in the
+    // hardware-backed Android Keystore and persisted (ciphertext only) in a
+    // private SharedPreferences file. Mirrors the iOS Keychain contract.
+    private fun secretPrefs(): SharedPreferences =
+        webView.context.getSharedPreferences("tac.secrets", Context.MODE_PRIVATE)
+
+    private fun secretKey(): javax.crypto.SecretKey {
+        val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (keyStore.getKey("tac.secrets.key", null) as? javax.crypto.SecretKey)?.let { return it }
+        val generator = javax.crypto.KeyGenerator.getInstance(
+            android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore"
+        )
+        generator.init(
+            android.security.keystore.KeyGenParameterSpec.Builder(
+                "tac.secrets.key",
+                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT
+            )
+                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .build()
+        )
+        return generator.generateKey()
+    }
+
+    private fun writeSecret(key: String, value: String) {
+        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, secretKey())
+        val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        val encoded = android.util.Base64.encodeToString(cipher.iv, android.util.Base64.NO_WRAP) +
+            ":" + android.util.Base64.encodeToString(encrypted, android.util.Base64.NO_WRAP)
+        secretPrefs().edit().putString(key, encoded).apply()
+    }
+
+    private fun readSecret(key: String): String? {
+        val stored = secretPrefs().getString(key, null) ?: return null
+        val parts = stored.split(":")
+        if (parts.size != 2) return null
+        val iv = android.util.Base64.decode(parts[0], android.util.Base64.NO_WRAP)
+        val encrypted = android.util.Base64.decode(parts[1], android.util.Base64.NO_WRAP)
+        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(javax.crypto.Cipher.DECRYPT_MODE, secretKey(), javax.crypto.spec.GCMParameterSpec(128, iv))
+        return String(cipher.doFinal(encrypted), Charsets.UTF_8)
     }
 
     private fun successResponse(id: Int, value: Any): JSONObject {
@@ -411,6 +534,9 @@ class NativeBridge(private val webView: WebView) {
     manifestXml() {
         const permissions = [
             '<uses-permission android:name="android.permission.INTERNET" />',
+            // Secure storage + user verification ship on every Android host, so
+            // the biometric/device-credential permission is always declared.
+            '<uses-permission android:name="android.permission.USE_BIOMETRIC" />',
             this.requestedDevicePermissions.has('camera') ? '<uses-permission android:name="android.permission.CAMERA" />' : '',
             this.requestedDevicePermissions.has('microphone') ? '<uses-permission android:name="android.permission.RECORD_AUDIO" />' : '',
             this.requestedDevicePermissions.has('location') ? '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' : '',

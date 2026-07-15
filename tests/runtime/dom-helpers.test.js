@@ -1,7 +1,7 @@
 // @ts-check
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
-import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, morphChildren, parseFragment, parseParams, resolveHandler, } from '../../src/runtime/dom-helpers.js';
+import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, morphChildren, parseFragment, parseParams, repointCurrentTarget, resolveHandler, } from '../../src/runtime/dom-helpers.js';
 /** @type {Record<string, unknown>} */
 let previousGlobals;
 /** @type {Window} */
@@ -74,6 +74,23 @@ describe('findEventTarget', () => {
         expect(detail.target).toBe(input);
         expect(detail.currentTarget).toBe(input);
         expect(detail.type).toBe('input');
+    });
+    test('repointCurrentTarget overrides a native event currentTarget the browser reset (#110 comment)', () => {
+        document.body.innerHTML = `<div id="pane" data-tac-on-keydown=""><input id="field" /></div>`;
+        const pane = /** @type {Element} */ (document.getElementById('pane'));
+        // A finished native event reads currentTarget back as null (or document),
+        // never the delegated handler's element.
+        const event = new windowInstance.Event('keydown');
+        expect(event.currentTarget).not.toBe(pane);
+        repointCurrentTarget(event, pane);
+        expect(event.currentTarget).toBe(pane);
+        // @ts-expect-error runtime check: closest() is now reachable off currentTarget
+        expect(event.currentTarget.closest('#pane')).toBe(pane);
+    });
+    test('repointCurrentTarget no-ops on a frozen event without throwing', () => {
+        const frozen = Object.freeze({ type: 'click', target: null, currentTarget: null });
+        expect(() => repointCurrentTarget(frozen, /** @type {any} */ ({}))).not.toThrow();
+        expect(frozen.currentTarget).toBeNull();
     });
 });
 describe('cleanBooleanAttrs', () => {

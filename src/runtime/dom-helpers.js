@@ -77,6 +77,27 @@ export function createValueEventDetail(element, event) {
 }
 
 /**
+ * Re-points an event's `currentTarget` to the element a delegated handler is
+ * bound to. Tac delegation listens on `document` and defers dispatch to a
+ * microtask, so the browser has already reset `currentTarget` (to document/null)
+ * by the time the handler runs. Overriding the instance property restores native
+ * addEventListener semantics — `currentTarget` is the handler's element — while
+ * leaving `target` (the origin element) intact. No-ops on frozen/exotic events.
+ * @param {unknown} event
+ * @param {Element} element
+ */
+export function repointCurrentTarget(event, element) {
+    if (!event || typeof event !== 'object')
+        return;
+    try {
+        Object.defineProperty(event, 'currentTarget', { configurable: true, value: element });
+    }
+    catch {
+        // Non-configurable/frozen event — handlers can still use event.target.
+    }
+}
+
+/**
  * @param {string} html
  * @returns {DocumentFragment}
  */

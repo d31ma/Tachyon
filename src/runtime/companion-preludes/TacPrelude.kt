@@ -73,6 +73,9 @@ object fileSystem {
     fun readText(path: String): String = ""
     fun writeText(path: String, text: String) {}
     fun readDir(path: String): Any? = null
+    fun stat(path: String): Any? = null
+    fun mkdir(path: String): Any? = null
+    fun remove(path: String): Any? = null
     fun paths(): Any? = null
 }
 

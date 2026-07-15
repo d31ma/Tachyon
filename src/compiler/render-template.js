@@ -669,6 +669,9 @@ const tc_createHelpers = (modulePath) => {
             readText: (/** @type {string} */ path) => device('fs.readText', { path }),
             writeText: (/** @type {string} */ path, /** @type {string} */ text) => device('fs.writeText', { path, text }),
             readDir: (/** @type {string} */ path) => device('fs.readDir', { path }),
+            stat: (/** @type {string} */ path) => device('fs.stat', { path }),
+            mkdir: (/** @type {string} */ path) => device('fs.mkdir', { path }),
+            remove: (/** @type {string} */ path) => device('fs.remove', { path }),
             paths: () => device('fs.paths'),
         }),
         shell: Object.freeze({
@@ -741,6 +744,9 @@ const tc_createHelpers = (modulePath) => {
             case 'fs.readText': return await native.fileSystem.readText(String(data.path ?? ''))
             case 'fs.writeText': return await native.fileSystem.writeText(String(data.path ?? ''), String(data.text ?? ''))
             case 'fs.readDir': return await native.fileSystem.readDir(String(data.path ?? ''))
+            case 'fs.stat': return await native.fileSystem.stat(String(data.path ?? ''))
+            case 'fs.mkdir': return await native.fileSystem.mkdir(String(data.path ?? ''))
+            case 'fs.remove': return await native.fileSystem.remove(String(data.path ?? ''))
             case 'fs.paths': return await native.fileSystem.paths()
             case 'shell.exec': return await native.shell.exec(String(data.command ?? ''), Array.isArray(data.args) ? data.args.map(String) : [], typeof data.cwd === 'string' ? data.cwd : undefined)
             case 'browser.open': return await native.browser.open(String(data.url ?? ''))
@@ -806,6 +812,9 @@ const tc_createHelpers = (modulePath) => {
             case 'fs.readText':
             case 'fs.writeText':
             case 'fs.readDir':
+            case 'fs.stat':
+            case 'fs.mkdir':
+            case 'fs.remove':
             case 'fs.paths':
             case 'shell.exec': return deviceAvailable(operation)
             case 'browser.open': return native.browser.available()

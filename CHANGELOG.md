@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.29.03] - 2026-07-15
+
+### Added
+
+- Raw native filesystem capabilities now include opt-in `fs.stat`, `fs.mkdir`,
+  and recursive `fs.remove` operations across Android, iOS, macOS, Windows, and
+  Linux, with matching Dart, Rust, Kotlin, Swift, C#, JavaScript, and TypeScript
+  companion APIs.
+- Android native hosts now provide encrypted secret storage through the Android
+  Keystore and local user verification through the framework `BiometricPrompt`,
+  bringing `secrets.*` and `auth.verifyUser` to Android alongside Apple hosts.
+- `ty bundle --csp-check` (or `TAC_CSP_CHECK=1`) audits staged JavaScript output
+  for runtime code-generation constructs blocked by a strict CSP and fails
+  atomically before replacing the previous bundle.
+
+### Fixed
+
+- Companion decorator and FYLO auto-import detection no longer mistakes an
+  unrelated import followed by a later `from` expression for a real binding.
+- Author-supplied element IDs no longer break Tac event or value-binding
+  dispatch, and delegated handlers receive the bound element as
+  `event.currentTarget`.
+- A handler that clears state used later in its own conditional render pass no
+  longer strands the DOM before the clean state-only render can complete.
+- Elements with multiple `on:*` handlers now invoke only the handler matching
+  the dispatched event type.
+
 ## [26.28.06] - 2026-07-11
 
 ### Added

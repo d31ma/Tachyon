@@ -1,5 +1,5 @@
 // @ts-check
-import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, findNavigationTarget, morphChildren, parseFragment, parseParams, resolveHandler } from './dom-helpers.js';
+import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, findNavigationTarget, morphChildren, parseFragment, parseParams, repointCurrentTarget, resolveHandler } from './dom-helpers.js';
 import { cacheModuleResponse, clearStaticCache, precacheModules } from './static-cache.js';
 import { createDeferredDelegation } from './event-hydration.js';
 import { createComponentRegistry } from './component-registry.js';
@@ -384,13 +384,25 @@ function navigateToHash(url) {
 // through the same deferred/replay path so dead-zone clicks aren't lost.
 deferredDelegation.schedule(['click']);
 
+// The id the compiler keys handler/binding dispatch off. It's normally the
+// element's generated `tc-<hash>` id, but when the author supplies their own
+// `id` the compiler stashes the dispatch id in `data-tac-id` so the author id
+// can't clobber it (#110).
+/** @param {Element} element @returns {string} */
+function dispatchId(element) {
+    return element.getAttribute('data-tac-id') || element.id;
+}
+
 for (const eventName of ['input', 'change', 'sl-input', 'sl-change']) {
     document.addEventListener(eventName, (event) => {
         const element = event.target instanceof Element ? event.target : null;
-        if (!element || !element.id || !element.hasAttribute('value'))
+        if (!element || !element.hasAttribute('value'))
+            return;
+        const id = dispatchId(element);
+        if (!id)
             return;
         const eventDetail = createValueEventDetail(/** @type {Element & { value?: unknown }} */ (element), event);
-        void enqueueRenderPass(() => rerender(element.id, eventDetail));
+        void enqueueRenderPass(() => rerender(id, eventDetail));
     });
 }
 
@@ -401,7 +413,12 @@ window.addEventListener('popstate', () => navigate(currentNavigationTarget()));
  * @param {unknown} eventDetail
  */
 function dispatchAction(element, eventDetail) {
-    void enqueueRenderPass(() => rerender(element.id, eventDetail));
+    // Delegation listens on `document` and dispatch is deferred to a microtask,
+    // so by the time the handler runs the browser has reset the event's
+    // `currentTarget`. Re-point it to the matched (marker-bearing) element so
+    // handlers see native addEventListener semantics (#110 comment).
+    repointCurrentTarget(eventDetail, element);
+    void enqueueRenderPass(() => rerender(dispatchId(element), eventDetail));
 }
 
 /** @param {string} elementId */
@@ -427,7 +444,7 @@ function findLazyAncestor(elementId) {
  */
 async function rerenderComponent(host, entry, triggerId, eventDetail) {
     if (triggerId !== null)
-        await entry.render(triggerId, eventDetail, entry.compId);
+        await runHandlerPass(entry.render(triggerId, eventDetail, entry.compId));
     const html = await entry.render(null, undefined, entry.compId);
     morphChildren(host, parseFragment(html), {
         preserveElement: (element) => lazyRenders.has(element.id),
@@ -451,6 +468,26 @@ function enqueueRenderPass(pass) {
 }
 
 /**
+ * Runs the trigger pass of a render whose sole purpose is to invoke the matching
+ * event handler; its HTML output is discarded (the following state-only render
+ * produces the DOM). A handler can mutate state mid-render so that a later
+ * interpolation in the same pass dereferences the just-cleared value (e.g. a
+ * handler on a `<logic :if="menu">` child sets `menu = null`, then `{menu.x}`
+ * later in the block throws). Swallow that spurious render error so the clean
+ * state-only render still runs — the handler already applied its state change
+ * (#112). A genuine handler error is surfaced but must not strand the DOM.
+ * @param {Promise<unknown>} triggerRender
+ */
+async function runHandlerPass(triggerRender) {
+    try {
+        await triggerRender;
+    }
+    catch (error) {
+        console.error('[tachyon] handler render pass error (continuing with state-only render):', error);
+    }
+}
+
+/**
  * @param {string} triggerId
  * @param {unknown} [eventDetail]
  */
@@ -461,7 +498,7 @@ async function rerender(triggerId, eventDetail) {
         const render = lazyRenders.get(lazyContainer.id);
         if (!render)
             return;
-        await render(triggerId, eventDetail, lazyContainer.id);
+        await runHandlerPass(render(triggerId, eventDetail, lazyContainer.id));
         const html = await render(null, undefined, lazyContainer.id);
         morphChildren(lazyContainer, parseFragment(html), {
             preserveElement: (element) => lazyRenders.has(element.id),
@@ -483,7 +520,7 @@ async function rerender(triggerId, eventDetail) {
     if (wrapperRender && inSlot) {
         if (!pageRender)
             return;
-        await pageRender(triggerId, eventDetail);
+        await runHandlerPass(pageRender(triggerId, eventDetail));
         patchSlot(await pageRender());
         return;
     }
@@ -495,7 +532,7 @@ async function rerender(triggerId, eventDetail) {
 
     if (!pageRender)
         return;
-    await pageRender(triggerId, eventDetail);
+    await runHandlerPass(pageRender(triggerId, eventDetail));
     patchBody(await pageRender());
 }
 
@@ -545,7 +582,7 @@ async function rerenderWrapper(triggerId, eventDetail) {
         return;
     const slotHTML = document.getElementById('tc-page-slot')?.innerHTML ?? '';
     if (triggerId)
-        await wrapperRender(triggerId, eventDetail);
+        await runHandlerPass(wrapperRender(triggerId, eventDetail));
     const html = await wrapperRender();
     document.body.innerHTML = html;
     const slot = document.getElementById('tc-page-slot');

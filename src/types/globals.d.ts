@@ -54,6 +54,9 @@ declare global {
     readText(path: string): Promise<{ path: string; text: string }>;
     writeText(path: string, text: string): Promise<{ path: string; bytes: number; written: boolean }>;
     readDir(path: string): Promise<{ path: string; entries: Array<{ name: string; type: 'file' | 'directory' }> }>;
+    stat(path: string): Promise<{ path: string; exists: boolean; type?: 'file' | 'directory'; size?: number }>;
+    mkdir(path: string): Promise<{ path: string; created: boolean }>;
+    remove(path: string): Promise<{ path: string; removed: boolean }>;
     paths(): Promise<{ appData: string; cache: string; documents?: string }>;
   };
   const shell: {

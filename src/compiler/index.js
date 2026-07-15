@@ -906,12 +906,27 @@ export default class Compiler {
         for (const name of Compiler.companionDecoratorNames) {
             const usagePattern = new RegExp(`(?:^|[^@\\w])@${name}\\b`, 'm');
             if (!usagePattern.test(stripped)) continue;
-            const importPattern = new RegExp(`^\\s*import\\s+[\\s\\S]*?\\b${name}\\b[\\s\\S]*?\\bfrom\\b`, 'm');
-            const declarationPattern = new RegExp(`^\\s*(?:const|let|var|class|function)\\s+${name}\\b`, 'm');
-            if (importPattern.test(stripped) || declarationPattern.test(stripped)) continue;
+            if (Compiler.alreadyBindsSymbol(stripped, name)) continue;
             referenced.push(name);
         }
         return referenced;
+    }
+    /**
+     * Whether `name` is already provided as a local binding — imported as a
+     * specifier of a single `import … from` statement, or declared locally.
+     * The import scan is tempered so it cannot cross a `from`: a loose
+     * `import[\s\S]*?name[\s\S]*?from` span would run from an unrelated top
+     * import, past it, to a later `@name` decoration plus any stray `from`
+     * (e.g. `Array.from`), and wrongly report the decorator as imported —
+     * which silently dropped the auto-import on larger companions (#108).
+     * @param {string} stripped Comment/string-masked source.
+     * @param {string} name
+     * @returns {boolean}
+     */
+    static alreadyBindsSymbol(stripped, name) {
+        const importPattern = new RegExp(`^\\s*import\\b(?:(?!\\bfrom\\b)[\\s\\S])*?\\b${name}\\b(?:(?!\\bfrom\\b)[\\s\\S])*?\\bfrom\\b`, 'm');
+        const declarationPattern = new RegExp(`^\\s*(?:const|let|var|class|function)\\s+${name}\\b`, 'm');
+        return importPattern.test(stripped) || declarationPattern.test(stripped);
     }
     /**
      * Throws when a companion script references decorators removed from the
@@ -925,9 +940,7 @@ export default class Compiler {
         for (const name of Compiler.removedCompanionDecoratorNames) {
             const usagePattern = new RegExp(`(?:^|[^@\\w])@${name}\\b`, 'm');
             if (!usagePattern.test(stripped)) continue;
-            const importPattern = new RegExp(`^\\s*import\\s+[\\s\\S]*?\\b${name}\\b[\\s\\S]*?\\bfrom\\b`, 'm');
-            const declarationPattern = new RegExp(`^\\s*(?:const|let|var|class|function)\\s+${name}\\b`, 'm');
-            if (importPattern.test(stripped) || declarationPattern.test(stripped)) continue;
+            if (Compiler.alreadyBindsSymbol(stripped, name)) continue;
             throw new Error(`Tac decorator @${name} is not supported in v2. Reassign instance fields to trigger automatic rerenders instead. (${Compiler.toSourceLabel(sourcePath)})`);
         }
     }
@@ -944,10 +957,7 @@ export default class Compiler {
         const stripped = Compiler.maskCommentsAndStrings(source);
         const usagePattern = /(?:^|[^.\w@])fylo\b/m;
         if (!usagePattern.test(stripped)) return false;
-        const importPattern = /^\s*import\s+[\s\S]*?\bfylo\b[\s\S]*?\bfrom\b/m;
-        const declarationPattern = /^\s*(?:const|let|var|class|function)\s+fylo\b/m;
-        if (importPattern.test(stripped) || declarationPattern.test(stripped)) return false;
-        return true;
+        return !Compiler.alreadyBindsSymbol(stripped, 'fylo');
     }
     /**
      * Non-JavaScript companions use the implicit `fylo` facade. Their generated
@@ -1709,7 +1719,7 @@ export default class Compiler {
                         throw new Error(`Tac: the ${name} handler must be a single expression — typically a method call like ${name}="handler($event)". Multi-statement handlers or blocks are not supported. Received: ${JSON.stringify(value)}`);
                     }
                     const eventHash = genHash();
-                    return `${eventMarkerAttr(eventName)}="\${await tc_invokeEvent('${eventHash}', async ($event) => { const __event__ = $event; return (${value}); }, '${hash}')}"`;
+                    return `${eventMarkerAttr(eventName)}="\${await tc_invokeEvent('${eventHash}', async ($event) => { const __event__ = $event; return (${value}); }, '${hash}', ${JSON.stringify(eventName)})}"`;
                 }
                 if (name === ':value' && tagName !== 'switch')
                     return `value="\${tc_escapeAttr(tc_assignValue('${hash}', '${value}', ${value}))}"`;
@@ -1816,9 +1826,22 @@ export default class Compiler {
                             }
                         }
                     }
-                    // Auto-generate id for non-control, non-component elements
+                    // Event dispatch and two-way binding key off a generated
+                    // `tc-<hash>` id on the element. Auto-generate that id when
+                    // the author didn't supply one.
+                    const hasDispatch = Object.keys(attrs).some((name) => name.startsWith('on:') || name === ':value');
                     if (!attrs.id && !resolvedComponent && !Compiler.controlTags.has(tagLower)) {
                         attrs[':id'] = `tc_generateId('${hash}', 'id')`;
+                    }
+                    else if (hasDispatch && !resolvedComponent && (attrs.id || attrs[':id'])) {
+                        // The author's own `id` becomes the element's visible id,
+                        // which would clobber the dispatch key the runtime looks
+                        // handlers up by. Carry the dispatch id in a private
+                        // attribute the author can't overwrite (#110). The 'id'
+                        // counter is unused for this element (no auto `:id` was
+                        // added), so it yields the same `tc-<hash>` the event/bind
+                        // lookups expect.
+                        attrs[':data-tac-id'] = `tc_generateId('${hash}', 'id')`;
                     }
                     const attrStr = Object.entries(attrs).map(([n, v]) => formatAttr(n, v, hash, tagLower)).join(' ');
                     tagStack.push(tagLower);
@@ -1906,7 +1929,7 @@ export default class Compiler {
                 // Event handlers have already been compiled to `data-tac-on-*`
                 // markers by formatAttr; carry them onto the component's host div.
                 if (key.startsWith('data-tac-on-')) {
-                    events.push(`${key}="${value.replace(/tc_invokeEvent\('([^']+)',([\s\S]*?),\s*'([^']+)'\)/g, `tc_invokeEvent('$1',$2,'${hash}')`)}"`);
+                    events.push(`${key}="${value.replace(/tc_invokeEvent\('([^']+)',([\s\S]*?),\s*'([^']+)',\s*("[^"]*")\)/g, `tc_invokeEvent('$1',$2,'${hash}',$4)`)}"`);
                 }
                 else {
                     // Component props carry the LIVE value, not a stringified
@@ -2031,6 +2054,10 @@ with (__tc_scope__) {
         for (const __k__ of Object.keys(__tc_props__)) {
             if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(__k__) && !__k__.startsWith('__tc_')) {
                 const __v__ = __tc_props__[__k__];
+                // Assigns through \`with\`: a plain proxy write would miss a
+                // same-named lexical \`let\`/\`var\` declared by an inline
+                // <script>, which shadows the proxy. Reaching that binding
+                // needs dynamic scoped assignment — see #109 (CSP-safe mode).
                 try { eval(\`\${__k__} = __v__\`) } catch {}
             }
         }
@@ -2060,14 +2087,17 @@ with (__tc_scope__) {
             return 'tc-' + displayKey + '-0';
         };
 
-        const tc_invokeEvent = async (hash, action, targetHash = hash) => {
-            if (elemId === tc_generateId(hash, 'ev', targetHash)) {
-                if (typeof action === 'function') await action(event);
-                else {
-                    const toCall = (event && !action.endsWith(')')) ? action + "('" + event + "')" : action;
-                    await eval(toCall);
-                }
-            }
+        const tc_invokeEvent = async (hash, action, targetHash = hash, eventType = undefined) => {
+            // Handlers always compile to a closure (see formatAttr's on: path),
+            // so dispatch never needs eval — keeping the bundle CSP-safe (#109).
+            // The element id can carry several handlers (on:click + on:contextmenu,
+            // etc.); only fire the one whose event type matches so a single event
+            // doesn't trigger them all (#113).
+            if (elemId !== tc_generateId(hash, 'ev', targetHash) || typeof action !== 'function')
+                return '';
+            if (eventType !== undefined && event && typeof event.type === 'string' && event.type !== eventType)
+                return '';
+            await action(event);
             return '';
         };
 
@@ -2076,6 +2106,10 @@ with (__tc_scope__) {
             if (elemId === tc_generateId(hash, 'bind') && event) {
                 if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(variable)) {
                     const __val__ = event.value;
+                    // Dynamic scoped assignment: a bound name may be a lexical
+                    // \`let\`/\`var\` from an inline <script> (which shadows the
+                    // proxy), so a plain proxy write would not reach it. See
+                    // #109 (CSP-safe mode) for removing this.
                     try { eval(\`\${variable} = __val__\`) } catch {}
                     nextValue = __val__;
                 }
@@ -2189,6 +2223,9 @@ ${transformed}
             .replace(/\bfileSystem\.readText\(/g, 'this.tac.__native.fileSystem.readText(')
             .replace(/\bfileSystem\.writeText\(/g, 'this.tac.__native.fileSystem.writeText(')
             .replace(/\bfileSystem\.readDir\(/g, 'this.tac.__native.fileSystem.readDir(')
+            .replace(/\bfileSystem\.stat\(/g, 'this.tac.__native.fileSystem.stat(')
+            .replace(/\bfileSystem\.mkdir\(/g, 'this.tac.__native.fileSystem.mkdir(')
+            .replace(/\bfileSystem\.remove\(/g, 'this.tac.__native.fileSystem.remove(')
             .replace(/\bfileSystem\.paths\(\)/g, 'this.tac.__native.fileSystem.paths()')
             .replace(/\bshell\.exec\(/g, 'this.tac.__native.shell.exec(')
             .replace(/\bbrowser\.open\(/g, 'this.tac.__native.browser.open(')
@@ -2228,7 +2265,7 @@ const __tc_noopHelpers__ = {
         capabilities: { supports: () => false, state: async () => 'unsupported' },
         app: { available: () => false, info: () => __tc_nativeUnavailable__('app.info') },
         clipboard: { available: () => false, readText: () => __tc_nativeUnavailable__('clipboard.readText'), writeText: () => __tc_nativeUnavailable__('clipboard.writeText') },
-        fileSystem: { readText: () => __tc_nativeUnavailable__('fs.readText'), writeText: () => __tc_nativeUnavailable__('fs.writeText'), readDir: () => __tc_nativeUnavailable__('fs.readDir'), paths: () => __tc_nativeUnavailable__('fs.paths') },
+        fileSystem: { readText: () => __tc_nativeUnavailable__('fs.readText'), writeText: () => __tc_nativeUnavailable__('fs.writeText'), readDir: () => __tc_nativeUnavailable__('fs.readDir'), stat: () => __tc_nativeUnavailable__('fs.stat'), mkdir: () => __tc_nativeUnavailable__('fs.mkdir'), remove: () => __tc_nativeUnavailable__('fs.remove'), paths: () => __tc_nativeUnavailable__('fs.paths') },
         shell: { exec: () => __tc_nativeUnavailable__('shell.exec') },
         browser: { available: () => false, open: () => __tc_nativeUnavailable__('browser.open') },
         share: { text: () => __tc_nativeUnavailable__('share.text') },
@@ -2362,6 +2399,44 @@ class Tac { props; tac; constructor(props = {}, tac = __tc_noopHelpers__) { this
                 return `/${kind}/${relative.replaceAll(path.sep, '/')}.js`;
         }
         throw new Error(`Dart Tac companion '${sourcePath}' must live under client/pages or client/components.`);
+    }
+    /**
+     * Scans a bundled output tree for JavaScript constructs that a strict
+     * Content-Security-Policy blocks without `'unsafe-eval'` — runtime code
+     * generation from strings. Used by `ty bundle --csp-check` (#109) so a
+     * build can gate on producing CSP-safe output.
+     * @param {string} root Directory to scan (e.g. dist/web).
+     * @returns {Promise<Array<{ file: string, construct: string, count: number }>>}
+     */
+    static async auditCspSafety(root) {
+        /** @type {Array<{ pattern: RegExp, construct: string }>} */
+        const probes = [
+            { pattern: /\beval\s*\(/g, construct: 'eval()' },
+            { pattern: /\bnew\s+Function\s*\(/g, construct: 'new Function()' },
+            { pattern: /\bnew\s+AsyncFunction\s*\(/g, construct: 'AsyncFunction constructor' },
+            { pattern: /\bnew\s+GeneratorFunction\s*\(/g, construct: 'GeneratorFunction constructor' },
+        ];
+        /** @type {Array<{ file: string, construct: string, count: number }>} */
+        const findings = [];
+        /** @param {string} dir */
+        const walk = async (dir) => {
+            let entries;
+            try { entries = await readdir(dir, { withFileTypes: true }); }
+            catch { return; }
+            for (const entry of entries) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) { await walk(full); continue; }
+                if (!entry.name.endsWith('.js') && !entry.name.endsWith('.mjs')) continue;
+                const source = await readFile(full, 'utf8');
+                for (const { pattern, construct } of probes) {
+                    const count = (source.match(pattern) || []).length;
+                    if (count > 0)
+                        findings.push({ file: path.relative(root, full), construct, count });
+                }
+            }
+        };
+        await walk(root);
+        return findings;
     }
     /**
      * @param {TemplateData} templateData

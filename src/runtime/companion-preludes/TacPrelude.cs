@@ -71,6 +71,9 @@ public static class FileSystem {
     public static string ReadTextAsync(string path) => "";
     public static void WriteTextAsync(string path, string text) {}
     public static object ReadDirAsync(string path) => null;
+    public static object StatAsync(string path) => null;
+    public static object MkdirAsync(string path) => null;
+    public static object RemoveAsync(string path) => null;
     public static object PathsAsync() => null;
 }
 

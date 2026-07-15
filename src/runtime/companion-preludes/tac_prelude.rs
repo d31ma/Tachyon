@@ -66,6 +66,9 @@ impl FileSystem {
     pub fn read_text(&self, _path: &str) -> String { String::new() }
     pub fn write_text(&self, _path: &str, _text: &str) {}
     pub fn read_dir(&self, _path: &str) {}
+    pub fn stat(&self, _path: &str) {}
+    pub fn mkdir(&self, _path: &str) {}
+    pub fn remove(&self, _path: &str) {}
     pub fn paths(&self) {}
 }
 pub fn file_system() -> FileSystem { FileSystem }

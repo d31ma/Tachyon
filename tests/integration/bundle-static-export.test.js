@@ -259,6 +259,62 @@ function choose(next) { selected = next; }
 <p>Selected {selected}</p>`);
     return root;
 }
+async function createAuthorIdEventFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-author-id-event-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-author-id-event-fixture',
+        private: true
+    }, null, 2));
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
+let selected = 'alpha';
+function choose(next) { selected = next; }
+</script>
+<input id="my-field" :value="selected" on:input="choose($event.target.value)" />
+<p>Selected {selected}</p>`);
+    return root;
+}
+async function createClearFieldFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-clear-field-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-clear-field-fixture',
+        private: true
+    }, null, 2));
+    // The close handler sits on an element INSIDE the conditional block, before a
+    // later expression that dereferences the same field. Clearing the field in
+    // the handler then makes {menu.x} later in the block throw (#112).
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
+let menu = { x: 5 };
+function close() { menu = null; }
+</script>
+<logic :if="menu">
+  <button class="scrim" on:click="close()"></button>
+  <p class="panel">at {menu.x}</p>
+</logic>
+<p class="rest">REST</p>`);
+    return root;
+}
+async function createMultiHandlerFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-multi-handler-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-multi-handler-fixture',
+        private: true
+    }, null, 2));
+    // One element with two handlers for different event types (#113).
+    await writeFile(path.join(root, 'client', 'pages', 'tac.html'), `<script>
+let log = 'none';
+function pick() { log = log + '+pick'; }
+function menu() { log = log + '+menu'; }
+</script>
+<button class="row" on:click="pick()" on:contextmenu="menu()">row</button>
+<p class="out">{log}</p>`);
+    return root;
+}
 async function createCheckedBindingFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-checked-binding-'));
     tempDirs.push(root);
@@ -694,6 +750,12 @@ timedTest('tac.bundle defaults to the web target without emitting target manifes
     expect(spaRenderer).toContain('browserOS');
     await expect(Bun.file(path.join(cwd, 'dist', 'tachyon.targets.json')).exists()).resolves.toBe(false);
     await expect(Bun.file(webDistPath(cwd, 'tachyon.target.json')).exists()).resolves.toBe(false);
+    // The CSP audit (#109) detects the runtime-code-generation constructs the
+    // rendering model still emits — the AsyncFunction factory wrapper on every
+    // page — so a build can gate on strict-CSP compatibility.
+    const Compiler = (await import('../../src/compiler/index.js')).default;
+    const findings = await Compiler.auditCspSafety(webDistPath(cwd));
+    expect(findings.some((f) => f.construct === 'AsyncFunction constructor')).toBe(true);
 });
 timedTest('tac.bundle accepts OS and all targets', { timeout: 60000 }, async () => {
     const cwd = await createFixture();
@@ -875,6 +937,26 @@ timedTest('tac.bundle leaves the previous dist intact when a full build fails', 
     const existing = await readFile(webDistPath(cwd, 'inbox', 'index.html'), 'utf8');
     expect(existing).toContain('previous dist survives');
 });
+timedTest('the CSP gate audits staged output and leaves the previous dist intact', { timeout: 20000 }, async () => {
+    const cwd = await createFixture();
+    await mkdir(webDistPath(cwd, 'inbox'), { recursive: true });
+    await writeFile(webDistPath(cwd, 'inbox', 'index.html'), '<!doctype html><p>previous CSP-safe dist survives</p>');
+    const proc = Bun.spawn(['bun', bundleEntrypoint, '--csp-check'], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe'
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited
+    ]);
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toContain('CSP check failed');
+    expect(stderr).toContain('AsyncFunction constructor');
+    const existing = await readFile(webDistPath(cwd, 'inbox', 'index.html'), 'utf8');
+    expect(existing).toContain('previous CSP-safe dist survives');
+});
 timedTest('tac.bundle classifies component, web component, native, and unknown tags by priority', { timeout: 20000 }, async () => {
     const cwd = await createTagClassificationFixture();
     const proc = Bun.spawn(['bun', bundleEntrypoint], {
@@ -1036,6 +1118,76 @@ timedTest('value-bound handlers retain DOM-style target access on synthetic upda
     await render(inputId, createValueEventDetail(/** @type {any} */ (input), /** @type {any} */ (new windowInstance.Event('input'))));
     expect(await render()).toContain('Selected beta');
     await windowInstance.happyDOM.close();
+});
+timedTest('an author-supplied id does not break event dispatch (#110)', { timeout: 20000 }, async () => {
+    const cwd = await createAuthorIdEventFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const pageModule = await import(`${pathToFileURL(webDistPath(cwd, 'pages', 'tac.js')).href}?author-id=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    // The author's id stays visible; the dispatch id moves to a private attr.
+    expect(initial).toContain('id="my-field"');
+    const dispatchId = initial.match(/data-tac-id="([^"]+)"/)?.[1];
+    expect(dispatchId).toBeTruthy();
+    expect(dispatchId).toMatch(/^tc-/);
+    const windowInstance = new Window();
+    const input = windowInstance.document.createElement('input');
+    input.value = 'beta';
+    const detail = createValueEventDetail(/** @type {any} */ (input), /** @type {any} */ (new windowInstance.Event('input')));
+    // Dispatching by the author id (the pre-fix behavior) must NOT fire the
+    // handler; the runtime's dispatchId() resolves to data-tac-id instead.
+    await render('my-field', detail);
+    expect(await render()).toContain('Selected alpha');
+    // Dispatching by the private data-tac-id fires the handler.
+    await render(dispatchId, detail);
+    expect(await render()).toContain('Selected beta');
+    await windowInstance.happyDOM.close();
+});
+timedTest('clearing a field from a handler inside its own :if block still re-renders (#112)', { timeout: 20000 }, async () => {
+    const cwd = await createClearFieldFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const pageModule = await import(`${pathToFileURL(webDistPath(cwd, 'pages', 'tac.js')).href}?clear-field=${Date.now()}`);
+    const render = await pageModule.default();
+    const initial = await render();
+    expect(initial).toContain('class="panel"');
+    const scrimId = initial.match(/<button class="scrim"[^>]* id="([^"]+)"/)?.[1];
+    expect(scrimId).toBeTruthy();
+    // The trigger render runs close() (menu = null) and then hits {menu.x} later
+    // in the same block — it throws. The runtime discards this pass's output and
+    // must still run the clean state-only render (that's what runHandlerPass does).
+    await expect(render(scrimId, { type: 'click' })).rejects.toThrow();
+    const cleaned = await render();
+    expect(cleaned).not.toContain('class="panel"');
+    expect(cleaned).toContain('REST');
+});
+timedTest('multiple on:* handlers on one element fire only the matching event type (#113)', { timeout: 20000 }, async () => {
+    const cwd = await createMultiHandlerFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    const [_stdout, stderr, exitCode] = await Promise.all([decode(proc.stdout), decode(proc.stderr), proc.exited]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const out = async (render) => (await render()).match(/<p class="out"[^>]*>([\s\S]*?)<\/p>/)?.[1];
+    const pageModulePath = webDistPath(cwd, 'pages', 'tac.js');
+    // Left click → only pick().
+    const clickModule = await import(`${pathToFileURL(pageModulePath).href}?multi-click=${Date.now()}`);
+    const clickRender = await clickModule.default();
+    const initial = await clickRender();
+    const rowId = initial.match(/<button class="row"[^>]* id="([^"]+)"/)?.[1];
+    expect(rowId).toBeTruthy();
+    await clickRender(rowId, { type: 'click' });
+    expect(await out(clickRender)).toBe('none+pick');
+    // Right click → only menu().
+    const menuModule = await import(`${pathToFileURL(pageModulePath).href}?multi-menu=${Date.now()}`);
+    const menuRender = await menuModule.default();
+    await menuRender();
+    await menuRender(rowId, { type: 'contextmenu' });
+    expect(await out(menuRender)).toBe('none+menu');
 });
 timedTest('checked bindings retain checkbox state across reactive rerenders', { timeout: 20000 }, async () => {
     const cwd = await createCheckedBindingFixture();

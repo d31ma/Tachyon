@@ -54,6 +54,36 @@ describe('Compiler.findReferencedDecorators', () => {
         expect(Compiler.findReferencedDecorators(source)).toEqual(['publish']);
     });
 
+    test('injects the auto-import when an unrelated import precedes a later `from` (#108)', () => {
+        // A top-level import plus a later `.from` used to make the loose
+        // detection regex span from the import, past it, to the @onMount usage
+        // and the stray `from`, wrongly treating onMount as already imported —
+        // silently dropping the auto-import on larger companions.
+        const source = `
+            import { helper } from '../../shared.js'
+            export default class extends Tac {
+              items = [1, 2, 3]
+              @onMount
+              async boot() {
+                const rows = Array.from(this.items)
+                this.status = helper(rows.length)
+              }
+            }
+        `;
+        expect(Compiler.findReferencedDecorators(source)).toEqual(['onMount']);
+    });
+
+    test('still skips a genuine onMount import alongside an unrelated one', () => {
+        const source = `
+            import { helper } from './util.js'
+            import { onMount } from './my-decorators.js'
+            export default class extends Tac {
+              @onMount boot() { return Array.from([]) }
+            }
+        `;
+        expect(Compiler.findReferencedDecorators(source)).toEqual([]);
+    });
+
     test('does not match JSDoc-style mentions', () => {
         const source = `
             /**
