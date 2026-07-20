@@ -61,7 +61,7 @@ try {
 
     await run(['cmake', '-S', hostRoot, '-B', buildRoot, '-A', 'x64'], root);
     await run(['cmake', '--build', buildRoot, '--config', 'Release'], root);
-    await access(path.join(buildRoot, 'TachyonWindowsSmoke', 'Release', 'TachyonWindowsSmoke.exe'));
+    await access(path.join(buildRoot, 'Release', 'TachyonWindowsSmoke.exe'));
 }
 finally {
     if (process.env.KEEP_NATIVE_SMOKE !== '1')
