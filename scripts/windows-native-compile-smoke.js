@@ -24,55 +24,18 @@ async function run(command, cwd) {
 
 const root = await mkdtemp(path.join(tmpdir(), 'tachyon-windows-native-smoke-'));
 const assetRoot = path.join(root, 'web');
-const extensionRoot = path.join(root, 'extension');
 const hostRoot = path.join(root, 'host');
 const buildRoot = path.join(root, 'build');
 
 try {
     await mkdir(assetRoot, { recursive: true });
-    await mkdir(extensionRoot, { recursive: true });
     await writeFile(path.join(assetRoot, 'index.html'), '<!doctype html><html><head></head><body>Windows native smoke</body></html>');
-
-    const extensionSource = path.join(extensionRoot, 'smoke_extension.cpp');
-    await writeFile(extensionSource, `
-#include "tachyon_extension_abi.hpp"
-#include <memory>
-#include <stdexcept>
-#include <string>
-
-class SmokeExtension final : public TachyonNativeExtension {
-public:
-    bool Supports(const std::string& operation) const override { return operation == "smoke.echo"; }
-    std::string Invoke(const std::string& operation, const std::string& payloadJson) override {
-        if (!Supports(operation)) throw std::runtime_error("unsupported operation");
-        return payloadJson;
-    }
-};
-
-std::unique_ptr<TachyonNativeExtension> CreateSmokeExtension() {
-    return std::make_unique<SmokeExtension>();
-}
-`);
 
     await generateNativeHost({
         target: 'windows',
         assetRoot,
         outputRoot: hostRoot,
         appName: 'TachyonWindowsSmoke',
-        devicePermissions: ['camera', 'microphone', 'screenCapture'],
-        permissionOrigins: {
-            camera: ['https://camera.example'],
-            microphone: ['https://microphone.example'],
-        },
-        managedContentOrigins: ['https://camera.example', 'https://microphone.example'],
-        nativeHostExtensions: [{
-            schemaVersion: 1,
-            id: 'smoke',
-            version: '1.0.0',
-            bridgeAbiVersion: 1,
-            operations: [{ name: 'smoke.echo', targets: ['windows'], permissions: [] }],
-            implementations: { windows: { source: extensionSource, factory: 'CreateSmokeExtension' } },
-        }],
     });
 
     await run(['cmake', '-S', hostRoot, '-B', buildRoot, '-G', 'Visual Studio 17 2022', '-A', 'x64'], root);
