@@ -1,7 +1,8 @@
 // @ts-check
-import { cleanBooleanAttrs, createValueEventDetail, findEventTarget, findNavigationTarget, morphChildren, parseFragment, parseParams, repointCurrentTarget, resolveHandler } from './dom-helpers.js';
+import { cleanBooleanAttrs, createFocusLease, createValueEventDetail, findEventTarget, findNavigationTarget, morphChildren, parseFragment, parseParams, repointCurrentTarget, resolveHandler } from './dom-helpers.js';
 import { cacheModuleResponse, clearStaticCache, precacheModules } from './static-cache.js';
-import { createDeferredDelegation } from './event-hydration.js';
+import { createDeferredDelegation, resumeCapturedNativeAction } from './event-hydration.js';
+import { IslandRuntime } from './island-runtime.js';
 import { createComponentRegistry } from './component-registry.js';
 import { ServiceWorkerPolicy } from './service-worker-policy.js';
 
@@ -162,8 +163,6 @@ let currentWrapperPath = null;
 /** @type {string | null} */
 let currentPageURL = null;
 let previousHTML = '';
-/** @type {string | null} */
-let focusTarget = null;
 let freshNavigation = false;
 
 /** @type {Map<string, Record<string, string>>} */
@@ -172,12 +171,17 @@ const routes = new Map();
 const wrapperPages = {};
 const routeManifestJSON = '{"__tachyonPlaceholder":true}';
 const wrapperManifestJSON = '{"__tachyonShellPlaceholder":true}';
+const componentManifestJSON = '{"__tachyonComponentPlaceholder":true}';
+/** @type {Record<string, string>} */
+const componentModules = JSON.parse(componentManifestJSON);
 /** @type {Record<string, string>} */
 const slugs = {};
 /** @type {unknown[]} */
 let params = [];
 const tac = getTacGlobal();
 const delegatedEvents = new Set();
+/** @type {IslandRuntime | null} */
+let islandRuntime = null;
 
 /**
  * Static HTML is rendered before the browser can read sessionStorage /
@@ -234,7 +238,10 @@ async function loadManifests() {
 }
 
 Promise.all([loadManifests()]).then(() => {
-    navigate(currentNavigationTarget());
+    if (document.querySelector('[data-tac-island], [data-tac-island-static]'))
+        void adoptCurrentDocument();
+    else
+        navigate(currentNavigationTarget());
 });
 
 /** @returns {string} */
@@ -265,7 +272,14 @@ function ensureDelegatedEvent(eventName) {
 // is held off the critical path until the browser is idle, or until the user
 // interacts — whichever first — at which point any interactions captured during
 // the pre-hydration dead zone are replayed. See event-hydration.js.
-const deferredDelegation = createDeferredDelegation({ ensure: ensureDelegatedEvent });
+const deferredDelegation = createDeferredDelegation({
+    ensure: ensureDelegatedEvent,
+    beforeReplay: async (target) => islandRuntime?.promote(target),
+    onReplayError: (error, record) => {
+        console.error('[tachyon] Island intent activation failed:', error);
+        resumeCapturedNativeAction(/** @type {Element} */ (record.target), record.type);
+    },
+});
 
 // Compile-time event registration: each compiled module calls this once at setup
 // with the event types its template uses (collected by the compiler). Exposed on
@@ -282,6 +296,20 @@ tac.delegateEvents = (eventNames) => {
 // page. Generalizes the `lazy` boundary (lazyRenders) to all components.
 const componentRegistry = createComponentRegistry();
 tac.registerComponentRender = componentRegistry.register;
+islandRuntime = new IslandRuntime({
+    root: document,
+    importer: async (modulePath) => tac.load(modulePath),
+    componentModules,
+    registerComponentRender: componentRegistry.register,
+    onIntentError: (_error, target, type) => resumeCapturedNativeAction(target, type),
+});
+
+/** @param {Element} element */
+function preserveRuntimeBoundary(element) {
+    return lazyRenders.has(element.id)
+        || element.hasAttribute('data-tac-island')
+        || element.hasAttribute('data-tac-island-static');
+}
 
 /**
  * Locates the closest ancestor of the event target that declares a handler for
@@ -447,7 +475,7 @@ async function rerenderComponent(host, entry, triggerId, eventDetail) {
         await runHandlerPass(entry.render(triggerId, eventDetail, entry.compId));
     const html = await entry.render(null, undefined, entry.compId);
     morphChildren(host, parseFragment(html), {
-        preserveElement: (element) => lazyRenders.has(element.id),
+        preserveElement: preserveRuntimeBoundary,
     });
     postPatch();
 }
@@ -492,7 +520,20 @@ async function runHandlerPass(triggerRender) {
  * @param {unknown} [eventDetail]
  */
 async function rerender(triggerId, eventDetail) {
-    focusTarget = triggerId;
+    const focusLease = createFocusLease(triggerId);
+    try {
+        await rerenderView(triggerId, eventDetail);
+    }
+    finally {
+        focusLease.restore();
+    }
+}
+
+/**
+ * @param {string} triggerId
+ * @param {unknown} [eventDetail]
+ */
+async function rerenderView(triggerId, eventDetail) {
     const lazyContainer = findLazyAncestor(triggerId);
     if (lazyContainer) {
         const render = lazyRenders.get(lazyContainer.id);
@@ -501,7 +542,7 @@ async function rerender(triggerId, eventDetail) {
         await runHandlerPass(render(triggerId, eventDetail, lazyContainer.id));
         const html = await render(null, undefined, lazyContainer.id);
         morphChildren(lazyContainer, parseFragment(html), {
-            preserveElement: (element) => lazyRenders.has(element.id),
+            preserveElement: preserveRuntimeBoundary,
         });
         postPatch();
         return;
@@ -551,7 +592,7 @@ async function refreshCurrentView() {
         if (slot)
             slot.innerHTML = pageHTML;
         morphChildren(document.body, parseFragment(tempDoc.body.innerHTML), {
-            preserveElement: (element) => lazyRenders.has(element.id),
+            preserveElement: preserveRuntimeBoundary,
         });
         previousHTML = pageHTML;
     }
@@ -620,7 +661,7 @@ function patchSlot(html) {
     }
     else {
         morphChildren(slot, parseFragment(html), {
-            preserveElement: (element) => lazyRenders.has(element.id),
+            preserveElement: preserveRuntimeBoundary,
         });
     }
     postPatch();
@@ -636,7 +677,7 @@ function patchBody(html) {
     }
     else {
         morphChildren(document.body, parseFragment(html), {
-            preserveElement: (element) => lazyRenders.has(element.id),
+            preserveElement: preserveRuntimeBoundary,
         });
     }
     postPatch();
@@ -696,19 +737,7 @@ function observeLazyComponents() {
 function postPatch() {
     cleanBooleanAttrs();
     observeLazyComponents();
-
-    if (focusTarget) {
-        const element = document.getElementById(focusTarget);
-        if (element) {
-            try {
-                element.focus();
-            }
-            catch {
-                // Some elements cannot be focused after a rerender; preserving the patch is enough.
-            }
-        }
-        focusTarget = null;
-    }
+    islandRuntime?.scan(document);
 
     const queue = /** @type {Array<() => void | Promise<void>> | undefined} */ (window.__tc_onMount_queue__);
     // Controllers that register onMount after this flush (e.g. async-loaded
@@ -733,6 +762,64 @@ function postPatch() {
         requestAnimationFrame(() => scrollToHash(location.hash));
     }
     freshNavigation = false;
+}
+
+/**
+ * Initializes render closures and event manifests against the already
+ * prerendered document. Island boundaries keep their original nodes; no
+ * initial body patch occurs.
+ */
+async function adoptCurrentDocument() {
+    const pathname = location.pathname || '/';
+    let handler = '/';
+    try {
+        handler = resolvePageHandler(pathname);
+    }
+    catch {
+        handler = '';
+    }
+    const handlerPath = handler.replaceAll('/:', '/_');
+    const pageURL = handler === '/'
+        ? `${ASSET_PREFIX}pages/tac.js`
+        : handler
+            ? `${ASSET_PREFIX}pages${handlerPath}/tac.js`
+            : `${ASSET_PREFIX}pages/404.js`;
+    const wrapperPath = resolveWrapperPage(pathname);
+    try {
+        const [pageFactory, wrapperFactory] = await Promise.all([
+            tac.load(pageURL),
+            wrapperPath ? tac.load(wrapperPath) : Promise.resolve(null),
+        ]);
+        pageRender = await pageFactory();
+        wrapperRender = wrapperFactory ? await wrapperFactory() : null;
+        currentPageURL = pageURL;
+        currentWrapperPath = wrapperPath;
+        // Execute once to register eager child render closures and compile-time
+        // event sets. The generated HTML is intentionally discarded.
+        if (wrapperRender)
+            await wrapperRender();
+        await pageRender();
+        islandRuntime?.scan(document);
+        postPatch();
+    }
+    catch (error) {
+        console.error('[tachyon] Failed to adopt prerendered Tac document:', error);
+        // Preserve useful SSR HTML on failure rather than blanking the page.
+        islandRuntime?.scan(document);
+    }
+}
+
+/** @param {string} html */
+function containsIslandBoundary(html) {
+    return html.includes('data-tac-island') || html.includes('data-tac-island-static');
+}
+
+/** @param {string} url */
+function navigateToIslandDocument(url) {
+    // Island routes require their prerendered HTML. A document navigation keeps
+    // strict `never` islands module-free and gives deferred islands real SSR DOM
+    // to adopt instead of client-created empty boundaries.
+    location.assign(url);
 }
 
 /** @param {string} target */
@@ -768,24 +855,29 @@ function navigate(target) {
 
     const loadPage = async () => {
         const pageFactory = await tac.load(pageURL);
+        pageRender = await pageFactory();
+        const pageHTML = await pageRender();
+        if (containsIslandBoundary(pageHTML)) {
+            navigateToIslandDocument(fullURL);
+            return;
+        }
         if (location.protocol !== 'file:') {
             if (location.pathname + location.search + location.hash !== fullURL)
                 history.pushState({}, '', fullURL);
             else
                 history.replaceState({}, '', fullURL);
         }
-        pageRender = await pageFactory();
         currentPageURL = pageURL;
         freshNavigation = true;
         previousHTML = '';
         lazyLoaded.clear();
         lazyRenders.clear();
         try {
-            if (wrapperRender && pageRender) {
-                patchSlot(await pageRender());
+            if (wrapperRender) {
+                patchSlot(pageHTML);
             }
-            else if (pageRender) {
-                patchBody(await pageRender());
+            else {
+                patchBody(pageHTML);
             }
         }
         finally {
@@ -798,22 +890,28 @@ function navigate(target) {
             tac.load(wrapperPath),
             tac.load(pageURL),
         ]).then(async ([wrapperFactory, pageFactory]) => {
+            const nextWrapperRender = await wrapperFactory();
+            const nextPageRender = await pageFactory();
+            const wrapperHTML = await nextWrapperRender();
+            const pageHTML = await nextPageRender();
+            if (containsIslandBoundary(wrapperHTML) || containsIslandBoundary(pageHTML)) {
+                navigateToIslandDocument(fullURL);
+                return;
+            }
             currentWrapperPath = wrapperPath;
-            wrapperRender = await wrapperFactory();
+            wrapperRender = nextWrapperRender;
+            pageRender = nextPageRender;
+            currentPageURL = pageURL;
             if (location.protocol !== 'file:') {
                 if (location.pathname + location.search + location.hash !== fullURL)
                     history.pushState({}, '', fullURL);
                 else
                     history.replaceState({}, '', fullURL);
             }
-            pageRender = await pageFactory();
-            currentPageURL = pageURL;
             freshNavigation = true;
             previousHTML = '';
             lazyLoaded.clear();
             lazyRenders.clear();
-            const wrapperHTML = await wrapperRender();
-            const pageHTML = await pageRender();
             previousHTML = pageHTML;
             const tempDoc = new DOMParser().parseFromString(`<body>${wrapperHTML}</body>`, 'text/html');
             const slot = tempDoc.getElementById('tc-page-slot');

@@ -554,6 +554,38 @@ class _Auth { const _Auth(); Future<dynamic> verifyUser(String reason) => _nativ
 class _Geolocation { const _Geolocation(); Future<dynamic> current([dynamic options]) => _nativeCall('geo.current', { 'options': options }); }
 class _Notifications { const _Notifications(); Future<dynamic> show(String title, [dynamic options]) => _nativeCall('notify.show', { 'title': title, 'options': options }); }
 class _Media { const _Media(); Future<dynamic> getUserMedia(dynamic constraints) => _nativeCall('media.getUserMedia', { 'constraints': constraints }); }
+class _Host { const _Host(); Future<dynamic> invoke(String operation, [dynamic payload]) => _nativeCall(operation, payload); }
+class _Shortcuts {
+  const _Shortcuts();
+  Future<dynamic> register(String id, String accelerator, [bool replace = false]) => _nativeCall('shortcuts.register', { 'id': id, 'accelerator': accelerator, 'replace': replace });
+  Future<dynamic> unregister(String id) => _nativeCall('shortcuts.unregister', { 'id': id });
+  Future<dynamic> unregisterAll() => _nativeCall('shortcuts.unregisterAll');
+  Future<dynamic> list() => _nativeCall('shortcuts.list');
+}
+class _AppWindow {
+  const _AppWindow();
+  Future<dynamic> state() => _nativeCall('window.state');
+  Future<dynamic> setAlwaysOnTop(bool enabled) => _nativeCall('window.alwaysOnTop', { 'enabled': enabled });
+  Future<dynamic> setOpacity(num value) => _nativeCall('window.opacity', { 'value': value });
+  Future<dynamic> setClickThrough(bool enabled) => _nativeCall('window.clickThrough', { 'enabled': enabled });
+  Future<dynamic> setCaptureProtection(bool enabled) => _nativeCall('window.captureProtection', { 'enabled': enabled });
+}
+class _ContentSurface {
+  const _ContentSurface();
+  Future<dynamic> open(String id, String url, [bool persistentSession = false]) => _nativeCall('contentSurface.open', { 'id': id, 'url': url, 'persistentSession': persistentSession });
+  Future<dynamic> navigate(String id, String url) => _nativeCall('contentSurface.navigate', { 'id': id, 'url': url });
+  Future<dynamic> state(String id) => _nativeCall('contentSurface.state', { 'id': id });
+  Future<dynamic> goBack(String id) => _nativeCall('contentSurface.goBack', { 'id': id });
+  Future<dynamic> goForward(String id) => _nativeCall('contentSurface.goForward', { 'id': id });
+  Future<dynamic> reload(String id) => _nativeCall('contentSurface.reload', { 'id': id });
+  Future<dynamic> close(String id) => _nativeCall('contentSurface.close', { 'id': id });
+}
+class _ScreenCapture {
+  const _ScreenCapture();
+  Future<dynamic> state() => _nativeCall('screenCapture.state');
+  Future<dynamic> listWindows([bool visibleOnly = true, bool excludeCurrentApp = true]) => _nativeCall('screenCapture.listWindows', { 'visibleOnly': visibleOnly, 'excludeCurrentApp': excludeCurrentApp });
+  Future<dynamic> captureWindow(String windowId, String destination) => _nativeCall('screenCapture.captureWindow', { 'windowId': windowId, 'destination': destination, 'format': 'png' });
+}
 
 const clipboard = _Clipboard();
 const fileSystem = _FileSystem();
@@ -574,6 +606,11 @@ const auth = _Auth();
 const geolocation = _Geolocation();
 const notifications = _Notifications();
 const media = _Media();
+const host = _Host();
+const shortcuts = _Shortcuts();
+const appWindow = _AppWindow();
+const contentSurface = _ContentSurface();
+const screenCapture = _ScreenCapture();
 Future<dynamic> fetch(dynamic input, [dynamic init]) => _nativeCall('web.fetch', { 'input': input.toString(), 'init': init });
 
 ${source}

@@ -15,6 +15,16 @@ async function makeAssetRoot() {
     const assetRoot = path.join(root, 'web');
     await mkdir(assetRoot, { recursive: true });
     await writeFile(path.join(assetRoot, 'index.html'), '<!doctype html><title>fixture</title>');
+    await writeFile(path.join(assetRoot, 'tachyon.native-controller.js'), 'globalThis.__tachyonNativeUI = {};');
+    await writeFile(path.join(assetRoot, 'tachyon.native-ui.json'), JSON.stringify({
+        schemaVersion: 1,
+        renderMode: 'native',
+        entryRoute: '/',
+        controller: 'tachyon.native-controller.js',
+        hasWebViewFallbacks: false,
+        webViewFallbacks: [],
+        routes: [{ schemaVersion: 1, route: '/', root: { kind: 'element', tag: 'main', children: [] } }],
+    }));
     return { root, assetRoot };
 }
 
@@ -56,6 +66,12 @@ test('generated android host carries the release signing fallback', async () => 
     expect(gradle).toContain('TAC_ANDROID_KEYSTORE');
     expect(gradle).toContain('signingConfigs.getByName("debug")');
     expect(gradle).toContain('versionName = "2.3.4"');
+
+    const activity = await readFile(path.join(
+        outputRoot, 'app', 'src', 'main', 'java', 'ma', 'del', 'tachyon', 'packagerfixture', 'MainActivity.kt',
+    ), 'utf8');
+    expect(activity).toContain('class MainActivity : ComponentActivity()');
+    expect(activity).toContain('QuickJs.create()');
 });
 
 test('generated ios host ships an xcodegen spec for .ipa export', async () => {

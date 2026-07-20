@@ -23,7 +23,7 @@ export default class {
       '</section>',
       '',
       '<loop :for="post of posts">',
-      '  <article>{post.title}</article>',
+      '  <product-card :product="post" hydrate="visible" />',
       '</loop>',
     ].join('\n'),
     companion: [

@@ -183,7 +183,7 @@ describe('docs content', () => {
         expect(text).toContain('environment')
     })
 
-    test('documents permissioned device APIs and the native declaration', async () => {
+    test('documents device APIs and the native-first fail-closed boundary', async () => {
         const docs = JSON.parse(await read('client/shared/data/docs.json'))
         const platformApis = docs.topics['platform-apis']
         const text = JSON.stringify(platformApis)
@@ -192,5 +192,30 @@ describe('docs content', () => {
         expect(text).toContain('auth.verifyUser')
         expect(text).toContain('media.getUserMedia')
         expect(text).toContain('host.on')
+        expect(text).toContain('native-tree adapter')
+    })
+
+    test('documents island hydration as a strict server-rendered component contract', async () => {
+        const docs = JSON.parse(await read('client/shared/data/docs.json'))
+        const templates = JSON.stringify(docs.topics.templates)
+
+        for (const policy of ['load', 'idle', 'visible', 'interaction', 'never'])
+            expect(templates).toContain(policy)
+        expect(templates).toContain('JSON-serializable')
+        expect(templates).toContain('combined with lazy')
+    })
+
+    test('documents native-by-default HTML rendering and strict fallback behavior', async () => {
+        const docs = JSON.parse(await read('client/shared/data/docs.json'))
+        const nativeRendering = JSON.stringify(docs.topics['native-rendering'])
+
+        expect(nativeRendering).toContain('SwiftUI')
+        expect(nativeRendering).toContain('Jetpack Compose')
+        expect(nativeRendering).toContain('WinUI')
+        expect(nativeRendering).toContain('GTK')
+        expect(nativeRendering).toContain('tachyon.native-ui.json')
+        expect(nativeRendering).toContain('tachyon.native-controller.js')
+        expect(nativeRendering).toContain('automatically become isolated WebView boundaries')
+        expect(nativeRendering).toContain('nativeUIAdapters')
     })
 })

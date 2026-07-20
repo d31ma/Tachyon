@@ -11,37 +11,38 @@ export default class {
     {
       name: 'macOS',
       platform: 'desktop platform',
-      description: 'Swift WKWebView host with bundled Tac assets.',
+      description: 'SwiftUI controls driven by Tac\'s DOM-free controller.',
       command: 'ty bundle --target macos\nty preview --target macos',
     },
     {
       name: 'Windows',
       platform: 'desktop platform',
-      description: 'WebView2 desktop host for Windows machines.',
+      description: 'WinUI controls with an embedded QuickJS controller.',
       command: 'ty bundle --target windows\nty preview --target windows',
     },
     {
       name: 'Linux',
       platform: 'desktop platform',
-      description: 'GTK/WebKitGTK host for Linux desktops.',
+      description: 'GTK controls with an embedded QuickJS controller.',
       command: 'ty bundle --target linux\nty preview --target linux',
     },
     {
       name: 'iOS',
       platform: 'mobile platform',
-      description: 'Xcode-ready iOS WKWebView project.',
+      description: 'Xcode-ready SwiftUI with local fallback for unsupported subtrees.',
       command: 'ty bundle --target ios\nty preview --target ios',
     },
     {
       name: 'Android',
       platform: 'mobile platform',
-      description: 'Android Studio-ready WebView project.',
+      description: 'Jetpack Compose project with an embedded controller.',
       command: 'ty bundle --target android\nty preview --target android',
     },
   ]
 
   allTargetsCommand = [
     'ty bundle --target all',
+    'ty bundle --target android',
     'ty preview --target web',
     'ty preview --target macos',
   ].join('\n')

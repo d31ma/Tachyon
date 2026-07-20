@@ -13,6 +13,7 @@ import TachyonRuntimeCache from "../shared/runtime-cache.js";
 import DartCompanionCompiler from './dart-companion.js';
 import TacSubsetCompanionCompiler from './subset-companion.js';
 import { nativeHostCapabilities } from './native/host-capabilities.js';
+import { HTML_ELEMENT_SET, TAC_CONTROL_ELEMENT_SET } from './html-tags.js';
 /**
  * @typedef {import("bun").BunRequest} BunRequest
  * @typedef {import("bun").BunPlugin} BunPlugin
@@ -31,6 +32,7 @@ import { nativeHostCapabilities } from './native/host-capabilities.js';
  */
 const ROUTE_MANIFEST_PLACEHOLDER = '{"__tachyonPlaceholder":true}';
 const WRAPPER_MANIFEST_PLACEHOLDER = '{"__tachyonShellPlaceholder":true}';
+const COMPONENT_MANIFEST_PLACEHOLDER = '{"__tachyonComponentPlaceholder":true}';
 const PRERENDER_WORKER_PATH = `${import.meta.dir}/../runtime/prerender-worker.js`;
 const MODULES_ROUTE_PREFIX = '/shared/modules';
 const IMPORT_MAP_PLACEHOLDER = '<!--__TACHYON_IMPORT_MAP__-->';
@@ -47,6 +49,7 @@ const EMBEDDED_FRAMEWORK_FILES = [
     'runtime/static-cache.js',
     'runtime/event-capture-script.js',
     'runtime/event-hydration.js',
+    'runtime/island-runtime.js',
     'runtime/component-registry.js',
     'runtime/service-worker-policy.js',
     'runtime/fylo-browser-worker.js',
@@ -76,6 +79,7 @@ async function loadEmbeddedFrameworkSource(relativePath) {
         case 'runtime/static-cache.js': return textModule(import('../runtime/static-cache.js', { with: { type: 'text' } }));
         case 'runtime/event-capture-script.js': return EVENT_CAPTURE_SCRIPT_SOURCE;
         case 'runtime/event-hydration.js': return textModule(import('../runtime/event-hydration.js', { with: { type: 'text' } }));
+        case 'runtime/island-runtime.js': return textModule(import('../runtime/island-runtime.js', { with: { type: 'text' } }));
         case 'runtime/component-registry.js': return textModule(import('../runtime/component-registry.js', { with: { type: 'text' } }));
         case 'runtime/service-worker-policy.js': return textModule(import('../runtime/service-worker-policy.js', { with: { type: 'text' } }));
         case 'runtime/fylo-browser-worker.js': return textModule(import('../runtime/fylo-browser-worker.js', { with: { type: 'text' } }));
@@ -195,28 +199,9 @@ export default class Compiler {
     ]);
     /** @type {Set<string>} */
     static bundledDependencyModules = new Set();
-    static nativeTags = new Set([
-        'a', 'abbr', 'address', 'area', 'article', 'aside', 'audio', 'b', 'base', 'bdi', 'bdo',
-        'blockquote', 'body', 'br', 'button', 'canvas', 'caption', 'cite', 'code', 'col',
-        'colgroup', 'data', 'datalist', 'dd', 'del', 'details', 'dfn', 'dialog', 'div', 'dl',
-        'dt', 'em', 'embed', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2',
-        'h3', 'h4', 'h5', 'h6', 'head', 'header', 'hgroup', 'hr', 'html', 'i', 'iframe', 'img',
-        'input', 'ins', 'kbd', 'label', 'legend', 'li', 'link', 'main', 'map', 'mark', 'menu',
-        'meta', 'meter', 'nav', 'noscript', 'object', 'ol', 'optgroup', 'option', 'output', 'p',
-        'picture', 'pre', 'progress', 'q', 'rp', 'rt', 'ruby', 's', 'samp', 'script', 'search',
-        'section', 'select', 'slot', 'small', 'source', 'span', 'strong', 'style', 'sub',
-        'summary', 'sup', 'table', 'tbody', 'td', 'template', 'textarea', 'tfoot', 'th', 'thead',
-        'time', 'title', 'tr', 'track', 'u', 'ul', 'var', 'video', 'wbr',
-        'svg', 'g', 'path', 'circle', 'ellipse', 'line', 'polygon', 'polyline', 'rect', 'defs',
-        'lineargradient', 'radialgradient', 'stop', 'symbol', 'use', 'clippath', 'mask', 'text',
-        'tspan', 'foreignobject', 'animate', 'animatemotion', 'animatetransform', 'pattern',
-        'marker', 'filter', 'feblend', 'fecolormatrix', 'fecomponenttransfer', 'fecomposite',
-        'feconvolvematrix', 'fediffuselighting', 'fedisplacementmap', 'fedistantlight',
-        'fedropshadow', 'feflood', 'fefunca', 'fefuncb', 'fefuncg', 'fefuncr', 'fegaussianblur',
-        'feimage', 'femerge', 'femergenode', 'femorphology', 'feoffset', 'fepointlight',
-        'fespecularlighting', 'fespotlight', 'fetile', 'feturbulence'
-    ]);
-    static controlTags = new Set(['loop', 'logic', 'switch', 'case']);
+    static nativeTags = HTML_ELEMENT_SET;
+    static controlTags = TAC_CONTROL_ELEMENT_SET;
+    static hydrationPolicies = Object.freeze(['load', 'idle', 'visible', 'interaction', 'never']);
     static reservedCustomElementNames = new Set([
         'annotation-xml',
         'color-profile',
@@ -301,7 +286,18 @@ export default class Compiler {
             .split(',')
             .map((capability) => capability.trim())
             .filter(Boolean);
-        return [...nativeHostCapabilities(Compiler.currentBundleTarget(), requested)].sort();
+        const devicePermissions = (process.env.TAC_NATIVE_DEVICE_PERMISSIONS ?? '')
+            .split(',')
+            .map((permission) => permission.trim())
+            .filter(Boolean);
+        const extensionCapabilities = (process.env.TAC_NATIVE_EXTENSION_CAPABILITIES ?? '')
+            .split(',')
+            .map((capability) => capability.trim())
+            .filter(Boolean);
+        return [...nativeHostCapabilities(Compiler.currentBundleTarget(), requested, {
+            devicePermissions,
+            extensionCapabilities,
+        })].sort();
     }
     /**
      * Returns true when the current bundle target is a native platform.
@@ -1174,6 +1170,12 @@ export default class Compiler {
     static async stageSpaRendererEntrypoint(spaRendererPath) {
         const routeManifestJSON = JSON.stringify(Router.routeSlugs);
         const wrapperManifestJSON = JSON.stringify(Compiler.wrapperPages);
+        const componentManifestJSON = JSON.stringify(Object.fromEntries(
+            [...Compiler.compMapping].map(([name, filepath]) => [
+                name,
+                Compiler.assetPath(`/components/${filepath}`),
+            ])
+        ));
         const assetPrefixLiteral = Compiler.isNativeBundle() ? './' : '/';
         const escapedRouteManifestJSON = routeManifestJSON
             .replaceAll('\\', '\\\\')
@@ -1181,11 +1183,16 @@ export default class Compiler {
         const escapedWrapperManifestJSON = wrapperManifestJSON
             .replaceAll('\\', '\\\\')
             .replaceAll("'", "\\'");
+        const escapedComponentManifestJSON = componentManifestJSON
+            .replaceAll('\\', '\\\\')
+            .replaceAll("'", "\\'");
         const source = await Bun.file(spaRendererPath).text();
         if (!source.includes(ROUTE_MANIFEST_PLACEHOLDER))
             throw new Error('Tac SPA renderer route manifest placeholder is missing');
         if (!source.includes(WRAPPER_MANIFEST_PLACEHOLDER))
             throw new Error('Tac SPA renderer wrapper manifest placeholder is missing');
+        if (!source.includes(COMPONENT_MANIFEST_PLACEHOLDER))
+            throw new Error('Tac SPA renderer component manifest placeholder is missing');
         if (!source.includes('__TACHYON_ASSET_PREFIX__'))
             throw new Error('Tac SPA renderer asset prefix placeholder is missing');
 
@@ -1194,6 +1201,7 @@ export default class Compiler {
         const rewrittenSource = source
             .replace(ROUTE_MANIFEST_PLACEHOLDER, escapedRouteManifestJSON)
             .replace(WRAPPER_MANIFEST_PLACEHOLDER, escapedWrapperManifestJSON)
+            .replace(COMPONENT_MANIFEST_PLACEHOLDER, escapedComponentManifestJSON)
             .replaceAll('__TACHYON_ASSET_PREFIX__', assetPrefixLiteral)
             // The staged entrypoint lives in a temporary directory. Point its
             // direct runtime imports back to their framework source directory.
@@ -1808,7 +1816,8 @@ export default class Compiler {
                     if (resolvedComponent) {
                         const filepath = Compiler.compMapping.get(resolvedComponent);
                         const isLazy = 'lazy' in attrs;
-                        if (filepath && !isLazy) {
+                        const isIsland = 'hydrate' in attrs || ':hydrate' in attrs;
+                        if (filepath && !isLazy && !isIsland) {
                             const existing = imports.get(filepath);
                             if (!existing || !existing.has(resolvedComponent)) {
                                 const keyword = existing ? 'const' : 'const';
@@ -1892,6 +1901,7 @@ export default class Compiler {
         const statics = [];
         /** @type {string[]} */
         const body = [];
+        const eagerComponentNames = new Set();
         for (const templateNode of elements) {
             if (templateNode.static)
                 statics.push(templateNode.static);
@@ -1922,9 +1932,23 @@ export default class Compiler {
             const events = [];
             const hash = genHash();
             const isLazy = /\blazy\b/.test(attrStr);
+            const hydrateMatch = attrStr.match(/(?:^|\s)hydrate="([^"]*)"/);
+            const hasHydrate = hydrateMatch !== null;
+            const dynamicHydrate = /(?:^|\s):hydrate=/.test(attrStr)
+                || hydrateMatch?.[1]?.startsWith('${');
+            if (dynamicHydrate) {
+                throw new Error(`Invalid Tac island <${component}> in '${publicPath}': hydrate must be a static literal (${Compiler.hydrationPolicies.join(', ')}).`);
+            }
+            const hydrationPolicy = hydrateMatch?.[1] ?? null;
+            if (hasHydrate && (!hydrationPolicy || !Compiler.hydrationPolicies.includes(hydrationPolicy))) {
+                throw new Error(`Invalid Tac island <${component}> in '${publicPath}': hydrate="${hydrationPolicy ?? ''}" is unsupported; expected ${Compiler.hydrationPolicies.join(', ')}.`);
+            }
+            if (hydrationPolicy && isLazy) {
+                throw new Error(`Invalid Tac island <${component}> in '${publicPath}': hydrate and lazy cannot be combined.`);
+            }
             const renderName = component.replaceAll('-', '_');
             for (const [, key, value] of matches) {
-                if (key === 'lazy')
+                if (key === 'lazy' || key === 'hydrate')
                     continue;
                 // Event handlers have already been compiled to `data-tac-on-*`
                 // markers by formatAttr; carry them onto the component's host div.
@@ -1962,23 +1986,59 @@ export default class Compiler {
             }
             const filepath = Compiler.compMapping.get(component);
             const runtimeModulePath = Compiler.assetPath(`/components/${filepath}`);
-            // Hoist the host id so it can be both the div id and the key under which
-            // this component's render closure is registered for scoped re-render.
+            if (hydrationPolicy) {
+                const hostVar = `__tc_island_host_${hash}`;
+                const componentIdVar = `__tc_island_component_${hash}`;
+                const propsVar = `__tc_island_props_${hash}`;
+                if (hydrationPolicy === 'never') {
+                    return `
+                const ${componentIdVar} = tc_generateId('${hash}', 'island').slice(3)
+                const ${hostVar} = 'tc-' + ${componentIdVar} + '-0'
+                const ${propsVar} = ${propsObj}
+                elements += \`<div id="\${${hostVar}}" data-tac-island-static data-tac-scope="${component}">\`
+                if (isServer) {
+                    const __tc_island_factory_${hash} = await __tc_helpers__.loadTacModule(${JSON.stringify(runtimeModulePath)})
+                    render = await __tc_island_factory_${hash}(${propsVar})
+                    elements += await render(elemId, event, ${componentIdVar})
+                }
+                elements += '</div>'
+                `;
+                }
+                return `
+                const ${componentIdVar} = tc_generateId('${hash}', 'island').slice(3)
+                const ${hostVar} = 'tc-' + ${componentIdVar} + '-0'
+                const ${propsVar} = ${propsObj}
+                elements += \`<div id="\${${hostVar}}" data-tac-island data-tac-scope="${component}" data-tac-component-id="\${${componentIdVar}}" data-tac-module="${runtimeModulePath}" data-tac-hydrate="${hydrationPolicy}" data-tac-props="\${tc_serializeIslandProps('${component}', ${propsVar})}">\`
+                if (isServer) {
+                    const __tc_island_factory_${hash} = await __tc_helpers__.loadTacModule(${JSON.stringify(runtimeModulePath)})
+                    render = await __tc_island_factory_${hash}(${propsVar})
+                    elements += await render(elemId, event, ${componentIdVar})
+                }
+                elements += '</div>'
+                `;
+            }
+            eagerComponentNames.add(component);
+            // Give every rendered occurrence its own component scope. A static
+            // template hash is shared by component calls inside a loop; using it
+            // as the child compId made every occurrence generate identical
+            // descendant event ids and dispatch the same event multiple times.
             const hostVar = `__tc_host_${hash}`;
+            const componentIdVar = `__tc_component_${hash}`;
             return `
-                const ${hostVar} = tc_generateId('${hash}', 'id')
+                const ${componentIdVar} = tc_generateId('${hash}', 'component').slice(3)
+                const ${hostVar} = 'tc-' + ${componentIdVar} + '-0'
                 elements += \`<div id="\${${hostVar}}" data-tac-scope="${component}" data-tac-module="${runtimeModulePath}" ${events.join(' ')}>\`
                 const __tc_child_props_${hash} = ${propsObj}
                 const __tc_child_props_sig_${hash} = JSON.stringify(__tc_child_props_${hash})
-                if(!compRenders.has('${hash}') || compRenderProps.get('${hash}') !== __tc_child_props_sig_${hash}) {
+                if(!compRenders.has(${componentIdVar}) || compRenderProps.get(${componentIdVar}) !== __tc_child_props_sig_${hash}) {
                     render = await ${renderName}(__tc_child_props_${hash})
-                    compRenders.set('${hash}', render)
-                    compRenderProps.set('${hash}', __tc_child_props_sig_${hash})
+                    compRenders.set(${componentIdVar}, render)
+                    compRenderProps.set(${componentIdVar}, __tc_child_props_sig_${hash})
                 } else {
-                    render = compRenders.get('${hash}')
+                    render = compRenders.get(${componentIdVar})
                 }
-                __tc_helpers__.registerComponentRender(${hostVar}, render, '${hash}')
-                elements += await render(elemId, event, '${hash}')
+                __tc_helpers__.registerComponentRender(${hostVar}, render, ${componentIdVar})
+                elements += await render(elemId, event, ${componentIdVar})
                 elements += '</div>'
             `;
         });
@@ -1995,8 +2055,7 @@ export default class Compiler {
         const factoryBindings = [...dynamicImportBindings];
         // Add component module imports referenced by HTML template component tags
         const seenBindings = new Set(factoryBindings);
-        for (const match of renderSource.matchAll(/data-tac-scope="([^"]+)"/g)) {
-            const componentName = match[1];
+        for (const componentName of eagerComponentNames) {
             const filepath = Compiler.compMapping.get(componentName);
             if (!filepath) continue;
             const bindingName = componentName.replaceAll('-', '_');
@@ -2067,7 +2126,7 @@ with (__tc_scope__) {
     const compRenderProps = new Map();
 
     return async function(elemId, event, compId) {
-        const counters = { id: {}, ev: {}, bind: {}, persist: {} };
+        const counters = { id: {}, ev: {}, bind: {}, persist: {}, island: {}, component: {} };
         const tc_componentRootId = compId
             ? (String(compId).startsWith('tc-') ? String(compId) : 'tc-' + compId + '-0')
             : null;
@@ -2129,6 +2188,49 @@ with (__tc_scope__) {
 
         const tc_escapeText = tc_escapeHtml;
         const tc_escapeAttr = tc_escapeHtml;
+
+        const tc_assertIslandJSON = (value, path, seen) => {
+            if (value === null || typeof value === 'string' || typeof value === 'boolean')
+                return;
+            if (typeof value === 'number') {
+                if (Number.isFinite(value)) return;
+                throw new TypeError(\`\${path} contains a non-finite number\`);
+            }
+            if (typeof value !== 'object')
+                throw new TypeError(\`\${path} contains unsupported \${typeof value}\`);
+            if (seen.has(value))
+                throw new TypeError(\`\${path} contains a circular reference\`);
+            seen.add(value);
+            if (Array.isArray(value)) {
+                for (let index = 0; index < value.length; index++)
+                    tc_assertIslandJSON(value[index], \`\${path}[\${index}]\`, seen);
+            }
+            else {
+                const prototype = Object.getPrototypeOf(value);
+                if (prototype !== Object.prototype && prototype !== null)
+                    throw new TypeError(\`\${path} must contain only plain objects\`);
+                for (const key of Object.keys(value))
+                    tc_assertIslandJSON(value[key], \`\${path}.\${key}\`, seen);
+            }
+            seen.delete(value);
+        };
+
+        const tc_serializeIslandProps = (component, value) => {
+            try {
+                tc_assertIslandJSON(value, \`<\${component}> props\`, new WeakSet());
+                const serialized = JSON.stringify(value);
+                if (serialized === undefined)
+                    throw new TypeError('the props value produced undefined');
+                return encodeURIComponent(serialized);
+            }
+            catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                throw new TypeError(
+                    \`Tac island <\${component}> props must be JSON-serializable: \${reason}\`,
+                    { cause: error }
+                );
+            }
+        };
 
         let elements = '';
         let render;
@@ -2241,6 +2343,11 @@ ${transformed}
             .replace(/\bnotifications\.show\(/g, 'this.tac.__native.notifications.show(')
             .replace(/\bmedia\.getUserMedia\(/g, 'this.tac.__native.media.getUserMedia(')
             .replace(/\bhost\.on\(/g, 'this.tac.__native.host.on(')
+            .replace(/\bhost\.invoke\(/g, 'this.tac.__native.host.invoke(')
+            .replace(/\bshortcuts\./g, 'this.tac.__native.shortcuts.')
+            .replace(/\bappWindow\./g, 'this.tac.__native.appWindow.')
+            .replace(/\bcontentSurface\./g, 'this.tac.__native.contentSurface.')
+            .replace(/\bscreenCapture\./g, 'this.tac.__native.screenCapture.')
             .replace(/\bcapabilities\.supports\(/g, 'this.tac.__native.capabilities.supports(')
             .replace(/\bcapabilities\.state\(/g, 'this.tac.__native.capabilities.state(')
     }
@@ -2276,7 +2383,11 @@ const __tc_noopHelpers__ = {
         geolocation: { current: () => __tc_nativeUnavailable__('geo.current') },
         notifications: { show: () => __tc_nativeUnavailable__('notify.show') },
         media: { getUserMedia: () => __tc_nativeUnavailable__('media.getUserMedia') },
-        host: { on: () => () => {} },
+        host: { on: () => () => {}, invoke: () => __tc_nativeUnavailable__('host.invoke') },
+        shortcuts: { register: () => __tc_nativeUnavailable__('shortcuts.register'), unregister: () => __tc_nativeUnavailable__('shortcuts.unregister'), unregisterAll: () => __tc_nativeUnavailable__('shortcuts.unregisterAll'), list: () => __tc_nativeUnavailable__('shortcuts.list') },
+        appWindow: { state: () => __tc_nativeUnavailable__('window.state'), setAlwaysOnTop: () => __tc_nativeUnavailable__('window.alwaysOnTop'), setOpacity: () => __tc_nativeUnavailable__('window.opacity'), setClickThrough: () => __tc_nativeUnavailable__('window.clickThrough'), setCaptureProtection: () => __tc_nativeUnavailable__('window.captureProtection') },
+        contentSurface: { open: () => __tc_nativeUnavailable__('contentSurface.open'), navigate: () => __tc_nativeUnavailable__('contentSurface.navigate'), state: () => __tc_nativeUnavailable__('contentSurface.state'), goBack: () => __tc_nativeUnavailable__('contentSurface.goBack'), goForward: () => __tc_nativeUnavailable__('contentSurface.goForward'), reload: () => __tc_nativeUnavailable__('contentSurface.reload'), close: () => __tc_nativeUnavailable__('contentSurface.close') },
+        screenCapture: { state: () => __tc_nativeUnavailable__('screenCapture.state'), listWindows: () => __tc_nativeUnavailable__('screenCapture.listWindows'), captureWindow: () => __tc_nativeUnavailable__('screenCapture.captureWindow') },
         web: {
             localStorage: { getItem: (_key, fallback) => fallback, setItem: () => {}, removeItem: () => {} },
             sessionStorage: { getItem: (_key, fallback) => fallback, setItem: () => {}, removeItem: () => {} },

@@ -28,7 +28,7 @@ const ROUTES = {
     '/': {
         file: 'index.html',
         title: 'Tachyon — the polyglot full-stack framework for ty',
-        description: 'Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Render reactive pages and components with Tac, serve routes in JavaScript, TypeScript, Python, Rust and more with Yon, and persist documents, realtime mailboxes and telemetry with FYLO.',
+        description: 'Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Author strict HTML that becomes reactive browser DOM or native SwiftUI, Compose, WinUI and GTK controls; serve polyglot Yon routes and persist data with FYLO.',
     },
     '/atlas': {
         file: 'atlas/index.html',
@@ -74,7 +74,7 @@ const ROUTES = {
     '/docs': {
         file: 'docs/index.html',
         title: 'Documentation — Tachyon',
-        description: 'Guides and reference for building full-stack apps with Tachyon: file-system routing, polyglot backends, the Tac rendering model, components, and FYLO storage.',
+        description: 'Guides for building Tachyon apps with file-system routing, island hydration, native-by-default HTML rendering, polyglot Tac and Yon code, and FYLO storage.',
     },
     '/docs/_topic': {
         file: 'docs/_topic/index.html',
@@ -86,7 +86,7 @@ const ROUTES = {
 const attr = (value) => String(value)
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 
-/** JSON-LD is embedded in a <script>; escape `<` so a value can't break out of the tag. */
+/** @param {unknown} data JSON-LD is embedded in a <script>; escape `<` so a value can't break out of the tag. */
 const jsonLd = (data) => JSON.stringify(data).replaceAll('<', '\\u003c');
 
 /** Site-wide structured data (brand entity + site), emitted once on the homepage. */
@@ -148,7 +148,12 @@ function headFor(route, meta) {
     return tags.filter(Boolean).map((tag) => `    ${tag}`).join('\n');
 }
 
-/** Inject the SEO <head> block (and force the title) into one prerendered file. */
+/**
+ * Inject the SEO <head> block (and force the title) into one prerendered file.
+ * @param {string} webRoot
+ * @param {string} route
+ * @param {{ file: string, title?: string, description?: string, noindex?: boolean }} meta
+ */
 async function applySeo(webRoot, route, meta) {
     const file = path.join(webRoot, meta.file);
     let html = await readFile(file, 'utf8').catch(() => null);
@@ -185,4 +190,10 @@ export async function postBundle({ targetRoots }) {
     await writeFile(path.join(webRoot, 'sitemap.xml'), sitemapXml());
 }
 
-export default { postBundle };
+// Custom elements keep their authored HTML API while declaring the semantic
+// schema node used by strict native bundles.
+export const nativeUIAdapters = {
+    'w-app-bar': 'header',
+};
+
+export default { nativeUIAdapters, postBundle };

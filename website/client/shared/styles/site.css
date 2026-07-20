@@ -5,6 +5,9 @@
   --tachyon-from: #0ea5e9;
   --tachyon-to: #14b8a6;
   --tachyon-gradient: linear-gradient(120deg, var(--tachyon-from), var(--tachyon-to));
+  /* Keep supporting labels legible across the site. DuVay's default xs token
+     is 11px, below this product's 12px minimum. */
+  --w-font-xs: 0.75rem;
 }
 
 body {
@@ -166,27 +169,15 @@ body[data-platform="desktop"] {
   }
 }
 
-/* Non-desktop viewports hide the scrollbar for a native app feel. */
-@media (max-width: 1024px) {
-  html {
-    scrollbar-width: none;
-  }
-
-  ::-webkit-scrollbar {
-    width: 0;
-    height: 0;
-    display: none;
-  }
-}
-
-/* Native desktop bundles hide it too — the window is the app, not a web
-   page. Browsers (data-platform="web") keep their scrollbars. */
-html:has(body[data-platform="desktop"]) {
+/* Scrolling stays available while browser and native scrollbars remain hidden. */
+html,
+body {
   scrollbar-width: none;
 }
 
-body[data-platform="desktop"]::-webkit-scrollbar,
-body[data-platform="desktop"] ::-webkit-scrollbar {
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;

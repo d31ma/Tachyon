@@ -62,6 +62,25 @@ async function createHtmlShellFixture() {
     await writeFile(path.join(root, 'client', 'pages', 'docs', 'tac.html'), `<script>document.title = "Fixture Docs"</script><p>Docs page</p>`);
     return root;
 }
+async function createIslandFixture() {
+    const root = await mkdtemp(path.join(tmpdir(), 'tachyon-islands-'));
+    tempDirs.push(root);
+    await mkdir(path.join(root, 'client', 'pages'), { recursive: true });
+    await mkdir(path.join(root, 'client', 'components', 'islands', 'counter'), { recursive: true });
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+        name: 'tachyon-islands-fixture',
+        private: true,
+    }, null, 2));
+    await writeFile(
+        path.join(root, 'client', 'components', 'islands', 'counter', 'tac.html'),
+        '<button class="counter">{label}</button>',
+    );
+    await writeFile(
+        path.join(root, 'client', 'pages', 'tac.html'),
+        '<script>const labels = ["One", "Two"]</script><main><loop :for="label of labels"><islands-counter hydrate="visible" :label="label" /></loop><islands-counter hydrate="never" label="Static" /></main>',
+    );
+    return root;
+}
 async function createSeparatedStructureFixture() {
     const root = await mkdtemp(path.join(tmpdir(), 'tachyon-separated-'));
     tempDirs.push(root);
@@ -723,6 +742,55 @@ timedTest('tac.bundle prerenders HTML routes into static documents', { timeout: 
     expect(docs).toContain('<title>Fixture Docs</title>');
     expect(docs).toContain('>Docs page</p>');
     expect(docs).not.toContain('class="shell"');
+});
+timedTest('tac.bundle prerenders populated island boundaries and packages the island runtime', { timeout: 20000 }, async () => {
+    const cwd = await createIslandFixture();
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe',
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited,
+    ]);
+    if (exitCode !== 0)
+        throw new Error(stderr);
+    const html = await readFile(webDistPath(cwd, 'index.html'), 'utf8');
+    const runtime = await readFile(webDistPath(cwd, 'spa-renderer.js'), 'utf8');
+    expect(html).toContain('data-tac-island');
+    expect(html).toContain('data-tac-hydrate="visible"');
+    expect(html).toContain('>One</button>');
+    expect(html).toContain('>Two</button>');
+    const componentIds = [...html.matchAll(/data-tac-component-id="([^"]+)"/g)].map((match) => match[1]);
+    expect(componentIds).toHaveLength(2);
+    expect(new Set(componentIds).size).toBe(2);
+    expect(html).toContain('data-tac-island-static');
+    expect(html).toContain('>Static</button>');
+    expect(runtime).toContain('data-tac-hydrated');
+    expect(runtime).toContain('Failed to hydrate island');
+    expect(runtime).toContain('/components/islands/counter/tac.js');
+    expect(runtime).not.toContain('__tachyonComponentPlaceholder');
+});
+timedTest('tac.bundle rejects lossy non-JSON island props with an actionable path', { timeout: 20000 }, async () => {
+    const cwd = await createIslandFixture();
+    await writeFile(
+        path.join(cwd, 'client', 'pages', 'tac.html'),
+        '<script>const bad = { callback: () => {} }</script><islands-counter hydrate="load" :label="bad" />',
+    );
+    const proc = Bun.spawn(['bun', bundleEntrypoint], {
+        cwd,
+        stdout: 'pipe',
+        stderr: 'pipe',
+    });
+    const [_stdout, stderr, exitCode] = await Promise.all([
+        decode(proc.stdout),
+        decode(proc.stderr),
+        proc.exited,
+    ]);
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toMatch(/islands-counter.*props\.label\.callback.*unsupported function/i);
 });
 timedTest('tac.bundle defaults to the web target without emitting target manifests', { timeout: 20000 }, async () => {
     const cwd = await createFixture();

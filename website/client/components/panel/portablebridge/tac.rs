@@ -15,7 +15,7 @@ impl PortableBridge {
             web_status: "checking browser",
             stored_value: "not read",
             device_status: "request app().info() to inspect the target",
-            mobile_status: "share and haptics require a mobile bundle capability",
+            mobile_status: "share and haptics await native-tree adapters",
             file_status: "native filesystem has not been inspected",
             clipboard_status: "clipboard bridge has not been requested",
             permission_status: "inspect location permission state",
@@ -43,7 +43,7 @@ impl PortableBridge {
 
     async fn test_mobile(&mut self) {
         if !capabilities().supports("share.text") || !capabilities().supports("haptics.impact") {
-            self.mobile_status = "build with share.text,haptics.impact";
+            self.mobile_status = "unavailable until native-tree adapters are installed";
             return;
         }
         await share().text("Tachyon companion mobile bridge");

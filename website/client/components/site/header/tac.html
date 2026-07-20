@@ -3,7 +3,7 @@
     <a href="/" class="w-row align-center ga-2 mr-auto" aria-label="Tachyon home">
       <img class="brand-mark" src="/shared/assets/logo.svg" alt="" width="28" height="28" />
       <span class="brand-name">TACHYON</span>
-      <w-chip size="x-small" color="success">{release}</w-chip>
+      <w-chip size="x-small" color="success">Tac + Yon</w-chip>
     </a>
 
     <nav class="w-row align-center ga-1 only-desktop" aria-label="Primary navigation">
@@ -13,7 +13,11 @@
     </nav>
 
     <w-btn variant="text" size="sm" w-theme-toggle aria-label="Switch color theme">
-      ◐<span class="w-hide-phone"> Theme</span>
+      <svg class="theme-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+        <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.75" />
+        <path d="M12 3.5a8.5 8.5 0 0 0 0 17Z" fill="currentColor" />
+      </svg>
+      <span class="w-hide-phone">Theme</span>
     </w-btn>
     <w-btn variant="text" size="sm" href="https://github.com/d31ma/Tachyon" target="_blank" rel="noopener" class="w-hide-phone">GitHub</w-btn>
 
@@ -28,12 +32,12 @@
       <span class="menu-icon menu-icon-open" aria-hidden="true">☰</span>
       <span class="menu-icon menu-icon-close" aria-hidden="true">✕</span>
     </button>
+
+    <nav id="mobile-menu" class="header-mobile-menu only-below-desktop" aria-label="Mobile navigation" w-dropdown>
+      <w-btn href="/" variant="text" class="mobile-menu-link">Home</w-btn>
+      <w-btn href="/atlas" variant="text" class="mobile-menu-link">Atlas</w-btn>
+      <w-btn href="/docs" variant="text" class="mobile-menu-link">Docs</w-btn>
+      <w-btn href="https://github.com/d31ma/Tachyon" target="_blank" rel="noopener" variant="text" class="mobile-menu-link">GitHub</w-btn>
+    </nav>
   </w-container>
 </w-app-bar>
-
-<nav id="mobile-menu" class="header-mobile-menu only-below-desktop" aria-label="Mobile navigation" w-dropdown>
-  <w-btn href="/" variant="text" class="mobile-menu-link">Home</w-btn>
-  <w-btn href="/atlas" variant="text" class="mobile-menu-link">Atlas</w-btn>
-  <w-btn href="/docs" variant="text" class="mobile-menu-link">Docs</w-btn>
-  <w-btn href="https://github.com/d31ma/Tachyon" target="_blank" rel="noopener" variant="text" class="mobile-menu-link">GitHub</w-btn>
-</nav>

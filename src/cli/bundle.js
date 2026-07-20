@@ -4,8 +4,11 @@ import Router from "../server/http/route-handler.js";
 import Compiler from "../compiler/index.js";
 import { generateNativeHost } from "../compiler/native/index.js";
 import { resolveNativeAppConfig } from "../compiler/native/config.js";
+import { resolveNativeHostExtensions } from "../compiler/native/extensions.js";
 import { hasNativePackager, packageNativeArtifact } from "../compiler/native/packagers.js";
 import { NATIVE_TARGET_SET, readTargetArg, resolveBundleTargets } from "../shared/native-targets.js";
+import { readRenderModeArg, resolveRenderModes } from "../shared/render-mode.js";
+import NativeUIBundleCompiler from "../compiler/native-ui/bundle-compiler.js";
 import logger from "../server/observability/logger.js";
 import { access, chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat } from "fs/promises";
 import { watch } from "fs";
@@ -33,6 +36,10 @@ const cspCheck = process.argv.includes('--csp-check')
 const packageNativeArtifacts = !process.argv.includes('--skip-package')
     && (process.argv.includes('--package') || process.env.NODE_ENV === 'production');
 const bundleTargets = resolveBundleTargets(readTargetArg(process.argv) ?? process.env.TAC_BUNDLE_TARGET ?? process.env.TAC_TARGET);
+const renderModes = resolveRenderModes(
+    bundleTargets,
+    readRenderModeArg(process.argv) ?? process.env.TAC_RENDER_MODE,
+);
 process.env.TAC_BUNDLE_TARGETS = bundleTargets.join(',');
 const WATCH_DEBOUNCE_MS = 200;
 const BUILD_CONCURRENCY = 8;
@@ -105,21 +112,25 @@ async function resolveAppVersion() {
     catch { }
     return '1.0.0';
 }
-/** @returns {Promise<((context: { distRoot: string, targets: BundleTarget[], targetRoots: Record<string, string> }) => Promise<void> | void) | null>} */
-async function loadPostBundleHook() {
+/** @type {Promise<Record<string, any>> | null} */
+let tacConfigPromise = null;
+async function loadTacConfig() {
+    if (tacConfigPromise) return tacConfigPromise;
     const configPath = path.resolve(process.cwd(), 'tac.config.js');
-    try {
-        await access(configPath);
-    }
-    catch {
-        return null;
-    }
-    const config = (await import(`${pathToFileURL(configPath).href}?t=${Date.now()}`)).default;
-    return typeof config?.postBundle === 'function' ? config.postBundle : null;
+    tacConfigPromise = (async () => {
+        try { await access(configPath); }
+        catch (error) {
+            if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') return {};
+            throw error;
+        }
+        const config = (await import(`${pathToFileURL(configPath).href}?t=${Date.now()}`)).default;
+        return config && typeof config === 'object' ? config : {};
+    })();
+    return tacConfigPromise;
 }
 /** @param {string} distRoot */
 async function runPostBundleHook(distRoot = activeDistPath) {
-    const hook = await loadPostBundleHook();
+    const hook = (await loadTacConfig()).postBundle;
     if (!hook)
         return;
     await hook({
@@ -185,23 +196,41 @@ export async function runBuild() {
     const stagingPath = await mkdtemp(path.join(path.dirname(distPath), `${path.basename(distPath)}-staging-`));
     const previousTargetEnv = process.env.TAC_BUNDLE_TARGETS;
     const previousNativeCapabilitiesEnv = process.env.TAC_NATIVE_CAPABILITIES;
+    const previousDevicePermissionsEnv = process.env.TAC_NATIVE_DEVICE_PERMISSIONS;
+    const previousExtensionCapabilitiesEnv = process.env.TAC_NATIVE_EXTENSION_CAPABILITIES;
     try {
         let routeCount = 0;
         const appName = await resolveAppName();
         const appVersion = await resolveAppVersion();
         const nativeConfig = await resolveNativeAppConfig();
+        const tacConfig = await loadTacConfig();
         const { devicePermissions, nativeCapabilities } = nativeConfig;
+        const nativeHostExtensions = Array.isArray(tacConfig.nativeHostExtensions) ? tacConfig.nativeHostExtensions : [];
+        const resolvedNativeHostExtensions = await resolveNativeHostExtensions(process.cwd(), nativeHostExtensions);
         process.env.TAC_NATIVE_CAPABILITIES = nativeCapabilities.join(',');
+        process.env.TAC_NATIVE_DEVICE_PERMISSIONS = devicePermissions.join(',');
         /** @type {Array<{ target: BundleTarget, outputRoot: string }>} */
         const nativeHosts = [];
         for (const target of bundleTargets) {
             Router.resetStaticState();
             process.env.TAC_BUNDLE_TARGETS = target;
+            process.env.TAC_NATIVE_EXTENSION_CAPABILITIES = resolvedNativeHostExtensions
+                .flatMap((extension) => extension.operations
+                    .filter((operation) => operation.targets.includes(target))
+                    .map((operation) => operation.name))
+                .join(',');
             activeDistPath = path.join(stagingPath, target);
             await mkdir(activeDistPath, { recursive: true });
             await benchPhase('compile', () => Compiler.createStaticRoutes());
             await benchPhase('write', () => runWithConcurrency(Object.keys(Router.reqRoutes), BUILD_CONCURRENCY, buildRouteOutput));
             await benchPhase('prerender', () => Compiler.prerenderStaticPages(activeDistPath));
+            if (renderModes[target] === 'native') {
+                await benchPhase('native-ui', () => NativeUIBundleCompiler.compile({
+                    distRoot: activeDistPath,
+                    routes: Compiler.getHtmlRoutes(),
+                    adapters: tacConfig.nativeUIAdapters,
+                }));
+            }
             if (!skipNativeHost && NATIVE_TARGET_SET.has(target)) {
                 nativeHosts.push({
                     target,
@@ -225,7 +254,20 @@ export async function runBuild() {
                 version: appVersion,
                 devicePermissions,
                 nativeCapabilities,
+                permissionOrigins: nativeConfig.permissionOrigins,
+                managedContentOrigins: nativeConfig.managedContentOrigins,
+                nativeHostExtensions,
+                nativeUIAdapters: tacConfig.nativeUIAdapters,
             });
+            if (typeof tacConfig.postNativeHost === 'function') {
+                const manifest = JSON.parse(await readFile(path.join(outputRoot, 'tachyon.host.json'), 'utf8'));
+                await tacConfig.postNativeHost({
+                    target,
+                    projectRoot: outputRoot,
+                    resourcesRoot: path.join(outputRoot, 'Resources'),
+                    manifest,
+                });
+            }
             // Native targets ship the host at dist/<target>/. Replace the
             // standalone web bundle (already embedded in the host's Resources/)
             // with the generated host.
@@ -312,6 +354,10 @@ export async function runBuild() {
         process.env.TAC_BUNDLE_TARGETS = previousTargetEnv ?? bundleTargets.join(',');
         if (previousNativeCapabilitiesEnv === undefined) delete process.env.TAC_NATIVE_CAPABILITIES;
         else process.env.TAC_NATIVE_CAPABILITIES = previousNativeCapabilitiesEnv;
+        if (previousDevicePermissionsEnv === undefined) delete process.env.TAC_NATIVE_DEVICE_PERMISSIONS;
+        else process.env.TAC_NATIVE_DEVICE_PERMISSIONS = previousDevicePermissionsEnv;
+        if (previousExtensionCapabilitiesEnv === undefined) delete process.env.TAC_NATIVE_EXTENSION_CAPABILITIES;
+        else process.env.TAC_NATIVE_EXTENSION_CAPABILITIES = previousExtensionCapabilitiesEnv;
     }
 }
 /** @param {string} route */

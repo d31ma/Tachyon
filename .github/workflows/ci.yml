@@ -67,3 +67,35 @@ jobs:
           bun build --compile --target=bun-linux-x64 ./src/cli/index.js --outfile ty
           ./ty --version
           ./ty --help
+
+  windows-native:
+    name: Windows native host compile smoke
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install pinned WebView2 SDK
+        shell: pwsh
+        run: |
+          $sdkRoot = Join-Path $env:RUNNER_TEMP 'webview2-sdk'
+          nuget install Microsoft.Web.WebView2 `
+            -Version 1.0.4078.44 `
+            -Source https://api.nuget.org/v3/index.json `
+            -OutputDirectory $sdkRoot `
+            -ExcludeVersion `
+            -NonInteractive
+          "WEBVIEW2_SDK_ROOT=$sdkRoot\Microsoft.Web.WebView2" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Generate and compile the complete Windows host
+        run: bun scripts/windows-native-compile-smoke.js

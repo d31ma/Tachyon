@@ -7,6 +7,7 @@ export const DEVICE_PERMISSION_NAMES = Object.freeze([
     'microphone',
     'location',
     'notifications',
+    'screenCapture',
 ]);
 
 export const RAW_NATIVE_CAPABILITY_NAMES = Object.freeze([
@@ -37,6 +38,37 @@ function validateStringList(value, key, allowed) {
     return [...new Set(entries)].sort();
 }
 
+/** @param {unknown} value @param {string} key */
+function validateOriginList(value, key) {
+    if (value === undefined) return [];
+    if (!Array.isArray(value)) throw new Error(`${key} must be an array`);
+    return [...new Set(value.map((entry) => {
+        if (typeof entry !== 'string')
+            throw new Error(`${key} entries must be an exact HTTPS origin`);
+        let url;
+        try { url = new URL(entry); }
+        catch { throw new Error(`${key} entries must be an exact HTTPS origin`); }
+        if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash || entry.includes('*'))
+            throw new Error(`${key} entries must be an exact HTTPS origin`);
+        return url.origin;
+    }))].sort();
+}
+
+/** @param {unknown} value */
+function validatePermissionOrigins(value) {
+    if (value === undefined) return {};
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+        throw new Error('tachyon.permissionOrigins must be an object');
+    const source = /** @type {Record<string, unknown>} */ (value);
+    for (const key of Object.keys(source)) {
+        if (key !== 'camera' && key !== 'microphone')
+            throw new Error(`tachyon.permissionOrigins contains unsupported permission '${key}'`);
+    }
+    return Object.fromEntries(['camera', 'microphone']
+        .filter((key) => source[key] !== undefined)
+        .map((key) => [key, validateOriginList(source[key], `tachyon.permissionOrigins.${key}`)]));
+}
+
 /**
  * Reads the native security declarations from package.json. Missing package
  * metadata is allowed; malformed or unsupported declarations fail closed.
@@ -49,7 +81,7 @@ export async function resolveNativeAppConfig(root = process.cwd()) {
     }
     catch (error) {
         if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') {
-            return { devicePermissions: [], nativeCapabilities: [] };
+            return { devicePermissions: [], nativeCapabilities: [], permissionOrigins: {}, managedContentOrigins: [] };
         }
         throw error;
     }
@@ -71,5 +103,7 @@ export async function resolveNativeAppConfig(root = process.cwd()) {
     return {
         devicePermissions: validateStringList(config.devicePermissions ?? legacyConfig.devicePermissions, 'tachyon.devicePermissions', DEVICE_PERMISSION_NAMES),
         nativeCapabilities: validateStringList(config.nativeCapabilities ?? legacyConfig.nativeCapabilities, 'tachyon.nativeCapabilities', RAW_NATIVE_CAPABILITY_NAMES),
+        permissionOrigins: validatePermissionOrigins(config.permissionOrigins ?? legacyConfig.permissionOrigins),
+        managedContentOrigins: validateOriginList(config.managedContentOrigins ?? legacyConfig.managedContentOrigins, 'tachyon.managedContentOrigins'),
     };
 }

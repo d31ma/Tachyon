@@ -76,7 +76,13 @@ describe('homepage DOM', () => {
         expect(home.document.querySelector('.yon-languages')?.textContent).toContain('TypeScript')
         expect(home.document.querySelector('[data-tac-scope="home-targets"]')).toBeTruthy()
         expect(home.document.querySelector('.target-terminal pre code')?.textContent).toContain('ty bundle --target all')
-        expect([...cards].map((card) => card.getAttribute('title'))).toContain('Permissioned device APIs')
+        const titles = [...cards].map((card) => card.getAttribute('title'))
+        expect(titles).toContain('Native HTML rendering')
+        expect(titles).toContain('Island hydration')
+        expect(home.document.querySelector('.targets')?.textContent).toContain('real native controls')
+        expect(home.document.querySelector('.features-grid')?.textContent).toContain('unsupported subtrees in local WebView boundaries')
+        expect(home.document.querySelector('.targets')?.textContent).toContain('local WebView boundaries')
+        expect(home.document.querySelector('.target-terminal pre code')?.textContent).not.toContain('--render-mode')
     })
 
     test('links the primary destinations', () => {
@@ -92,6 +98,21 @@ describe('homepage DOM', () => {
 
         expect(source).toContain("closest('[href]')")
         expect(source).not.toContain("closest('a[href]')")
+    })
+
+    test('keeps the mobile menu in the same interactive boundary as its trigger', () => {
+        const trigger = home.document.querySelector('button.header-burger[aria-controls="mobile-menu"]')
+        const menu = home.document.querySelector('nav#mobile-menu[w-dropdown]')
+
+        expect(trigger?.closest('w-container')).toBe(menu?.closest('w-container'))
+    })
+
+    test('hides page scrollbars at every viewport size', async () => {
+        const source = await read('client/shared/styles/site.css')
+
+        expect(source).toContain('html,\nbody {\n  scrollbar-width: none;')
+        expect(source).toContain('html::-webkit-scrollbar')
+        expect(source).toContain('body::-webkit-scrollbar')
     })
 })
 

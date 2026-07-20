@@ -581,8 +581,9 @@ client/components/
 
 Companion scripts are portable controller artifacts. JavaScript, TypeScript,
 Dart, Rust, Kotlin, Swift, and C# companions can be bundled for web, macOS,
-Windows, Linux, iOS, and Android; the selected native host owns device
-integration rather than the companion language:
+Windows, Linux, iOS, and Android. Device calls stay capability-checked and
+transport-free in source; native targets reject them until the corresponding
+native-tree adapter exists:
 
 - `tac.js`
 - `tac.ts`
@@ -631,6 +632,67 @@ Template expressions run inside Tac's async render function, so `await` is
 available in interpolation, dynamic attributes, and control expressions. Prefer
 companion-script fields for uncached network data so rerenders do not repeatedly
 fetch the same resource.
+
+### Island hydration
+
+Add a static `hydrate` policy to a component occurrence when it should keep its
+server-rendered HTML but defer loading and activating its browser companion:
+
+```html
+<product-card :product="product" hydrate="visible" />
+<cart-summary hydrate="interaction" />
+<legal-notice hydrate="never" />
+```
+
+Every island is fully rendered on the server. On the initial browser load, Tac
+adopts that DOM in place rather than rendering it again, so deferred components
+remain visible and useful before their JavaScript runs.
+
+| Policy | Browser activation |
+| --- | --- |
+| `load` | As soon as the Tac runtime scans the document. |
+| `idle` | During `requestIdleCallback`, with a short timer fallback, or on earlier interaction. |
+| `visible` | When the island approaches the viewport (100px root margin), or on earlier interaction; immediately when `IntersectionObserver` is unavailable. |
+| `interaction` | On the first interaction inside the island. The triggering event is replayed after activation. |
+| `never` | Never. Tac emits static SSR HTML without browser module or props metadata for that occurrence. |
+
+The policy must be one of these five literal strings. Empty, bare, unsupported,
+or dynamic policies such as `:hydrate="policy"` are rejected at build time.
+`hydrate` and `lazy` describe different rendering contracts and cannot be
+combined on the same component. Omitting both preserves Tac's normal eager
+component behavior.
+
+Island props are serialized into HTML and are validated as strict JSON data:
+`null`, strings, booleans, finite numbers, arrays, and plain objects. Tac rejects
+`undefined`, functions, symbols, `BigInt`, non-finite numbers, circular
+references, and non-plain objects during prerender. The error identifies the
+component and property path that failed validation. Treat serialized props as
+public, non-authoritative browser input: do not put secrets in them, and do not
+use them as proof of identity, authorization, or server state. The client
+companion should initialize deterministically from the same props that produced
+the server HTML.
+
+Each component occurrence is its own boundary. Repeated islands, including
+islands rendered inside `<loop>`, receive independent identities and hydrate
+independently.
+
+If module loading or activation fails, Tac leaves the useful SSR DOM in place,
+marks the boundary with `data-tac-island-error`, and reports the error. A later
+interaction may retry activation. Captured events are replayed only after a
+successful activation; on failure, Tac restores safe native link navigation or
+form submission when one exists.
+
+Routes containing islands require their prerendered document. Navigating to one
+from the Tac SPA therefore performs a full document navigation instead of a
+client-side body morph. This preserves SSR adoption and guarantees that a
+`hydrate="never"` occurrence stays module-free in the browser.
+
+Tac's lossless pre-runtime event replay uses the small inline capture script
+emitted in the document `<head>`. A strict Content Security Policy that blocks
+inline scripts also blocks this early-capture window unless the generated script
+is allowed with an appropriate hash, nonce, or policy. Island activation still
+works after the external runtime loads, but interactions made before then cannot
+be replayed when the capture script is blocked.
 
 #### Literal braces in prose (`\{` / `\}`)
 
@@ -727,12 +789,17 @@ page size. This is automatic; components are the re-render boundary.
   not implicitly re-render content owned by its parent or siblings; publish a
   signal and let the other component subscribe (its own subtree then re-renders).
 - **Page-level state** (a companion on the page root) still re-renders the page.
+- **Active editing survives re-renders.** Tac keeps the focused `input`,
+  `textarea`, `select`, or `contenteditable` element's live value and selection
+  authoritative while a patch is pending. If the patch replaces that same
+  control, Tac transfers its editing state and restores focus; if the user moved
+  focus in the meantime, the newer target wins.
 - **Escape hatch:** call `rerender({ global: true })` to force a full-page
   re-render for the rare case a component must refresh content outside itself.
   Plain `rerender()` stays scoped to the calling component.
-- **Looped/repeated components** fall back to a full re-render of their container
-  (they share an internal id space, so isolated re-render isn't safe) — correct,
-  just not individually optimized.
+- **Looped/repeated components** receive an occurrence-specific render scope, so
+  their descendant handlers and component rerenders stay isolated even after
+  list replacement, filtering, or reordering.
 
 Example page:
 
@@ -857,129 +924,35 @@ required.
 
 ### Device Capabilities
 
-Tac keeps browser and device transport private. Every companion receives an
-implicit platform prelude: no `Tac` object, imports, or bridge handles appear
-in application code. JavaScript and TypeScript retain their browser globals;
-the other languages use the same capabilities with native casing. The compiler
-lowers those calls to one permissioned host bridge. Native hosts service device
-requests with operating-system APIs, while browser builds use standards-based
-implementations when available.
+Tac keeps browser and device transport private. Companion languages use an
+implicit platform prelude, so application source never imports a framework
+bridge or handles transport messages directly.
 
-```js
-localStorage.setItem('theme', 'calm')
-const language = navigator.language
-```
+The current capability catalog applies to the **web target**. Browser output
+provides standards-backed storage, network, clipboard, file selection,
+geolocation, notifications, and media APIs where the browser supports them.
+Capability checks fail closed when an operation is unavailable.
 
-```rust
-local_storage().set_item("theme", "calm");
-let language = navigator().language();
+Non-web targets now use the native-first renderer exclusively. They emit native
+controls and a DOM-free controller, but native-tree capability adapters are not
+implemented yet. To prevent an apparently successful bundle from shipping an
+unserviceable permission or privileged operation, native-first bundles reject
+these compatibility-only configuration keys:
 
-if app().is_available() {
-    let info = await app().info();
-}
-```
+- `tachyon.devicePermissions`
+- `tachyon.nativeCapabilities`
+- `tachyon.managedContentOrigins`
+- `nativeHostExtensions`
 
-```dart
-await clipboard.writeText('Copied from Tac');
-await localStorage.setItem('theme', 'calm');
-```
+Automatic local WebView boundaries are rendering islands only. They load
+bundled HTML, CSS, and component modules for an unsupported subtree, and do not
+receive an application-wide native bridge or silently expand device access.
 
-The portable prelude is deliberately small and coherent: `fetch`, local and
-session storage, navigator/location metadata, clipboard, FYLO collections,
-app metadata, external URLs, text-file selection, raw native filesystem access,
-desktop shell execution, mobile sharing/haptics, and `capabilities` checks.
-Its spelling follows the source language:
-
-- Rust: `local_storage()`, `session_storage()`, `fetch()`, `clipboard()`,
-  `file_system()`, `shell()`, `app()`, `browser()`, `file_picker()`, `fylo()`,
-  and `capabilities()`.
-- Kotlin and Swift: `localStorage`, `sessionStorage`, `fetch`, `clipboard`,
-  `fileSystem`, `shell`, `app`, `browser`, `filePicker`, `fylo`, and
-  `capabilities`.
-- C#: `LocalStorage`, `SessionStorage`, `FetchAsync`, `Clipboard`, `App`,
-  `FileSystem`, `Shell`, `Browser`, `FilePicker`, `Fylo`, and `Capabilities`.
-- Dart: `localStorage`, `sessionStorage`, `fetch`, `clipboard`, `app`,
-  `fileSystem`, `shell`, `browser`, `filePicker`, `fylo`, and `capabilities`.
-
-Android and iOS bundles service `clipboard`, `browser`, `share`, `haptics`,
-and sandbox-path discovery through their native SDKs. These remain portable source APIs: Rust uses
-`share().text(...)` and `haptics().impact()`, Kotlin/Swift/Dart use
-`share.text(...)` and `haptics.impact()`, and C# uses `Share.TextAsync(...)`
-and `Haptics.ImpactAsync()`. Enable them explicitly:
-
-```bash
-ty bundle --target android,ios
-```
-
-Camera/microphone capture, geolocation, notifications, file save, secure
-storage, and user verification are also available through the portable
-prelude. Media, location, and notifications use browser-standard APIs inside
-the native WebView and require explicit host privacy declarations. Secure
-storage and user verification use Keychain plus LocalAuthentication on macOS
-and iOS, and Android Keystore plus `BiometricPrompt` on Android. Contacts,
-calendar, Bluetooth, NFC, USB, push delivery, and window management remain
-outside the portable set.
-
-macOS, Windows, and Linux bundles service `app`, `clipboard`, and `browser`
-through their native hosts as well. This means the same companion call reaches
-`NSPasteboard`/`NSWorkspace`, the Windows Clipboard/Shell APIs, or GTK/WebKitGTK
-instead of relying on a browser fallback. Desktop sharing, notifications,
-window management, and OS-specific integrations remain separate capability
-families because there is no reliable common contract yet.
-
-Clipboard reads are asynchronous in portable companions because a browser or
-native host may require a permission prompt. Use `await` for any shim call that
-returns data or crosses the device boundary.
-
-Safe host capabilities are enabled automatically for their target. Use
-`capabilities` to detect whether a portable operation exists on the current
-bundle:
-
-```bash
-if capabilities().supports("clipboard.writeText") {
-    await clipboard().write_text("Ready");
-}
-```
-
-The bridge, not the companion language, handles target permission prompts and
-rejects capabilities unavailable on the current platform.
-
-Raw filesystem and shell operations are disabled by default. Opt in to the
-minimum required set in `package.json`; the bundle validates the declaration,
-bakes the same allowlist into the frontend and native host, and rejects direct
-bridge calls that are not enabled. `shell.exec` is supported only on macOS,
-Windows, and Linux. Distribute raw-capability apps only with trusted companion
-code, and still use feature detection for target-specific operations.
-
-```json
-{
-  "tachyon": {
-    "devicePermissions": ["camera", "microphone", "location", "notifications"],
-    "nativeCapabilities": ["fs.readText", "fs.readDir", "fs.stat", "fs.mkdir"]
-  }
-}
-```
-
-```rust
-if capabilities().supports("fs.readDir") {
-    let entries = await file_system().read_dir(".");
-}
-if capabilities().supports("fs.stat") {
-    let metadata = await file_system().stat("./notes.txt");
-}
-if capabilities().supports("shell.exec") {
-    let result = await shell().exec("git", ["status", "--short"]);
-}
-```
-
-`nativeCapabilities` accepts `fs.readText`, `fs.writeText`, `fs.readDir`,
-`fs.stat`, `fs.mkdir`, `fs.remove`, and `shell.exec`. `fs.remove` deletes files
-or directories recursively, so enable it only for trusted companion code.
-Unknown names and non-array declarations fail the build instead of being
-ignored. External URL requests accept HTTP(S) only, and native bridge messages
-are constrained to the generated app's main frame/origin where the platform
-exposes that distinction.
-
+Use browser feature detection and `capabilities.supports()` for web output.
+For non-web applications that need camera, biometrics, filesystem, managed
+remote content, or another privileged family, wait for or implement a concrete
+native-tree adapter; the bundle error names the unsupported configuration
+instead of degrading to the removed full-WebView host.
 ### Decorator Form
 
 The same context, lifecycle, and event helpers are also exposed as Stage 3 decorators. They move the wiring out of the constructor and onto the field or method that owns the value. Companion scripts can use them as bare identifiers — the Tachyon compiler auto-imports them when it sees the `@<name>` syntax, so no `import` line is needed in user code.
@@ -1524,23 +1497,52 @@ Tachyon's rooted terminology, used identically in code, docs, and the website:
 - **Companion language** — the language a Tac companion is written in:
   JavaScript, TypeScript, Dart, Rust, Kotlin, Swift, or C#.
 
-For native targets, `ty bundle` produces a native webview host at
+For non-web targets, `ty bundle` defaults to the greenfield native renderer at
 `dist/<target>/`:
 
 ```text
-dist/macos/      (macOS WKWebView host)
-dist/windows/    (Windows WebView2 host)
-dist/linux/      (Linux WebKitGTK host)
-dist/ios/        (iOS WKWebView host)
-dist/android/    (Android WebView host)
+dist/macos/      (SwiftUI host)
+dist/windows/    (WinUI host)
+dist/linux/      (GTK host)
+dist/ios/        (SwiftUI host)
+dist/android/    (Jetpack Compose host)
 ```
 
-These hosts are frontend-only shells: they load the static Tac files (embedded
-under `Resources/`) through the operating system's webview (`WKWebView`,
-WebView2, WebKitGTK, iOS `WKWebView`, or Android `WebView`). They do not embed
-or spawn a Yon backend. Pass `--skip-native-host` to emit the plain web bundle
-at `dist/<target>/` instead, or run `ty native-bundle --target <target>` later
-to turn an existing `dist/<target>/` web bundle into the native host in place.
+Application code still authors HTML. Tac lowers `<loop>`, `<logic>`, Tac
+components, and their bindings before native compilation, then emits a
+versioned native UI tree plus a DOM-free controller. Platform hosts map that
+tree to SwiftUI, Compose, WinUI, or GTK controls. Known standard HTML without a
+native mapping and unmapped Web Components automatically become isolated local
+WebView boundaries. A genuinely unknown non-HTML tag still fails the build, so
+typos do not silently ship. Use an object mapping when a Web Component
+represents an existing native semantic:
+
+```js
+// tac.config.js
+export default {
+  nativeUIAdapters: {
+    'w-app-bar': 'header',
+  },
+}
+```
+
+The emitted native node keeps `adapter: 'w-app-bar'` for platform-specific
+styling while using the shared `header` schema. The legacy array form remains
+available for custom platform adapters that consume the original tag directly.
+
+There is no render-mode flag: every non-web bundle is native-first. Tac control
+tags and components lower before fallback analysis, and a native adapter always
+wins. When fallback is necessary, the compiler captures the nearest unsupported
+subtree as one boundary; native-capable parents and siblings stay native. Pass
+`--skip-native-host` to retain the plain target bundle, and run
+`ty native-bundle --target <target>` later to generate a host in place. Native
+bundling never embeds or spawns a Yon backend.
+
+Native output includes `tachyon.native-ui.json` for the first frame and
+`tachyon.native-controller.js` for live render/event dispatch. HTML remains the
+only application-facing view language; the platform tree is compiler output.
+WebView boundaries load the app's bundled CSS and module entrypoints from local
+resources; native-capable siblings remain SwiftUI, Compose, WinUI, or GTK.
 
 ### Native artifact export (`.apk` / `.ipa` / `.app` / Linux binary)
 
@@ -1565,13 +1567,15 @@ and remains buildable by hand.
   signed build through your Apple Developer team instead.
 - **macOS** — requires the Xcode Command Line Tools (`swiftc`). Emits an
   ad-hoc-signed `dist/macos/<App>.app`.
-- **Linux** — requires CMake plus GTK/WebKitGTK development packages
-  (`apt-get install cmake libgtk-3-dev libwebkit2gtk-4.1-dev`), building on
-  Linux. Emits `dist/linux/<App>/` containing the executable and its
+- **Linux** — requires CMake, GTK 3, json-glib, and network access for the
+  pinned QuickJS source. WebKitGTK 4.1 is required only when the compiled UI
+  contains an inferred WebView boundary. Build on Linux; output is
+  `dist/linux/<App>/` with the executable and `Resources/`.
+- **Windows** — requires Visual Studio 2022 with the C++ workload, CMake, the
+  Windows App SDK, and network access for the pinned QuickJS source. WebView2
+  is additionally required when the compiled UI contains an inferred boundary.
+  Build on Windows; output is `dist/windows/<App>/` with `<App>.exe` and
   `Resources/`.
-- **Windows** — requires Visual Studio 2022 with the C++ workload, CMake,
-  and the WebView2 SDK, building on Windows. Emits `dist/windows/<App>/`
-  containing `<App>.exe` and its `Resources/`.
 
 `ty serve --no-bundle` or `YON_SKIP_BUNDLE=true` starts the server without
 regenerating `dist/`, which is useful when another build pipeline owns frontend
@@ -1604,7 +1608,7 @@ dist/
     imports.js
     imports.css
   ios/
-    Resources/*
+    WebBundle/*
     Sources/*
     tachyon.host.json
   android/
@@ -1631,13 +1635,13 @@ dist/
 <tr><td><code>ty serve</code></td><td>Detects <code>client/</code> and <code>server/</code> contents, serves frontend, backend, or full-stack app</td></tr>
 <tr><td><code>ty bundle</code></td><td>Builds <code>dist/</code></td></tr>
 <tr><td><code>ty bundle --csp-check</code></td><td>Fails before the atomic output swap when staged JavaScript requires CSP <code>'unsafe-eval'</code></td></tr>
-<tr><td><code>ty bundle --target MacOS</code></td><td>Builds a macOS <code>WKWebView</code> host at <code>dist/macos</code></td></tr>
-<tr><td><code>ty bundle --target linux</code></td><td>Builds a Linux WebKitGTK host at <code>dist/linux</code></td></tr>
-<tr><td><code>ty bundle --target android</code></td><td>Builds an Android WebView host at <code>dist/android</code></td></tr>
-<tr><td><code>ty bundle --target ios</code></td><td>Builds an iOS <code>WKWebView</code> host at <code>dist/ios</code></td></tr>
-<tr><td><code>ty bundle --target all</code></td><td>Builds the web bundle and native webview hosts for web, macOS, Windows, Linux, Android, and iOS</td></tr>
+<tr><td><code>ty bundle --target MacOS</code></td><td>Builds the default SwiftUI host at <code>dist/macos</code></td></tr>
+<tr><td><code>ty bundle --target linux</code></td><td>Builds the default GTK host at <code>dist/linux</code></td></tr>
+<tr><td><code>ty bundle --target android</code></td><td>Builds the default Jetpack Compose host at <code>dist/android</code></td></tr>
+<tr><td><code>ty bundle --target ios</code></td><td>Builds the default SwiftUI host at <code>dist/ios</code></td></tr>
+<tr><td><code>ty bundle --target all</code></td><td>Builds web plus native-toolkit hosts for macOS, Windows, Linux, Android, and iOS</td></tr>
 <tr><td><code>ty bundle --target macos --skip-native-host</code></td><td>Builds the plain web bundle at <code>dist/macos</code> without generating the native host</td></tr>
-<tr><td><code>ty native-bundle --target macos</code></td><td>Turns an existing <code>dist/macos</code> web bundle into the native host in place</td></tr>
+<tr><td><code>ty native-bundle --target macos</code></td><td>Turns an existing native target bundle into the default native-toolkit host in place</td></tr>
 <tr><td><code>ty bundle --watch</code></td><td>Keeps <code>dist/</code> fresh</td></tr>
 <tr><td><code>ty preview</code></td><td>Serves <code>dist/web</code></td></tr>
 <tr><td><code>ty preview --target macos</code></td><td>Serves the selected target's previewable web assets, usually <code>dist/&lt;target&gt;/Resources</code> for native hosts</td></tr>
@@ -1645,11 +1649,11 @@ dist/
 </table>
 
 `ty preview --target <native>` checks local prerequisites before starting. For
-example, macOS preview requires macOS plus `swiftc`, iOS requires Xcode,
-Linux requires GTK/WebKitGTK development packages, Windows requires WebView2,
-and Android requires an Android SDK plus JDK. Use `--skip-native-checks` only
-when you intentionally want to serve the generated web assets without verifying
-the native host toolchain.
+example, macOS preview requires macOS plus `swiftc`, iOS requires Xcode, Linux
+requires GTK and json-glib (plus WebKitGTK when a boundary exists), Windows
+requires the Windows native build toolchain, and Android requires an Android SDK
+plus JDK. Use `--skip-native-checks` only when you intentionally want to serve
+the generated assets without verifying the native host toolchain.
 
 ---
 

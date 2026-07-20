@@ -8,10 +8,11 @@
  * components). The render/morph itself stays in the renderer; this module owns
  * only the lookup + the safety decision.
  *
- * Safety: a component is re-rendered in isolation only when it is a *single*
- * instance whose host id is its canonical render root (`tc-<compId>-0`).
- * Repeated/looped instances share a compId (so their generated ids would
- * mis-key) and are excluded — the caller falls back to a full page re-render.
+ * Safety: a component is re-rendered in isolation only when its host id is its
+ * canonical render root (`tc-<compId>-0`). The compiler gives each repeated
+ * occurrence a distinct compId. The duplicate-compId guard remains defensive
+ * for manually registered or legacy renderers and falls back to a parent/page
+ * render when isolation cannot be proven safe.
  *
  * @typedef {(elemId?: string | null, event?: unknown, compId?: string | null) => Promise<string>} TacRender
  * @typedef {{ render: TacRender, compId: string }} ComponentEntry
@@ -20,7 +21,7 @@
 export function createComponentRegistry() {
     /** @type {Map<string, ComponentEntry>} */
     const renders = new Map();
-    /** compIds seen at more than one host (looped) — not scopable. */
+    /** Duplicate compIds seen at more than one host — not safely scopable. */
     const repeatedCompIds = new Set();
     /** @type {Map<string, string>} compId → first host id seen. */
     const firstHostForCompId = new Map();
@@ -38,7 +39,7 @@ export function createComponentRegistry() {
         if (seen === undefined)
             firstHostForCompId.set(compId, hostId);
         else if (seen !== hostId)
-            repeatedCompIds.add(compId); // same compId at two hosts → looped
+            repeatedCompIds.add(compId); // Legacy/manual duplicate scope.
     }
 
     /**
