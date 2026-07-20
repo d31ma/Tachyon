@@ -40,10 +40,10 @@ describe('component registry scoping decision', () => {
         expect(reg.scopable('tc-abc-1')).toBeNull();
     });
 
-    test('repeated/looped instances (same compId, multiple hosts) fall back', () => {
+    test('legacy/manual duplicate compIds across hosts fall back', () => {
         const reg = createComponentRegistry();
         reg.register('tc-abc-0', noopRender, 'abc');
-        reg.register('tc-abc-1', noopRender, 'abc'); // second instance → compId is looped
+        reg.register('tc-abc-1', noopRender, 'abc'); // Duplicate scope is ambiguous.
         // Even the canonical root is no longer scopable once the compId repeats.
         expect(reg.scopable('tc-abc-0')).toBeNull();
         expect(reg.scopable('tc-abc-1')).toBeNull();
@@ -72,7 +72,7 @@ describe('findAncestor walks to the nearest scopable component host', () => {
         expect(found?.host.id).toBe('tc-inner-0'); // nearest, not outer
     });
 
-    test('skips non-scopable (looped) hosts and keeps walking up', () => {
+    test('skips non-scopable duplicate-id hosts and keeps walking up', () => {
         document.body.innerHTML = `
             <div id="tc-outer-0">
                 <div id="tc-loop-1"><button id="tc-btn-0">go</button></div>
@@ -80,9 +80,9 @@ describe('findAncestor walks to the nearest scopable component host', () => {
         const reg = createComponentRegistry();
         reg.register('tc-outer-0', noopRender, 'outer');
         reg.register('tc-loop-0', noopRender, 'loop');
-        reg.register('tc-loop-1', noopRender, 'loop'); // looped → not scopable
+        reg.register('tc-loop-1', noopRender, 'loop'); // duplicate → not scopable
         const found = reg.findAncestor('tc-btn-0');
-        expect(found?.host.id).toBe('tc-outer-0'); // falls through the looped instance
+        expect(found?.host.id).toBe('tc-outer-0'); // falls through the ambiguous instance
     });
 
     test('returns null when no component ancestor exists (page-level trigger)', () => {

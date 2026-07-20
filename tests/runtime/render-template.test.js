@@ -456,6 +456,158 @@ describe('render-template browser-side (with window)', () => {
         delete (/** @type {any} */ (windowInstance)).__tcNativeBridge__;
     });
 
+    test('#117-#121 expose the desktop program through the portable native facade', async () => {
+        const meta = windowInstance.document.createElement('meta');
+        meta.name = 'tachyon-native-capabilities';
+        meta.content = [
+            'example.echo',
+            'shortcuts.register', 'shortcuts.unregister', 'shortcuts.unregisterAll', 'shortcuts.list',
+            'window.state', 'window.alwaysOnTop', 'window.opacity', 'window.clickThrough', 'window.captureProtection',
+            'contentSurface.open', 'contentSurface.navigate', 'contentSurface.state',
+            'contentSurface.goBack', 'contentSurface.goForward', 'contentSurface.reload', 'contentSurface.close',
+            'screenCapture.state', 'screenCapture.listWindows', 'screenCapture.captureWindow',
+        ].join(',');
+        windowInstance.document.head.append(meta);
+        /** @type {Array<{ capability: string, payload: unknown }>} */
+        const calls = [];
+        (/** @type {any} */ (windowInstance)).__tcNativeBridge__ = {
+            async invoke(capability, payload) {
+                calls.push({ capability, payload });
+                return { capability, payload };
+            },
+            onMessage() { return () => {}; },
+        };
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const native = __tc_helpers__.createTacHelpers({}).__native
+            __tc_test__.supportsExtension = native.capabilities.supports('example.echo')
+            __tc_test__.echo = await native.host.invoke('example.echo', { value: 'hello' })
+            await native.shortcuts.register({ id: 'cloak.toggle', accelerator: 'Primary+Shift+C' })
+            await native.shortcuts.unregister('cloak.toggle')
+            await native.shortcuts.unregisterAll()
+            await native.shortcuts.list()
+            await native.appWindow.state()
+            await native.appWindow.setAlwaysOnTop(true)
+            await native.appWindow.setOpacity(0.55)
+            await native.appWindow.setClickThrough(false)
+            await native.appWindow.setCaptureProtection(true)
+            await native.contentSurface.open({
+                id: 'assistant',
+                url: 'https://chatgpt.com',
+                persistentSession: true,
+            })
+            await native.contentSurface.navigate('assistant', 'https://claude.ai')
+            await native.contentSurface.state('assistant')
+            await native.contentSurface.goBack('assistant')
+            await native.contentSurface.goForward('assistant')
+            await native.contentSurface.reload('assistant')
+            await native.contentSurface.close('assistant')
+            await native.screenCapture.state()
+            await native.screenCapture.listWindows({ visibleOnly: true, excludeCurrentApp: true })
+            await native.screenCapture.captureWindow({
+                windowId: 'opaque-session-window-1',
+                destination: 'both',
+                format: 'png',
+            })
+        `);
+        await factory();
+        expect(r.supportsExtension).toBe(true);
+        expect(r.echo).toEqual({ capability: 'example.echo', payload: { value: 'hello' } });
+        expect(calls).toEqual([
+            { capability: 'example.echo', payload: { value: 'hello' } },
+            { capability: 'shortcuts.register', payload: { id: 'cloak.toggle', accelerator: 'Primary+Shift+C' } },
+            { capability: 'shortcuts.unregister', payload: { id: 'cloak.toggle' } },
+            { capability: 'shortcuts.unregisterAll', payload: {} },
+            { capability: 'shortcuts.list', payload: {} },
+            { capability: 'window.state', payload: {} },
+            { capability: 'window.alwaysOnTop', payload: { enabled: true } },
+            { capability: 'window.opacity', payload: { value: 0.55 } },
+            { capability: 'window.clickThrough', payload: { enabled: false } },
+            { capability: 'window.captureProtection', payload: { enabled: true } },
+            {
+                capability: 'contentSurface.open',
+                payload: {
+                    id: 'assistant',
+                    url: 'https://chatgpt.com',
+                    persistentSession: true,
+                },
+            },
+            { capability: 'contentSurface.state', payload: { id: 'assistant' } },
+            { capability: 'contentSurface.navigate', payload: { id: 'assistant', url: 'https://claude.ai' } },
+            { capability: 'contentSurface.state', payload: { id: 'assistant' } },
+            { capability: 'contentSurface.state', payload: { id: 'assistant' } },
+            { capability: 'contentSurface.goBack', payload: { id: 'assistant' } },
+            { capability: 'contentSurface.state', payload: { id: 'assistant' } },
+            { capability: 'contentSurface.goForward', payload: { id: 'assistant' } },
+            { capability: 'contentSurface.state', payload: { id: 'assistant' } },
+            { capability: 'contentSurface.reload', payload: { id: 'assistant' } },
+            { capability: 'contentSurface.state', payload: { id: 'assistant' } },
+            { capability: 'contentSurface.close', payload: { id: 'assistant' } },
+            { capability: 'screenCapture.state', payload: {} },
+            { capability: 'screenCapture.listWindows', payload: { visibleOnly: true, excludeCurrentApp: true } },
+            {
+                capability: 'screenCapture.captureWindow',
+                payload: { windowId: 'opaque-session-window-1', destination: 'both', format: 'png' },
+            },
+        ]);
+        meta.remove();
+        delete (/** @type {any} */ (windowInstance)).__tcNativeBridge__;
+    });
+
+    test('#118-#122 validate dangerous desktop requests before crossing the bridge and deliver typed host events', async () => {
+        const meta = windowInstance.document.createElement('meta');
+        meta.name = 'tachyon-native-capabilities';
+        meta.content = 'shortcuts.register,window.opacity,contentSurface.open,screenCapture.captureWindow';
+        windowInstance.document.head.append(meta);
+        /** @type {Array<{ capability: string, payload: unknown }>} */
+        const calls = [];
+        /** @type {((message: unknown) => void) | undefined} */
+        let deliver;
+        (/** @type {any} */ (windowInstance)).__tcNativeBridge__ = {
+            async invoke(capability, payload) {
+                calls.push({ capability, payload });
+                return { ok: true };
+            },
+            onMessage(handler) {
+                deliver = handler;
+                return () => { deliver = undefined; };
+            },
+        };
+        const r = testResults();
+        const factory = await buildTestFactory(`
+            const native = __tc_helpers__.createTacHelpers({}).__native
+            __tc_test__.errors = []
+            for (const run of [
+                () => native.appWindow.setOpacity(0.09),
+                () => native.appWindow.setOpacity(Number.NaN),
+                () => native.shortcuts.register({ id: 'bad', accelerator: 'Control+Bogus+S' }),
+                () => native.contentSurface.open({ id: 'assistant/chat', url: 'https://example.com', persistentSession: false }),
+                () => native.contentSurface.open({ id: 'bad', url: 'javascript:alert(1)', persistentSession: false }),
+                () => native.screenCapture.captureWindow({ windowId: 'opaque', destination: 'base64', format: 'png' }),
+            ]) {
+                try { await run() } catch (error) { __tc_test__.errors.push(error.message) }
+            }
+            __tc_test__.events = []
+            __tc_test__.unsubscribe = native.host.on('shortcut.activated', (payload) => __tc_test__.events.push(payload))
+        `);
+        await factory();
+        deliver?.({ type: 'tac:host-event', event: 'shortcut.activated', payload: { id: 'cloak.toggle' } });
+        deliver?.({ type: 'tac:host-event', event: 'window.changed', payload: { opacity: 0.5 } });
+        expect(r.errors).toHaveLength(6);
+        expect(r.errors[0]).toMatch(/opacity.+0\.1.+1/i);
+        expect(r.errors[1]).toMatch(/opacity.+finite/i);
+        expect(r.errors[2]).toMatch(/accelerator/i);
+        expect(r.errors[3]).toMatch(/surface id.+1-128/i);
+        expect(r.errors[4]).toMatch(/https/i);
+        expect(r.errors[5]).toMatch(/destination.+clipboard.+file.+both/i);
+        expect(calls).toEqual([]);
+        expect(r.events).toEqual([{ id: 'cloak.toggle' }]);
+        expect(typeof r.unsubscribe).toBe('function');
+        r.unsubscribe();
+        meta.remove();
+        delete (/** @type {any} */ (windowInstance)).__tcNativeBridge__;
+    });
+
     test('backs generated FYLO shims with the in-bundle browser client', async () => {
         const previousFylo = /** @type {any} */ (windowInstance).fylo;
         /** @type {any} */ (windowInstance).fylo = {

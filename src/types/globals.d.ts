@@ -92,8 +92,73 @@ declare global {
   const media: {
     getUserMedia(constraints: MediaStreamConstraints): Promise<MediaStream>;
   };
+  interface TachyonShortcut {
+    id: string;
+    accelerator: string;
+  }
+  interface TachyonShortcutListResult {
+    shortcuts: TachyonShortcut[];
+  }
   const host: {
-    on(event: string, handler: (payload: unknown) => void): () => void;
+    invoke<T = unknown>(operation: string, payload?: unknown): Promise<T>;
+    on<T = unknown>(event: string, handler: (payload: T) => void): () => void;
+  };
+  const shortcuts: {
+    register(options: { id: string; accelerator: string; replace?: boolean }): Promise<TachyonShortcutListResult & { shortcut: TachyonShortcut }>;
+    unregister(id: string): Promise<TachyonShortcutListResult & { unregistered: boolean }>;
+    unregisterAll(): Promise<TachyonShortcutListResult & { unregistered: number }>;
+    list(): Promise<TachyonShortcutListResult>;
+  };
+  interface TachyonAppWindowState {
+    mode?: 'normal' | 'minimized' | 'maximized' | 'fullscreen';
+    alwaysOnTop: boolean;
+    opacity: number;
+    clickThrough?: boolean;
+    captureProtection?: boolean;
+  }
+  const appWindow: {
+    state(): Promise<TachyonAppWindowState>;
+    setAlwaysOnTop(enabled: boolean): Promise<TachyonAppWindowState | { updated: true }>;
+    setOpacity(value: number): Promise<TachyonAppWindowState | { updated: true }>;
+    setClickThrough(enabled: boolean): Promise<TachyonAppWindowState>;
+    setCaptureProtection(enabled: boolean): Promise<TachyonAppWindowState>;
+  };
+  interface TachyonContentSurfaceState {
+    id: string;
+    open: boolean;
+    persistentSession?: boolean;
+    url?: string;
+    loading?: boolean;
+    canGoBack?: boolean;
+    canGoForward?: boolean;
+  }
+  const contentSurface: {
+    open(options: { id: string; url: string; persistentSession?: boolean }): Promise<TachyonContentSurfaceState>;
+    navigate(id: string, url: string): Promise<TachyonContentSurfaceState>;
+    state(id: string): Promise<TachyonContentSurfaceState>;
+    goBack(id: string): Promise<TachyonContentSurfaceState>;
+    goForward(id: string): Promise<TachyonContentSurfaceState>;
+    reload(id: string): Promise<TachyonContentSurfaceState>;
+    close(id: string): Promise<{ id: string; open: false }>;
+  };
+  interface TachyonCaptureWindow {
+    windowId: string;
+    title: string;
+    application: string;
+    frame: { x: number; y: number; width: number; height: number };
+  }
+  interface TachyonCaptureResult {
+    windowId: string;
+    destination: 'clipboard' | 'file' | 'both';
+    format: 'png';
+    bytes: number;
+    clipboard: boolean;
+    path: string;
+  }
+  const screenCapture: {
+    state(): Promise<{ supported: true; permission: 'granted' | 'prompt' | 'denied'; format: 'png'; destinations: Array<'clipboard' | 'file' | 'both'> }>;
+    listWindows(options?: { visibleOnly?: boolean; excludeCurrentApp?: boolean }): Promise<{ windows: TachyonCaptureWindow[]; permission: 'granted' }>;
+    captureWindow(options: { windowId: string; destination: 'clipboard' | 'file' | 'both'; format?: 'png' }): Promise<TachyonCaptureResult>;
   };
   const capabilities: {
     supports(capability: string): boolean;

@@ -520,6 +520,33 @@ const tc_createHelpers = (modulePath) => {
         })
     }
 
+    /** @param {string} accelerator */
+    const validateAccelerator = (accelerator) => {
+        const parts = accelerator.split('+').map((part) => part.trim()).filter(Boolean)
+        const modifiers = new Set(['Primary', 'Control', 'Command', 'Meta', 'Alt', 'Option', 'Shift'])
+        if (parts.length < 2 || parts.slice(0, -1).some((part) => !modifiers.has(part))
+            || !/^(?:[A-Z0-9]|F(?:[1-9]|1[0-9]|2[0-4]))$/i.test(parts.at(-1) ?? ''))
+            throw new Error('Shortcut accelerator must use portable modifiers and one supported key')
+        return parts.join('+')
+    }
+
+    /** @param {string} raw */
+    const requireHttpsURL = (raw) => {
+        let url
+        try { url = new URL(raw) }
+        catch { throw new Error('Managed content requires an HTTPS URL') }
+        if (url.protocol !== 'https:') throw new Error('Managed content requires an HTTPS URL')
+        return raw
+    }
+
+    /** @param {string} raw */
+    const requireSurfaceId = (raw) => {
+        const id = String(raw ?? '')
+        if (!/^[A-Za-z0-9._-]{1,128}$/.test(id))
+            throw new Error("Managed content surface id must be 1-128 ASCII letters, digits, '.', '_', or '-'")
+        return id
+    }
+
     /**
      * Permissioned device boundary shared by JavaScript companions and
      * generated language adapters. A native host may provide richer behavior;
@@ -642,6 +669,54 @@ const tc_createHelpers = (modulePath) => {
         return facade
     }
 
+    /** @param {{ id: string, url: string, persistentSession?: boolean }} options */
+    const openContentSurface = async (options) => {
+        const id = requireSurfaceId(options?.id)
+        let nativeOpenStarted = false
+        /** @type {ReturnType<typeof setTimeout> | undefined} */
+        let timeout
+        /** @type {(value?: unknown) => void} */
+        let resolveReady = () => {}
+        /** @type {(error: Error) => void} */
+        let rejectReady = () => {}
+        const ready = new Promise((resolve, reject) => {
+            resolveReady = resolve
+            rejectReady = reject
+        })
+        const stopOpened = subscribeHostEvent('surface.opened', (payload) => {
+            if (String(/** @type {any} */ (payload)?.id ?? '') === id) resolveReady()
+        })
+        const stopFailed = subscribeHostEvent('surface.failed', (payload) => {
+            if (String(/** @type {any} */ (payload)?.id ?? '') === id)
+                rejectReady(new Error('Managed content surface failed to open'))
+        })
+        try {
+            const result = /** @type {{ pending?: boolean }} */ (await device('contentSurface.open', {
+                id,
+                url: requireHttpsURL(String(options?.url ?? '')),
+                persistentSession: Boolean(options?.persistentSession),
+            }))
+            nativeOpenStarted = true
+            if (result?.pending) {
+                timeout = setTimeout(
+                    () => rejectReady(new Error('Managed content surface timed out while opening; native creation will be cancelled')),
+                    10000,
+                )
+                await ready
+            }
+            return await device('contentSurface.state', { id })
+        } catch (error) {
+            if (nativeOpenStarted) {
+                try { await device('contentSurface.close', { id }) } catch {}
+            }
+            throw error
+        } finally {
+            if (timeout) clearTimeout(timeout)
+            stopOpened()
+            stopFailed()
+        }
+    }
+
     // Language compilers lower their native-shaped APIs to this internal object.
     // It deliberately reuses the public Web facade and the permissioned device
     // bridge so there is one policy implementation to audit.
@@ -713,7 +788,75 @@ const tc_createHelpers = (modulePath) => {
                 return window.navigator.mediaDevices.getUserMedia(constraints)
             },
         }),
-        host: Object.freeze({ on: subscribeHostEvent }),
+        host: Object.freeze({
+            on: subscribeHostEvent,
+            invoke: (/** @type {string} */ operation, /** @type {unknown} */ payload = {}) => device(operation, payload),
+        }),
+        shortcuts: Object.freeze({
+            register: (/** @type {{ id: string, accelerator: string, replace?: boolean }} */ options) => device('shortcuts.register', {
+                id: String(options?.id ?? ''),
+                accelerator: validateAccelerator(String(options?.accelerator ?? '')),
+                ...(options?.replace ? { replace: true } : {}),
+            }),
+            unregister: (/** @type {string} */ id) => device('shortcuts.unregister', { id: String(id) }),
+            unregisterAll: () => device('shortcuts.unregisterAll'),
+            list: () => device('shortcuts.list'),
+        }),
+        appWindow: Object.freeze({
+            state: () => device('window.state'),
+            setAlwaysOnTop: (/** @type {boolean} */ enabled) => device('window.alwaysOnTop', { enabled: Boolean(enabled) }),
+            setOpacity: (/** @type {number} */ value) => {
+                if (!Number.isFinite(value)) throw new Error('Window opacity must be finite')
+                if (value < 0.1 || value > 1) throw new Error('Window opacity must be between 0.1 and 1')
+                return device('window.opacity', { value })
+            },
+            setClickThrough: (/** @type {boolean} */ enabled) => device('window.clickThrough', { enabled: Boolean(enabled) }),
+            setCaptureProtection: (/** @type {boolean} */ enabled) => device('window.captureProtection', { enabled: Boolean(enabled) }),
+        }),
+        contentSurface: Object.freeze({
+            open: openContentSurface,
+            navigate: async (/** @type {string} */ rawId, /** @type {string} */ url) => {
+                const id = requireSurfaceId(rawId)
+                await device('contentSurface.navigate', { id, url: requireHttpsURL(String(url)) })
+                return await device('contentSurface.state', { id })
+            },
+            state: (/** @type {string} */ id) => device('contentSurface.state', { id: requireSurfaceId(id) }),
+            goBack: async (/** @type {string} */ rawId) => {
+                const id = requireSurfaceId(rawId)
+                await device('contentSurface.goBack', { id })
+                return await device('contentSurface.state', { id })
+            },
+            goForward: async (/** @type {string} */ rawId) => {
+                const id = requireSurfaceId(rawId)
+                await device('contentSurface.goForward', { id })
+                return await device('contentSurface.state', { id })
+            },
+            reload: async (/** @type {string} */ rawId) => {
+                const id = requireSurfaceId(rawId)
+                await device('contentSurface.reload', { id })
+                return await device('contentSurface.state', { id })
+            },
+            close: async (/** @type {string} */ rawId) => {
+                const id = requireSurfaceId(rawId)
+                await device('contentSurface.close', { id })
+                return { id, open: false }
+            },
+        }),
+        screenCapture: Object.freeze({
+            state: () => device('screenCapture.state'),
+            listWindows: (/** @type {{ visibleOnly?: boolean, excludeCurrentApp?: boolean }} */ options = {}) => device('screenCapture.listWindows', {
+                visibleOnly: options.visibleOnly !== false,
+                excludeCurrentApp: options.excludeCurrentApp !== false,
+            }),
+            captureWindow: (/** @type {{ windowId: string, destination: string, format?: string }} */ options) => {
+                const destination = String(options?.destination ?? '')
+                if (!['clipboard', 'file', 'both'].includes(destination))
+                    throw new Error('Capture destination must be clipboard, file, or both')
+                const format = String(options?.format ?? 'png').toLowerCase()
+                if (format !== 'png') throw new Error('Screen capture format must be png')
+                return device('screenCapture.captureWindow', { windowId: String(options?.windowId ?? ''), destination, format })
+            },
+        }),
         fylo: Object.freeze({
             collection: fyloCollection,
         }),
@@ -762,6 +905,25 @@ const tc_createHelpers = (modulePath) => {
             case 'notify.show': return await native.notifications.show(String(data.title ?? ''), /** @type {NotificationOptions | undefined} */ (data.options))
             case 'media.getUserMedia': return await native.media.getUserMedia(/** @type {MediaStreamConstraints} */ (data.constraints))
             case 'capabilities.state': return await native.capabilities.state(String(data.capability ?? ''))
+            case 'shortcuts.register': return await native.shortcuts.register(/** @type {any} */ (data))
+            case 'shortcuts.unregister': return await native.shortcuts.unregister(String(data.id ?? ''))
+            case 'shortcuts.unregisterAll': return await native.shortcuts.unregisterAll()
+            case 'shortcuts.list': return await native.shortcuts.list()
+            case 'window.state': return await native.appWindow.state()
+            case 'window.alwaysOnTop': return await native.appWindow.setAlwaysOnTop(Boolean(data.enabled))
+            case 'window.opacity': return await native.appWindow.setOpacity(Number(data.value))
+            case 'window.clickThrough': return await native.appWindow.setClickThrough(Boolean(data.enabled))
+            case 'window.captureProtection': return await native.appWindow.setCaptureProtection(Boolean(data.enabled))
+            case 'contentSurface.open': return await native.contentSurface.open(/** @type {any} */ (data))
+            case 'contentSurface.navigate': return await native.contentSurface.navigate(String(data.id ?? ''), String(data.url ?? ''))
+            case 'contentSurface.state': return await native.contentSurface.state(String(data.id ?? ''))
+            case 'contentSurface.goBack': return await native.contentSurface.goBack(String(data.id ?? ''))
+            case 'contentSurface.goForward': return await native.contentSurface.goForward(String(data.id ?? ''))
+            case 'contentSurface.reload': return await native.contentSurface.reload(String(data.id ?? ''))
+            case 'contentSurface.close': return await native.contentSurface.close(String(data.id ?? ''))
+            case 'screenCapture.state': return await native.screenCapture.state()
+            case 'screenCapture.listWindows': return await native.screenCapture.listWindows(/** @type {any} */ (data))
+            case 'screenCapture.captureWindow': return await native.screenCapture.captureWindow(/** @type {any} */ (data))
             case 'web.fetch': {
                 const input = String(data.input ?? data.url ?? '')
                 if (!input) throw new Error('web.fetch requires a request URL')
@@ -799,7 +961,9 @@ const tc_createHelpers = (modulePath) => {
                 return await invoke.apply(facade, args)
             }
             case 'capabilities.supports': return native.capabilities.supports(String(data.capability ?? ''))
-            default: throw new Error(`Unknown native shim operation '${operation}'`)
+            default:
+                if (native.capabilities.supports(operation)) return await native.host.invoke(operation, data)
+                throw new Error(`Unknown native shim operation '${operation}'`)
         }
     }
 
@@ -830,6 +994,25 @@ const tc_createHelpers = (modulePath) => {
             case 'notify.show': return standardCapabilityAvailable('notify.show')
             case 'media.getUserMedia': return standardCapabilityAvailable('media.getUserMedia')
             case 'capabilities.state': return standardCapabilityAvailable('capabilities.state')
+            case 'shortcuts.register':
+            case 'shortcuts.unregister':
+            case 'shortcuts.unregisterAll':
+            case 'shortcuts.list':
+            case 'window.state':
+            case 'window.alwaysOnTop':
+            case 'window.opacity':
+            case 'window.clickThrough':
+            case 'window.captureProtection':
+            case 'contentSurface.open':
+            case 'contentSurface.navigate':
+            case 'contentSurface.state':
+            case 'contentSurface.goBack':
+            case 'contentSurface.goForward':
+            case 'contentSurface.reload':
+            case 'contentSurface.close':
+            case 'screenCapture.state':
+            case 'screenCapture.listWindows':
+            case 'screenCapture.captureWindow': return deviceAvailable(operation)
             default: return false
         }
     }

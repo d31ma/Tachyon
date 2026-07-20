@@ -408,6 +408,18 @@ function translateNativeShims(output, language) {
             .replace(/\bgeolocation\(\)\.current\(/g, 'await this.tac.__native.geolocation.current(')
             .replace(/\bnotifications\(\)\.show\(/g, 'await this.tac.__native.notifications.show(')
             .replace(/\bmedia\(\)\.get_user_media\(/g, 'await this.tac.__native.media.getUserMedia(')
+            .replace(/\bhost\(\)\.invoke\(/g, 'await this.tac.__native.host.invoke(')
+            .replace(/\bshortcuts\(\)\.register\(/g, 'await this.tac.__native.shortcuts.register(')
+            .replace(/\bshortcuts\(\)\.unregister_all\(\)/g, 'await this.tac.__native.shortcuts.unregisterAll()')
+            .replace(/\bshortcuts\(\)\.unregister\(/g, 'await this.tac.__native.shortcuts.unregister(')
+            .replace(/\bshortcuts\(\)\.list\(\)/g, 'await this.tac.__native.shortcuts.list()')
+            .replace(/\bapp_window\(\)\.state\(\)/g, 'await this.tac.__native.appWindow.state()')
+            .replace(/\bapp_window\(\)\.set_always_on_top\(/g, 'await this.tac.__native.appWindow.setAlwaysOnTop(')
+            .replace(/\bapp_window\(\)\.set_opacity\(/g, 'await this.tac.__native.appWindow.setOpacity(')
+            .replace(/\bapp_window\(\)\.set_click_through\(/g, 'await this.tac.__native.appWindow.setClickThrough(')
+            .replace(/\bapp_window\(\)\.set_capture_protection\(/g, 'await this.tac.__native.appWindow.setCaptureProtection(')
+            .replace(/\bcontent_surface\(\)\./g, 'await this.tac.__native.contentSurface.')
+            .replace(/\bscreen_capture\(\)\./g, 'await this.tac.__native.screenCapture.')
             .replace(/\bcapabilities\(\)\.supports\(/g, 'this.tac.__native.capabilities.supports(')
             .replace(/\bcapabilities\(\)\.state\(/g, 'await this.tac.__native.capabilities.state(');
     }
@@ -445,6 +457,11 @@ function translateNativeShims(output, language) {
             .replace(/\bgeolocation\.current\(/g, 'await this.tac.__native.geolocation.current(')
             .replace(/\bnotifications\.show\(/g, 'await this.tac.__native.notifications.show(')
             .replace(/\bmedia\.getUserMedia\(/g, 'await this.tac.__native.media.getUserMedia(')
+            .replace(/\bhost\.invoke\(/g, 'await this.tac.__native.host.invoke(')
+            .replace(/\bshortcuts\./g, 'await this.tac.__native.shortcuts.')
+            .replace(/\bappWindow\./g, 'await this.tac.__native.appWindow.')
+            .replace(/\bcontentSurface\./g, 'await this.tac.__native.contentSurface.')
+            .replace(/\bscreenCapture\./g, 'await this.tac.__native.screenCapture.')
             .replace(/\bcapabilities\.supports\(/g, 'this.tac.__native.capabilities.supports(')
             .replace(/\bcapabilities\.state\(/g, 'await this.tac.__native.capabilities.state(');
     }
@@ -482,6 +499,11 @@ function translateNativeShims(output, language) {
             .replace(/\bgeolocation\.current\(/g, 'await this.tac.__native.geolocation.current(')
             .replace(/\bnotifications\.show\(/g, 'await this.tac.__native.notifications.show(')
             .replace(/\bmedia\.getUserMedia\(/g, 'await this.tac.__native.media.getUserMedia(')
+            .replace(/\bhost\.invoke\(/g, 'await this.tac.__native.host.invoke(')
+            .replace(/\bshortcuts\./g, 'await this.tac.__native.shortcuts.')
+            .replace(/\bappWindow\./g, 'await this.tac.__native.appWindow.')
+            .replace(/\bcontentSurface\./g, 'await this.tac.__native.contentSurface.')
+            .replace(/\bscreenCapture\./g, 'await this.tac.__native.screenCapture.')
             .replace(/\bcapabilities\.supports\(/g, 'this.tac.__native.capabilities.supports(')
             .replace(/\bcapabilities\.state\(/g, 'await this.tac.__native.capabilities.state(');
     }
@@ -523,6 +545,18 @@ function translateNativeShims(output, language) {
         .replace(/\bGeolocation\.CurrentAsync\(/g, 'await this.tac.__native.geolocation.current(')
         .replace(/\bNotifications\.ShowAsync\(/g, 'await this.tac.__native.notifications.show(')
         .replace(/\bMedia\.GetUserMediaAsync\(/g, 'await this.tac.__native.media.getUserMedia(')
+        .replace(/\bHost\.InvokeAsync\(/g, 'await this.tac.__native.host.invoke(')
+        .replace(/\bShortcuts\.RegisterAsync\(/g, 'await this.tac.__native.shortcuts.register(')
+        .replace(/\bShortcuts\.UnregisterAllAsync\(\)/g, 'await this.tac.__native.shortcuts.unregisterAll()')
+        .replace(/\bShortcuts\.UnregisterAsync\(/g, 'await this.tac.__native.shortcuts.unregister(')
+        .replace(/\bShortcuts\.ListAsync\(\)/g, 'await this.tac.__native.shortcuts.list()')
+        .replace(/\bAppWindow\.StateAsync\(\)/g, 'await this.tac.__native.appWindow.state()')
+        .replace(/\bAppWindow\.SetAlwaysOnTopAsync\(/g, 'await this.tac.__native.appWindow.setAlwaysOnTop(')
+        .replace(/\bAppWindow\.SetOpacityAsync\(/g, 'await this.tac.__native.appWindow.setOpacity(')
+        .replace(/\bAppWindow\.SetClickThroughAsync\(/g, 'await this.tac.__native.appWindow.setClickThrough(')
+        .replace(/\bAppWindow\.SetCaptureProtectionAsync\(/g, 'await this.tac.__native.appWindow.setCaptureProtection(')
+        .replace(/\bContentSurface\.(Open|Navigate|State|GoBack|GoForward|Reload|Close)Async\(/g, (_match, method) => `await this.tac.__native.contentSurface.${method[0].toLowerCase()}${method.slice(1)}(`)
+        .replace(/\bScreenCapture\.(State|ListWindows|CaptureWindow)Async\(/g, (_match, method) => `await this.tac.__native.screenCapture.${method[0].toLowerCase()}${method.slice(1)}(`)
         .replace(/\bCapabilities\.Supports\(/g, 'this.tac.__native.capabilities.supports(')
         .replace(/\bCapabilities\.StateAsync\(/g, 'await this.tac.__native.capabilities.state(');
 }

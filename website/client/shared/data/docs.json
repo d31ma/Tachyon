@@ -4,6 +4,7 @@
     "routing",
     "devices",
     "templates",
+    "native-rendering",
     "companions",
     "polyglot",
     "platform-apis",
@@ -27,6 +28,7 @@
       "summary": "Templates, polyglot companions and browser-local data.",
       "topics": [
         "templates",
+        "native-rendering",
         "companions",
         "polyglot",
         "platform-apis",
@@ -164,7 +166,7 @@
     },
     "templates": {
       "title": "Tac templates",
-      "summary": "Templates are HTML with braces for interpolation, on:event attributes for delegated events, and loop, logic, and switch elements for control flow.",
+      "summary": "Templates are HTML with braces for interpolation, on:event attributes for delegated events, loop, logic, and switch elements for control flow, and explicit island hydration policies.",
       "sections": [
         {
           "heading": "Interpolation and events",
@@ -179,6 +181,44 @@
         {
           "heading": "Components",
           "body": "A component folder under client/components maps to a hyphenated tag: components/panel/users becomes panel-users. Props pass as attributes, and adding the lazy attribute defers loading until the component scrolls into view."
+        },
+        {
+          "heading": "Island hydration",
+          "body": "A component occurrence with a literal hydrate policy is fully rendered on the server, then adopts that useful DOM in place when its browser companion activates. Use load for immediate activation, idle for background work, visible for viewport-driven activation, interaction for the first user intent, or never for permanently static server HTML. Repeated islands, including components inside loop, receive independent identities.",
+          "code": "<product-card :product=\"product\" hydrate=\"visible\" />\n<cart-summary hydrate=\"interaction\" />\n<legal-notice hydrate=\"never\" />"
+        },
+        {
+          "heading": "Island contracts",
+          "body": "hydrate must be one of load, idle, visible, interaction, or never as a static literal. It cannot be dynamic or combined with lazy. Props must be JSON-serializable public data; never put secrets or authorization state in serialized island props. A failed activation leaves the server-rendered DOM in place and can retry on a later interaction."
+        }
+      ]
+    },
+    "native-rendering": {
+      "title": "Native HTML rendering",
+      "summary": "Non-web Tac bundles keep HTML as the only application-facing view language, render supported semantics with native controls, and isolate only unmapped subtrees in local WebViews.",
+      "sections": [
+        {
+          "heading": "Native by default",
+          "body": "web remains a browser target. macos, windows, linux, ios, and android are always native-first. The compiler emits tachyon.native-ui.json for the initial versioned UI tree and tachyon.native-controller.js for live rendering and events; neither controller nor native nodes depend on a DOM.",
+          "code": "ty bundle --target macos\nty bundle --target android\nty bundle --target windows"
+        },
+        {
+          "heading": "One HTML source",
+          "body": "Application developers still write tac.html. Before native tree creation, Tac lowers loop, logic, switch and case control elements, resolves Tac components, evaluates bindings, and removes nonvisual script, style, template, and noscript elements. Native hosts map the resulting semantic tree to SwiftUI on Apple platforms, Jetpack Compose on Android, WinUI on Windows, and GTK on Linux.",
+          "code": "<main>\n  <h1>{title}</h1>\n  <loop :for=\"product of products\">\n    <button on:click=\"select(product.id)\">{product.name}</button>\n  </loop>\n  <logic :if=\"selected\"><p>Selected: {selected}</p></logic>\n</main>"
+        },
+        {
+          "heading": "Native-first tag handling",
+          "body": "Control tags and Tac component tags compile away before native output. Supported semantic HTML maps to native controls. Known standard HTML without a native mapping and unmapped Web Components automatically become isolated WebView boundaries; a genuinely unknown non-HTML tag still fails so typos remain visible. A semantic nativeUIAdapters mapping always wins over fallback.",
+          "code": "// tac.config.js\nexport default {\n  nativeUIAdapters: { 'w-app-bar': 'header' },\n}\n\n// company-chart and canvas need no fallback declaration\nty bundle --target ios"
+        },
+        {
+          "heading": "Live events",
+          "body": "Each native host sends normalized input and event data to the generated controller, including elementId, type, value, checked, and detail. The controller applies the event, rerenders, and returns the complete next tree for the host to reconcile. JavaScriptCore runs the controller on macOS and iOS; Android, Windows, and Linux use embedded QuickJS runtimes."
+        },
+        {
+          "heading": "Automatic local boundary",
+          "body": "The compiler keeps supported parents and siblings native while loading the nearest unmapped subtree in an isolated local WebView with bundled CSS and module entrypoints. No app-wide mode or fallback declaration is required. Truly unknown non-HTML tags still fail, and local boundaries do not grant raw nativeCapabilities, devicePermissions, managed content origins, or native host extensions."
         }
       ]
     },
@@ -209,7 +249,7 @@
         },
         {
           "heading": "Use native-shaped shims",
-          "body": "Companion source never calls Tac transport APIs. Every language gets an implicit platform prelude for local/session storage, browser context, local-first FYLO collections and capability-checked device calls. Raw filesystem and desktop shell operations require an explicit package allowlist. Raw OPFS handles remain private to FYLO's bundled browser engine.",
+          "body": "Companion source never calls Tac transport APIs. Every language gets an implicit platform prelude for local/session storage, browser context, local-first FYLO collections and capability-checked device calls. Browser output services standards-backed operations today; unavailable and native-only operations remain feature-detectable and fail closed. Raw OPFS handles remain private to FYLO's bundled browser engine.",
           "code": "// Rust\nlocal_storage().set_item(\"theme\", \"calm\");\nlet notes = await fylo().collection(\"notes\").find({});\nif capabilities().supports(\"fs.readDir\") {\n  let entries = await file_system().read_dir(\".\");\n}\n\n// Swift\nlet notes = await fylo.collection(\"notes\").find({})\nawait clipboard.writeText(\"Ready\")\n\n// Dart\nfinal notes = await fylo.collection('notes').find({});"
         },
         {
@@ -218,23 +258,28 @@
         },
         {
           "heading": "Device boundary",
-          "body": "Safe capabilities are enabled automatically. Android and iOS hosts implement native clipboard, HTTP(S) external URLs, share sheets, haptic feedback and sandbox path discovery; macOS, Windows and Linux service their safe desktop families as well. Raw filesystem access must be listed in tachyon.nativeCapabilities, and shell.exec is an additional desktop-only opt-in. Browser builds use standards-based fallbacks or fail closed when a capability is unavailable.",
+          "body": "Browser builds use standards-backed implementations or fail closed when a capability is unavailable. Native-first hosts do not yet service the device prelude: devicePermissions and nativeCapabilities are rejected until each family has an audited native-tree adapter. Keep capability checks around target-specific calls so the same source remains honest as adapters land.",
           "code": "// Rust\nif capabilities().supports(\"share.text\") {\n  await share().text(\"Ready\");\n  await haptics().impact();\n}\nif capabilities().supports(\"shell.exec\") {\n  await shell().exec(\"git\", [\"status\", \"--short\"]);\n}\n\n# ty bundle --target android,ios"
         }
       ]
     },
     "devices": {
       "title": "Devices and targets",
-      "summary": "Tac builds one client source tree into browser, desktop and mobile outputs. The rooted terminology: platform is the form factor (desktop/mobile/web); environment and os are synonyms for the concrete host (windows/macos/linux/android/ios/web); target is the bundle output.",
+      "summary": "Tac builds one client source tree into a browser output or native desktop and mobile controls. The rooted terminology: platform is the form factor (desktop/mobile/web); environment and os are synonyms for the concrete host (windows/macos/linux/android/ios/web); target is the bundle output.",
       "sections": [
         {
           "heading": "Targets",
-          "body": "The supported bundle targets are web, macos, windows, linux, ios and android. The all target expands to every supported target and writes sibling directories under dist/.",
+          "body": "The supported bundle targets are web, macos, windows, linux, ios and android. web emits browser assets; every non-web target uses the native renderer by default. The all target expands to every supported target and writes sibling directories under dist/.",
           "code": "ty bundle --target web      # dist/web\nty bundle --target macos    # dist/macos\nty bundle --target windows  # dist/windows\nty bundle --target linux    # dist/linux\nty bundle --target ios      # dist/ios\nty bundle --target android  # dist/android\nty bundle --target all"
         },
         {
+          "heading": "One native-first policy",
+          "body": "Every non-web target maps supported Tac HTML to platform controls and automatically isolates the nearest unmapped standard HTML or Web Component subtree in a local WebView. Native siblings remain native. The former render-mode flag and TAC_RENDER_MODE override have been removed.",
+          "code": "ty bundle --target macos    # SwiftUI + inferred local boundaries\nty bundle --target android  # Compose + inferred local boundaries\nty bundle --target windows  # WinUI + inferred local boundaries"
+        },
+        {
           "heading": "Preview",
-          "body": "Preview accepts exactly one target. If you omit --target, Tachyon previews web. Native previews run prerequisite checks first so missing Xcode, Android SDK, WebView2, GTK or WebKitGTK dependencies fail early with an actionable message.",
+          "body": "Preview accepts exactly one target. If you omit --target, Tachyon previews web. Native previews run prerequisite checks first so missing Xcode or Swift, the Android SDK, Windows build tools, GTK, embedded controller dependencies, or a WebView dependency required by an inferred boundary fail early with an actionable message.",
           "code": "ty preview --target web\nty preview --target macos\nty preview --target android"
         },
         {
@@ -319,36 +364,26 @@
     },
     "platform-apis": {
       "title": "Platform APIs",
-      "summary": "Every capability a Tac companion can call, which targets service it natively, and how each companion language spells it. One permissioned host bridge backs all of them.",
+      "summary": "The web target exposes standards-backed capability helpers today. Native-first targets fail closed until each privileged family has a concrete native-tree adapter.",
       "sections": [
         {
-          "heading": "The capability catalog per target",
-          "body": "Safe host capabilities are enabled automatically for their bundle target and embedded into the app shell at bundle time. Anything outside the catalog fails closed with a named error instead of reaching the host. Browser-standard capabilities use the standard API on every target; sensitive native capabilities are enabled only where the generated host has a concrete implementation.",
-          "code": "capability                web   macOS  Windows  Linux  iOS  Android\nweb.fetch                  Y      Y       Y       Y      Y      Y\nfylo.collection            Y      Y       Y       Y      Y      Y\napp.info                   -      Y       Y       Y      Y      Y\nclipboard.*                -      Y       Y       Y      Y      Y\nfs.readText/writeText      -      opt-in  opt-in  opt-in opt-in opt-in\nfs.readDir/stat/mkdir      -      opt-in  opt-in  opt-in opt-in opt-in\nfs.remove                  -      opt-in  opt-in  opt-in opt-in opt-in\nfs.paths                   -      Y       -       -      Y      Y\nshell.exec                 -      opt-in  opt-in  opt-in -      -\nsecrets.get/set/delete     -      Y       -       -      Y      Y\nauth.verifyUser            -      Y       -       -      Y      Y\nfilePicker.saveText        Y      Y       Y       Y      Y      Y\ngeolocation.current        Y      Y       Y       Y      Y      Y\nnotifications.show         Y      Y       Y       Y      Y      Y\nmedia.getUserMedia         Y      Y       Y       Y      Y      Y\ncapabilities.state         Y      Y       Y       Y      Y      Y\n\nSecure storage and user verification now reach every native OS: Keychain +\nLocalAuthentication on Apple, Android Keystore + BiometricPrompt on Android.\nRaw filesystem ops (read/write/readDir/stat/mkdir/remove) are opt-in per\ntarget via tachyon.nativeCapabilities in package.json."
+          "heading": "Current target availability",
+          "body": "Browser output can use storage, fetch, clipboard, file selection, geolocation, notifications, and media when the browser supports them. capabilities.supports reports whether an operation is available, and capabilities.state reports granted, denied, prompt, or unsupported where a permission state exists.",
+          "code": "if (capabilities.supports('media.getUserMedia')) {\n  const stream = await media.getUserMedia({ audio: true })\n}\n\nif (await capabilities.state('geo.current') !== 'denied') {\n  const position = await geolocation.current()\n}"
         },
         {
-          "heading": "Web APIs in every language",
-          "body": "The portable web families work on every target, including plain browser builds. JavaScript and TypeScript keep their browser globals; Dart, Kotlin and Swift share one camelCase prelude; Rust and C# use their native casing. The compiler lowers every spelling to the same bridge.",
-          "code": "family      JS / TS                  Dart / Kotlin / Swift      Rust                          C#\nstorage     localStorage.setItem     localStorage.setItem       local_storage().set_item      LocalStorage.SetItem\nsession     sessionStorage.getItem   sessionStorage.getItem     session_storage().get_item    SessionStorage.GetItem\nfetch       fetch(url)               fetch(url)                 fetch(url)                    FetchAsync(url)\nlanguage    navigator.language       navigator.language()       navigator().language()        Navigator.Language()\nonline      navigator.onLine         navigator.isOnline()       navigator().is_online()       Navigator.IsOnline()\nlocation    location.origin          location.origin()          location().origin()           Location.Origin()\nFYLO        fylo.collection(name)    fylo.collection(name)      fylo().collection(name)       Fylo.Collection(name)"
+          "heading": "Native-first fail-closed boundary",
+          "body": "macos, windows, linux, ios, and android now use native controls plus a DOM-free controller. Native-tree capability adapters are not implemented yet, so bundles reject devicePermissions, nativeCapabilities, managedContentOrigins, and nativeHostExtensions. An automatic local WebView boundary renders only its unsupported subtree and never receives an application-wide native bridge.",
+          "code": "// These declarations intentionally fail on a non-web target today.\n{ \"tachyon\": {\n  \"devicePermissions\": [\"camera\"],\n  \"nativeCapabilities\": [\"fs.readText\"]\n} }"
         },
         {
-          "heading": "Device APIs in every language",
-          "body": "Device families cross the permissioned host bridge. Every companion language, including JavaScript and TypeScript, receives the same implicit prelude - the compiler lowers each spelling to one bridge. stat returns { exists, type, size }; mkdir creates parents; remove deletes recursively. Every call that returns data or crosses the device boundary is asynchronous - await it.",
-          "code": "family       JS / TS                     Dart / Kotlin / Swift       Rust                            C#\nread file    fileSystem.readText(p)      fileSystem.readText(p)      file_system().read_text(p)      FileSystem.ReadTextAsync(p)\nwrite file   fileSystem.writeText(p,t)   fileSystem.writeText(p,t)   file_system().write_text(p,t)   FileSystem.WriteTextAsync(p,t)\nlist dir     fileSystem.readDir(p)       fileSystem.readDir(p)       file_system().read_dir(p)       FileSystem.ReadDirAsync(p)\nstat path    fileSystem.stat(p)          fileSystem.stat(p)          file_system().stat(p)           FileSystem.StatAsync(p)\nmake dir     fileSystem.mkdir(p)         fileSystem.mkdir(p)         file_system().mkdir(p)          FileSystem.MkdirAsync(p)\nremove path  fileSystem.remove(p)        fileSystem.remove(p)        file_system().remove(p)         FileSystem.RemoveAsync(p)\nsecure store secrets.get(key)            secrets.get(key)            secrets().get(key)              Secrets.GetAsync(key)\nuser verify  auth.verifyUser(reason)     auth.verifyUser(reason)     auth().verify_user(reason)      Auth.VerifyUserAsync(reason)\nsave text    filePicker.saveText(n, t)   filePicker.saveText(n, t)   file_picker().save_text(n, t)   FilePicker.SaveTextAsync(n, t)\nlocation     geolocation.current()       geolocation.current()       geolocation().current()         Geolocation.CurrentAsync()\nnotify       notifications.show(title)   notifications.show(title)   notifications().show(title)     Notifications.ShowAsync(title)\nmedia        media.getUserMedia(input)   media.getUserMedia(input)   media().get_user_media(input)   Media.GetUserMediaAsync(input)\npermission   capabilities.state(op)      capabilities.state(op)      capabilities().state(op)        Capabilities.StateAsync(op)"
+          "heading": "Portable companion spelling",
+          "body": "Companion source stays transport-free. JavaScript and TypeScript use camelCase helpers; Dart, Kotlin, and Swift use the same family names; Rust and C# keep language-native casing. Unavailable operations such as auth.verifyUser and filesystem access remain detectable by name and fail closed instead of silently falling back.",
+          "code": "// JavaScript / TypeScript\nif (capabilities.supports('auth.verifyUser')) {\n  await auth.verifyUser('Confirm access')\n}\n\n// Rust\nif capabilities().supports(\"fs.readText\") {\n  let text = await file_system().read_text(\"notes.txt\");\n}"
         },
         {
-          "heading": "What each target services natively",
-          "body": "Web keeps the portable families and rejects unavailable device calls by name. Native hosts service their safe capability catalog automatically. Raw filesystem operations are opt-in on every native target; shell.exec is opt-in on desktop only. The generated host enforces the same allowlist as the compiled facade, and openUrl accepts HTTP(S) only. Distribute apps with raw capabilities only when all bundled companion code is trusted.",
-          "code": "// Rust - gate desktop-only and mobile-only families before calling\nif capabilities().supports(\"shell.exec\") {\n    let result = await shell().exec(\"git\", [\"status\", \"--short\"]);\n}\nif capabilities().supports(\"share.text\") {\n    await share().text(\"Sent from a Tac companion\");\n}"
-        },
-        {
-          "heading": "Feature detection and async rules",
-          "body": "`capabilities.supports` answers whether a bundle/environment carries an operation. `capabilities.state` adds the browser permission state (`granted`, `denied`, `prompt`, or `unsupported`) so apps do not discover denial through an exception. Native hosts declare camera, microphone, location, and notification permissions explicitly in `package.json`; declarations do not grant access or trigger a prompt.",
-          "code": "// package.json\n{ \"tachyon\": {\n  \"devicePermissions\": [\"camera\", \"microphone\", \"location\", \"notifications\"],\n  \"nativeCapabilities\": [\"fs.readText\", \"fs.readDir\"]\n} }\n\nif (await capabilities.state(\"geo.current\") !== \"denied\") {\n  const position = await geolocation.current();\n}"
-        },
-        {
-          "heading": "Lifecycle and scope boundaries",
-          "body": "`host.on(\"app.ready\", handler)` is the typed, buffered host-event channel for JavaScript/TypeScript. It is ready for future deep links and notification actions without turning each API into a bespoke callback. Secure storage and user verification use Keychain plus LocalAuthentication on macOS/iOS and Android Keystore plus BiometricPrompt on Android; unsupported targets fail closed. Contacts, calendar, Bluetooth, NFC, USB, push delivery, and window management remain separate, platform-specific families."
+          "heading": "Events and future adapters",
+          "body": "host.on is the typed event channel for capability implementations that provide host events. A native-tree adapter must define its operation contract, target implementation, permission model, failure behavior, and tests before Tachyon enables the family on non-web targets. Camera, biometrics, managed content, filesystem access, and extensions remain explicit roadmap work rather than compatibility promises."
         }
       ]
     }

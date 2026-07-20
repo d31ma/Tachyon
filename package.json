@@ -1,6 +1,6 @@
 {
   "name": "@d31ma/tachyon",
-  "version": "26.29.03",
+  "version": "26.29.07",
   "description": "A polyglot, file-system-routed full-stack framework for Bun",
   "author": "Chidelma",
   "license": "MIT",

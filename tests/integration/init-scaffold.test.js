@@ -30,6 +30,10 @@ test('createAppScaffold writes a deployable starter app', async () => {
     expect(jsconfig).toContain('tachyon-env.d.ts');
     // Globals are embedded self-contained (no @d31ma/tachyon/globals reference).
     expect(tachyonEnv).toContain('const fylo: FyloApi');
+    expect(tachyonEnv).toContain('invoke<T = unknown>(operation: string');
+    expect(tachyonEnv).toContain('const shortcuts:');
+    expect(tachyonEnv).toContain('const contentSurface:');
+    expect(tachyonEnv).toContain('const screenCapture:');
     expect(tachyonEnv).not.toContain('@d31ma/tachyon/globals');
     expect(await readFile(path.join(appDir, 'client', 'pages', 'tac.js'), 'utf8')).toContain('document.title = "Acme Desk"');
     expect(await Bun.file(path.join(appDir, 'browser')).exists()).toBe(false);

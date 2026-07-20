@@ -93,6 +93,11 @@ export default class {
         await shell.exec('echo', ['ready'])
         await share.text('ready')
         await haptics.impact()
+        await shortcuts.register({ id: 'toggle', accelerator: 'Primary+T' })
+        await appWindow.setOpacity(0.8)
+        await contentSurface.open({ id: 'docs', url: 'https://example.com' })
+        await screenCapture.listWindows()
+        await host.invoke('example.echo', { value: 'ready' })
         return capabilities.supports('app.info') ? info : null
     }
 }
@@ -105,6 +110,11 @@ export default class {
         expect(output).toContain("await this.tac.__native.shell.exec('echo', ['ready'])");
         expect(output).toContain("await this.tac.__native.share.text('ready')");
         expect(output).toContain('await this.tac.__native.haptics.impact()');
+        expect(output).toContain('await this.tac.__native.shortcuts.register(');
+        expect(output).toContain('await this.tac.__native.appWindow.setOpacity(0.8)');
+        expect(output).toContain('await this.tac.__native.contentSurface.open(');
+        expect(output).toContain('await this.tac.__native.screenCapture.listWindows()');
+        expect(output).toContain("await this.tac.__native.host.invoke('example.echo'");
         expect(output).toContain("this.tac.__native.capabilities.supports('app.info')");
         expect(output).not.toContain('await app.info()');
     });

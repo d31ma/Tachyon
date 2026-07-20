@@ -10,6 +10,7 @@ describe('enterprise SEO is baked into the prerendered output', () => {
     test('the homepage head carries description, canonical, OG, Twitter and JSON-LD', async () => {
         const html = await read('dist/web/index.html');
         expect(html).toContain('<meta name="description" content="Tachyon is a polyglot');
+        expect(html).toContain('native SwiftUI, Compose, WinUI and GTK controls');
         expect(html).toContain('<link rel="canonical" href="https://tachyon.dev/">');
         expect(html).toContain('property="og:title"');
         expect(html).toContain('name="twitter:card" content="summary_large_image"');

@@ -3,9 +3,9 @@
     <p class="eyebrow">Device targets</p>
     <h2>One client tree, six outputs.</h2>
     <p>
-      Tac builds the same <code>client/</code> source for the browser, desktop
-      WebView hosts, and mobile WebView hosts. Each selected target lands in
-      its own <code>dist/&lt;target&gt;</code> directory.
+      Tac builds the same strict HTML in <code>client/</code> for browsers and,
+      by default, real native controls on desktop and mobile. Each selected
+      target lands in its own <code>dist/&lt;target&gt;</code> directory.
     </p>
   </div>
 
@@ -25,7 +25,8 @@
       <h3>Build all platforms</h3>
       <p>
         Use <code>all</code> for release validation, then preview one target at a time.
-        Native preview checks the local machine before it opens a host project.
+        Non-web bundles always render native controls first and automatically
+        isolate unsupported subtrees in local WebView boundaries.
       </p>
     </div>
     <pre class="code-block"><code>{allTargetsCommand}</code></pre>

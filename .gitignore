@@ -5,6 +5,7 @@ examples/node_modules*/
 .fylo-data/
 .tachyon/
 dist
+dist-staging-*/
 dist-bin/
 dist-web/
 build

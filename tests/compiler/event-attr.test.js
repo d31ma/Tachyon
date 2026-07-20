@@ -136,14 +136,14 @@ describe('compile-time event set is registered once (no per-render DOM scan)', (
 });
 
 describe('component invocations register for scoped re-render', () => {
-    test('emits a hoisted host id and a registerComponentRender call', async () => {
+    test('emits an occurrence-specific component id, canonical host, and registry entry', async () => {
         Compiler.compMapping.set('counter', 'counter/tac.js');
         try {
             const nodes = await Compiler.parseHTML('<main><counter /></main>', 'comp-scope-test');
             const code = await Compiler.createJSData({ script: '', scriptLang: 'js' }, nodes, '/pages/tac.js');
-            // Host id hoisted into a const, used as the div id and the registry key.
-            expect(code).toMatch(/const __tc_host_[a-z0-9]+ = tc_generateId\('[a-z0-9]+', 'id'\)/);
-            expect(code).toMatch(/__tc_helpers__\.registerComponentRender\(__tc_host_[a-z0-9]+, render, '[a-z0-9]+'\)/);
+            expect(code).toMatch(/const (__tc_component_[a-z0-9]+) = tc_generateId\('[a-z0-9]+', 'component'\)\.slice\(3\)/);
+            expect(code).toMatch(/const __tc_host_[a-z0-9]+ = 'tc-' \+ __tc_component_[a-z0-9]+ \+ '-0'/);
+            expect(code).toMatch(/__tc_helpers__\.registerComponentRender\(__tc_host_[a-z0-9]+, render, __tc_component_[a-z0-9]+\)/);
         }
         finally {
             Compiler.compMapping.delete('counter');

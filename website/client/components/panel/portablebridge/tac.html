@@ -1,5 +1,5 @@
 <w-card variant="outlined" class="panel-card portable-bridge">
-  <w-card-item title="Rust companion: permissioned device APIs" subtitle="This colocated tac.rs companion uses the same capability and permission contracts as JavaScript — no framework bridge names in application source.">
+  <w-card-item title="Rust companion: capability detection" subtitle="This web-target demo uses the same transport-free companion spelling as every language and fails closed for unavailable device operations.">
   </w-card-item>
   <w-card-text>
     <div class="w-row ga-2 portable-status">
@@ -11,7 +11,7 @@
       <w-btn size="sm" variant="outlined" on:click="inspect_web()">Refresh Web APIs</w-btn>
       <w-btn size="sm" variant="filled" on:click="inspect_device()">Read device info</w-btn>
       <w-btn size="sm" variant="outlined" on:click="inspect_filesystem()">Inspect native files</w-btn>
-      <w-btn size="sm" variant="filled" on:click="test_mobile()">Test mobile bridge</w-btn>
+      <w-btn size="sm" variant="filled" on:click="test_mobile()">Probe share + haptics</w-btn>
       <w-btn size="sm" variant="outlined" on:click="inspect_permissions()">Inspect permission model</w-btn>
       <w-btn size="sm" variant="outlined" on:click="copy_report()">Copy bridge report</w-btn>
     </div>
@@ -26,8 +26,8 @@
         <p><code>app().info()</code> looks like a native SDK call but remains explicit and policy-gated: <span>{device_status}</span></p>
       </div>
       <div>
-        <strong>Mobile host bridge</strong>
-        <p><code>share().text(...)</code> and <code>haptics().impact()</code> invoke Android and iOS SDKs from this Rust companion: <span>{mobile_status}</span></p>
+        <strong>Native adapter readiness</strong>
+        <p><code>share().text(...)</code> and <code>haptics().impact()</code> stay behind feature checks. Native-first hosts report them unavailable until concrete adapters land: <span>{mobile_status}</span></p>
       </div>
       <div>
         <strong>Raw filesystem bridge</strong>
@@ -46,12 +46,12 @@
         <p><code>secrets()</code> and <code>auth().verify_user(...)</code> are offered only by hosts with a real secure store and local-auth contract: <span>{security_status}</span></p>
       </div>
       <div class="portable-permission-config">
-        <strong>Native permission declaration</strong>
+        <strong>Fail-closed native declaration</strong>
         <pre><code>&#123; "tachyon": &#123;
   "devicePermissions": ["camera", "microphone", "location", "notifications"],
   "nativeCapabilities": ["fs.readText", "fs.readDir"]
 &#125; &#125;</code></pre>
-        <p>Device declarations generate privacy metadata; raw capabilities form the host allowlist. Neither grants access or shows a prompt by itself.</p>
+        <p>Native-first bundles currently reject these compatibility-only declarations. This makes missing camera or filesystem adapters a build error instead of an unserviceable runtime promise.</p>
       </div>
     </div>
   </w-card-text>

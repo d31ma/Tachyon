@@ -37,6 +37,8 @@ a {
   z-index: 39;
   display: none;
   flex-direction: column;
+  flex: 0 0 100%;
+  width: 100%;
   gap: 0.25rem;
   padding: 0.65rem clamp(1rem, 4vw, 1.5rem);
   border-block: 1px solid color-mix(in srgb, var(--w-text) 10%, transparent);
