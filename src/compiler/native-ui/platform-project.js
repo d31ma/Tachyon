@@ -1054,7 +1054,6 @@ FetchContent_MakeAvailable(quickjs)
 add_executable(\${PROJECT_NAME} WIN32 src/main.cpp src/tachyon_ui_controller.c src/app.rc)
 set_property(TARGET \${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 set_property(TARGET \${PROJECT_NAME} PROPERTY VS_PACKAGE_REFERENCES "Microsoft.WindowsAppSDK_${WINDOWS_APP_SDK_VERSION};Microsoft.Windows.CppWinRT_${WINDOWS_CPP_WINRT_VERSION}")
-set_property(TARGET \${PROJECT_NAME} PROPERTY VS_GLOBAL_CppWinRTEnabled "true")
 set_property(TARGET \${PROJECT_NAME} PROPERTY VS_GLOBAL_WindowsPackageType "None")
 target_link_libraries(\${PROJECT_NAME} PRIVATE qjs)
 `);
