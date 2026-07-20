@@ -59,7 +59,7 @@ try {
         appName: 'TachyonWindowsSmoke',
     });
 
-    await run(['cmake', '-S', hostRoot, '-B', buildRoot, '-G', 'Visual Studio 17 2022', '-A', 'x64'], root);
+    await run(['cmake', '-S', hostRoot, '-B', buildRoot, '-A', 'x64'], root);
     await run(['cmake', '--build', buildRoot, '--config', 'Release'], root);
     await access(path.join(buildRoot, 'TachyonWindowsSmoke', 'Release', 'TachyonWindowsSmoke.exe'));
 }
