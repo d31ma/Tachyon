@@ -861,11 +861,15 @@ int main(int argc, char** argv) {
 /** @param {any} host */
 function windowsNativeSource(host) {
     const hybrid = host.hasWebViewFallbacks;
-    return `#include <winrt/Microsoft.UI.Xaml.h>
+    return `#include <windows.h>
+#include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
+#include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 ${hybrid ? '#include <winrt/Microsoft.Web.WebView2.Core.h>' : ''}
 #include <winrt/Windows.Data.Json.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include "tachyon_ui_controller.h"

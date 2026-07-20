@@ -36,7 +36,7 @@ const expectations = {
     macos: { file: ['Sources', 'TachyonApp.swift'], include: ['import SwiftUI', 'import JavaScriptCore', 'TachyonNativeNodeView', 'controller?.call("dispatch"'], exclude: ['import WebKit', 'WKWebView'] },
     ios: { file: ['Sources', 'TachyonNativeView.swift'], include: ['import SwiftUI', 'import JavaScriptCore', 'TachyonNativeNodeView', 'controller?.call("dispatch"'], exclude: ['import WebKit', 'WKWebView'] },
     android: { file: ['app', 'src', 'main', 'java', 'ma', 'del', 'tachyon', 'fixture', 'MainActivity.kt'], include: ['androidx.activity.compose.setContent', 'TachyonNativeNode', 'QuickJs.create()', 'controller.dispatch'], exclude: ['android.webkit', 'WebView'] },
-    windows: { file: ['src', 'main.cpp'], include: ['Microsoft.UI.Xaml', 'TachyonNativeNode', 'tachyon_ui_controller_dispatch'], exclude: ['WebView2', 'ICoreWebView2'] },
+    windows: { file: ['src', 'main.cpp'], include: ['<windows.h>', 'Microsoft.UI.Xaml.Controls.Primitives', 'Windows.Foundation.Collections', 'TachyonNativeNode', 'tachyon_ui_controller_dispatch'], exclude: ['WebView2', 'ICoreWebView2'] },
     linux: { file: ['src', 'main.c'], include: ['<gtk/gtk.h>', 'TachyonNativeNode', 'tachyon_ui_controller_dispatch'], exclude: ['webkit2', 'WebKitWebView'] },
 };
 
