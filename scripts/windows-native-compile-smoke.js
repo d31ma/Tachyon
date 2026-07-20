@@ -30,6 +30,27 @@ const buildRoot = path.join(root, 'build');
 try {
     await mkdir(assetRoot, { recursive: true });
     await writeFile(path.join(assetRoot, 'index.html'), '<!doctype html><html><head></head><body>Windows native smoke</body></html>');
+    await writeFile(path.join(assetRoot, 'tachyon.native-controller.js'), 'globalThis.__tachyonNativeUI = {};');
+    await writeFile(path.join(assetRoot, 'tachyon.native-ui.json'), JSON.stringify({
+        schemaVersion: 1,
+        renderMode: 'native',
+        entryRoute: '/',
+        controller: 'tachyon.native-controller.js',
+        hasWebViewFallbacks: false,
+        webViewFallbacks: [],
+        routes: [{
+            schemaVersion: 1,
+            route: '/',
+            root: {
+                kind: 'element',
+                tag: 'main',
+                attributes: {},
+                style: {},
+                events: {},
+                children: [],
+            },
+        }],
+    }));
 
     await generateNativeHost({
         target: 'windows',
