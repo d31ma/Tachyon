@@ -4,6 +4,7 @@ import path from 'path';
 import { QUICKJS_NG_VERSION, quickJSDriverHeader, quickJSDriverSource } from './quickjs-driver.js';
 
 const WINDOWS_APP_SDK_VERSION = '1.8.260710003';
+const WINDOWS_CPP_WINRT_VERSION = '3.0.260715.1';
 const HYBRID_LOCAL_ASSET_BOOTSTRAP = `<script>(()=>{const append=Node.prototype.appendChild;Node.prototype.appendChild=function(child){for(const name of ["src","href"]){const value=child?.getAttribute?.(name);const local=value?.startsWith("/")&&!value.startsWith("//");if(local){child.setAttribute(name,value.slice(1));if(name==="src"&&child.tagName==="SCRIPT"&&child.type==="module")child.removeAttribute("type")}}return append.call(this,child)}})();</script>`;
 const HYBRID_BOUNDARY_NAVIGATION_SCRIPT = `<script>document.addEventListener("click",event=>{const target=event.composedPath().find(node=>node instanceof Element&&node.hasAttribute("href"));if(!target)return;const href=target.getAttribute("href");if(href==null||href.startsWith("#")||href.startsWith("//")||/^[a-z][a-z0-9+.-]*:/i.test(href))return;const apple=window.webkit?.messageHandlers?.tachyonBoundaryNavigate;if(!apple)return;const route=href===""?"/":"/"+href.replace(/^\\.?\\/+/,"");event.preventDefault();apple.postMessage(route)},true);</script>`;
 const HYBRID_BOUNDARY_THEME_SCRIPT = `<script>(()=>{const root=document.documentElement;const publish=()=>{const theme=root.getAttribute("w-theme")||"light";window.webkit?.messageHandlers?.tachyonBoundaryTheme?.postMessage(theme);if(window.TachyonBoundary)window.TachyonBoundary.setTheme(theme)};new MutationObserver(publish).observe(root,{attributes:true,attributeFilter:["w-theme"]});window.addEventListener("load",publish);requestAnimationFrame(publish)})();</script>`;
@@ -1052,7 +1053,8 @@ FetchContent_Declare(quickjs
 FetchContent_MakeAvailable(quickjs)
 add_executable(\${PROJECT_NAME} WIN32 src/main.cpp src/tachyon_ui_controller.c src/app.rc)
 set_property(TARGET \${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
-set_property(TARGET \${PROJECT_NAME} PROPERTY VS_PACKAGE_REFERENCES "Microsoft.WindowsAppSDK_${WINDOWS_APP_SDK_VERSION}")
+set_property(TARGET \${PROJECT_NAME} PROPERTY VS_PACKAGE_REFERENCES "Microsoft.WindowsAppSDK_${WINDOWS_APP_SDK_VERSION};Microsoft.Windows.CppWinRT_${WINDOWS_CPP_WINRT_VERSION}")
+set_property(TARGET \${PROJECT_NAME} PROPERTY VS_GLOBAL_CppWinRTEnabled "true")
 set_property(TARGET \${PROJECT_NAME} PROPERTY VS_GLOBAL_WindowsPackageType "None")
 target_link_libraries(\${PROJECT_NAME} PRIVATE qjs)
 `);
