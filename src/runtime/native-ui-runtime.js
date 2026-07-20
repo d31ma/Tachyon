@@ -73,6 +73,7 @@ function findTagEnd(html, start) {
 /** @param {string} html @param {number} cursor @param {string} rootTag */
 function findElementEnd(html, cursor, rootTag) {
     let depth = 1;
+    const normalizedHTML = html.toLowerCase();
     while (cursor < html.length) {
         const opening = html.indexOf('<', cursor);
         if (opening < 0) break;
@@ -87,6 +88,14 @@ function findElementEnd(html, cursor, rootTag) {
         const rawTag = html.slice(opening + (closing ? 2 : 1), end).trim();
         const selfClosing = rawTag.endsWith('/');
         const tag = rawTag.replace(/\/$/, '').trim().split(/\s/, 1)[0].toLowerCase();
+        if (!closing && (tag === 'script' || tag === 'style')) {
+            const closeTag = `</${tag}>`;
+            const closingIndex = normalizedHTML.indexOf(closeTag, end + 1);
+            if (closingIndex < 0)
+                throw new Error(`Native UI HTML contains an unterminated <${tag}> tag.`);
+            cursor = closingIndex + closeTag.length;
+            continue;
+        }
         if (tag === rootTag) {
             if (closing) depth -= 1;
             else if (!selfClosing && !HTML_VOID_ELEMENT_SET.has(tag)) depth += 1;

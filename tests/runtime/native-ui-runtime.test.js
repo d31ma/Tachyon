@@ -88,4 +88,17 @@ describe('DOM-free native UI runtime', () => {
             ],
         });
     });
+
+    test('does not truncate WebView boundaries at closing-tag text inside scripts or styles', () => {
+        const boundary = '<company-chart id="live"><script>const markup = "</company-chart>";</script><style>.label::after{content:"</company-chart>"}</style><canvas></canvas></company-chart>';
+        const root = parseNativeUIFragment(`<main>${boundary}<p>After</p></main>`, { route: '/' });
+        expect(root).toMatchObject({
+            kind: 'element',
+            tag: 'main',
+            children: [
+                { kind: 'webview', tag: 'company-chart', id: 'live', html: boundary },
+                { kind: 'element', tag: 'p', children: [{ kind: 'text', value: 'After' }] },
+            ],
+        });
+    });
 });

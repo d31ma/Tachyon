@@ -224,6 +224,17 @@ describe('EVENT_CAPTURE_SCRIPT (pre-hydration dead-zone capture)', () => {
         expect(capture().queue[0]).toMatchObject({ type: 'update:selected', target: picker });
     });
 
+    test('discovers a custom event when its marker is added to an existing element', async () => {
+        document.body.innerHTML = '<div><div id="picker"><span>Choice</span></div></div>';
+        await Promise.resolve();
+        const picker = /** @type {Element} */ (document.getElementById('picker'));
+        picker.setAttribute('data-tac-on-update__selected', '');
+        await Promise.resolve();
+        picker.dispatchEvent(/** @type {any} */ (new windowInstance.Event('update:selected', { bubbles: true })));
+        expect(capture().queue).toHaveLength(1);
+        expect(capture().queue[0]).toMatchObject({ type: 'update:selected', target: picker });
+    });
+
     test('records a click on an internal anchor (for SPA-nav replay)', () => {
         document.body.innerHTML = `<a id="a" href="/about"><span id="inner">About</span></a>`;
         const inner = /** @type {Element} */ (document.getElementById('inner'));

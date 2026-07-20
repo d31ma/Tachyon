@@ -23,6 +23,7 @@ function lowerClassicScriptBigInts(source) {
     let output = '';
     let state = 'code';
     let changed = false;
+    const bigintLiteral = /(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|[0-9][0-9_]*)n\b/y;
     for (let index = 0; index < source.length;) {
         const character = source[index];
         const next = source[index + 1];
@@ -49,7 +50,8 @@ function lowerClassicScriptBigInts(source) {
         if (character === '"') { output += character; index += 1; state = 'double'; continue; }
         if (character === '`') { output += character; index += 1; state = 'template'; continue; }
         if (character >= '0' && character <= '9') {
-            const match = source.slice(index).match(/^(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|[0-9][0-9_]*)n\b/);
+            bigintLiteral.lastIndex = index;
+            const match = bigintLiteral.exec(source);
             if (match) {
                 output += `__tc_bigint__(${JSON.stringify(match[0].slice(0, -1).replaceAll('_', ''))})`;
                 index += match[0].length;

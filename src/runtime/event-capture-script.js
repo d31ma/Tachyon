@@ -36,8 +36,11 @@ export const EVENT_CAPTURE_SCRIPT = `(function(){
   var observer=new MutationObserver(function(records){
     for(var i=0;i<records.length;i++){
       var record=records[i];
-      if(record.type==='attributes') discover(record.target);
-      for(var j=0;j<record.addedNodes.length;j++) discover(record.addedNodes[j]);
+      if(record.type==='attributes'){
+        if(record.attributeName.indexOf('data-tac-on-')===0) listen(record.attributeName.slice(12).replace(/__/g,':'));
+      }else{
+        for(var j=0;j<record.addedNodes.length;j++) discover(record.addedNodes[j]);
+      }
     }
   });
   observer.observe(document.documentElement,{subtree:true,childList:true,attributes:true});
