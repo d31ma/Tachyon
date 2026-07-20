@@ -1059,7 +1059,10 @@ add_executable(\${PROJECT_NAME} WIN32 src/main.cpp src/tachyon_ui_controller.c s
 set_property(TARGET \${PROJECT_NAME} PROPERTY CXX_STANDARD 20)
 set_property(TARGET \${PROJECT_NAME} PROPERTY VS_PACKAGE_REFERENCES "Microsoft.WindowsAppSDK_${WINDOWS_APP_SDK_VERSION};Microsoft.Windows.CppWinRT_${WINDOWS_CPP_WINRT_VERSION}")
 set_property(TARGET \${PROJECT_NAME} PROPERTY VS_GLOBAL_WindowsPackageType "None")
-target_link_libraries(\${PROJECT_NAME} PRIVATE qjs)
+target_link_libraries(\${PROJECT_NAME} PRIVATE
+    "$(_FoundationLibFolder)/Microsoft.WindowsAppRuntime.lib"
+    "$(_FoundationLibFolder)/Microsoft.WindowsAppRuntime.Bootstrap.lib"
+    qjs)
 `);
         await writeFile(path.join(host.outputRoot, 'build.bat'), '@cmake -S . -B build\r\n@cmake --build build --config Release\r\n');
     }

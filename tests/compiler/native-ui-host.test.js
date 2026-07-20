@@ -77,7 +77,8 @@ for (const [target, contract] of Object.entries(expectations)) {
             const cmake = await readFile(path.join(outputRoot, 'CMakeLists.txt'), 'utf8');
             expect(cmake).toContain('VS_PACKAGE_REFERENCES "Microsoft.WindowsAppSDK_1.8.260710003;Microsoft.Windows.CppWinRT_3.0.260715.1"');
             expect(cmake).toContain('VS_GLOBAL_WindowsPackageType "None"');
-            expect(cmake).toContain('target_link_libraries(${PROJECT_NAME} PRIVATE qjs)');
+            expect(cmake).toContain('"$(_FoundationLibFolder)/Microsoft.WindowsAppRuntime.lib"');
+            expect(cmake).toContain('"$(_FoundationLibFolder)/Microsoft.WindowsAppRuntime.Bootstrap.lib"');
         }
         const manifest = JSON.parse(await readFile(path.join(outputRoot, 'tachyon.host.json'), 'utf8'));
         expect(manifest).toMatchObject({
