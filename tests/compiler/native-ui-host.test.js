@@ -205,6 +205,9 @@ for (const target of ['windows', 'linux']) {
             expect(source).toContain('RegisterHotKey');
             expect(source).toContain('SetWindowDisplayAffinity');
             expect(source).toContain('screenCapture.captureWindow');
+            expect(source).toContain('CapabilityEnabled(std::wstring(payload.GetNamedString');
+            expect(source).toContain('auto url = std::wstring(payload.GetNamedString');
+            expect(source).toContain('ParseAccelerator(std::wstring(accelerator))');
             expect(source).toContain('EnsureCoreWebView2Async(environment, options)');
             expect(source).toContain('options.IsInPrivateModeEnabled(!persistent)');
             expect(source).not.toContain('CoreWebView2CreationProperties');
