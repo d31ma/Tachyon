@@ -47,7 +47,11 @@ const initial = await globalThis.__tachyonNativeUI.render();
 const updated = await globalThis.__tachyonNativeUI.dispatch(JSON.stringify({ elementId: 'increment', type: 'click' }));
 const supported = globalThis.__tcNativeBridge__.supports('window.opacity');
 const native = await globalThis.__tcNativeBridge__.invoke('window.opacity', { value: 0.5 });
-console.log(JSON.stringify({ initial: JSON.parse(initial), updated: JSON.parse(updated), supported, native }));`);
+const delivered = [];
+globalThis.__tcNativeBridge__.onMessage(() => { throw new Error('listener failure'); });
+globalThis.__tcNativeBridge__.onMessage((message) => delivered.push(message.event));
+await globalThis.__tachyonNativeUI.emit({ type: 'tac:host-event', event: 'surface.opened', payload: {} });
+console.log(JSON.stringify({ initial: JSON.parse(initial), updated: JSON.parse(updated), supported, native, delivered }));`);
     const processHandle = Bun.spawn(['bun', runner], { stdout: 'pipe', stderr: 'pipe' });
     const [stdout, stderr, exitCode] = await Promise.all([
         new Response(processHandle.stdout).text(),
@@ -60,6 +64,7 @@ console.log(JSON.stringify({ initial: JSON.parse(initial), updated: JSON.parse(u
     expect(JSON.stringify(result.updated)).toContain('Count: 1');
     expect(result.supported).toBe(true);
     expect(result.native).toEqual({ capability: 'window.opacity', payload: { value: 0.5 } });
+    expect(result.delivered).toEqual(['surface.opened']);
 
     const javaScriptCore = Bun.which('jsc');
     if (javaScriptCore) {

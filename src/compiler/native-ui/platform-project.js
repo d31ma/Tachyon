@@ -1199,9 +1199,8 @@ static TachyonManagedSurface* require_surface(JsonObject* payload, char** error)
     }
     if (g_strcmp0(capability, "contentSurface.state") == 0) {
         TachyonManagedSurface* surface = require_surface(payload, error); if (!surface) goto done;
-        const char* uri = webkit_web_view_get_uri(surface->view); char* escaped_uri = g_strescape(uri ? uri : "", NULL);
-        char* value = g_strdup_printf("{\\\"id\\\":\\\"%s\\\",\\\"open\\\":true,\\\"persistentSession\\\":%s,\\\"url\\\":\\\"%s\\\",\\\"canGoBack\\\":%s,\\\"canGoForward\\\":%s}", surface->id, surface->persistent ? "true" : "false", escaped_uri ? escaped_uri : "", webkit_web_view_can_go_back(surface->view) ? "true" : "false", webkit_web_view_can_go_forward(surface->view) ? "true" : "false");
-        result = success_json(value, result_json); g_free(value); g_free(escaped_uri); goto done;
+        const char* uri = webkit_web_view_get_uri(surface->view); JsonBuilder* builder = json_builder_new(); json_builder_begin_object(builder); json_builder_set_member_name(builder, "id"); json_builder_add_string_value(builder, surface->id); json_builder_set_member_name(builder, "open"); json_builder_add_boolean_value(builder, TRUE); json_builder_set_member_name(builder, "persistentSession"); json_builder_add_boolean_value(builder, surface->persistent); json_builder_set_member_name(builder, "url"); json_builder_add_string_value(builder, uri ? uri : ""); json_builder_set_member_name(builder, "canGoBack"); json_builder_add_boolean_value(builder, webkit_web_view_can_go_back(surface->view)); json_builder_set_member_name(builder, "canGoForward"); json_builder_add_boolean_value(builder, webkit_web_view_can_go_forward(surface->view)); json_builder_end_object(builder);
+        JsonNode* node = json_builder_get_root(builder); JsonGenerator* generator = json_generator_new(); json_generator_set_root(generator, node); char* value = json_generator_to_data(generator, NULL); result = success_json(value, result_json); g_free(value); g_object_unref(generator); json_node_free(node); g_object_unref(builder); goto done;
     }
     if (g_str_has_prefix(capability, "contentSurface.")) {
         TachyonManagedSurface* surface = require_surface(payload, error); if (!surface) goto done;
@@ -1246,8 +1245,8 @@ static int handle_native_capability(const char* capability, const char* payload_
     }
     if (g_strcmp0(capability, "app.info") == 0) { result = success_json(${JSON.stringify(JSON.stringify({ name: host.appName, runtime: 'linux-gtk', version: host.version }))}, result_json); goto done; }
     if (g_strcmp0(capability, "clipboard.readText") == 0) {
-        GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD); char* text = gtk_clipboard_wait_for_text(clipboard); char* escaped = g_strescape(text ? text : "", NULL); char* value = g_strdup_printf("\\\"%s\\\"", escaped ? escaped : "");
-        result = success_json(value, result_json); g_free(value); g_free(escaped); g_free(text); goto done;
+        GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD); char* text = gtk_clipboard_wait_for_text(clipboard); JsonNode* node = json_node_new(JSON_NODE_VALUE); json_node_set_string(node, text ? text : ""); JsonGenerator* generator = json_generator_new(); json_generator_set_root(generator, node); char* value = json_generator_to_data(generator, NULL);
+        result = success_json(value, result_json); g_free(value); g_object_unref(generator); json_node_free(node); g_free(text); goto done;
     }
     if (g_strcmp0(capability, "clipboard.writeText") == 0) { const char* text = json_object_get_string_member_with_default(payload, "text", ""); gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), text, -1); result = success_json("{\\\"written\\\":true}", result_json); goto done; }
     if (g_strcmp0(capability, "openUrl") == 0) { const char* url = json_object_get_string_member_with_default(payload, "url", ""); if (!g_str_has_prefix(url, "https://") && !g_str_has_prefix(url, "http://")) { result = fail_host(error, "openUrl requires an http(s) URL"); goto done; } GError* launch_error = NULL; gboolean opened = g_app_info_launch_default_for_uri(url, NULL, &launch_error); if (!opened) { result = fail_host(error, launch_error ? launch_error->message : "Unable to open URL"); if (launch_error) g_error_free(launch_error); goto done; } result = success_json("{\\\"opened\\\":true}", result_json); goto done; }
@@ -1452,7 +1451,7 @@ static BOOL CALLBACK CollectCapturableWindow(HWND hwnd, LPARAM data) {
     if (!IsWindowVisible(hwnd) || GetWindow(hwnd, GW_OWNER)) return TRUE;
     DWORD pid = 0; GetWindowThreadProcessId(hwnd, &pid); if (pid == GetCurrentProcessId()) return TRUE;
     int length = GetWindowTextLengthW(hwnd); if (length <= 0) return TRUE;
-    std::wstring title(static_cast<size_t>(length) + 1, L'\\0'); GetWindowTextW(hwnd, title.data(), length + 1); title.resize(length);
+    std::wstring title(static_cast<size_t>(length) + 1, L'\\0'); int copied = GetWindowTextW(hwnd, title.data(), length + 1); title.resize(static_cast<size_t>(copied));
     auto array = reinterpret_cast<JsonArray*>(data); JsonObject item;
     item.SetNamedValue(L"windowId", JsonValue::CreateStringValue(to_hstring(std::to_string(reinterpret_cast<uintptr_t>(hwnd)))));
     item.SetNamedValue(L"title", JsonValue::CreateStringValue(title)); item.SetNamedValue(L"application", JsonValue::CreateStringValue(L"Windows application"));
@@ -1470,7 +1469,7 @@ static CLSID PngEncoder() {
 static JsonObject CaptureWindow(JsonObject const& payload) {
     auto text = to_string(payload.GetNamedString(L"windowId", L"0")); HWND hwnd = reinterpret_cast<HWND>(static_cast<uintptr_t>(std::stoull(text)));
     RECT rect{}; if (!GetWindowRect(hwnd, &rect)) throw hresult_error(HRESULT_FROM_WIN32(GetLastError()), L"Unable to read capture window bounds");
-    int width = rect.right - rect.left, height = rect.bottom - rect.top; HDC screen = GetDC(nullptr); HDC memory = CreateCompatibleDC(screen); HBITMAP bitmap = CreateCompatibleBitmap(screen, width, height);
+    int width = rect.right - rect.left, height = rect.bottom - rect.top; if (width <= 0 || height <= 0) throw hresult_error(E_FAIL, L"Invalid window dimensions for capture"); HDC screen = GetDC(nullptr); HDC memory = CreateCompatibleDC(screen); HBITMAP bitmap = CreateCompatibleBitmap(screen, width, height);
     auto previous = SelectObject(memory, bitmap); BOOL printed = PrintWindow(hwnd, memory, PW_RENDERFULLCONTENT); SelectObject(memory, previous); DeleteDC(memory); ReleaseDC(nullptr, screen);
     if (!printed) { DeleteObject(bitmap); throw hresult_error(E_FAIL, L"Unable to capture the selected window"); }
     auto destination = payload.GetNamedString(L"destination", L"clipboard"); std::wstring filePath;

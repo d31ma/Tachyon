@@ -208,6 +208,9 @@ for (const target of ['windows', 'linux']) {
             expect(source).toContain('CapabilityEnabled(std::wstring(payload.GetNamedString');
             expect(source).toContain('auto url = std::wstring(payload.GetNamedString');
             expect(source).toContain('ParseAccelerator(std::wstring(accelerator))');
+            expect(source).toContain('int copied = GetWindowTextW');
+            expect(source).toContain('title.resize(static_cast<size_t>(copied))');
+            expect(source).toContain('if (width <= 0 || height <= 0)');
             expect(source).toContain('EnsureCoreWebView2Async(environment, options)');
             expect(source).toContain('options.IsInPrivateModeEnabled(!persistent)');
             expect(source).not.toContain('CoreWebView2CreationProperties');
@@ -219,6 +222,8 @@ for (const target of ['windows', 'linux']) {
             expect(source).toContain('webkit_permission_request_allow');
             expect(source).toContain('success_json("{\\"written\\":true}", result_json)');
             expect(source).not.toContain('success_json("{"written":true}", result_json)');
+            expect(source).toContain('json_generator_to_data(generator, NULL)');
+            expect(source).not.toContain('g_strescape');
             expect(source).not.toContain('shortcuts.register');
             expect(source).not.toContain('screenCapture.captureWindow');
             expect(manifest.hostCapabilities).not.toContain('screenCapture.captureWindow');

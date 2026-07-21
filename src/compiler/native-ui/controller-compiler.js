@@ -192,7 +192,13 @@ globalThis.__tachyonNativeUI = Object.freeze({
         const message = typeof payload === "string" ? JSON.parse(payload) : payload;
         if (!message || message.type !== "tac:host-event" || typeof message.event !== "string")
             throw new Error("Native host event payload is invalid.");
-        for (const listener of [...hostListeners]) listener(message);
+        for (const listener of [...hostListeners]) {
+            try { listener(message); }
+            catch (error) {
+                if (typeof console !== "undefined" && typeof console.error === "function")
+                    console.error("Native host event listener failed:", error);
+            }
+        }
         await Promise.resolve();
         return JSON.stringify(await (await getRuntime(activeRoute)).render());
     },
