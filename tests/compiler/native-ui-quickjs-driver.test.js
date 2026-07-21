@@ -14,7 +14,10 @@ test('desktop controller driver owns QuickJS values and pumps promise jobs', asy
     expect(source).toContain('JS_ExecutePendingJob');
     expect(source).toContain('JS_PromiseState');
     expect(source).toContain('tachyon_ui_controller_dispatch');
+    expect(source).toContain('__tachyonNativeHostCall');
+    expect(source).toContain('tachyon_ui_controller_emit');
     expect(quickJSDriverHeader()).toContain('TachyonUIController');
+    expect(quickJSDriverHeader()).toContain('TachyonNativeHostHandler');
 
     const quickJSRoot = '/tmp/quickjs-0.15.1';
     const compiler = Bun.which('cc');

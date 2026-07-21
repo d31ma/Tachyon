@@ -183,7 +183,7 @@ describe('docs content', () => {
         expect(text).toContain('environment')
     })
 
-    test('documents device APIs and the native-first fail-closed boundary', async () => {
+    test('documents device APIs and the target-accurate native capability boundary', async () => {
         const docs = JSON.parse(await read('client/shared/data/docs.json'))
         const platformApis = docs.topics['platform-apis']
         const text = JSON.stringify(platformApis)
@@ -192,7 +192,9 @@ describe('docs content', () => {
         expect(text).toContain('auth.verifyUser')
         expect(text).toContain('media.getUserMedia')
         expect(text).toContain('host.on')
-        expect(text).toContain('native-tree adapter')
+        expect(text).toContain('Desktop native capability matrix')
+        expect(text).toContain('managedContentOrigins')
+        expect(text).toContain('tachyon.host.json')
     })
 
     test('documents island hydration as a strict server-rendered component contract', async () => {

@@ -143,3 +143,90 @@ for (const [target, includes] of Object.entries(fallbackExpectations)) {
         }
     });
 }
+
+test('macOS emits isolated managed-content, permission, shortcut, window, and capture adapters', async () => {
+    const { root, assets } = await fixture();
+    const outputRoot = path.join(root, 'macos-capabilities');
+    await generateNativeHost({
+        target: 'macos', assetRoot: assets, outputRoot, appName: 'Fixture', appId: 'ma.del.tachyon.fixture',
+        devicePermissions: ['microphone', 'screenCapture'],
+        managedContentOrigins: ['https://chatgpt.com'],
+        permissionOrigins: { microphone: ['https://chatgpt.com'] },
+    });
+    const sourcePath = path.join(outputRoot, 'Sources', 'TachyonApp.swift');
+    const source = await readFile(sourcePath, 'utf8');
+    expect(source).toContain('class TachyonManagedSurface');
+    expect(source).toContain('requestMediaCapturePermissionFor');
+    expect(source).toContain('window.captureProtection');
+    expect(source).toContain('shortcuts.register');
+    expect(source).toContain('screenCapture.captureWindow');
+    expect(source).toContain('__tachyonNativeHostCall');
+    expect(source).not.toContain('configuration.userContentController.addUserScript');
+    const manifest = JSON.parse(await readFile(path.join(outputRoot, 'tachyon.host.json'), 'utf8'));
+    expect(manifest.hostCapabilities).toEqual(expect.arrayContaining([
+        'contentSurface.open', 'screenCapture.captureWindow', 'shortcuts.register', 'window.opacity',
+    ]));
+    if (process.platform === 'darwin') {
+        const typecheck = Bun.spawn(['swiftc', '-typecheck', '-parse-as-library', sourcePath], { stdout: 'pipe', stderr: 'pipe' });
+        const [stderr, exitCode] = await Promise.all([new Response(typecheck.stderr).text(), typecheck.exited]);
+        if (exitCode !== 0) throw new Error(stderr);
+        const build = Bun.spawn(['sh', 'build.sh'], { cwd: outputRoot, stdout: 'pipe', stderr: 'pipe' });
+        const [buildOutput, buildError, buildExitCode] = await Promise.all([
+            new Response(build.stdout).text(), new Response(build.stderr).text(), build.exited,
+        ]);
+        if (buildExitCode !== 0) throw new Error(`${buildOutput}\n${buildError}`);
+        expect(await readFile(path.join(outputRoot, 'build', 'Fixture.app', 'Contents', 'Info.plist'), 'utf8'))
+            .toContain('NSMicrophoneUsageDescription');
+    }
+});
+
+for (const target of ['windows', 'linux']) {
+    test(`${target} emits only its concrete desktop capability adapters`, async () => {
+        const { root, assets } = await fixture();
+        const outputRoot = path.join(root, `${target}-capabilities`);
+        await generateNativeHost({
+            target, assetRoot: assets, outputRoot, appName: 'Fixture', appId: 'ma.del.tachyon.fixture',
+            devicePermissions: target === 'windows' ? ['microphone', 'screenCapture'] : ['microphone'],
+            managedContentOrigins: ['https://chatgpt.com'],
+            permissionOrigins: { microphone: ['https://chatgpt.com'] },
+        });
+        const contract = expectations[target];
+        const source = await readFile(path.join(outputRoot, ...contract.file), 'utf8');
+        expect(source).toContain('contentSurface.open');
+        expect(source).toContain('https://chatgpt.com');
+        expect(source).not.toContain('AddScriptToExecuteOnDocumentCreated');
+        const manifest = JSON.parse(await readFile(path.join(outputRoot, 'tachyon.host.json'), 'utf8'));
+        expect(manifest.hostCapabilities).toContain('contentSurface.open');
+        expect(manifest.managedContentPolicy).toMatchObject({
+            allowedOrigins: ['https://chatgpt.com'], permissions: 'declared-origin-only',
+        });
+        if (target === 'windows') {
+            expect(source).toContain('HandleNativeCapability');
+            expect(source).toContain('RegisterHotKey');
+            expect(source).toContain('SetWindowDisplayAffinity');
+            expect(source).toContain('screenCapture.captureWindow');
+            expect(source).toContain('EnsureCoreWebView2Async(environment, options)');
+            expect(source).toContain('options.IsInPrivateModeEnabled(!persistent)');
+            expect(source).not.toContain('CoreWebView2CreationProperties');
+            expect(manifest.hostCapabilities).toEqual(expect.arrayContaining([
+                'shortcuts.register', 'window.captureProtection', 'screenCapture.captureWindow',
+            ]));
+        } else {
+            expect(source).toContain('handle_native_capability');
+            expect(source).toContain('webkit_permission_request_allow');
+            expect(source).toContain('success_json("{\\"written\\":true}", result_json)');
+            expect(source).not.toContain('success_json("{"written":true}", result_json)');
+            expect(source).not.toContain('shortcuts.register');
+            expect(source).not.toContain('screenCapture.captureWindow');
+            expect(manifest.hostCapabilities).not.toContain('screenCapture.captureWindow');
+            if (process.platform === 'linux' && process.env.TACHYON_NATIVE_COMPILE_SMOKE === '1') {
+                const build = Bun.spawn(['sh', 'build.sh'], { cwd: outputRoot, stdout: 'pipe', stderr: 'pipe' });
+                const [buildOutput, buildError, buildExitCode] = await Promise.all([
+                    new Response(build.stdout).text(), new Response(build.stderr).text(), build.exited,
+                ]);
+                if (buildExitCode !== 0) throw new Error(`${buildOutput}\n${buildError}`);
+                expect(await Bun.file(path.join(outputRoot, 'build', 'Fixture')).exists()).toBe(true);
+            }
+        }
+    });
+}

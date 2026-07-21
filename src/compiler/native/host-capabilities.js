@@ -7,6 +7,7 @@
 
 const BASE_CAPABILITIES = Object.freeze([
     'app.info',
+    'capabilities.state',
     'clipboard.readText',
     'clipboard.writeText',
     'openUrl',
@@ -24,6 +25,9 @@ const DESKTOP_CAPABILITIES = Object.freeze([
     'window.state',
     'window.alwaysOnTop',
     'window.opacity',
+]);
+
+const MANAGED_CONTENT_CAPABILITIES = Object.freeze([
     'contentSurface.open',
     'contentSurface.navigate',
     'contentSurface.state',
@@ -60,44 +64,48 @@ const SECURE_STORAGE_CAPABILITIES = Object.freeze([
     'auth.verifyUser',
 ]);
 
-/** @param {string} target @param {string[]} [requestedRawCapabilities] @param {{ devicePermissions?: string[], extensionCapabilities?: string[] }} [options] */
+/** @param {string} target @param {string[]} [requestedRawCapabilities] @param {{ devicePermissions?: string[], extensionCapabilities?: string[], managedContentOrigins?: string[] }} [options] */
 export function nativeHostCapabilities(target, requestedRawCapabilities = [], options = {}) {
     const requested = new Set(requestedRawCapabilities);
     const devicePermissions = new Set(Array.isArray(options.devicePermissions) ? options.devicePermissions : []);
     const extensionCapabilities = Array.isArray(options.extensionCapabilities) ? options.extensionCapabilities : [];
+    const managedContent = Array.isArray(options.managedContentOrigins) && options.managedContentOrigins.length > 0
+        ? MANAGED_CONTENT_CAPABILITIES
+        : [];
     const raw = [
-        ...(target === 'android' || target === 'ios' || target === 'macos' || target === 'windows' || target === 'linux'
+        ...(target === 'macos'
             ? FILESYSTEM_CAPABILITIES.filter((capability) => requested.has(capability))
             : []),
-        ...(target === 'macos' || target === 'windows' || target === 'linux') && requested.has('shell.exec') ? ['shell.exec'] : [],
+        ...target === 'macos' && requested.has('shell.exec') ? ['shell.exec'] : [],
     ];
     if (target === 'android') return Object.freeze([...MOBILE_CAPABILITIES, 'ui.statusBarStyle', ...SECURE_STORAGE_CAPABILITIES, ...raw]);
     if (target === 'ios') return Object.freeze([...MOBILE_CAPABILITIES, ...SECURE_STORAGE_CAPABILITIES, ...raw]);
     if (target === 'macos') return Object.freeze([
         ...DESKTOP_CAPABILITIES,
+        ...managedContent,
         ...DESKTOP_SHORTCUT_CAPABILITIES,
         ...DESKTOP_RECOVERABLE_WINDOW_CAPABILITIES,
         ...(devicePermissions.has('screenCapture') ? SCREEN_CAPTURE_CAPABILITIES : []),
         'fs.paths',
-        ...SECURE_STORAGE_CAPABILITIES,
         ...raw,
         ...extensionCapabilities,
     ]);
     if (target === 'windows') return Object.freeze([
         ...DESKTOP_CAPABILITIES,
+        ...managedContent,
         ...DESKTOP_SHORTCUT_CAPABILITIES,
         ...DESKTOP_RECOVERABLE_WINDOW_CAPABILITIES,
         ...(devicePermissions.has('screenCapture') ? SCREEN_CAPTURE_CAPABILITIES : []),
         ...raw,
         ...extensionCapabilities,
     ]);
-    if (target === 'linux') return Object.freeze([...DESKTOP_CAPABILITIES, ...raw, ...extensionCapabilities]);
+    if (target === 'linux') return Object.freeze([...DESKTOP_CAPABILITIES, ...managedContent, ...raw, ...extensionCapabilities]);
     return Object.freeze([]);
 }
 
-/** @param {string} target @param {string[]} [requestedRawCapabilities] */
-export function nativeRawHostCapabilities(target, requestedRawCapabilities = []) {
-    return nativeHostCapabilities(target, requestedRawCapabilities).filter((capability) => /^(?:fs\.(?:readText|writeText|readDir|stat|mkdir|remove)|shell\.|process\.)/.test(capability));
+/** @param {string} target @param {string[]} [requestedRawCapabilities] @param {{ devicePermissions?: string[], managedContentOrigins?: string[] }} [options] */
+export function nativeRawHostCapabilities(target, requestedRawCapabilities = [], options = {}) {
+    return nativeHostCapabilities(target, requestedRawCapabilities, options).filter((capability) => /^(?:fs\.(?:readText|writeText|readDir|stat|mkdir|remove)|shell\.|process\.)/.test(capability));
 }
 
 export const TAC_NATIVE_BRIDGE_ABI_VERSION = 1;

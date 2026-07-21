@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.30.02] - 2026-07-21
+
+### Added
+
+- Native-first macOS, Windows, and Linux hosts now implement desktop window
+  controls, isolated managed-content surfaces, declared camera and microphone
+  permissions, and truthful capability state reporting. macOS and Windows also
+  implement global shortcuts and permissioned window enumeration and capture.
+- Release CI now compiles generated native hosts on macOS, Linux, and Windows,
+  including platform-specific managed-content and screen-capture adapters.
+
+### Fixed
+
+- Compiled standalone Tachyon binaries now embed the DOM-free native UI runtime,
+  so a freshly initialized project can bundle native targets without resolving
+  source-only runtime paths.
+- Native host manifests now advertise only generated operations and preserve
+  declared permissions and exact-origin managed-content policies. Remote content
+  stays isolated from the application-wide native bridge.
+
 ## [26.29.03] - 2026-07-15
 
 ### Added

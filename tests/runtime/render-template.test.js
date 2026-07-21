@@ -554,6 +554,36 @@ describe('render-template browser-side (with window)', () => {
         delete (/** @type {any} */ (windowInstance)).__tcNativeBridge__;
     });
 
+    test('native capability state is reported by the concrete host adapter', async () => {
+        /** @type {Array<{ capability: string, payload: unknown }>} */
+        const calls = [];
+        (/** @type {any} */ (windowInstance)).__tcNativeBridge__ = {
+            supports(capability) {
+                return capability === 'capabilities.state' || capability === 'screenCapture.captureWindow';
+            },
+            async invoke(capability, payload) {
+                calls.push({ capability, payload });
+                return capability === 'capabilities.state' ? 'prompt' : null;
+            },
+        };
+        try {
+            const r = testResults();
+            const factory = await buildTestFactory(`
+                const native = __tc_helpers__.createTacHelpers({}).__native
+                __tc_test__.supported = native.capabilities.supports('screenCapture.captureWindow')
+                __tc_test__.state = await native.capabilities.state('screenCapture.captureWindow')
+            `);
+            await factory();
+            expect(r.supported).toBe(true);
+            expect(r.state).toBe('prompt');
+            expect(calls).toEqual([{
+                capability: 'capabilities.state', payload: { capability: 'screenCapture.captureWindow' },
+            }]);
+        } finally {
+            delete (/** @type {any} */ (windowInstance)).__tcNativeBridge__;
+        }
+    });
+
     test('#118-#122 validate dangerous desktop requests before crossing the bridge and deliver typed host events', async () => {
         const meta = windowInstance.document.createElement('meta');
         meta.name = 'tachyon-native-capabilities';

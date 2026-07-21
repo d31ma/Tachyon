@@ -68,6 +68,51 @@ jobs:
           ./ty --version
           ./ty --help
 
+  macos-native:
+    name: macOS native host compile smoke
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate and compile the complete macOS host
+        run: bun test tests/compiler/native-ui-host.test.js --test-name-pattern 'macOS emits isolated managed-content'
+
+  linux-native:
+    name: Linux native host compile smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libgtk-3-dev libwebkit2gtk-4.1-dev
+          bun install --frozen-lockfile
+
+      - name: Generate and compile the complete Linux host
+        run: bun test tests/compiler/native-ui-host.test.js --test-name-pattern 'linux emits only its concrete desktop capability adapters'
+        env:
+          TACHYON_NATIVE_COMPILE_SMOKE: '1'
+
   windows-native:
     name: Windows native host compile smoke
     runs-on: windows-latest

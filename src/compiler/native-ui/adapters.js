@@ -89,3 +89,19 @@ export function scopeNativeUIBoundaryHTML(html, scopes, styles = new Map()) {
     const css = scopes.map((scope) => styles.get(scope) ?? '').filter(Boolean).join('\n');
     return css ? `<style>${css}</style>${scoped}` : scoped;
 }
+
+/**
+ * Returns this module as self-contained source for the compiled standalone
+ * CLI. Bun's executable compiler does not preserve arbitrary source paths, so
+ * native controller builds load this source through an in-memory plugin.
+ */
+export function nativeUIAdaptersModuleSource() {
+    return `const CUSTOM_ELEMENT_PATTERN = ${CUSTOM_ELEMENT_PATTERN};
+${assertCustomElementTag.toString()}
+export ${normalizeNativeUIAdapters.toString()}
+export ${nativeUIAdapterMap.toString()}
+export ${normalizeNativeUIBoundaryHTML.toString()}
+export ${collectNativeUIScopedStyles.toString()}
+export ${scopeNativeUIBoundaryHTML.toString()}
+`;
+}

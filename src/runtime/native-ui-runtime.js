@@ -5,7 +5,12 @@ import {
     NATIVE_UI_ELEMENT_SET,
     TAC_CONTROL_ELEMENT_SET,
 } from '../compiler/html-tags.js';
-import { collectNativeUIScopedStyles, nativeUIAdapterMap, scopeNativeUIBoundaryHTML } from '../compiler/native-ui/adapters.js';
+import {
+    collectNativeUIScopedStyles,
+    nativeUIAdapterMap,
+    nativeUIAdaptersModuleSource,
+    scopeNativeUIBoundaryHTML,
+} from '../compiler/native-ui/adapters.js';
 
 const NON_VISUAL_ELEMENTS = new Set(['script', 'style', 'template', 'noscript']);
 
@@ -308,4 +313,28 @@ export default class NativeUIRuntime {
         };
         return this.render(nativeEvent.elementId, event);
     }
+}
+
+/**
+ * Serializes the DOM-free native renderer into a virtual ES module. This is
+ * deliberately generated from the live functions so source and standalone
+ * binary builds cannot drift apart.
+ */
+export function nativeUIRuntimeModuleSource() {
+    return `${nativeUIAdaptersModuleSource()}
+const HTML_ELEMENT_SET = new Set(${JSON.stringify([...HTML_ELEMENT_SET])});
+const HTML_VOID_ELEMENT_SET = new Set(${JSON.stringify([...HTML_VOID_ELEMENT_SET])});
+const NATIVE_UI_ELEMENT_SET = new Set(${JSON.stringify([...NATIVE_UI_ELEMENT_SET])});
+const TAC_CONTROL_ELEMENT_SET = new Set(${JSON.stringify([...TAC_CONTROL_ELEMENT_SET])});
+const NON_VISUAL_ELEMENTS = new Set(${JSON.stringify([...NON_VISUAL_ELEMENTS])});
+${decodeEntities.toString()}
+${parseStyle.toString()}
+${parseAttributes.toString()}
+${findTagEnd.toString()}
+${findElementEnd.toString()}
+${appendText.toString()}
+export ${parseNativeUIFragment.toString()}
+${collectEvents.toString()}
+export default ${NativeUIRuntime.toString()};
+`;
 }

@@ -51,7 +51,12 @@ timedTest('tac.bundle ships a native-first macOS host at dist/<target>', { timeo
         entry: 'Resources/tachyon.native-ui.json',
         renderMode: 'native',
         hasWebViewFallbacks: false,
-        hostCapabilities: [],
+        hostCapabilities: expect.arrayContaining([
+            'window.opacity',
+            'window.clickThrough',
+            'window.captureProtection',
+            'shortcuts.register',
+        ]),
         rawHostCapabilities: [],
     });
     const source = await readFile(path.join(cwd, 'dist', 'macos', 'Sources', 'TachyonApp.swift'), 'utf8');
@@ -131,6 +136,76 @@ timedTest('native-first hosts reject standalone permission origins without an ad
     }, null, 2));
     await expect(runCli(cwd, ['bun', bundleEntrypoint, '--target', 'android']))
         .rejects.toThrow(/Native-first bundles do not expose permissionOrigins yet/i);
+});
+
+timedTest('macOS native-first host accepts and advertises concrete CLOAK capabilities', { timeout: 30000 }, async () => {
+    const cwd = await createFixture();
+    await writeFile(path.join(cwd, 'package.json'), JSON.stringify({
+        name: 'native-fixture', private: true,
+        tachyon: {
+            devicePermissions: ['microphone', 'screenCapture'],
+            managedContentOrigins: ['https://chatgpt.com', 'https://claude.ai'],
+            permissionOrigins: { microphone: ['https://chatgpt.com', 'https://claude.ai'] },
+        },
+    }, null, 2));
+    await runCli(cwd, ['bun', bundleEntrypoint, '--target', 'macos']);
+    const manifest = JSON.parse(await readFile(path.join(cwd, 'dist', 'macos', 'tachyon.host.json'), 'utf8'));
+    expect(manifest.hostCapabilities).toEqual(expect.arrayContaining([
+        'contentSurface.open',
+        'screenCapture.listWindows',
+        'shortcuts.register',
+        'window.opacity',
+    ]));
+    expect(manifest.requestedDevicePermissions).toEqual(['microphone', 'screenCapture']);
+    expect(manifest.permissionOrigins).toEqual({ microphone: ['https://chatgpt.com', 'https://claude.ai'] });
+    expect(manifest.managedContentPolicy.allowedOrigins).toEqual(['https://chatgpt.com', 'https://claude.ai']);
+    const source = await readFile(path.join(cwd, 'dist', 'macos', 'Sources', 'TachyonApp.swift'), 'utf8');
+    expect(source).toContain('requestMediaCapturePermissionFor');
+    expect(source).toContain('screenCapture.captureWindow');
+    expect(source).toContain('globalShortcutMonitor');
+});
+
+timedTest('desktop native-first hosts reject declarations without target adapters', { timeout: 30000 }, async () => {
+    const linuxCwd = await createFixture();
+    await writeFile(path.join(linuxCwd, 'package.json'), JSON.stringify({
+        name: 'native-fixture', private: true,
+        tachyon: { devicePermissions: ['screenCapture'] },
+    }, null, 2));
+    await expect(runCli(linuxCwd, ['bun', bundleEntrypoint, '--target', 'linux']))
+        .rejects.toThrow(/linux.+do not implement device permission: screenCapture/i);
+
+    const windowsCwd = await createFixture();
+    await writeFile(path.join(windowsCwd, 'package.json'), JSON.stringify({
+        name: 'native-fixture', private: true,
+        tachyon: { nativeCapabilities: ['fs.readText'] },
+    }, null, 2));
+    await expect(runCli(windowsCwd, ['bun', bundleEntrypoint, '--target', 'windows']))
+        .rejects.toThrow(/windows.+do not implement raw nativeCapabilities/i);
+});
+
+timedTest('managed permission origins must be declared and least-privileged', { timeout: 30000 }, async () => {
+    const missingPermission = await createFixture();
+    await writeFile(path.join(missingPermission, 'package.json'), JSON.stringify({
+        name: 'native-fixture', private: true,
+        tachyon: {
+            managedContentOrigins: ['https://chatgpt.com'],
+            permissionOrigins: { microphone: ['https://chatgpt.com'] },
+        },
+    }, null, 2));
+    await expect(runCli(missingPermission, ['bun', bundleEntrypoint, '--target', 'macos']))
+        .rejects.toThrow(/permissionOrigins\.microphone requires 'microphone'/i);
+
+    const undeclaredOrigin = await createFixture();
+    await writeFile(path.join(undeclaredOrigin, 'package.json'), JSON.stringify({
+        name: 'native-fixture', private: true,
+        tachyon: {
+            devicePermissions: ['microphone'],
+            managedContentOrigins: ['https://chatgpt.com'],
+            permissionOrigins: { microphone: ['https://claude.ai'] },
+        },
+    }, null, 2));
+    await expect(runCli(undeclaredOrigin, ['bun', bundleEntrypoint, '--target', 'macos']))
+        .rejects.toThrow(/permissionOrigins\.microphone must be contained.+managedContentOrigins/i);
 });
 
 timedTest('removed render-mode arguments are rejected by both native commands', { timeout: 30000 }, async () => {

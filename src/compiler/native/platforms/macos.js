@@ -9,6 +9,14 @@ export default class MacOSGenerator extends PlatformGenerator {
     }
 
     infoPlist() {
+        const usageDescriptions = [
+            this.requestedDevicePermissions.has('camera')
+                ? '    <key>NSCameraUsageDescription</key><string>Allow camera access for declared managed content origins.</string>'
+                : '',
+            this.requestedDevicePermissions.has('microphone')
+                ? '    <key>NSMicrophoneUsageDescription</key><string>Allow microphone access for declared managed content origins.</string>'
+                : '',
+        ].filter(Boolean).join('\n');
         return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -24,16 +32,26 @@ export default class MacOSGenerator extends PlatformGenerator {
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
+${usageDescriptions}
 </dict></plist>
 `;
     }
 
     entitlements() {
+        const deviceEntitlements = [
+            this.requestedDevicePermissions.has('camera')
+                ? '    <key>com.apple.security.device.camera</key><true/>'
+                : '',
+            this.requestedDevicePermissions.has('microphone')
+                ? '    <key>com.apple.security.device.audio-input</key><true/>'
+                : '',
+        ].filter(Boolean).join('\n');
         return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
     <key>com.apple.security.app-sandbox</key><true/>
     <key>com.apple.security.network.client</key><true/>
+${deviceEntitlements}
 </dict></plist>
 `;
     }

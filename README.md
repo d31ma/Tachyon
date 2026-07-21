@@ -928,31 +928,30 @@ Tac keeps browser and device transport private. Companion languages use an
 implicit platform prelude, so application source never imports a framework
 bridge or handles transport messages directly.
 
-The current capability catalog applies to the **web target**. Browser output
-provides standards-backed storage, network, clipboard, file selection,
-geolocation, notifications, and media APIs where the browser supports them.
-Capability checks fail closed when an operation is unavailable.
+Browser output provides standards-backed storage, network, clipboard, file
+selection, geolocation, notifications, and media APIs where the browser
+supports them. Desktop native-first output provides concrete native-tree
+adapters for window state, managed remote-content surfaces, declared media
+permissions, and capability inspection. macOS and Windows additionally provide
+global shortcuts and permissioned window capture. Capability checks fail closed
+when an operation is unavailable.
 
-Non-web targets now use the native-first renderer exclusively. They emit native
-controls and a DOM-free controller, but native-tree capability adapters are not
-implemented yet. To prevent an apparently successful bundle from shipping an
-unserviceable permission or privileged operation, native-first bundles reject
-these compatibility-only configuration keys:
+Desktop permissions and managed content are opt-in. Declare camera, microphone,
+or screen-capture access with `tachyon.devicePermissions`; restrict media grants
+to exact origins with `tachyon.permissionOrigins`; and allow remote surfaces
+with `tachyon.managedContentOrigins`. Permission origins must also appear in the
+managed-content allowlist. Raw `tachyon.nativeCapabilities` remain macOS-only,
+and `nativeHostExtensions` remain unavailable to native-first bundles.
 
-- `tachyon.devicePermissions`
-- `tachyon.nativeCapabilities`
-- `tachyon.managedContentOrigins`
-- `nativeHostExtensions`
+Managed remote content runs in an isolated platform WebView. Navigation and
+media requests are checked against the exact-origin allowlists, popups are
+blocked, and the surface never receives the application-wide native bridge.
+Automatic local WebView rendering boundaries follow the same no-bridge rule.
 
-Automatic local WebView boundaries are rendering islands only. They load
-bundled HTML, CSS, and component modules for an unsupported subtree, and do not
-receive an application-wide native bridge or silently expand device access.
-
-Use browser feature detection and `capabilities.supports()` for web output.
-For non-web applications that need camera, biometrics, filesystem, managed
-remote content, or another privileged family, wait for or implement a concrete
-native-tree adapter; the bundle error names the unsupported configuration
-instead of degrading to the removed full-WebView host.
+Use feature detection and `capabilities.supports()` on every target. Mobile
+native-first targets and unsupported desktop operations reject privileged
+configuration during the bundle instead of silently degrading to an
+unserviceable host.
 ### Decorator Form
 
 The same context, lifecycle, and event helpers are also exposed as Stage 3 decorators. They move the wiring out of the constructor and onto the field or method that owns the value. Companion scripts can use them as bare identifiers — the Tachyon compiler auto-imports them when it sees the `@<name>` syntax, so no `import` line is needed in user code.

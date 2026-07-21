@@ -17,6 +17,330 @@ function swiftIdentifier(value) {
 }
 
 /** @param {any} host */
+function swiftMacOSHost(host) {
+    if (host.target !== 'macos') return '';
+    const managed = host.managedContentOrigins.length > 0;
+    const managedCases = managed ? `
+        case "contentSurface.open":
+            let id = try requireString(payload, "id")
+            let url = try requireAllowedURL(payload, "url")
+            if surfaces[id] != nil { throw TachyonNativeHostError.message("Managed content surface already exists: " + id) }
+            let surface = TachyonManagedSurface(
+                id: id,
+                url: url,
+                persistent: payload["persistentSession"] as? Bool == true,
+                allowedOrigins: managedContentOrigins,
+                permissionOrigins: permissionOrigins,
+                requestedPermissions: requestedPermissions)
+            surfaces[id] = surface
+            surface.show()
+            return ["id": id, "open": true, "pending": false]
+        case "contentSurface.navigate":
+            let surface = try requireSurface(payload)
+            surface.navigate(try requireAllowedURL(payload, "url"))
+            return surface.state()
+        case "contentSurface.state": return try requireSurface(payload).state()
+        case "contentSurface.goBack": let surface = try requireSurface(payload); surface.goBack(); return surface.state()
+        case "contentSurface.goForward": let surface = try requireSurface(payload); surface.goForward(); return surface.state()
+        case "contentSurface.reload": let surface = try requireSurface(payload); surface.reload(); return surface.state()
+        case "contentSurface.close":
+            let id = try requireString(payload, "id")
+            guard let surface = surfaces.removeValue(forKey: id) else { throw TachyonNativeHostError.message("Unknown managed content surface: " + id) }
+            surface.close()
+            return ["id": id, "open": false]
+` : '';
+    const managedTypes = managed ? `
+final class TachyonManagedSurface: NSObject, WKNavigationDelegate, WKUIDelegate {
+    let id: String
+    let window: NSWindow
+    let webView: WKWebView
+    let allowedOrigins: Set<String>
+    let permissionOrigins: [String: [String]]
+    let requestedPermissions: Set<String>
+
+    init(id: String, url: URL, persistent: Bool, allowedOrigins: Set<String>, permissionOrigins: [String: [String]], requestedPermissions: Set<String>) {
+        self.id = id
+        self.allowedOrigins = allowedOrigins
+        self.permissionOrigins = permissionOrigins
+        self.requestedPermissions = requestedPermissions
+        let configuration = WKWebViewConfiguration()
+        configuration.processPool = WKProcessPool()
+        if !persistent { configuration.websiteDataStore = .nonPersistent() }
+        self.webView = WKWebView(frame: .zero, configuration: configuration)
+        self.window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1040, height: 760),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false)
+        super.init()
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        window.title = id
+        window.contentView = webView
+        window.center()
+        webView.load(URLRequest(url: url))
+    }
+
+    func show() { window.makeKeyAndOrderFront(nil) }
+    func close() { window.close() }
+    func navigate(_ url: URL) { webView.load(URLRequest(url: url)) }
+    func goBack() { if webView.canGoBack { webView.goBack() } }
+    func goForward() { if webView.canGoForward { webView.goForward() } }
+    func reload() { webView.reload() }
+    func state() -> [String: Any] {
+        ["id": id, "open": window.isVisible, "url": webView.url?.absoluteString ?? "", "canGoBack": webView.canGoBack, "canGoForward": webView.canGoForward]
+    }
+
+    private func exactOrigin(_ url: URL?) -> String? {
+        guard let url, url.scheme == "https", let host = url.host else { return nil }
+        let port = url.port.flatMap { $0 == 443 ? nil : ":" + String($0) } ?? ""
+        return "https://" + host + port
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        decisionHandler(exactOrigin(action.request.url).map(allowedOrigins.contains) == true ? .allow : .cancel)
+    }
+
+    @available(macOS 12.0, *)
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+        let port = origin.port == 0 || origin.port == 443 ? "" : ":" + String(origin.port)
+        let exactOrigin = origin.protocol + "://" + origin.host + port
+        let names: [String]
+        switch type {
+        case .camera: names = ["camera"]
+        case .microphone: names = ["microphone"]
+        case .cameraAndMicrophone: names = ["camera", "microphone"]
+        @unknown default: names = []
+        }
+        let allowed = !names.isEmpty && names.allSatisfy { permission in
+            requestedPermissions.contains(permission) && (permissionOrigins[permission] ?? []).contains(exactOrigin)
+        }
+        decisionHandler(allowed ? .prompt : .deny)
+    }
+}
+` : '';
+    return `
+#if os(macOS)
+enum TachyonNativeHostError: LocalizedError {
+    case message(String)
+    var errorDescription: String? { if case .message(let value) = self { return value }; return "Native host error" }
+}
+
+${managedTypes}
+
+final class TachyonNativeHost {
+    static let shared = TachyonNativeHost()
+    let capabilities = Set<String>(${JSON.stringify(host.hostCapabilities)})
+    let requestedPermissions = Set<String>(${JSON.stringify([...host.requestedDevicePermissions].sort())})
+    let managedContentOrigins = Set<String>(${JSON.stringify(host.managedContentOrigins)})
+    let permissionOrigins: [String: [String]] = (try? JSONDecoder().decode([String: [String]].self, from: Data(#"${JSON.stringify(host.permissionOrigins)}"#.utf8))) ?? [:]
+    private var shortcuts: [String: String] = [:]
+    private var globalShortcutMonitor: Any?
+    private var localShortcutMonitor: Any?
+    ${managed ? 'private var surfaces: [String: TachyonManagedSurface] = [:]' : ''}
+    var emit: ((String, Any) -> Void)?
+
+    func handle(capability: String, payloadJSON: String) -> String {
+        do {
+            let data = Data(payloadJSON.utf8)
+            let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            let value = try invoke(capability: capability, payload: payload)
+            return try envelope(ok: true, value: value)
+        } catch {
+            return (try? envelope(ok: false, value: error.localizedDescription)) ?? "{\\\"ok\\\":false,\\\"error\\\":\\\"Native host capability failed\\\"}"
+        }
+    }
+
+    private func envelope(ok: Bool, value: Any) throws -> String {
+        let object: [String: Any] = ok ? ["ok": true, "value": value] : ["ok": false, "error": String(describing: value)]
+        return String(data: try JSONSerialization.data(withJSONObject: object), encoding: .utf8)!
+    }
+
+    private func requireString(_ payload: [String: Any], _ key: String) throws -> String {
+        guard let value = payload[key] as? String, !value.isEmpty else { throw TachyonNativeHostError.message("Native capability payload requires " + key) }
+        return value
+    }
+
+    private func requireAllowedURL(_ payload: [String: Any], _ key: String) throws -> URL {
+        let raw = try requireString(payload, key)
+        guard let url = URL(string: raw), url.scheme == "https", let host = url.host else { throw TachyonNativeHostError.message("Managed content requires an HTTPS URL") }
+        let origin = "https://" + host + (url.port.flatMap { $0 == 443 ? nil : ":" + String($0) } ?? "")
+        guard managedContentOrigins.contains(origin) else { throw TachyonNativeHostError.message("Managed content origin is not allowed: " + origin) }
+        return url
+    }
+
+    ${managed ? `private func requireSurface(_ payload: [String: Any]) throws -> TachyonManagedSurface {
+        let id = try requireString(payload, "id")
+        guard let surface = surfaces[id] else { throw TachyonNativeHostError.message("Unknown managed content surface: " + id) }
+        return surface
+    }` : ''}
+
+    private func primaryWindow() throws -> NSWindow {
+        ${managed ? 'let window = NSApp.windows.first { candidate in !surfaces.values.contains { $0.window === candidate } }' : 'let window = NSApp.windows.first'}
+        guard let window else { throw TachyonNativeHostError.message("Application window is unavailable") }
+        return window
+    }
+
+    private func appWindowState() throws -> [String: Any] {
+        let window = try primaryWindow()
+        return ["alwaysOnTop": window.level == .floating, "opacity": window.alphaValue, "clickThrough": window.ignoresMouseEvents, "captureProtection": window.sharingType == .none]
+    }
+
+    private func invoke(capability: String, payload: [String: Any]) throws -> Any {
+        if capability != "__tachyon.hostInfo" && !capabilities.contains(capability) {
+            throw TachyonNativeHostError.message("Unsupported native capability: " + capability)
+        }
+        switch capability {
+        case "__tachyon.hostInfo": return ["target": "macos", "platform": "desktop", "capabilities": Array(capabilities).sorted()]
+        case "capabilities.state":
+            let requested = try requireString(payload, "capability")
+            if !capabilities.contains(requested) { return "unsupported" }
+            if requested.hasPrefix("screenCapture.") { return CGPreflightScreenCaptureAccess() ? "granted" : "prompt" }
+            return "granted"
+        case "app.info": return ["name": ${JSON.stringify(host.appName)}, "runtime": "macos-swiftui", "version": ${JSON.stringify(host.version)}]
+        case "clipboard.readText": return NSPasteboard.general.string(forType: .string) ?? ""
+        case "clipboard.writeText":
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(String(describing: payload["text"] ?? ""), forType: .string)
+            return ["written": true]
+        case "openUrl":
+            let raw = try requireString(payload, "url")
+            guard let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { throw TachyonNativeHostError.message("openUrl requires an http(s) URL") }
+            NSWorkspace.shared.open(url)
+            return ["opened": true]
+        case "window.state": return try appWindowState()
+        case "window.alwaysOnTop": try primaryWindow().level = payload["enabled"] as? Bool == true ? .floating : .normal; return try appWindowState()
+        case "window.opacity":
+            let value = payload["value"] as? Double ?? 1
+            guard value >= 0.1 && value <= 1 else { throw TachyonNativeHostError.message("Window opacity must be between 0.1 and 1") }
+            try primaryWindow().alphaValue = value
+            return try appWindowState()
+        case "window.clickThrough": try primaryWindow().ignoresMouseEvents = payload["enabled"] as? Bool == true; return try appWindowState()
+        case "window.captureProtection": try primaryWindow().sharingType = payload["enabled"] as? Bool == true ? .none : .readOnly; return try appWindowState()
+        case "shortcuts.register": return try registerShortcut(payload)
+        case "shortcuts.unregister":
+            let id = try requireString(payload, "id")
+            let removed = shortcuts.removeValue(forKey: id) != nil
+            return ["shortcuts": shortcutSnapshot(), "unregistered": removed]
+        case "shortcuts.unregisterAll":
+            let count = shortcuts.count
+            shortcuts.removeAll()
+            return ["shortcuts": shortcutSnapshot(), "unregistered": count]
+        case "shortcuts.list": return ["shortcuts": shortcutSnapshot()]
+        ${managedCases}
+        case "screenCapture.state": return ["supported": true, "permission": CGPreflightScreenCaptureAccess() ? "granted" : "prompt", "format": "png", "destinations": ["clipboard", "file", "both"]]
+        case "screenCapture.listWindows": return try listWindows(payload)
+        case "screenCapture.captureWindow": return try captureWindow(payload)
+        case "fs.paths":
+            let manager = FileManager.default
+            return ["appData": manager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory(), "cache": manager.urls(for: .cachesDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory(), "documents": manager.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory()]
+        case "fs.readText": let path = try requireString(payload, "path"); return ["path": path, "text": try String(contentsOfFile: path, encoding: .utf8)]
+        case "fs.writeText": let path = try requireString(payload, "path"); let text = String(describing: payload["text"] ?? ""); try text.write(toFile: path, atomically: true, encoding: .utf8); return ["path": path, "bytes": text.utf8.count, "written": true]
+        case "fs.readDir": let path = try requireString(payload, "path"); return ["path": path, "entries": try FileManager.default.contentsOfDirectory(atPath: path)]
+        case "fs.stat": let path = try requireString(payload, "path"); var directory: ObjCBool = false; let exists = FileManager.default.fileExists(atPath: path, isDirectory: &directory); return ["path": path, "exists": exists, "type": directory.boolValue ? "directory" : "file"]
+        case "fs.mkdir": let path = try requireString(payload, "path"); try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true); return ["path": path, "created": true]
+        case "fs.remove": let path = try requireString(payload, "path"); if FileManager.default.fileExists(atPath: path) { try FileManager.default.removeItem(atPath: path) }; return ["path": path, "removed": true]
+        case "shell.exec": return try runProcess(payload)
+        default: throw TachyonNativeHostError.message("Unsupported native capability: " + capability)
+        }
+    }
+
+    private func shortcutSnapshot() -> [[String: String]] {
+        shortcuts.keys.sorted().map { ["id": $0, "accelerator": shortcuts[$0] ?? ""] }
+    }
+
+    private func registerShortcut(_ payload: [String: Any]) throws -> [String: Any] {
+        let id = try requireString(payload, "id")
+        let accelerator = try requireString(payload, "accelerator")
+        if shortcuts[id] != nil && payload["replace"] as? Bool != true { throw TachyonNativeHostError.message("Shortcut id is already registered: " + id) }
+        if shortcuts.contains(where: { $0.key != id && $0.value.caseInsensitiveCompare(accelerator) == .orderedSame }) { throw TachyonNativeHostError.message("Shortcut accelerator is already registered: " + accelerator) }
+        shortcuts[id] = accelerator
+        installShortcutMonitors()
+        return ["shortcuts": shortcutSnapshot(), "shortcut": ["id": id, "accelerator": accelerator]]
+    }
+
+    private func installShortcutMonitors() {
+        if globalShortcutMonitor == nil { globalShortcutMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in self?.handleShortcut(event) } }
+        if localShortcutMonitor == nil { localShortcutMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in self?.handleShortcut(event); return event } }
+    }
+
+    private func handleShortcut(_ event: NSEvent) {
+        let key = event.charactersIgnoringModifiers?.uppercased() ?? ""
+        for (id, accelerator) in shortcuts where shortcutMatches(accelerator, key: key, flags: event.modifierFlags) {
+            emit?("shortcut.activated", ["id": id])
+        }
+    }
+
+    private func shortcutMatches(_ accelerator: String, key: String, flags: NSEvent.ModifierFlags) -> Bool {
+        let parts = accelerator.split(separator: "+").map { String($0).lowercased() }
+        guard parts.last?.uppercased() == key else { return false }
+        let modifiers = Set(parts.dropLast())
+        let primary = modifiers.contains("primary") || modifiers.contains("command") || modifiers.contains("meta")
+        return flags.contains(.command) == primary
+            && flags.contains(.control) == modifiers.contains("control")
+            && flags.contains(.option) == (modifiers.contains("alt") || modifiers.contains("option"))
+            && flags.contains(.shift) == modifiers.contains("shift")
+    }
+
+    private func listWindows(_ payload: [String: Any]) throws -> [String: Any] {
+        if !CGPreflightScreenCaptureAccess() { _ = CGRequestScreenCaptureAccess() }
+        let entries = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let windows = entries.compactMap { entry -> [String: Any]? in
+            guard let id = entry[kCGWindowNumber as String] as? NSNumber,
+                  let owner = entry[kCGWindowOwnerName as String] as? String else { return nil }
+            if payload["excludeCurrentApp"] as? Bool != false,
+               (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == ownPID { return nil }
+            let bounds = entry[kCGWindowBounds as String] as? [String: Any] ?? [:]
+            let frame: [String: Any] = [
+                "x": (bounds["X"] as? NSNumber)?.doubleValue ?? 0,
+                "y": (bounds["Y"] as? NSNumber)?.doubleValue ?? 0,
+                "width": (bounds["Width"] as? NSNumber)?.doubleValue ?? 0,
+                "height": (bounds["Height"] as? NSNumber)?.doubleValue ?? 0
+            ]
+            return ["windowId": id.stringValue, "application": owner, "title": entry[kCGWindowName as String] as? String ?? "", "frame": frame]
+        }
+        return ["windows": windows, "permission": "granted"]
+    }
+
+    private func captureWindow(_ payload: [String: Any]) throws -> [String: Any] {
+        guard let id = UInt32(try requireString(payload, "windowId")) else { throw TachyonNativeHostError.message("screenCapture.captureWindow requires a numeric windowId") }
+        if !CGPreflightScreenCaptureAccess(), !CGRequestScreenCaptureAccess() { throw TachyonNativeHostError.message("Screen capture permission was denied") }
+        typealias CaptureFunction = @convention(c) (CGRect, CGWindowListOption, CGWindowID, CGWindowImageOption) -> Unmanaged<CGImage>?
+        guard let process = dlopen(nil, RTLD_LAZY),
+              let symbol = dlsym(process, "CGWindowListCreateImage") else { throw TachyonNativeHostError.message("Window capture is unavailable on this macOS version") }
+        let capture = unsafeBitCast(symbol, to: CaptureFunction.self)
+        guard let image = capture(.null, .optionIncludingWindow, CGWindowID(id), [.boundsIgnoreFraming, .bestResolution])?.takeRetainedValue() else { throw TachyonNativeHostError.message("Unable to capture the selected window") }
+        let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])!
+        let destination = String(describing: payload["destination"] ?? "clipboard")
+        var filePath = ""
+        if destination == "clipboard" || destination == "both" { NSPasteboard.general.clearContents(); NSPasteboard.general.setData(data, forType: .png) }
+        if destination == "file" || destination == "both" {
+            let directory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+            let url = directory.appendingPathComponent("tachyon-capture-" + String(Int(Date().timeIntervalSince1970)) + ".png")
+            try data.write(to: url, options: .atomic)
+            filePath = url.path
+        }
+        return ["windowId": String(id), "destination": destination, "format": "png", "bytes": data.count, "clipboard": destination == "clipboard" || destination == "both", "path": filePath]
+    }
+
+    private func runProcess(_ payload: [String: Any]) throws -> [String: Any] {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        let command = try requireString(payload, "command")
+        let arguments = payload["args"] as? [String] ?? []
+        process.arguments = [command] + arguments
+        if let cwd = payload["cwd"] as? String, !cwd.isEmpty { process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true) }
+        let stdout = Pipe(); let stderr = Pipe(); process.standardOutput = stdout; process.standardError = stderr
+        try process.run(); process.waitUntilExit()
+        return ["exitCode": Int(process.terminationStatus), "stdout": String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? "", "stderr": String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""]
+    }
+}
+#endif
+`;
+}
+
+/** @param {any} host */
 function swiftNativeView(host) {
     const appType = swiftIdentifier(host.appName || 'TachyonApp');
     const hybrid = host.hasWebViewFallbacks;
@@ -184,13 +508,16 @@ struct TachyonHybridWebView: View {
     }
 }
 ` : '';
+    const needsWebKit = hybrid || (host.target === 'macos' && host.managedContentOrigins.length > 0);
     return `import Foundation
 import JavaScriptCore
 import SwiftUI
-	${hybrid ? 'import WebKit' : ''}
+	${needsWebKit ? 'import WebKit' : ''}
 #if os(macOS)
 import AppKit
 #endif
+
+${swiftMacOSHost(host)}
 
 struct TachyonNativeNode: Decodable, Identifiable {
     let kind: String
@@ -228,6 +555,12 @@ final class TachyonNativeController {
         context.exceptionHandler = { _, exception in
             print("Tachyon controller: " + (exception?.toString() ?? "unknown JavaScript error"))
         }
+        #if os(macOS)
+        let nativeHostCall: @convention(block) (String, String) -> String = { capability, payload in
+            TachyonNativeHost.shared.handle(capability: capability, payloadJSON: payload)
+        }
+        context.setObject(nativeHostCall, forKeyedSubscript: "__tachyonNativeHostCall" as NSString)
+        #endif
         let resolveURL: @convention(block) (String, String) -> [String: String] = { input, base in
             let baseURL = base.isEmpty ? nil : URL(string: base)
             guard let url = URL(string: input, relativeTo: baseURL)?.absoluteURL else {
@@ -364,6 +697,9 @@ final class TachyonNativeController {
             routes = bundle.routes
             root = bundle.routes.first(where: { $0.route == bundle.entryRoute })?.root
             controller = try TachyonNativeController()
+            #if os(macOS)
+            TachyonNativeHost.shared.emit = { [weak self] event, payload in self?.emit(event, payload: payload) }
+            #endif
             controller?.call("render") { [weak self] result in
                 Task { @MainActor in self?.apply(result) }
             }
@@ -406,6 +742,15 @@ final class TachyonNativeController {
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let json = String(data: data, encoding: .utf8) else { return }
         controller?.call("dispatch", payload: json) { [weak self] result in
+            Task { @MainActor in self?.apply(result) }
+        }
+    }
+
+    private func emit(_ event: String, payload: Any) {
+        let envelope: [String: Any] = ["type": "tac:host-event", "event": event, "payload": payload]
+        guard let data = try? JSONSerialization.data(withJSONObject: envelope),
+              let json = String(data: data, encoding: .utf8) else { return }
+        controller?.call("emit", payload: json) { [weak self] result in
             Task { @MainActor in self?.apply(result) }
         }
     }
@@ -761,11 +1106,171 @@ ${hybrid ? `private fun hybridDocument(fragment: String, theme: String): String 
 }
 
 /** @param {any} host */
+function linuxHostSupport(host) {
+    const managed = host.managedContentOrigins.length > 0;
+    const capabilityChecks = /** @type {string[]} */ (host.hostCapabilities).map((capability) => `g_strcmp0(capability, ${JSON.stringify(capability)}) == 0`).join(' || ') || 'FALSE';
+    const allowedOrigins = /** @type {string[]} */ (host.managedContentOrigins).map((origin) => `g_strcmp0(origin, ${JSON.stringify(origin)}) == 0`).join(' || ') || 'FALSE';
+    const permissionChecks = /** @type {[string, string[]][]} */ (Object.entries(host.permissionOrigins)).flatMap(([permission, origins]) =>
+        origins.map((origin) => `(g_strcmp0(permission, ${JSON.stringify(permission)}) == 0 && g_strcmp0(origin, ${JSON.stringify(origin)}) == 0)`),
+    ).join(' || ') || 'FALSE';
+    const managedSupport = managed ? `
+typedef struct { char* id; GtkWidget* window; WebKitWebView* view; gboolean persistent; } TachyonManagedSurface;
+static GHashTable* managed_surfaces = NULL;
+
+static char* exact_origin(const char* uri) {
+    GError* error = NULL;
+    GUri* parsed = g_uri_parse(uri, G_URI_FLAGS_NONE, &error);
+    if (!parsed || g_strcmp0(g_uri_get_scheme(parsed), "https") != 0 || !g_uri_get_host(parsed)) {
+        if (parsed) g_uri_unref(parsed); if (error) g_error_free(error); return NULL;
+    }
+    int port = g_uri_get_port(parsed);
+    char* origin = port > 0 && port != 443
+        ? g_strdup_printf("https://%s:%d", g_uri_get_host(parsed), port)
+        : g_strdup_printf("https://%s", g_uri_get_host(parsed));
+    g_uri_unref(parsed); if (error) g_error_free(error); return origin;
+}
+
+static gboolean managed_origin_allowed(const char* origin) { return origin && (${allowedOrigins}); }
+static gboolean permission_origin_allowed(const char* permission, const char* origin) { return origin && (${permissionChecks}); }
+
+static gboolean managed_decide_policy(WebKitWebView* view, WebKitPolicyDecision* decision, WebKitPolicyDecisionType type, gpointer data) {
+    (void)view; (void)data;
+    if (type != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION && type != WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) return FALSE;
+    if (type == WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) { webkit_policy_decision_ignore(decision); return TRUE; }
+    WebKitNavigationPolicyDecision* navigation = WEBKIT_NAVIGATION_POLICY_DECISION(decision);
+    WebKitURIRequest* request = webkit_navigation_action_get_request(webkit_navigation_policy_decision_get_navigation_action(navigation));
+    char* origin = exact_origin(webkit_uri_request_get_uri(request));
+    gboolean allowed = managed_origin_allowed(origin); g_free(origin);
+    if (allowed) webkit_policy_decision_use(decision); else webkit_policy_decision_ignore(decision);
+    return TRUE;
+}
+
+static gboolean managed_permission_request(WebKitWebView* view, WebKitPermissionRequest* request, gpointer data) {
+    (void)data;
+    const char* uri = webkit_web_view_get_uri(view);
+    char* origin = exact_origin(uri ? uri : "");
+    gboolean allowed = FALSE;
+    if (WEBKIT_IS_USER_MEDIA_PERMISSION_REQUEST(request)) {
+        WebKitUserMediaPermissionRequest* media = WEBKIT_USER_MEDIA_PERMISSION_REQUEST(request);
+        gboolean audio = webkit_user_media_permission_is_for_audio_device(media);
+        gboolean video = webkit_user_media_permission_is_for_video_device(media);
+        allowed = (!audio || permission_origin_allowed("microphone", origin))
+            && (!video || permission_origin_allowed("camera", origin));
+    }
+    g_free(origin);
+    if (allowed) webkit_permission_request_allow(request); else webkit_permission_request_deny(request);
+    return TRUE;
+}
+
+static void managed_surface_free(gpointer value) {
+    TachyonManagedSurface* surface = (TachyonManagedSurface*)value;
+    if (!surface) return;
+    if (surface->window) gtk_widget_destroy(surface->window);
+    g_free(surface->id); g_free(surface);
+}
+
+static TachyonManagedSurface* require_surface(JsonObject* payload, char** error) {
+    const char* id = json_object_get_string_member_with_default(payload, "id", "");
+    TachyonManagedSurface* surface = managed_surfaces ? (TachyonManagedSurface*)g_hash_table_lookup(managed_surfaces, id) : NULL;
+    if (!surface && error) *error = duplicate_host_text("Unknown managed content surface");
+    return surface;
+}
+` : '';
+    const managedCases = managed ? `
+    if (g_strcmp0(capability, "contentSurface.open") == 0) {
+        const char* id = json_object_get_string_member_with_default(payload, "id", "");
+        const char* url = json_object_get_string_member_with_default(payload, "url", "");
+        char* origin = exact_origin(url);
+        if (!g_regex_match_simple("^[A-Za-z0-9._-]{1,128}$", id, 0, 0) || !managed_origin_allowed(origin)) { g_free(origin); result = fail_host(error, "Managed content id or origin is not allowed"); goto done; }
+        g_free(origin);
+        if (!managed_surfaces) managed_surfaces = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, managed_surface_free);
+        if (g_hash_table_contains(managed_surfaces, id)) { result = fail_host(error, "Managed content surface already exists"); goto done; }
+        TachyonManagedSurface* surface = g_new0(TachyonManagedSurface, 1); surface->id = g_strdup(id); surface->persistent = json_object_get_boolean_member_with_default(payload, "persistentSession", FALSE);
+        surface->window = gtk_window_new(GTK_WINDOW_TOPLEVEL); gtk_window_set_title(GTK_WINDOW(surface->window), id); gtk_window_set_default_size(GTK_WINDOW(surface->window), 1040, 760);
+        WebKitWebContext* context = surface->persistent
+            ? webkit_web_context_get_default() : webkit_web_context_new_ephemeral();
+        surface->view = WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
+        if (!surface->persistent) g_object_unref(context);
+        g_signal_connect(surface->view, "decide-policy", G_CALLBACK(managed_decide_policy), NULL);
+        g_signal_connect(surface->view, "permission-request", G_CALLBACK(managed_permission_request), NULL);
+        gtk_container_add(GTK_CONTAINER(surface->window), GTK_WIDGET(surface->view)); gtk_widget_show_all(surface->window);
+        webkit_web_view_load_uri(surface->view, url); g_hash_table_insert(managed_surfaces, g_strdup(id), surface);
+        char* value = g_strdup_printf("{\\\"id\\\":\\\"%s\\\",\\\"open\\\":true,\\\"pending\\\":false}", surface->id); result = success_json(value, result_json); g_free(value); goto done;
+    }
+    if (g_strcmp0(capability, "contentSurface.state") == 0) {
+        TachyonManagedSurface* surface = require_surface(payload, error); if (!surface) goto done;
+        const char* uri = webkit_web_view_get_uri(surface->view); char* escaped_uri = g_strescape(uri ? uri : "", NULL);
+        char* value = g_strdup_printf("{\\\"id\\\":\\\"%s\\\",\\\"open\\\":true,\\\"persistentSession\\\":%s,\\\"url\\\":\\\"%s\\\",\\\"canGoBack\\\":%s,\\\"canGoForward\\\":%s}", surface->id, surface->persistent ? "true" : "false", escaped_uri ? escaped_uri : "", webkit_web_view_can_go_back(surface->view) ? "true" : "false", webkit_web_view_can_go_forward(surface->view) ? "true" : "false");
+        result = success_json(value, result_json); g_free(value); g_free(escaped_uri); goto done;
+    }
+    if (g_str_has_prefix(capability, "contentSurface.")) {
+        TachyonManagedSurface* surface = require_surface(payload, error); if (!surface) goto done;
+        if (g_strcmp0(capability, "contentSurface.navigate") == 0) {
+            const char* url = json_object_get_string_member_with_default(payload, "url", ""); char* origin = exact_origin(url);
+            if (!managed_origin_allowed(origin)) { g_free(origin); result = fail_host(error, "Managed content origin is not allowed"); goto done; }
+            g_free(origin); webkit_web_view_load_uri(surface->view, url);
+        } else if (g_strcmp0(capability, "contentSurface.goBack") == 0 && webkit_web_view_can_go_back(surface->view)) webkit_web_view_go_back(surface->view);
+        else if (g_strcmp0(capability, "contentSurface.goForward") == 0 && webkit_web_view_can_go_forward(surface->view)) webkit_web_view_go_forward(surface->view);
+        else if (g_strcmp0(capability, "contentSurface.reload") == 0) webkit_web_view_reload(surface->view);
+        else if (g_strcmp0(capability, "contentSurface.close") == 0) { char* id = g_strdup(surface->id); g_hash_table_remove(managed_surfaces, id); char* value = g_strdup_printf("{\\\"id\\\":\\\"%s\\\",\\\"open\\\":false}", id); result = success_json(value, result_json); g_free(value); g_free(id); goto done; }
+        result = success_json("{\\\"open\\\":true}", result_json); goto done;
+    }
+` : '';
+    return `static char* duplicate_host_text(const char* value) {
+    size_t length = value ? strlen(value) : 0; char* copy = (char*)malloc(length + 1);
+    if (!copy) return NULL; if (length) memcpy(copy, value, length); copy[length] = 0; return copy;
+}
+
+static int fail_host(char** error, const char* message) { if (error) *error = duplicate_host_text(message); return 0; }
+static int success_json(const char* value_json, char** result_json) {
+    size_t length = strlen(value_json) + 32; char* envelope = (char*)malloc(length);
+    if (!envelope) return 0; snprintf(envelope, length, "{\\\"ok\\\":true,\\\"value\\\":%s}", value_json);
+    *result_json = envelope; return 1;
+}
+static gboolean capability_enabled(const char* capability) { return ${capabilityChecks}; }
+static gboolean window_always_on_top = FALSE;
+
+${managedSupport}
+
+static int handle_native_capability(const char* capability, const char* payload_json, char** result_json, char** error, void* user_data) {
+    (void)user_data; int result = 0;
+    if (g_strcmp0(capability, "__tachyon.hostInfo") == 0)
+        return success_json(${JSON.stringify(JSON.stringify({ target: 'linux', platform: 'desktop', capabilities: host.hostCapabilities }))}, result_json);
+    if (!capability_enabled(capability)) return fail_host(error, "Unsupported native capability");
+    JsonParser* parser = json_parser_new();
+    if (!json_parser_load_from_data(parser, payload_json ? payload_json : "{}", -1, NULL)) { g_object_unref(parser); return fail_host(error, "Invalid native capability payload"); }
+    JsonObject* payload = json_node_get_object(json_parser_get_root(parser));
+    if (g_strcmp0(capability, "capabilities.state") == 0) {
+        const char* requested = json_object_get_string_member_with_default(payload, "capability", "");
+        result = success_json(capability_enabled(requested) ? "\\\"granted\\\"" : "\\\"unsupported\\\"", result_json); goto done;
+    }
+    if (g_strcmp0(capability, "app.info") == 0) { result = success_json(${JSON.stringify(JSON.stringify({ name: host.appName, runtime: 'linux-gtk', version: host.version }))}, result_json); goto done; }
+    if (g_strcmp0(capability, "clipboard.readText") == 0) {
+        GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD); char* text = gtk_clipboard_wait_for_text(clipboard); char* escaped = g_strescape(text ? text : "", NULL); char* value = g_strdup_printf("\\\"%s\\\"", escaped ? escaped : "");
+        result = success_json(value, result_json); g_free(value); g_free(escaped); g_free(text); goto done;
+    }
+    if (g_strcmp0(capability, "clipboard.writeText") == 0) { const char* text = json_object_get_string_member_with_default(payload, "text", ""); gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), text, -1); result = success_json("{\\\"written\\\":true}", result_json); goto done; }
+    if (g_strcmp0(capability, "openUrl") == 0) { const char* url = json_object_get_string_member_with_default(payload, "url", ""); if (!g_str_has_prefix(url, "https://") && !g_str_has_prefix(url, "http://")) { result = fail_host(error, "openUrl requires an http(s) URL"); goto done; } GError* launch_error = NULL; gboolean opened = g_app_info_launch_default_for_uri(url, NULL, &launch_error); if (!opened) { result = fail_host(error, launch_error ? launch_error->message : "Unable to open URL"); if (launch_error) g_error_free(launch_error); goto done; } result = success_json("{\\\"opened\\\":true}", result_json); goto done; }
+    if (g_strcmp0(capability, "window.state") == 0) { char* value = g_strdup_printf("{\\\"alwaysOnTop\\\":%s,\\\"opacity\\\":%.3f}", window_always_on_top ? "true" : "false", gtk_widget_get_opacity(window)); result = success_json(value, result_json); g_free(value); goto done; }
+    if (g_strcmp0(capability, "window.alwaysOnTop") == 0) { gboolean enabled = json_object_get_boolean_member_with_default(payload, "enabled", FALSE); gtk_window_set_keep_above(GTK_WINDOW(window), enabled); window_always_on_top = enabled; char* value = g_strdup_printf("{\\\"alwaysOnTop\\\":%s,\\\"opacity\\\":%.3f}", enabled ? "true" : "false", gtk_widget_get_opacity(window)); result = success_json(value, result_json); g_free(value); goto done; }
+    if (g_strcmp0(capability, "window.opacity") == 0) { double opacity = json_object_get_double_member_with_default(payload, "value", 1.0); if (opacity < 0.1 || opacity > 1.0) { result = fail_host(error, "Window opacity must be between 0.1 and 1"); goto done; } gtk_widget_set_opacity(window, opacity); char* reply = g_strdup_printf("{\\\"alwaysOnTop\\\":%s,\\\"opacity\\\":%.3f}", window_always_on_top ? "true" : "false", opacity); result = success_json(reply, result_json); g_free(reply); goto done; }
+    ${managedCases}
+    result = fail_host(error, "Unsupported native capability");
+done:
+    g_object_unref(parser); return result;
+}
+`;
+}
+
+/** @param {any} host */
 function linuxNativeSource(host) {
     const hybrid = host.hasWebViewFallbacks;
+    const needsWebKit = hybrid || host.managedContentOrigins.length > 0;
     return `#include <gtk/gtk.h>
 #include <json-glib/json-glib.h>
-${hybrid ? '#include <webkit2/webkit2.h>' : ''}
+${needsWebKit ? '#include <webkit2/webkit2.h>' : ''}
+#include <stdlib.h>
+#include <string.h>
 #include "tachyon_ui_controller.h"
 
 #define APP_NAME ${JSON.stringify(host.appName)}
@@ -774,6 +1279,8 @@ static TachyonUIController* controller = NULL;
 static GtkWidget* window = NULL;
 
 static void apply_snapshot(const char* snapshot);
+
+${linuxHostSupport(host)}
 
 static void dispatch_click(GtkButton* button, gpointer user_data) {
     (void)button;
@@ -837,7 +1344,7 @@ static void apply_snapshot(const char* snapshot) {
 static void activate(GtkApplication* app, gpointer user_data) {
     (void)user_data;
     char* error = NULL;
-    controller = tachyon_ui_controller_create("Resources/tachyon.native-controller.js", &error);
+    controller = tachyon_ui_controller_create("Resources/tachyon.native-controller.js", handle_native_capability, NULL, &error);
     if (!controller) g_error("Tachyon controller: %s", error ? error : "initialization failed");
     window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), APP_NAME);
@@ -859,31 +1366,239 @@ int main(int argc, char** argv) {
 }
 
 /** @param {any} host */
+function windowsHostSupport(host) {
+    const managed = host.managedContentOrigins.length > 0;
+    const capture = host.requestedDevicePermissions.has('screenCapture');
+    const checks = /** @type {string[]} */ (host.hostCapabilities).map((capability) => `capability == L${JSON.stringify(capability)}`).join(' || ') || 'false';
+    const allowedOrigins = /** @type {string[]} */ (host.managedContentOrigins).map((origin) => `origin == L${JSON.stringify(origin)}`).join(' || ') || 'false';
+    const permissionChecks = /** @type {[string, string[]][]} */ (Object.entries(host.permissionOrigins)).flatMap(([permission, origins]) =>
+        origins.map((origin) => `(permission == L${JSON.stringify(permission)} && origin == L${JSON.stringify(origin)})`),
+    ).join(' || ') || 'false';
+    const managedTypes = managed ? `
+struct TachyonManagedSurface { Window window{ nullptr }; WebView2 view{ nullptr }; bool persistent = false; bool pending = true; };
+static std::map<std::wstring, TachyonManagedSurface> managedSurfaces;
+static bool ManagedOriginAllowed(std::wstring const& origin) { return ${allowedOrigins}; }
+static bool PermissionOriginAllowed(std::wstring const& permission, std::wstring const& origin) { return ${permissionChecks}; }
+
+static std::wstring ExactOrigin(hstring const& raw) {
+    try {
+        Windows::Foundation::Uri uri(raw);
+        if (uri.SchemeName() != L"https") return L"";
+        auto origin = std::wstring(L"https://") + std::wstring(uri.Host());
+        if (uri.Port() > 0 && uri.Port() != 443) origin += L":" + std::to_wstring(uri.Port());
+        return origin;
+    } catch (...) { return L""; }
+}
+
+static void ConfigureManagedSurface(WebView2 const& view) {
+    view.NavigationStarting([](WebView2 const&, CoreWebView2NavigationStartingEventArgs const& args) {
+        if (!ManagedOriginAllowed(ExactOrigin(args.Uri()))) args.Cancel(true);
+    });
+    view.CoreWebView2Initialized([view](WebView2 const&, CoreWebView2InitializedEventArgs const& args) {
+        if (FAILED(args.Exception())) return;
+        auto core = view.CoreWebView2();
+        core.NewWindowRequested([](CoreWebView2 const&, CoreWebView2NewWindowRequestedEventArgs const& args) { args.Handled(true); });
+        core.PermissionRequested([](CoreWebView2 const&, CoreWebView2PermissionRequestedEventArgs const& args) {
+            auto origin = ExactOrigin(args.Uri());
+            std::wstring permission;
+            if (args.PermissionKind() == CoreWebView2PermissionKind::Microphone) permission = L"microphone";
+            else if (args.PermissionKind() == CoreWebView2PermissionKind::Camera) permission = L"camera";
+            args.State(PermissionOriginAllowed(permission, origin) ? CoreWebView2PermissionState::Allow : CoreWebView2PermissionState::Deny);
+            args.SavesInProfile(false);
+        });
+    });
+}
+
+static fire_and_forget InitializeManagedSurface(std::wstring id, WebView2 view, hstring url, bool persistent) {
+    try {
+        auto environment = co_await CoreWebView2Environment::CreateAsync();
+        auto options = environment.CreateCoreWebView2ControllerOptions();
+        options.IsInPrivateModeEnabled(!persistent);
+        co_await view.EnsureCoreWebView2Async(environment, options);
+        view.Source(Windows::Foundation::Uri(url));
+        auto found = managedSurfaces.find(id); if (found != managedSurfaces.end()) found->second.pending = false;
+        JsonObject payload; payload.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); EmitHostEvent(L"surface.opened", payload);
+    } catch (...) {
+        JsonObject payload; payload.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); EmitHostEvent(L"surface.failed", payload);
+    }
+}
+` : '';
+    const managedCases = managed ? `
+        if (capability == L"contentSurface.open") {
+            auto id = payload.GetNamedString(L"id", L""); auto url = payload.GetNamedString(L"url", L"");
+            if (id.empty() || !ManagedOriginAllowed(ExactOrigin(url))) throw hresult_invalid_argument(L"Managed content id or origin is not allowed");
+            if (managedSurfaces.contains(std::wstring(id))) throw hresult_invalid_argument(L"Managed content surface already exists");
+            TachyonManagedSurface surface; surface.window = Window(); surface.window.Title(id); surface.view = WebView2(); surface.persistent = payload.GetNamedBoolean(L"persistentSession", false);
+            ConfigureManagedSurface(surface.view); surface.window.Content(surface.view); surface.window.Activate();
+            managedSurfaces.emplace(std::wstring(id), surface);
+            InitializeManagedSurface(std::wstring(id), surface.view, url, surface.persistent);
+            JsonObject value; value.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); value.SetNamedValue(L"open", JsonValue::CreateBooleanValue(true)); value.SetNamedValue(L"pending", JsonValue::CreateBooleanValue(true)); return HostSuccess(value, resultJson);
+        }
+        if (capability.rfind(L"contentSurface.", 0) == 0) {
+            auto id = std::wstring(payload.GetNamedString(L"id", L"")); auto found = managedSurfaces.find(id);
+            if (found == managedSurfaces.end()) throw hresult_invalid_argument(L"Unknown managed content surface");
+            auto& surface = found->second;
+            if (capability == L"contentSurface.navigate") { auto url = payload.GetNamedString(L"url", L""); if (!ManagedOriginAllowed(ExactOrigin(url))) throw hresult_invalid_argument(L"Managed content origin is not allowed"); surface.view.Source(Windows::Foundation::Uri(url)); }
+            else if (capability == L"contentSurface.goBack" && surface.view.CanGoBack()) surface.view.GoBack();
+            else if (capability == L"contentSurface.goForward" && surface.view.CanGoForward()) surface.view.GoForward();
+            else if (capability == L"contentSurface.reload") surface.view.Reload();
+            else if (capability == L"contentSurface.close") { surface.window.Close(); managedSurfaces.erase(found); JsonObject value; value.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); value.SetNamedValue(L"open", JsonValue::CreateBooleanValue(false)); return HostSuccess(value, resultJson); }
+            JsonObject value; value.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); value.SetNamedValue(L"open", JsonValue::CreateBooleanValue(true)); value.SetNamedValue(L"persistentSession", JsonValue::CreateBooleanValue(surface.persistent)); value.SetNamedValue(L"pending", JsonValue::CreateBooleanValue(surface.pending));
+            value.SetNamedValue(L"url", JsonValue::CreateStringValue(surface.view.Source() ? surface.view.Source().AbsoluteUri() : L"")); value.SetNamedValue(L"canGoBack", JsonValue::CreateBooleanValue(surface.view.CanGoBack())); value.SetNamedValue(L"canGoForward", JsonValue::CreateBooleanValue(surface.view.CanGoForward())); return HostSuccess(value, resultJson);
+        }
+` : '';
+    const captureSupport = capture ? `
+static BOOL CALLBACK CollectCapturableWindow(HWND hwnd, LPARAM data) {
+    if (!IsWindowVisible(hwnd) || GetWindow(hwnd, GW_OWNER)) return TRUE;
+    DWORD pid = 0; GetWindowThreadProcessId(hwnd, &pid); if (pid == GetCurrentProcessId()) return TRUE;
+    int length = GetWindowTextLengthW(hwnd); if (length <= 0) return TRUE;
+    std::wstring title(static_cast<size_t>(length) + 1, L'\\0'); GetWindowTextW(hwnd, title.data(), length + 1); title.resize(length);
+    auto array = reinterpret_cast<JsonArray*>(data); JsonObject item;
+    item.SetNamedValue(L"windowId", JsonValue::CreateStringValue(to_hstring(std::to_string(reinterpret_cast<uintptr_t>(hwnd)))));
+    item.SetNamedValue(L"title", JsonValue::CreateStringValue(title)); item.SetNamedValue(L"application", JsonValue::CreateStringValue(L"Windows application"));
+    RECT rect{}; GetWindowRect(hwnd, &rect); JsonObject frame; frame.SetNamedValue(L"x", JsonValue::CreateNumberValue(rect.left)); frame.SetNamedValue(L"y", JsonValue::CreateNumberValue(rect.top)); frame.SetNamedValue(L"width", JsonValue::CreateNumberValue(rect.right - rect.left)); frame.SetNamedValue(L"height", JsonValue::CreateNumberValue(rect.bottom - rect.top)); item.SetNamedValue(L"frame", frame); array->Append(item);
+    return TRUE;
+}
+
+static CLSID PngEncoder() {
+    UINT count = 0, bytes = 0; Gdiplus::GetImageEncodersSize(&count, &bytes); std::vector<BYTE> buffer(bytes);
+    auto encoders = reinterpret_cast<Gdiplus::ImageCodecInfo*>(buffer.data()); Gdiplus::GetImageEncoders(count, bytes, encoders);
+    for (UINT index = 0; index < count; ++index) if (wcscmp(encoders[index].MimeType, L"image/png") == 0) return encoders[index].Clsid;
+    return CLSID{};
+}
+
+static JsonObject CaptureWindow(JsonObject const& payload) {
+    auto text = to_string(payload.GetNamedString(L"windowId", L"0")); HWND hwnd = reinterpret_cast<HWND>(static_cast<uintptr_t>(std::stoull(text)));
+    RECT rect{}; if (!GetWindowRect(hwnd, &rect)) throw hresult_error(HRESULT_FROM_WIN32(GetLastError()), L"Unable to read capture window bounds");
+    int width = rect.right - rect.left, height = rect.bottom - rect.top; HDC screen = GetDC(nullptr); HDC memory = CreateCompatibleDC(screen); HBITMAP bitmap = CreateCompatibleBitmap(screen, width, height);
+    auto previous = SelectObject(memory, bitmap); BOOL printed = PrintWindow(hwnd, memory, PW_RENDERFULLCONTENT); SelectObject(memory, previous); DeleteDC(memory); ReleaseDC(nullptr, screen);
+    if (!printed) { DeleteObject(bitmap); throw hresult_error(E_FAIL, L"Unable to capture the selected window"); }
+    auto destination = payload.GetNamedString(L"destination", L"clipboard"); std::wstring filePath;
+    if (destination == L"file" || destination == L"both") {
+        wchar_t temp[MAX_PATH]; GetTempPathW(MAX_PATH, temp); filePath = std::wstring(temp) + L"tachyon-capture-" + std::to_wstring(GetTickCount64()) + L".png";
+        ULONG_PTR token = 0; Gdiplus::GdiplusStartupInput input; Gdiplus::GdiplusStartup(&token, &input, nullptr); Gdiplus::Bitmap image(bitmap, nullptr); auto encoder = PngEncoder(); if (image.Save(filePath.c_str(), &encoder, nullptr) != Gdiplus::Ok) { Gdiplus::GdiplusShutdown(token); DeleteObject(bitmap); throw hresult_error(E_FAIL, L"Unable to encode PNG capture"); } Gdiplus::GdiplusShutdown(token);
+    }
+    bool clipboard = destination == L"clipboard" || destination == L"both";
+    if (clipboard) { if (!OpenClipboard(nullptr)) { DeleteObject(bitmap); throw hresult_error(E_FAIL, L"Unable to open clipboard"); } EmptyClipboard(); SetClipboardData(CF_BITMAP, bitmap); CloseClipboard(); } else DeleteObject(bitmap);
+    JsonObject value; value.SetNamedValue(L"windowId", JsonValue::CreateStringValue(payload.GetNamedString(L"windowId", L""))); value.SetNamedValue(L"destination", JsonValue::CreateStringValue(destination)); value.SetNamedValue(L"format", JsonValue::CreateStringValue(L"png")); value.SetNamedValue(L"bytes", JsonValue::CreateNumberValue(static_cast<double>(width) * height * 4)); value.SetNamedValue(L"clipboard", JsonValue::CreateBooleanValue(clipboard)); value.SetNamedValue(L"path", JsonValue::CreateStringValue(filePath)); return value;
+}
+` : '';
+    const captureCases = capture ? `
+        if (capability == L"screenCapture.state") { JsonObject value; value.SetNamedValue(L"supported", JsonValue::CreateBooleanValue(true)); value.SetNamedValue(L"permission", JsonValue::CreateStringValue(L"granted")); value.SetNamedValue(L"format", JsonValue::CreateStringValue(L"png")); JsonArray destinations; destinations.Append(JsonValue::CreateStringValue(L"clipboard")); destinations.Append(JsonValue::CreateStringValue(L"file")); destinations.Append(JsonValue::CreateStringValue(L"both")); value.SetNamedValue(L"destinations", destinations); return HostSuccess(value, resultJson); }
+        if (capability == L"screenCapture.listWindows") { JsonArray windows; EnumWindows(CollectCapturableWindow, reinterpret_cast<LPARAM>(&windows)); JsonObject value; value.SetNamedValue(L"windows", windows); value.SetNamedValue(L"permission", JsonValue::CreateStringValue(L"granted")); return HostSuccess(value, resultJson); }
+        if (capability == L"screenCapture.captureWindow") return HostSuccess(CaptureWindow(payload), resultJson);
+` : '';
+    return `static std::wstring Widen(std::string const& value) {
+    if (value.empty()) return L""; int size = MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0); std::wstring result(size, L'\\0'); MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), size); return result;
+}
+static std::string Narrow(std::wstring const& value) {
+    if (value.empty()) return ""; int size = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr); std::string result(size, '\\0'); WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), size, nullptr, nullptr); return result;
+}
+static int CopyHostText(std::string const& value, char** output) { *output = static_cast<char*>(malloc(value.size() + 1)); if (!*output) return 0; memcpy(*output, value.c_str(), value.size() + 1); return 1; }
+static int HostSuccess(IJsonValue const& value, char** resultJson) { JsonObject envelope; envelope.SetNamedValue(L"ok", JsonValue::CreateBooleanValue(true)); envelope.SetNamedValue(L"value", value); return CopyHostText(to_string(envelope.Stringify()), resultJson); }
+static int HostFailure(std::string const& message, char** error) { return CopyHostText(message, error) ? 0 : 0; }
+static bool CapabilityEnabled(std::wstring const& capability) { return ${checks}; }
+static HWND MainWindowHandle() { HWND hwnd = nullptr; if (mainWindow) check_hresult(mainWindow.as<::IWindowNative>()->get_WindowHandle(&hwnd)); return hwnd; }
+
+static std::string ReadClipboardText() {
+    if (!OpenClipboard(nullptr)) throw hresult_error(E_FAIL, L"Unable to open clipboard"); HANDLE handle = GetClipboardData(CF_UNICODETEXT); if (!handle) { CloseClipboard(); return ""; }
+    auto text = static_cast<const wchar_t*>(GlobalLock(handle)); std::string result = text ? Narrow(text) : ""; if (text) GlobalUnlock(handle); CloseClipboard(); return result;
+}
+static void WriteClipboardText(std::string const& value) {
+    auto text = Widen(value); if (!OpenClipboard(nullptr)) throw hresult_error(E_FAIL, L"Unable to open clipboard"); EmptyClipboard(); SIZE_T bytes = (text.size() + 1) * sizeof(wchar_t); HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes); if (!memory) { CloseClipboard(); throw hresult_error(E_OUTOFMEMORY); } void* target = GlobalLock(memory); memcpy(target, text.c_str(), bytes); GlobalUnlock(memory); if (!SetClipboardData(CF_UNICODETEXT, memory)) { GlobalFree(memory); CloseClipboard(); throw hresult_error(E_FAIL, L"Unable to update clipboard"); } CloseClipboard();
+}
+
+static std::map<int, std::pair<std::wstring, std::wstring>> registeredShortcuts;
+static int nextShortcutId = 0x5400; static WNDPROC previousWindowProc = nullptr;
+static bool windowAlwaysOnTop = false; static bool windowCaptureProtected = false;
+static double windowOpacity = 1.0;
+static JsonArray ShortcutSnapshot() { JsonArray list; for (auto const& entry : registeredShortcuts) { JsonObject item; item.SetNamedValue(L"id", JsonValue::CreateStringValue(entry.second.first)); item.SetNamedValue(L"accelerator", JsonValue::CreateStringValue(entry.second.second)); list.Append(item); } return list; }
+static JsonObject WindowSnapshot(HWND hwnd) { LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE); JsonObject value; value.SetNamedValue(L"alwaysOnTop", JsonValue::CreateBooleanValue(windowAlwaysOnTop)); value.SetNamedValue(L"opacity", JsonValue::CreateNumberValue(windowOpacity)); value.SetNamedValue(L"clickThrough", JsonValue::CreateBooleanValue((style & WS_EX_TRANSPARENT) != 0)); value.SetNamedValue(L"captureProtection", JsonValue::CreateBooleanValue(windowCaptureProtected)); return value; }
+static std::pair<UINT, UINT> ParseAccelerator(std::wstring accelerator) {
+    UINT modifiers = 0, key = 0; size_t start = 0;
+    while (start <= accelerator.size()) { auto end = accelerator.find(L'+', start); auto part = accelerator.substr(start, end == std::wstring::npos ? std::wstring::npos : end - start); for (auto& character : part) character = towupper(character);
+        if (part == L"PRIMARY" || part == L"CONTROL") modifiers |= MOD_CONTROL; else if (part == L"SHIFT") modifiers |= MOD_SHIFT; else if (part == L"ALT" || part == L"OPTION") modifiers |= MOD_ALT; else if (part == L"COMMAND" || part == L"META") modifiers |= MOD_WIN; else if (part.size() == 1) key = VkKeyScanW(part[0]) & 0xff; else if (part.size() > 1 && part[0] == L'F') key = VK_F1 + std::stoi(part.substr(1)) - 1;
+        if (end == std::wstring::npos) break; start = end + 1; }
+    if (!modifiers || !key) throw hresult_invalid_argument(L"Invalid shortcut accelerator"); return { modifiers | MOD_NOREPEAT, key };
+}
+static void EmitHostEvent(std::wstring const& name, IJsonValue const& payload) {
+    if (!controller) return; JsonObject event; event.SetNamedValue(L"type", JsonValue::CreateStringValue(L"tac:host-event")); event.SetNamedValue(L"event", JsonValue::CreateStringValue(name)); event.SetNamedValue(L"payload", payload); auto text = to_string(event.Stringify()); char* error = nullptr; char* snapshot = tachyon_ui_controller_emit(controller, text.c_str(), &error); if (snapshot) { ApplySnapshot(snapshot); tachyon_ui_controller_free_string(snapshot); } tachyon_ui_controller_free_string(error);
+}
+static LRESULT CALLBACK TachyonWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == WM_HOTKEY) { auto found = registeredShortcuts.find(static_cast<int>(wParam)); if (found != registeredShortcuts.end()) { JsonObject payload; payload.SetNamedValue(L"id", JsonValue::CreateStringValue(found->second.first)); EmitHostEvent(L"shortcut.activated", payload); } return 0; }
+    return previousWindowProc ? CallWindowProcW(previousWindowProc, hwnd, message, wParam, lParam) : DefWindowProcW(hwnd, message, wParam, lParam);
+}
+
+${managedTypes}
+${captureSupport}
+
+static int HandleNativeCapability(const char* rawCapability, const char* rawPayload, char** resultJson, char** error, void*) {
+    try {
+        std::wstring capability = Widen(rawCapability ? rawCapability : "");
+        if (capability == L"__tachyon.hostInfo") return HostSuccess(JsonObject::Parse(L${JSON.stringify(JSON.stringify({ target: 'windows', platform: 'desktop', capabilities: host.hostCapabilities }))}), resultJson);
+        if (!CapabilityEnabled(capability)) return HostFailure("Unsupported native capability", error);
+        JsonObject payload = JsonObject::Parse(Widen(rawPayload ? rawPayload : "{}"));
+        if (capability == L"capabilities.state") return HostSuccess(JsonValue::CreateStringValue(CapabilityEnabled(payload.GetNamedString(L"capability", L"")) ? L"granted" : L"unsupported"), resultJson);
+        if (capability == L"app.info") return HostSuccess(JsonObject::Parse(L${JSON.stringify(JSON.stringify({ name: host.appName, runtime: 'windows-winui', version: host.version }))}), resultJson);
+        if (capability == L"clipboard.readText") return HostSuccess(JsonValue::CreateStringValue(Widen(ReadClipboardText())), resultJson);
+        if (capability == L"clipboard.writeText") { WriteClipboardText(to_string(payload.GetNamedString(L"text", L""))); JsonObject value; value.SetNamedValue(L"written", JsonValue::CreateBooleanValue(true)); return HostSuccess(value, resultJson); }
+        if (capability == L"openUrl") { auto url = payload.GetNamedString(L"url", L""); if (url.rfind(L"https://", 0) != 0 && url.rfind(L"http://", 0) != 0) throw hresult_invalid_argument(L"openUrl requires an http(s) URL"); if (reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32) throw hresult_error(E_FAIL, L"Unable to open URL"); JsonObject value; value.SetNamedValue(L"opened", JsonValue::CreateBooleanValue(true)); return HostSuccess(value, resultJson); }
+        HWND hwnd = MainWindowHandle();
+        if (capability == L"window.state") return HostSuccess(WindowSnapshot(hwnd), resultJson);
+        if (capability == L"window.alwaysOnTop") { bool enabled = payload.GetNamedBoolean(L"enabled", false); if (!SetWindowPos(hwnd, enabled ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)) throw hresult_error(HRESULT_FROM_WIN32(GetLastError())); windowAlwaysOnTop = enabled; return HostSuccess(WindowSnapshot(hwnd), resultJson); }
+        if (capability == L"window.opacity") { double opacity = payload.GetNamedNumber(L"value", 1.0); if (opacity < 0.1 || opacity > 1.0) throw hresult_invalid_argument(L"Window opacity must be between 0.1 and 1"); SetWindowLongPtrW(hwnd, GWL_EXSTYLE, GetWindowLongPtrW(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED); if (!SetLayeredWindowAttributes(hwnd, 0, static_cast<BYTE>(opacity * 255), LWA_ALPHA)) throw hresult_error(HRESULT_FROM_WIN32(GetLastError())); windowOpacity = opacity; return HostSuccess(WindowSnapshot(hwnd), resultJson); }
+        if (capability == L"window.clickThrough") { bool enabled = payload.GetNamedBoolean(L"enabled", false); LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE); SetWindowLongPtrW(hwnd, GWL_EXSTYLE, enabled ? style | WS_EX_TRANSPARENT : style & ~WS_EX_TRANSPARENT); return HostSuccess(WindowSnapshot(hwnd), resultJson); }
+        if (capability == L"window.captureProtection") { bool enabled = payload.GetNamedBoolean(L"enabled", false); if (!SetWindowDisplayAffinity(hwnd, enabled ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE)) throw hresult_error(HRESULT_FROM_WIN32(GetLastError())); windowCaptureProtected = enabled; return HostSuccess(WindowSnapshot(hwnd), resultJson); }
+        if (capability == L"shortcuts.register") { auto id = payload.GetNamedString(L"id", L""); auto accelerator = payload.GetNamedString(L"accelerator", L""); if (id.empty()) throw hresult_invalid_argument(L"Shortcut id is required"); bool replace = payload.GetNamedBoolean(L"replace", false); for (auto it = registeredShortcuts.begin(); it != registeredShortcuts.end(); ) { if (it->second.first == id) { if (!replace) throw hresult_invalid_argument(L"Shortcut id is already registered"); UnregisterHotKey(hwnd, it->first); it = registeredShortcuts.erase(it); } else ++it; } auto parsed = ParseAccelerator(accelerator); int nativeId = nextShortcutId++; if (!RegisterHotKey(hwnd, nativeId, parsed.first, parsed.second)) throw hresult_error(HRESULT_FROM_WIN32(GetLastError()), L"Shortcut registration failed"); registeredShortcuts[nativeId] = { std::wstring(id), std::wstring(accelerator) }; JsonObject shortcut; shortcut.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); shortcut.SetNamedValue(L"accelerator", JsonValue::CreateStringValue(accelerator)); JsonObject value; value.SetNamedValue(L"shortcuts", ShortcutSnapshot()); value.SetNamedValue(L"shortcut", shortcut); return HostSuccess(value, resultJson); }
+        if (capability == L"shortcuts.unregister") { auto id = payload.GetNamedString(L"id", L""); bool removed = false; for (auto it = registeredShortcuts.begin(); it != registeredShortcuts.end(); ) { if (it->second.first == id) { UnregisterHotKey(hwnd, it->first); it = registeredShortcuts.erase(it); removed = true; } else ++it; } JsonObject value; value.SetNamedValue(L"shortcuts", ShortcutSnapshot()); value.SetNamedValue(L"unregistered", JsonValue::CreateBooleanValue(removed)); return HostSuccess(value, resultJson); }
+        if (capability == L"shortcuts.unregisterAll") { double count = static_cast<double>(registeredShortcuts.size()); for (auto const& entry : registeredShortcuts) UnregisterHotKey(hwnd, entry.first); registeredShortcuts.clear(); JsonObject value; value.SetNamedValue(L"shortcuts", ShortcutSnapshot()); value.SetNamedValue(L"unregistered", JsonValue::CreateNumberValue(count)); return HostSuccess(value, resultJson); }
+        if (capability == L"shortcuts.list") { JsonObject value; value.SetNamedValue(L"shortcuts", ShortcutSnapshot()); return HostSuccess(value, resultJson); }
+        ${managedCases}
+        ${captureCases}
+        return HostFailure("Unsupported native capability", error);
+    } catch (hresult_error const& failure) { return HostFailure(to_string(failure.message()), error); } catch (std::exception const& failure) { return HostFailure(failure.what(), error); }
+}
+`;
+}
+
+/** @param {any} host */
 function windowsNativeSource(host) {
     const hybrid = host.hasWebViewFallbacks;
+    const needsWebView = hybrid || host.managedContentOrigins.length > 0;
     return `#include <windows.h>
+#include <shellapi.h>
+#include <gdiplus.h>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <cwctype>
+#include <microsoft.ui.xaml.window.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
-${hybrid ? '#include <winrt/Microsoft.Web.WebView2.Core.h>' : ''}
+${needsWebView ? '#include <winrt/Microsoft.Web.WebView2.Core.h>' : ''}
 #include <winrt/Windows.Data.Json.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
+#include <vector>
 #include "tachyon_ui_controller.h"
 
 using namespace winrt;
 using namespace Microsoft::UI::Xaml;
 using namespace Microsoft::UI::Xaml::Controls;
-${hybrid ? 'using namespace Microsoft::Web::WebView2::Core;' : ''}
+${needsWebView ? 'using namespace Microsoft::Web::WebView2::Core;' : ''}
 using namespace Windows::Data::Json;
 
 static TachyonUIController* controller = nullptr;
 static Window mainWindow{ nullptr };
 
 static void ApplySnapshot(const char* snapshot);
+
+${windowsHostSupport(host)}
 
 ${hybrid ? `static hstring HybridDocument(hstring const& fragment) {
     return hstring(L"<!doctype html><html><head><base href=\\"https://appassets.tachyon/\\">"
@@ -943,12 +1658,14 @@ int __stdcall wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         mainWindow = Window();
         mainWindow.Title(L"${host.appName.replaceAll('"', '\\"')}");
         char* error = nullptr;
-        controller = tachyon_ui_controller_create("Resources/tachyon.native-controller.js", &error);
+        controller = tachyon_ui_controller_create("Resources/tachyon.native-controller.js", HandleNativeCapability, nullptr, &error);
         if (!controller) throw hresult_error(E_FAIL, to_hstring(error ? error : "Controller initialization failed"));
         char* snapshot = tachyon_ui_controller_render(controller, &error);
         if (!snapshot) throw hresult_error(E_FAIL, to_hstring(error ? error : "Controller render failed"));
         ApplySnapshot(snapshot); tachyon_ui_controller_free_string(snapshot); tachyon_ui_controller_free_string(error);
         mainWindow.Activate();
+        auto hwnd = MainWindowHandle();
+        previousWindowProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(TachyonWindowProc)));
     });
     return 0;
 }
@@ -978,7 +1695,7 @@ export default class NativeUIPlatformProject {
         await writeFile(path.join(app, 'Info.plist'), host.infoPlist());
         await writeFile(path.join(app, 'TachyonApp.entitlements'), host.entitlements());
         await writeFile(path.join(app, 'PkgInfo'), 'APPL????');
-        const buildScript = host.hasWebViewFallbacks
+        const buildScript = host.hasWebViewFallbacks || host.managedContentOrigins.length > 0
             ? host.buildScript().replace('    -framework WebKit \\\n', '    -framework WebKit \\\n    -framework JavaScriptCore \\\n')
             : host.buildScript().replace('    -framework WebKit \\\n', '    -framework JavaScriptCore \\\n');
         await host.writeExecutable('build.sh', buildScript);
@@ -1031,7 +1748,7 @@ FetchContent_Declare(quickjs
     URL_HASH SHA256=c4e813951b7c46845096a948e978c620b11ab4cf5fd622ca09c727ec31f42623)
 FetchContent_MakeAvailable(quickjs)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(GTK REQUIRED gtk+-3.0 json-glib-1.0${host.hasWebViewFallbacks ? ' webkit2gtk-4.1' : ''})
+pkg_check_modules(GTK REQUIRED gtk+-3.0 json-glib-1.0${host.hasWebViewFallbacks || host.managedContentOrigins.length > 0 ? ' webkit2gtk-4.1' : ''})
 add_executable(\${PROJECT_NAME} src/main.c src/tachyon_ui_controller.c)
 target_include_directories(\${PROJECT_NAME} PRIVATE \${GTK_INCLUDE_DIRS})
 target_link_libraries(\${PROJECT_NAME} PRIVATE \${GTK_LIBRARIES} qjs)
@@ -1062,7 +1779,7 @@ set_property(TARGET \${PROJECT_NAME} PROPERTY VS_GLOBAL_WindowsPackageType "None
 target_link_libraries(\${PROJECT_NAME} PRIVATE
     "$(_FoundationLibFolder)/Microsoft.WindowsAppRuntime.lib"
     "$(_FoundationLibFolder)/Microsoft.WindowsAppRuntime.Bootstrap.lib"
-    qjs)
+    qjs gdiplus windowscodecs shell32 user32 gdi32)
 `);
         await writeFile(path.join(host.outputRoot, 'build.bat'), '@cmake -S . -B build\r\n@cmake --build build --config Release\r\n');
     }

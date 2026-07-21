@@ -128,4 +128,15 @@ timedTest('compiled ty binary can init, bundle, and serve a client app', async (
     expect(runtimeSource).not.toContain('__tachyonPlaceholder');
     expect(runtimeSource).not.toContain('__tachyonShellPlaceholder');
     expect(await exists(path.join(cacheRoot, 'runtime'))).toBe(true);
+
+    const nativeTarget = process.platform === 'darwin'
+        ? 'macos'
+        : process.platform === 'win32' ? 'windows' : 'linux';
+    await run([binaryPath, 'bundle', '--target', nativeTarget, '--skip-package'], {
+        cwd: appRoot,
+        env: cacheEnv,
+        timeoutMs: 120000,
+    });
+    expect(await exists(path.join(appRoot, 'dist', nativeTarget, 'tachyon.host.json'))).toBe(true);
+    expect(await exists(path.join(appRoot, 'dist', nativeTarget, 'Resources', 'tachyon.native-controller.js'))).toBe(true);
 }, 180000);

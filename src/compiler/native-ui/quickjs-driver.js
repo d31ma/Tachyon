@@ -9,9 +9,11 @@ export function quickJSDriverHeader() {
 extern "C" {
 #endif
 typedef struct TachyonUIController TachyonUIController;
-TachyonUIController* tachyon_ui_controller_create(const char* script_path, char** error);
+typedef int (*TachyonNativeHostHandler)(const char* capability, const char* payload_json, char** result_json, char** error, void* user_data);
+TachyonUIController* tachyon_ui_controller_create(const char* script_path, TachyonNativeHostHandler host_handler, void* user_data, char** error);
 char* tachyon_ui_controller_render(TachyonUIController* controller, char** error);
 char* tachyon_ui_controller_dispatch(TachyonUIController* controller, const char* event_json, char** error);
+char* tachyon_ui_controller_emit(TachyonUIController* controller, const char* event_json, char** error);
 void tachyon_ui_controller_free_string(char* value);
 void tachyon_ui_controller_destroy(TachyonUIController* controller);
 #ifdef __cplusplus
@@ -28,7 +30,13 @@ export function quickJSDriverSource() {
 #include <stdlib.h>
 #include <string.h>
 
-struct TachyonUIController { JSRuntime* runtime; JSContext* context; JSValue api; };
+struct TachyonUIController {
+    JSRuntime* runtime;
+    JSContext* context;
+    JSValue api;
+    TachyonNativeHostHandler host_handler;
+    void* host_user_data;
+};
 
 static char* duplicate_text(const char* value) {
     size_t length = value ? strlen(value) : 0;
@@ -55,6 +63,33 @@ static char* read_source(const char* path, size_t* length) {
     if (!source) { fclose(file); return NULL; }
     *length = fread(source, 1, (size_t)size, file); source[*length] = 0; fclose(file);
     return source;
+}
+
+static JSValue native_host_call(JSContext* context, JSValueConst this_value, int argc, JSValueConst* argv) {
+    (void)this_value;
+    TachyonUIController* controller = (TachyonUIController*)JS_GetContextOpaque(context);
+    if (!controller || !controller->host_handler)
+        return JS_ThrowInternalError(context, "Native host bridge is unavailable");
+    const char* capability = argc > 0 ? JS_ToCString(context, argv[0]) : NULL;
+    const char* payload = argc > 1 ? JS_ToCString(context, argv[1]) : NULL;
+    char* result = NULL;
+    char* error = NULL;
+    int ok = controller->host_handler(
+        capability ? capability : "",
+        payload ? payload : "{}",
+        &result,
+        &error,
+        controller->host_user_data);
+    if (capability) JS_FreeCString(context, capability);
+    if (payload) JS_FreeCString(context, payload);
+    if (!ok) {
+        JSValue exception = JS_ThrowInternalError(context, "%s", error ? error : "Native host capability failed");
+        free(result); free(error);
+        return exception;
+    }
+    JSValue value = JS_NewString(context, result ? result : "{\\\"ok\\\":true,\\\"value\\\":null}");
+    free(result); free(error);
+    return value;
 }
 
 static char* invoke(TachyonUIController* controller, const char* method, const char* argument, char** error) {
@@ -87,7 +122,7 @@ static char* invoke(TachyonUIController* controller, const char* method, const c
     return copy;
 }
 
-TachyonUIController* tachyon_ui_controller_create(const char* script_path, char** error) {
+TachyonUIController* tachyon_ui_controller_create(const char* script_path, TachyonNativeHostHandler host_handler, void* user_data, char** error) {
     TachyonUIController* controller = (TachyonUIController*)calloc(1, sizeof(*controller));
     if (!controller) return NULL;
     controller->api = JS_UNDEFINED;
@@ -95,6 +130,12 @@ TachyonUIController* tachyon_ui_controller_create(const char* script_path, char*
     if (!controller->runtime) { if (error) *error = duplicate_text("Unable to allocate QuickJS runtime"); free(controller); return NULL; }
     controller->context = JS_NewContext(controller->runtime);
     if (!controller->context) { if (error) *error = duplicate_text("Unable to allocate QuickJS context"); JS_FreeRuntime(controller->runtime); free(controller); return NULL; }
+    controller->host_handler = host_handler;
+    controller->host_user_data = user_data;
+    JS_SetContextOpaque(controller->context, controller);
+    JSValue global = JS_GetGlobalObject(controller->context);
+    JS_SetPropertyStr(controller->context, global, "__tachyonNativeHostCall", JS_NewCFunction(controller->context, native_host_call, "__tachyonNativeHostCall", 2));
+    JS_FreeValue(controller->context, global);
     size_t length = 0; char* source = read_source(script_path, &length);
     if (!source) { if (error) *error = duplicate_text("Unable to read tachyon.native-controller.js"); tachyon_ui_controller_destroy(controller); return NULL; }
     JSValue evaluated = JS_Eval(controller->context, source, length, script_path, JS_EVAL_TYPE_GLOBAL); free(source);
@@ -103,7 +144,7 @@ TachyonUIController* tachyon_ui_controller_create(const char* script_path, char*
         JS_FreeValue(controller->context, exception); JS_FreeValue(controller->context, evaluated); tachyon_ui_controller_destroy(controller); return NULL;
     }
     JS_FreeValue(controller->context, evaluated);
-    JSValue global = JS_GetGlobalObject(controller->context);
+    global = JS_GetGlobalObject(controller->context);
     controller->api = JS_GetPropertyStr(controller->context, global, "__tachyonNativeUI"); JS_FreeValue(controller->context, global);
     if (JS_IsUndefined(controller->api)) { if (error) *error = duplicate_text("Native controller API is missing"); tachyon_ui_controller_destroy(controller); return NULL; }
     return controller;
@@ -111,6 +152,7 @@ TachyonUIController* tachyon_ui_controller_create(const char* script_path, char*
 
 char* tachyon_ui_controller_render(TachyonUIController* controller, char** error) { return invoke(controller, "render", NULL, error); }
 char* tachyon_ui_controller_dispatch(TachyonUIController* controller, const char* event_json, char** error) { return invoke(controller, "dispatch", event_json, error); }
+char* tachyon_ui_controller_emit(TachyonUIController* controller, const char* event_json, char** error) { return invoke(controller, "emit", event_json, error); }
 void tachyon_ui_controller_free_string(char* value) { free(value); }
 void tachyon_ui_controller_destroy(TachyonUIController* controller) {
     if (!controller) return;

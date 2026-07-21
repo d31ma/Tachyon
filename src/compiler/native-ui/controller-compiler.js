@@ -2,6 +2,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
+import { nativeUIRuntimeModuleSource } from '../../runtime/native-ui-runtime.js';
 
 /** @param {unknown[]} logs */
 function formatBuildLogs(logs) {
@@ -93,8 +94,8 @@ export default class NativeUIControllerCompiler {
 
         const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'tachyon-native-ui-controller-'));
         try {
+            const nativeUIRuntimeSource = nativeUIRuntimeModuleSource();
             const entryFile = path.join(temporaryRoot, 'entry.js');
-            const runtimePath = path.resolve(import.meta.dir, '../../runtime/native-ui-runtime.js');
             const imports = options.routes.map((entry, index) =>
                 `import routeFactory${index} from ${JSON.stringify(path.resolve(entry.modulePath))};`,
             );
@@ -103,8 +104,48 @@ export default class NativeUIControllerCompiler {
             );
             const entryRoute = routeNames.has('/') ? '/' : options.routes[0].route;
             const source = `
-import NativeUIRuntime from ${JSON.stringify(runtimePath)};
+import NativeUIRuntime from "tachyon:embedded/native-ui-runtime";
 ${imports.join('\n')}
+
+function callNativeHost(capability, payload = {}) {
+    if (typeof globalThis.__tachyonNativeHostCall !== "function")
+        throw new Error("Native host bridge is unavailable");
+    const raw = globalThis.__tachyonNativeHostCall(String(capability), JSON.stringify(payload ?? {}));
+    const value = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!value || typeof value !== "object" || value.ok !== true) {
+        throw new Error(String(value?.error || "Native host capability failed"));
+    }
+    return value.value;
+}
+
+let hostInfo = { target: "web", platform: "web", capabilities: [] };
+if (typeof globalThis.__tachyonNativeHostCall === "function") {
+    try { hostInfo = callNativeHost("__tachyon.hostInfo"); } catch {}
+}
+const hostCapabilities = new Set(Array.isArray(hostInfo.capabilities) ? hostInfo.capabilities : []);
+const hostListeners = new Set();
+globalThis.__tcNativeBridge__ = Object.freeze({
+    version: 2,
+    supports(capability) { return hostCapabilities.has(String(capability)); },
+    async invoke(capability, payload = {}) { return callNativeHost(capability, payload); },
+    onMessage(listener) {
+        if (typeof listener !== "function") throw new TypeError("Native host listener must be a function.");
+        hostListeners.add(listener);
+        return () => hostListeners.delete(listener);
+    },
+});
+globalThis.Tac = Object.assign(globalThis.Tac || {}, {
+    platform: Object.freeze({
+        target: hostInfo.target || "web",
+        platform: hostInfo.platform || "web",
+        environment: hostInfo.target || "web",
+        os: hostInfo.target || "web",
+        native: hostInfo.target !== "web",
+        web: hostInfo.target === "web",
+        desktop: hostInfo.platform === "desktop",
+        mobile: hostInfo.platform === "mobile",
+    }),
+});
 
 const routeFactories = new Map([${factories.join(',\n')}]);
 const routeRuntimes = new Map();
@@ -147,6 +188,14 @@ globalThis.__tachyonNativeUI = Object.freeze({
     async dispatch(payload) {
         return JSON.stringify(await (await getRuntime(activeRoute)).dispatch(decodeEvent(payload)));
     },
+    async emit(payload) {
+        const message = typeof payload === "string" ? JSON.parse(payload) : payload;
+        if (!message || message.type !== "tac:host-event" || typeof message.event !== "string")
+            throw new Error("Native host event payload is invalid.");
+        for (const listener of [...hostListeners]) listener(message);
+        await Promise.resolve();
+        return JSON.stringify(await (await getRuntime(activeRoute)).render());
+    },
 });
 `;
             await writeFile(entryFile, source);
@@ -163,6 +212,14 @@ globalThis.__tachyonNativeUI = Object.freeze({
                 plugins: [{
                     name: 'tachyon-native-ui-rooted-modules',
                     setup(build) {
+                        build.onResolve({ filter: /^tachyon:embedded\/native-ui-runtime$/ }, () => ({
+                            path: 'native-ui-runtime.js',
+                            namespace: 'tachyon-native-ui-embedded',
+                        }));
+                        build.onLoad({ filter: /^native-ui-runtime\.js$/, namespace: 'tachyon-native-ui-embedded' }, () => ({
+                            contents: nativeUIRuntimeSource,
+                            loader: 'js',
+                        }));
                         build.onResolve({ filter: /^\/(?:components|pages|shared)\// }, (args) => ({
                             path: path.join(path.dirname(options.outputFile), args.path.slice(1)),
                         }));
