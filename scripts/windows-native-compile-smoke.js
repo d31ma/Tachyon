@@ -57,6 +57,9 @@ try {
         assetRoot,
         outputRoot: hostRoot,
         appName: 'TachyonWindowsSmoke',
+        devicePermissions: ['microphone', 'screenCapture'],
+        managedContentOrigins: ['https://example.com'],
+        permissionOrigins: { microphone: ['https://example.com'] },
     });
 
     await run(['cmake', '-S', hostRoot, '-B', buildRoot, '-A', 'x64'], root);

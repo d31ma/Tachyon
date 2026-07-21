@@ -375,6 +375,9 @@ const tc_createHelpers = (modulePath) => {
 
     /** @param {string} capability */
     const isDeviceCapabilityAuthorized = (capability) => {
+        const bridge = /** @type {{ supports?: (capability: string) => boolean } | undefined} */ (
+            /** @type {any} */ (globalThis).__tcNativeBridge__ ?? (isBrowser ? /** @type {any} */ (window).__tcNativeBridge__ : undefined))
+        if (typeof bridge?.supports === 'function' && bridge.supports(capability)) return true
         if (!isBrowser) return false
         const meta = [...window.document.getElementsByTagName('meta')]
             .find((element) => element.getAttribute('name') === 'tachyon-native-capabilities')
@@ -430,7 +433,11 @@ const tc_createHelpers = (modulePath) => {
 
     /** @param {string} capability */
     const capabilityState = async (capability) => {
-        if (deviceAvailable(capability)) return capability === 'auth.verifyUser' ? 'prompt' : 'granted'
+        if (deviceAvailable(capability)) {
+            if (deviceAvailable('capabilities.state'))
+                return await device('capabilities.state', { capability })
+            return capability === 'auth.verifyUser' ? 'prompt' : 'granted'
+        }
         const permissionName = capabilityPermissionName(capability)
         if (!permissionName || !isBrowser) return standardCapabilityAvailable(capability) ? 'prompt' : 'unsupported'
         try {
@@ -511,7 +518,8 @@ const tc_createHelpers = (modulePath) => {
 
     /** @param {string} event @param {(payload: unknown) => void} handler */
     const subscribeHostEvent = (event, handler) => {
-        const bridge = /** @type {{ onMessage?: (handler: (message: unknown) => void) => () => void } | undefined} */ (/** @type {any} */ (window).__tcNativeBridge__)
+        const bridge = /** @type {{ onMessage?: (handler: (message: unknown) => void) => () => void } | undefined} */ (
+            /** @type {any} */ (globalThis).__tcNativeBridge__ ?? (isBrowser ? /** @type {any} */ (window).__tcNativeBridge__ : undefined))
         if (typeof bridge?.onMessage !== 'function')
             throw new Error('Host events are unavailable in this environment')
         return bridge.onMessage((message) => {
@@ -559,9 +567,12 @@ const tc_createHelpers = (modulePath) => {
         if (!isDeviceCapabilityAuthorized(capability)) {
             throw new Error(`Tac device capability '${capability}' is not implemented by this bundle target`)
         }
-        const bridge = /** @type {{ invoke?: Function } | undefined} */ (/** @type {any} */ (window).__tcNativeBridge__)
+        const bridge = /** @type {{ invoke?: Function } | undefined} */ (
+            /** @type {any} */ (globalThis).__tcNativeBridge__ ?? (isBrowser ? /** @type {any} */ (window).__tcNativeBridge__ : undefined))
         if (typeof bridge?.invoke === 'function')
             return await bridge.invoke(capability, payload, { source: modulePath })
+        if (!isBrowser)
+            throw new Error(`Tac device capability '${capability}' is not available in this environment`)
         const data = payload && typeof payload === 'object' ? /** @type {Record<string, unknown>} */ (payload) : {}
         if (capability === 'app.info') {
             return {

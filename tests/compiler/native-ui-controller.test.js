@@ -36,10 +36,22 @@ export default async function () {
     expect(source).not.toMatch(/\b\d+n\b/);
 
     const runner = path.join(root, 'runner.js');
-    await writeFile(runner, `${source}
+    await writeFile(runner, `globalThis.__tachyonNativeHostCall = (capability, payload) => JSON.stringify({
+  ok: true,
+  value: capability === '__tachyon.hostInfo'
+    ? { target: 'macos', platform: 'desktop', capabilities: ['window.opacity'] }
+    : { capability, payload: JSON.parse(payload) },
+});
+${source}
 const initial = await globalThis.__tachyonNativeUI.render();
 const updated = await globalThis.__tachyonNativeUI.dispatch(JSON.stringify({ elementId: 'increment', type: 'click' }));
-console.log(JSON.stringify({ initial: JSON.parse(initial), updated: JSON.parse(updated) }));`);
+const supported = globalThis.__tcNativeBridge__.supports('window.opacity');
+const native = await globalThis.__tcNativeBridge__.invoke('window.opacity', { value: 0.5 });
+const delivered = [];
+globalThis.__tcNativeBridge__.onMessage(() => { throw new Error('listener failure'); });
+globalThis.__tcNativeBridge__.onMessage((message) => delivered.push(message.event));
+await globalThis.__tachyonNativeUI.emit({ type: 'tac:host-event', event: 'surface.opened', payload: {} });
+console.log(JSON.stringify({ initial: JSON.parse(initial), updated: JSON.parse(updated), supported, native, delivered }));`);
     const processHandle = Bun.spawn(['bun', runner], { stdout: 'pipe', stderr: 'pipe' });
     const [stdout, stderr, exitCode] = await Promise.all([
         new Response(processHandle.stdout).text(),
@@ -50,6 +62,9 @@ console.log(JSON.stringify({ initial: JSON.parse(initial), updated: JSON.parse(u
     const result = JSON.parse(stdout);
     expect(JSON.stringify(result.initial)).toContain('Count: 0');
     expect(JSON.stringify(result.updated)).toContain('Count: 1');
+    expect(result.supported).toBe(true);
+    expect(result.native).toEqual({ capability: 'window.opacity', payload: { value: 0.5 } });
+    expect(result.delivered).toEqual(['surface.opened']);
 
     const javaScriptCore = Bun.which('jsc');
     if (javaScriptCore) {

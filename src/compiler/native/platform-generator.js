@@ -4,7 +4,7 @@
 import { access, chmod, cp, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import path from 'path';
 import NativeIconAssets from './icon-assets.js';
-import { TAC_NATIVE_BRIDGE_ABI_VERSION } from './host-capabilities.js';
+import { nativeHostCapabilities, nativeRawHostCapabilities, TAC_NATIVE_BRIDGE_ABI_VERSION } from './host-capabilities.js';
 
 /**
  * @typedef {object} NativeHostOptions
@@ -42,6 +42,14 @@ export default class PlatformGenerator {
         this.nativeUIAdapters = options.nativeUIAdapters ?? [];
         this.renderMode = /** @type {const} */ ('native');
         this.hasWebViewFallbacks = false;
+        const capabilityOptions = {
+            devicePermissions: [...this.requestedDevicePermissions],
+            managedContentOrigins: this.managedContentOrigins,
+        };
+        this.hostCapabilities = this.target === 'android' || this.target === 'ios'
+            ? []
+            : [...nativeHostCapabilities(this.target, [...this.requestedNativeCapabilities], capabilityOptions)];
+        this.rawHostCapabilities = [...nativeRawHostCapabilities(this.target, [...this.requestedNativeCapabilities], capabilityOptions)];
     }
 
     async generate() {
@@ -58,12 +66,37 @@ export default class PlatformGenerator {
     async validateRenderAssets() {
         const compatibilityOnly = [];
         if (this.nativeHostExtensionSpecifiers.length) compatibilityOnly.push('nativeHostExtensions');
-        if (this.requestedNativeCapabilities.size) compatibilityOnly.push('nativeCapabilities');
-        if (this.requestedDevicePermissions.size) compatibilityOnly.push('devicePermissions');
-        if (Object.keys(this.permissionOrigins).length) compatibilityOnly.push('permissionOrigins');
-        if (this.managedContentOrigins.length) compatibilityOnly.push('managedContentOrigins');
+        if (this.target === 'android' || this.target === 'ios') {
+            if (this.requestedNativeCapabilities.size) compatibilityOnly.push('nativeCapabilities');
+            if (this.requestedDevicePermissions.size) compatibilityOnly.push('devicePermissions');
+            if (Object.keys(this.permissionOrigins).length) compatibilityOnly.push('permissionOrigins');
+            if (this.managedContentOrigins.length) compatibilityOnly.push('managedContentOrigins');
+        }
         if (compatibilityOnly.length) {
             throw new Error(`Native-first bundles do not expose ${compatibilityOnly.join(', ')} yet. Add native-tree capability adapters before requesting them.`);
+        }
+
+        const desktopPermissions = this.target === 'macos' || this.target === 'windows'
+            ? new Set(['camera', 'microphone', 'screenCapture'])
+            : this.target === 'linux' ? new Set(['camera', 'microphone']) : undefined;
+        if (desktopPermissions) {
+            const unsupported = [...this.requestedDevicePermissions].filter((permission) => !desktopPermissions.has(permission));
+            if (unsupported.length) {
+                throw new Error(`Native-first ${this.target} bundles do not implement device permission${unsupported.length === 1 ? '' : 's'}: ${unsupported.join(', ')}.`);
+            }
+            if (this.requestedNativeCapabilities.size && this.target !== 'macos') {
+                throw new Error(`Native-first ${this.target} bundles do not implement raw nativeCapabilities.`);
+            }
+            const managedOrigins = new Set(this.managedContentOrigins);
+            for (const [permission, origins] of Object.entries(this.permissionOrigins)) {
+                if (!this.requestedDevicePermissions.has(permission)) {
+                    throw new Error(`tachyon.permissionOrigins.${permission} requires '${permission}' in tachyon.devicePermissions.`);
+                }
+                const undeclared = origins.filter((origin) => !managedOrigins.has(origin));
+                if (undeclared.length) {
+                    throw new Error(`tachyon.permissionOrigins.${permission} must be contained in tachyon.managedContentOrigins: ${undeclared.join(', ')}.`);
+                }
+            }
         }
 
         const documentPath = path.join(this.assetRoot, 'tachyon.native-ui.json');
@@ -115,20 +148,22 @@ export default class PlatformGenerator {
             hasWebViewFallbacks: this.hasWebViewFallbacks,
             platformApiVersion: TAC_NATIVE_BRIDGE_ABI_VERSION,
             bridgeVersion: 2,
-            hostCapabilities: [],
-            rawHostCapabilities: [],
-            requestedDevicePermissions: [],
-            permissionOrigins: {},
+            hostCapabilities: this.hostCapabilities,
+            rawHostCapabilities: this.rawHostCapabilities,
+            requestedDevicePermissions: [...this.requestedDevicePermissions].sort(),
+            permissionOrigins: this.permissionOrigins,
             managedContentPolicy: {
-                allowedOrigins: [],
+                allowedOrigins: this.managedContentOrigins,
                 layout: { mode: 'split', edge: 'right', ratio: 0.75 },
                 popups: 'event',
                 downloads: 'deny',
                 uploads: 'prompt',
-                permissions: 'deny-all',
+                permissions: this.managedContentOrigins.length ? 'declared-origin-only' : 'deny-all',
             },
             extensions: [],
-            capabilities: [],
+            capabilities: this.hostCapabilities
+                .map((capability) => ({ route: '*', capability, descriptor: {} }))
+                .sort((left, right) => left.capability.localeCompare(right.capability)),
         };
         await writeFile(path.join(this.outputRoot, 'tachyon.host.json'), JSON.stringify(manifest, null, 2));
     }
