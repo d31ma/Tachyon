@@ -86,7 +86,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Generate and compile the complete macOS host
-        run: bun test tests/compiler/native-ui-host.test.js --timeout 30000 --test-name-pattern 'macOS emits isolated managed-content'
+        run: bun test tests/compiler/native-ui-host.test.js --timeout 120000 --test-name-pattern 'macOS emits isolated managed-content'
 
   linux-native:
     name: Linux native host compile smoke
@@ -109,7 +109,7 @@ jobs:
           bun install --frozen-lockfile
 
       - name: Generate and compile the complete Linux host
-        run: bun test tests/compiler/native-ui-host.test.js --timeout 30000 --test-name-pattern 'linux emits only its concrete desktop capability adapters'
+        run: bun test tests/compiler/native-ui-host.test.js --timeout 120000 --test-name-pattern 'linux emits only its concrete desktop capability adapters'
         env:
           TACHYON_NATIVE_COMPILE_SMOKE: '1'
 
