@@ -154,7 +154,10 @@ export default class PlatformGenerator {
             permissionOrigins: this.permissionOrigins,
             managedContentPolicy: {
                 allowedOrigins: this.managedContentOrigins,
-                layout: { mode: 'split', edge: 'right', ratio: 0.75 },
+                ...(this.managedContentOrigins.length ? {
+                    presentation: 'composed',
+                    layout: { mode: 'split', edge: 'right', ratio: 0.75 },
+                } : {}),
                 popups: 'event',
                 downloads: 'deny',
                 uploads: 'prompt',
@@ -172,9 +175,12 @@ export default class PlatformGenerator {
         const boundary = this.hasWebViewFallbacks
             ? ' Unmapped HTML and Web Component subtrees use isolated WebView boundaries while native siblings remain native.'
             : ' This bundle does not require a WebView boundary.';
+        const managed = this.managedContentOrigins.length
+            ? ' Managed remote content is composed into the right 75% of the primary window, remains bridge-isolated, and inherits supported appWindow state.'
+            : '';
         await writeFile(path.join(this.outputRoot, 'README.md'), `# ${this.appName} — ${this.target} native UI host
 
-This project renders Tac's strict HTML through the platform UI toolkit.${boundary}
+This project renders Tac's strict HTML through the platform UI toolkit.${boundary}${managed}
 The authored HTML is lowered into \`${path.basename(this.resourcesDir)}/tachyon.native-ui.json\`;
 live state and events run through \`tachyon.native-controller.js\`.
 

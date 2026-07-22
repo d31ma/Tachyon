@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.30.03] - 2026-07-22
+
+### Changed
+
+- Managed remote content on macOS, Windows, and Linux is now composed into the
+  primary native window's declared 25/75 split instead of opening in a detached
+  top-level window. Primary `appWindow` controls therefore apply to the trusted
+  controls and active remote surface as one presentation.
+- Managed-content state and host manifests now report the composed presentation
+  contract, while bundles without managed origins omit unsupported layout
+  metadata.
+
+### Fixed
+
+- Closing or replacing the active managed surface now removes it from the
+  composed pane and promotes another open surface without exposing the native
+  bridge to remote content.
+- Documentation now explains composed versus detached presentation behavior,
+  platform limitations, and the global-shortcut recovery path for click-through
+  windows.
+
 ## [26.30.02] - 2026-07-21
 
 ### Added
