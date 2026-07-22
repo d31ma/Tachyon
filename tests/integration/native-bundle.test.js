@@ -59,6 +59,8 @@ timedTest('tac.bundle ships a native-first macOS host at dist/<target>', { timeo
         ]),
         rawHostCapabilities: [],
     });
+    expect(manifest.managedContentPolicy).not.toHaveProperty('presentation');
+    expect(manifest.managedContentPolicy).not.toHaveProperty('layout');
     const source = await readFile(path.join(cwd, 'dist', 'macos', 'Sources', 'TachyonApp.swift'), 'utf8');
     expect(source).toContain('import SwiftUI');
     expect(source).toContain('import JavaScriptCore');
@@ -159,6 +161,10 @@ timedTest('macOS native-first host accepts and advertises concrete CLOAK capabil
     expect(manifest.requestedDevicePermissions).toEqual(['microphone', 'screenCapture']);
     expect(manifest.permissionOrigins).toEqual({ microphone: ['https://chatgpt.com', 'https://claude.ai'] });
     expect(manifest.managedContentPolicy.allowedOrigins).toEqual(['https://chatgpt.com', 'https://claude.ai']);
+    expect(manifest.managedContentPolicy).toMatchObject({
+        presentation: 'composed',
+        layout: { mode: 'split', edge: 'right', ratio: 0.75 },
+    });
     const source = await readFile(path.join(cwd, 'dist', 'macos', 'Sources', 'TachyonApp.swift'), 'utf8');
     expect(source).toContain('requestMediaCapturePermissionFor');
     expect(source).toContain('screenCapture.captureWindow');

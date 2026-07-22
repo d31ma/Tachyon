@@ -161,11 +161,19 @@ test('macOS emits isolated managed-content, permission, shortcut, window, and ca
     expect(source).toContain('shortcuts.register');
     expect(source).toContain('screenCapture.captureWindow');
     expect(source).toContain('__tachyonNativeHostCall');
+    expect(source).toContain('struct TachyonManagedSurfaceView: NSViewRepresentable');
+    expect(source).toContain('GeometryReader { geometry in');
+    expect(source).toContain('geometry.size.width * 0.75');
+    expect(source).not.toContain('let window: NSWindow');
+    expect(source).not.toContain('window.contentView = webView');
     expect(source).not.toContain('configuration.userContentController.addUserScript');
     const manifest = JSON.parse(await readFile(path.join(outputRoot, 'tachyon.host.json'), 'utf8'));
     expect(manifest.hostCapabilities).toEqual(expect.arrayContaining([
         'contentSurface.open', 'screenCapture.captureWindow', 'shortcuts.register', 'window.opacity',
     ]));
+    expect(manifest.managedContentPolicy).toMatchObject({
+        presentation: 'composed', layout: { mode: 'split', edge: 'right', ratio: 0.75 },
+    });
     if (process.platform === 'darwin') {
         const typecheck = Bun.spawn(['swiftc', '-typecheck', '-parse-as-library', sourcePath], { stdout: 'pipe', stderr: 'pipe' });
         const [stderr, exitCode] = await Promise.all([new Response(typecheck.stderr).text(), typecheck.exited]);
@@ -199,6 +207,8 @@ for (const target of ['windows', 'linux']) {
         expect(manifest.hostCapabilities).toContain('contentSurface.open');
         expect(manifest.managedContentPolicy).toMatchObject({
             allowedOrigins: ['https://chatgpt.com'], permissions: 'declared-origin-only',
+            presentation: 'composed',
+            layout: { mode: 'split', edge: 'right', ratio: 0.75 },
         });
         if (target === 'windows') {
             expect(source).toContain('HandleNativeCapability');
@@ -213,6 +223,10 @@ for (const target of ['windows', 'linux']) {
             expect(source).toContain('if (width <= 0 || height <= 0)');
             expect(source).toContain('EnsureCoreWebView2Async(environment, options)');
             expect(source).toContain('options.IsInPrivateModeEnabled(!persistent)');
+            expect(source).toContain('static Grid mainLayout{ nullptr }');
+            expect(source).toContain('AttachManagedSurface(surface.view)');
+            expect(source).not.toContain('surface.window = Window()');
+            expect(source).not.toContain('surface.window.Content(surface.view)');
             expect(source).not.toContain('CoreWebView2CreationProperties');
             expect(manifest.hostCapabilities).toEqual(expect.arrayContaining([
                 'shortcuts.register', 'window.captureProtection', 'screenCapture.captureWindow',
@@ -220,6 +234,9 @@ for (const target of ['windows', 'linux']) {
         } else {
             expect(source).toContain('handle_native_capability');
             expect(source).toContain('webkit_permission_request_allow');
+            expect(source).toContain('gtk_paned_new(GTK_ORIENTATION_HORIZONTAL)');
+            expect(source).toContain('attach_managed_surface(surface)');
+            expect(source).not.toContain('gtk_window_new(GTK_WINDOW_TOPLEVEL)');
             expect(source).toContain('success_json("{\\"written\\":true}", result_json)');
             expect(source).not.toContain('success_json("{"written":true}", result_json)');
             expect(source).toContain('json_generator_to_data(generator, NULL)');

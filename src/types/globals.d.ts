@@ -126,6 +126,7 @@ declare global {
   interface TachyonContentSurfaceState {
     id: string;
     open: boolean;
+    presentation?: 'composed' | 'detached';
     persistentSession?: boolean;
     url?: string;
     loading?: boolean;
@@ -139,7 +140,7 @@ declare global {
     goBack(id: string): Promise<TachyonContentSurfaceState>;
     goForward(id: string): Promise<TachyonContentSurfaceState>;
     reload(id: string): Promise<TachyonContentSurfaceState>;
-    close(id: string): Promise<{ id: string; open: false }>;
+    close(id: string): Promise<TachyonContentSurfaceState & { open: false }>;
   };
   interface TachyonCaptureWindow {
     windowId: string;

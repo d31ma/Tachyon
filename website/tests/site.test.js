@@ -219,5 +219,8 @@ describe('docs content', () => {
         expect(nativeRendering).toContain('tachyon.native-controller.js')
         expect(nativeRendering).toContain('automatically become isolated WebView boundaries')
         expect(nativeRendering).toContain('nativeUIAdapters')
+        expect(nativeRendering).toContain('right 75% of the primary native window')
+        expect(nativeRendering).toContain("never receives the application's native bridge")
+        expect(nativeRendering).toContain('cloak.recover')
     })
 })

@@ -33,8 +33,9 @@ function swiftMacOSHost(host) {
                 permissionOrigins: permissionOrigins,
                 requestedPermissions: requestedPermissions)
             surfaces[id] = surface
-            surface.show()
-            return ["id": id, "open": true, "pending": false]
+            activeSurfaceID = id
+            surfaceChanged?(surface.webView)
+            return ["id": id, "open": true, "pending": false, "presentation": "composed"]
         case "contentSurface.navigate":
             let surface = try requireSurface(payload)
             surface.navigate(try requireAllowedURL(payload, "url"))
@@ -47,16 +48,20 @@ function swiftMacOSHost(host) {
             let id = try requireString(payload, "id")
             guard let surface = surfaces.removeValue(forKey: id) else { throw TachyonNativeHostError.message("Unknown managed content surface: " + id) }
             surface.close()
-            return ["id": id, "open": false]
+            if activeSurfaceID == id {
+                activeSurfaceID = surfaces.keys.sorted().first
+                surfaceChanged?(activeSurfaceID.flatMap { surfaces[$0]?.webView })
+            }
+            return ["id": id, "open": false, "presentation": "composed"]
 ` : '';
     const managedTypes = managed ? `
 final class TachyonManagedSurface: NSObject, WKNavigationDelegate, WKUIDelegate {
     let id: String
-    let window: NSWindow
     let webView: WKWebView
     let allowedOrigins: Set<String>
     let permissionOrigins: [String: [String]]
     let requestedPermissions: Set<String>
+    private(set) var isOpen = true
 
     init(id: String, url: URL, persistent: Bool, allowedOrigins: Set<String>, permissionOrigins: [String: [String]], requestedPermissions: Set<String>) {
         self.id = id
@@ -67,28 +72,19 @@ final class TachyonManagedSurface: NSObject, WKNavigationDelegate, WKUIDelegate 
         configuration.processPool = WKProcessPool()
         if !persistent { configuration.websiteDataStore = .nonPersistent() }
         self.webView = WKWebView(frame: .zero, configuration: configuration)
-        self.window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1040, height: 760),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered,
-            defer: false)
         super.init()
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        window.title = id
-        window.contentView = webView
-        window.center()
         webView.load(URLRequest(url: url))
     }
 
-    func show() { window.makeKeyAndOrderFront(nil) }
-    func close() { window.close() }
+    func close() { isOpen = false; webView.stopLoading(); webView.removeFromSuperview() }
     func navigate(_ url: URL) { webView.load(URLRequest(url: url)) }
     func goBack() { if webView.canGoBack { webView.goBack() } }
     func goForward() { if webView.canGoForward { webView.goForward() } }
     func reload() { webView.reload() }
     func state() -> [String: Any] {
-        ["id": id, "open": window.isVisible, "url": webView.url?.absoluteString ?? "", "canGoBack": webView.canGoBack, "canGoForward": webView.canGoForward]
+        ["id": id, "open": isOpen, "presentation": "composed", "url": webView.url?.absoluteString ?? "", "canGoBack": webView.canGoBack, "canGoForward": webView.canGoForward]
     }
 
     private func exactOrigin(_ url: URL?) -> String? {
@@ -118,6 +114,12 @@ final class TachyonManagedSurface: NSObject, WKNavigationDelegate, WKUIDelegate 
         decisionHandler(allowed ? .prompt : .deny)
     }
 }
+
+struct TachyonManagedSurfaceView: NSViewRepresentable {
+    let webView: WKWebView
+    func makeNSView(context: Context) -> WKWebView { webView }
+    func updateNSView(_ view: WKWebView, context: Context) {}
+}
 ` : '';
     return `
 #if os(macOS)
@@ -137,7 +139,7 @@ final class TachyonNativeHost {
     private var shortcuts: [String: String] = [:]
     private var globalShortcutMonitor: Any?
     private var localShortcutMonitor: Any?
-    ${managed ? 'private var surfaces: [String: TachyonManagedSurface] = [:]' : ''}
+    ${managed ? 'private var surfaces: [String: TachyonManagedSurface] = [:]\n    private var activeSurfaceID: String?\n    var surfaceChanged: ((WKWebView?) -> Void)?' : ''}
     var emit: ((String, Any) -> Void)?
 
     func handle(capability: String, payloadJSON: String) -> String {
@@ -176,7 +178,7 @@ final class TachyonNativeHost {
     }` : ''}
 
     private func primaryWindow() throws -> NSWindow {
-        ${managed ? 'let window = NSApp.windows.first { candidate in !surfaces.values.contains { $0.window === candidate } }' : 'let window = NSApp.windows.first'}
+        let window = NSApp.windows.first
         guard let window else { throw TachyonNativeHostError.message("Application window is unavailable") }
         return window
     }
@@ -344,6 +346,7 @@ final class TachyonNativeHost {
 function swiftNativeView(host) {
     const appType = swiftIdentifier(host.appName || 'TachyonApp');
     const hybrid = host.hasWebViewFallbacks;
+    const managed = host.target === 'macos' && host.managedContentOrigins.length > 0;
     const hybridSupport = hybrid ? `
 private func tachyonHybridDocument(_ fragment: String, theme: String) -> String {
     """
@@ -676,6 +679,7 @@ final class TachyonNativeController {
     @Published var root: TachyonNativeNode?
     @Published var error: String?
     @Published var theme = UserDefaults.standard.string(forKey: "tachyon.theme") ?? "light"
+    ${managed ? '@Published var managedWebView: WKWebView?' : ''}
     private var controller: TachyonNativeController?
     private var routes: [TachyonNativeRoute] = []
 
@@ -699,6 +703,7 @@ final class TachyonNativeController {
             controller = try TachyonNativeController()
             #if os(macOS)
             TachyonNativeHost.shared.emit = { [weak self] event, payload in self?.emit(event, payload: payload) }
+            ${managed ? 'TachyonNativeHost.shared.surfaceChanged = { [weak self] webView in self?.managedWebView = webView }' : ''}
             #endif
             controller?.call("render") { [weak self] result in
                 Task { @MainActor in self?.apply(result) }
@@ -827,6 +832,8 @@ private func tachyonNativeSurface(theme: String) -> Color {
 struct TachyonNativeRootView: View {
     @StateObject private var model = TachyonNativeModel()
     var body: some View {
+        ${managed ? `GeometryReader { geometry in
+            HStack(spacing: 0) {` : ''}
         Group {
             if let root = model.root,
                let children = root.children,
@@ -856,6 +863,13 @@ struct TachyonNativeRootView: View {
                 }
             }
         }
+        ${managed ? `.frame(width: model.managedWebView == nil ? geometry.size.width : geometry.size.width * 0.25)
+                if let webView = model.managedWebView {
+                    TachyonManagedSurfaceView(webView: webView)
+                        .frame(width: geometry.size.width * 0.75)
+                }
+            }
+        }` : ''}
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .preferredColorScheme(model.preferredColorScheme)
     }
@@ -1114,8 +1128,9 @@ function linuxHostSupport(host) {
         origins.map((origin) => `(g_strcmp0(permission, ${JSON.stringify(permission)}) == 0 && g_strcmp0(origin, ${JSON.stringify(origin)}) == 0)`),
     ).join(' || ') || 'FALSE';
     const managedSupport = managed ? `
-typedef struct { char* id; GtkWidget* window; WebKitWebView* view; gboolean persistent; } TachyonManagedSurface;
+typedef struct { char* id; WebKitWebView* view; gboolean persistent; } TachyonManagedSurface;
 static GHashTable* managed_surfaces = NULL;
+static TachyonManagedSurface* active_managed_surface = NULL;
 
 static char* exact_origin(const char* uri) {
     GError* error = NULL;
@@ -1162,10 +1177,26 @@ static gboolean managed_permission_request(WebKitWebView* view, WebKitPermission
     return TRUE;
 }
 
+static void attach_managed_surface(TachyonManagedSurface* surface) {
+    if (!surface || !managed_slot) return;
+    if (active_managed_surface && active_managed_surface != surface) {
+        GtkWidget* previous = GTK_WIDGET(active_managed_surface->view);
+        if (gtk_widget_get_parent(previous)) gtk_container_remove(GTK_CONTAINER(managed_slot), previous);
+    }
+    active_managed_surface = surface;
+    GtkWidget* view = GTK_WIDGET(surface->view);
+    if (!gtk_widget_get_parent(view)) gtk_container_add(GTK_CONTAINER(managed_slot), view);
+    gtk_widget_show_all(managed_slot);
+    if (main_layout) gtk_paned_set_position(GTK_PANED(main_layout), MAX(1, gtk_widget_get_allocated_width(main_layout) / 4));
+}
+
 static void managed_surface_free(gpointer value) {
     TachyonManagedSurface* surface = (TachyonManagedSurface*)value;
     if (!surface) return;
-    if (surface->window) gtk_widget_destroy(surface->window);
+    GtkWidget* view = GTK_WIDGET(surface->view);
+    if (gtk_widget_get_parent(view)) gtk_container_remove(GTK_CONTAINER(managed_slot), view);
+    if (active_managed_surface == surface) active_managed_surface = NULL;
+    g_object_unref(surface->view);
     g_free(surface->id); g_free(surface);
 }
 
@@ -1186,20 +1217,20 @@ static TachyonManagedSurface* require_surface(JsonObject* payload, char** error)
         if (!managed_surfaces) managed_surfaces = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, managed_surface_free);
         if (g_hash_table_contains(managed_surfaces, id)) { result = fail_host(error, "Managed content surface already exists"); goto done; }
         TachyonManagedSurface* surface = g_new0(TachyonManagedSurface, 1); surface->id = g_strdup(id); surface->persistent = json_object_get_boolean_member_with_default(payload, "persistentSession", FALSE);
-        surface->window = gtk_window_new(GTK_WINDOW_TOPLEVEL); gtk_window_set_title(GTK_WINDOW(surface->window), id); gtk_window_set_default_size(GTK_WINDOW(surface->window), 1040, 760);
         WebKitWebContext* context = surface->persistent
             ? webkit_web_context_get_default() : webkit_web_context_new_ephemeral();
         surface->view = WEBKIT_WEB_VIEW(webkit_web_view_new_with_context(context));
+        g_object_ref_sink(surface->view);
         if (!surface->persistent) g_object_unref(context);
         g_signal_connect(surface->view, "decide-policy", G_CALLBACK(managed_decide_policy), NULL);
         g_signal_connect(surface->view, "permission-request", G_CALLBACK(managed_permission_request), NULL);
-        gtk_container_add(GTK_CONTAINER(surface->window), GTK_WIDGET(surface->view)); gtk_widget_show_all(surface->window);
-        webkit_web_view_load_uri(surface->view, url); g_hash_table_insert(managed_surfaces, g_strdup(id), surface);
-        char* value = g_strdup_printf("{\\\"id\\\":\\\"%s\\\",\\\"open\\\":true,\\\"pending\\\":false}", surface->id); result = success_json(value, result_json); g_free(value); goto done;
+        g_hash_table_insert(managed_surfaces, g_strdup(id), surface); attach_managed_surface(surface);
+        webkit_web_view_load_uri(surface->view, url);
+        char* value = g_strdup_printf("{\\\"id\\\":\\\"%s\\\",\\\"open\\\":true,\\\"pending\\\":false,\\\"presentation\\\":\\\"composed\\\"}", surface->id); result = success_json(value, result_json); g_free(value); goto done;
     }
     if (g_strcmp0(capability, "contentSurface.state") == 0) {
         TachyonManagedSurface* surface = require_surface(payload, error); if (!surface) goto done;
-        const char* uri = webkit_web_view_get_uri(surface->view); JsonBuilder* builder = json_builder_new(); json_builder_begin_object(builder); json_builder_set_member_name(builder, "id"); json_builder_add_string_value(builder, surface->id); json_builder_set_member_name(builder, "open"); json_builder_add_boolean_value(builder, TRUE); json_builder_set_member_name(builder, "persistentSession"); json_builder_add_boolean_value(builder, surface->persistent); json_builder_set_member_name(builder, "url"); json_builder_add_string_value(builder, uri ? uri : ""); json_builder_set_member_name(builder, "canGoBack"); json_builder_add_boolean_value(builder, webkit_web_view_can_go_back(surface->view)); json_builder_set_member_name(builder, "canGoForward"); json_builder_add_boolean_value(builder, webkit_web_view_can_go_forward(surface->view)); json_builder_end_object(builder);
+        const char* uri = webkit_web_view_get_uri(surface->view); JsonBuilder* builder = json_builder_new(); json_builder_begin_object(builder); json_builder_set_member_name(builder, "id"); json_builder_add_string_value(builder, surface->id); json_builder_set_member_name(builder, "open"); json_builder_add_boolean_value(builder, TRUE); json_builder_set_member_name(builder, "presentation"); json_builder_add_string_value(builder, "composed"); json_builder_set_member_name(builder, "persistentSession"); json_builder_add_boolean_value(builder, surface->persistent); json_builder_set_member_name(builder, "url"); json_builder_add_string_value(builder, uri ? uri : ""); json_builder_set_member_name(builder, "canGoBack"); json_builder_add_boolean_value(builder, webkit_web_view_can_go_back(surface->view)); json_builder_set_member_name(builder, "canGoForward"); json_builder_add_boolean_value(builder, webkit_web_view_can_go_forward(surface->view)); json_builder_end_object(builder);
         JsonNode* node = json_builder_get_root(builder); JsonGenerator* generator = json_generator_new(); json_generator_set_root(generator, node); char* value = json_generator_to_data(generator, NULL); result = success_json(value, result_json); g_free(value); g_object_unref(generator); json_node_free(node); g_object_unref(builder); goto done;
     }
     if (g_str_has_prefix(capability, "contentSurface.")) {
@@ -1211,7 +1242,7 @@ static TachyonManagedSurface* require_surface(JsonObject* payload, char** error)
         } else if (g_strcmp0(capability, "contentSurface.goBack") == 0 && webkit_web_view_can_go_back(surface->view)) webkit_web_view_go_back(surface->view);
         else if (g_strcmp0(capability, "contentSurface.goForward") == 0 && webkit_web_view_can_go_forward(surface->view)) webkit_web_view_go_forward(surface->view);
         else if (g_strcmp0(capability, "contentSurface.reload") == 0) webkit_web_view_reload(surface->view);
-        else if (g_strcmp0(capability, "contentSurface.close") == 0) { char* id = g_strdup(surface->id); g_hash_table_remove(managed_surfaces, id); char* value = g_strdup_printf("{\\\"id\\\":\\\"%s\\\",\\\"open\\\":false}", id); result = success_json(value, result_json); g_free(value); g_free(id); goto done; }
+        else if (g_strcmp0(capability, "contentSurface.close") == 0) { char* id = g_strdup(surface->id); gboolean was_active = surface == active_managed_surface; if (was_active) active_managed_surface = NULL; g_hash_table_remove(managed_surfaces, id); if (was_active && g_hash_table_size(managed_surfaces) > 0) { GHashTableIter iterator; gpointer next_value = NULL; g_hash_table_iter_init(&iterator, managed_surfaces); if (g_hash_table_iter_next(&iterator, NULL, &next_value)) attach_managed_surface((TachyonManagedSurface*)next_value); } else if (was_active && managed_slot) gtk_widget_hide(managed_slot); char* value = g_strdup_printf("{\\\"id\\\":\\\"%s\\\",\\\"open\\\":false,\\\"presentation\\\":\\\"composed\\\"}", id); result = success_json(value, result_json); g_free(value); g_free(id); goto done; }
         result = success_json("{\\\"open\\\":true}", result_json); goto done;
     }
 ` : '';
@@ -1264,6 +1295,7 @@ done:
 /** @param {any} host */
 function linuxNativeSource(host) {
     const hybrid = host.hasWebViewFallbacks;
+    const managed = host.managedContentOrigins.length > 0;
     const needsWebKit = hybrid || host.managedContentOrigins.length > 0;
     return `#include <gtk/gtk.h>
 #include <json-glib/json-glib.h>
@@ -1276,6 +1308,7 @@ ${needsWebKit ? '#include <webkit2/webkit2.h>' : ''}
 typedef JsonObject TachyonNativeNode;
 static TachyonUIController* controller = NULL;
 static GtkWidget* window = NULL;
+${managed ? 'static GtkWidget* main_layout = NULL;\nstatic GtkWidget* trusted_slot = NULL;\nstatic GtkWidget* managed_slot = NULL;' : ''}
 
 static void apply_snapshot(const char* snapshot);
 
@@ -1336,9 +1369,16 @@ static void apply_snapshot(const char* snapshot) {
     JsonParser* parser = json_parser_new(); GError* error = NULL;
     if (!json_parser_load_from_data(parser, snapshot, -1, &error)) g_error("%s", error->message);
     TachyonNativeNode* root = json_object_get_object_member(json_node_get_object(json_parser_get_root(parser)), "root");
-    GtkWidget* child = gtk_bin_get_child(GTK_BIN(window)); if (child) gtk_container_remove(GTK_CONTAINER(window), child);
-    gtk_container_add(GTK_CONTAINER(window), render_node(root)); gtk_widget_show_all(window); g_object_unref(parser);
+    ${managed ? `GtkWidget* child = gtk_bin_get_child(GTK_BIN(trusted_slot)); if (child) gtk_container_remove(GTK_CONTAINER(trusted_slot), child);
+    gtk_container_add(GTK_CONTAINER(trusted_slot), render_node(root)); gtk_widget_show_all(window);
+    if (!active_managed_surface) gtk_widget_hide(managed_slot);` : `GtkWidget* child = gtk_bin_get_child(GTK_BIN(window)); if (child) gtk_container_remove(GTK_CONTAINER(window), child);
+    gtk_container_add(GTK_CONTAINER(window), render_node(root)); gtk_widget_show_all(window);`} g_object_unref(parser);
 }
+
+${managed ? `static void maintain_split_ratio(GtkWidget* widget, GtkAllocation* allocation, gpointer user_data) {
+    (void)widget; (void)user_data;
+    if (active_managed_surface) gtk_paned_set_position(GTK_PANED(main_layout), MAX(1, allocation->width / 4));
+}` : ''}
 
 static void activate(GtkApplication* app, gpointer user_data) {
     (void)user_data;
@@ -1348,6 +1388,13 @@ static void activate(GtkApplication* app, gpointer user_data) {
     window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), APP_NAME);
     gtk_window_set_default_size(GTK_WINDOW(window), 1000, 700);
+    ${managed ? `main_layout = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    trusted_slot = gtk_event_box_new(); managed_slot = gtk_event_box_new();
+    gtk_paned_pack1(GTK_PANED(main_layout), trusted_slot, TRUE, FALSE);
+    gtk_paned_pack2(GTK_PANED(main_layout), managed_slot, TRUE, FALSE);
+    gtk_paned_set_position(GTK_PANED(main_layout), 250);
+    g_signal_connect(main_layout, "size-allocate", G_CALLBACK(maintain_split_ratio), NULL);
+    gtk_container_add(GTK_CONTAINER(window), main_layout);` : ''}
     char* snapshot = tachyon_ui_controller_render(controller, &error);
     if (!snapshot) g_error("Tachyon controller: %s", error ? error : "render failed");
     apply_snapshot(snapshot); tachyon_ui_controller_free_string(snapshot); tachyon_ui_controller_free_string(error);
@@ -1357,6 +1404,7 @@ int main(int argc, char** argv) {
     GtkApplication* app = gtk_application_new("${host.appId}", G_APPLICATION_FLAGS_NONE);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     int status = g_application_run(G_APPLICATION(app), argc, argv);
+    ${managed ? 'if (managed_surfaces) g_hash_table_destroy(managed_surfaces);' : ''}
     tachyon_ui_controller_destroy(controller);
     g_object_unref(app);
     return status;
@@ -1374,10 +1422,35 @@ function windowsHostSupport(host) {
         origins.map((origin) => `(permission == L${JSON.stringify(permission)} && origin == L${JSON.stringify(origin)})`),
     ).join(' || ') || 'false';
     const managedTypes = managed ? `
-struct TachyonManagedSurface { Window window{ nullptr }; WebView2 view{ nullptr }; bool persistent = false; bool pending = true; };
+struct TachyonManagedSurface { WebView2 view{ nullptr }; bool persistent = false; bool pending = true; };
 static std::map<std::wstring, TachyonManagedSurface> managedSurfaces;
+static WebView2 activeManagedView{ nullptr };
+static std::wstring activeManagedSurfaceID;
 static bool ManagedOriginAllowed(std::wstring const& origin) { return ${allowedOrigins}; }
 static bool PermissionOriginAllowed(std::wstring const& permission, std::wstring const& origin) { return ${permissionChecks}; }
+
+static void EnsureMainLayout() {
+    if (mainLayout) return;
+    mainLayout = Grid();
+    ColumnDefinition trusted; trusted.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star));
+    ColumnDefinition managed; managed.Width(GridLengthHelper::FromValueAndType(3, GridUnitType::Star));
+    mainLayout.ColumnDefinitions().Append(trusted); mainLayout.ColumnDefinitions().Append(managed);
+    mainWindow.Content(mainLayout);
+}
+
+static void RemoveFromMainLayout(UIElement const& element) {
+    if (!mainLayout || !element) return;
+    uint32_t index = 0;
+    if (mainLayout.Children().IndexOf(element, index)) mainLayout.Children().RemoveAt(index);
+}
+
+static void AttachManagedSurface(WebView2 const& view) {
+    EnsureMainLayout();
+    RemoveFromMainLayout(activeManagedView);
+    activeManagedView = view;
+    Grid::SetColumn(view, 1);
+    mainLayout.Children().Append(view);
+}
 
 static std::wstring ExactOrigin(hstring const& raw) {
     try {
@@ -1414,8 +1487,8 @@ static fire_and_forget InitializeManagedSurface(std::wstring id, WebView2 view, 
         auto options = environment.CreateCoreWebView2ControllerOptions();
         options.IsInPrivateModeEnabled(!persistent);
         co_await view.EnsureCoreWebView2Async(environment, options);
-        view.Source(Windows::Foundation::Uri(url));
-        auto found = managedSurfaces.find(id); if (found != managedSurfaces.end()) found->second.pending = false;
+        auto found = managedSurfaces.find(id); if (found == managedSurfaces.end()) co_return;
+        found->second.view.Source(Windows::Foundation::Uri(url)); found->second.pending = false;
         JsonObject payload; payload.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); EmitHostEvent(L"surface.opened", payload);
     } catch (...) {
         JsonObject payload; payload.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); EmitHostEvent(L"surface.failed", payload);
@@ -1427,11 +1500,11 @@ static fire_and_forget InitializeManagedSurface(std::wstring id, WebView2 view, 
             auto id = payload.GetNamedString(L"id", L""); auto url = payload.GetNamedString(L"url", L"");
             if (id.empty() || !ManagedOriginAllowed(ExactOrigin(url))) throw hresult_invalid_argument(L"Managed content id or origin is not allowed");
             if (managedSurfaces.contains(std::wstring(id))) throw hresult_invalid_argument(L"Managed content surface already exists");
-            TachyonManagedSurface surface; surface.window = Window(); surface.window.Title(id); surface.view = WebView2(); surface.persistent = payload.GetNamedBoolean(L"persistentSession", false);
-            ConfigureManagedSurface(surface.view); surface.window.Content(surface.view); surface.window.Activate();
+            TachyonManagedSurface surface; surface.view = WebView2(); surface.persistent = payload.GetNamedBoolean(L"persistentSession", false);
+            ConfigureManagedSurface(surface.view); activeManagedSurfaceID = std::wstring(id); AttachManagedSurface(surface.view);
             managedSurfaces.emplace(std::wstring(id), surface);
             InitializeManagedSurface(std::wstring(id), surface.view, url, surface.persistent);
-            JsonObject value; value.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); value.SetNamedValue(L"open", JsonValue::CreateBooleanValue(true)); value.SetNamedValue(L"pending", JsonValue::CreateBooleanValue(true)); return HostSuccess(value, resultJson);
+            JsonObject value; value.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); value.SetNamedValue(L"open", JsonValue::CreateBooleanValue(true)); value.SetNamedValue(L"pending", JsonValue::CreateBooleanValue(true)); value.SetNamedValue(L"presentation", JsonValue::CreateStringValue(L"composed")); return HostSuccess(value, resultJson);
         }
         if (capability.rfind(L"contentSurface.", 0) == 0) {
             auto id = std::wstring(payload.GetNamedString(L"id", L"")); auto found = managedSurfaces.find(id);
@@ -1441,9 +1514,9 @@ static fire_and_forget InitializeManagedSurface(std::wstring id, WebView2 view, 
             else if (capability == L"contentSurface.goBack" && surface.view.CanGoBack()) surface.view.GoBack();
             else if (capability == L"contentSurface.goForward" && surface.view.CanGoForward()) surface.view.GoForward();
             else if (capability == L"contentSurface.reload") surface.view.Reload();
-            else if (capability == L"contentSurface.close") { surface.window.Close(); managedSurfaces.erase(found); JsonObject value; value.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); value.SetNamedValue(L"open", JsonValue::CreateBooleanValue(false)); return HostSuccess(value, resultJson); }
+            else if (capability == L"contentSurface.close") { bool wasActive = std::wstring(id) == activeManagedSurfaceID; if (wasActive) { RemoveFromMainLayout(activeManagedView); activeManagedView = nullptr; activeManagedSurfaceID.clear(); } managedSurfaces.erase(found); if (wasActive && !managedSurfaces.empty()) { activeManagedSurfaceID = managedSurfaces.begin()->first; AttachManagedSurface(managedSurfaces.begin()->second.view); } JsonObject value; value.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); value.SetNamedValue(L"open", JsonValue::CreateBooleanValue(false)); value.SetNamedValue(L"presentation", JsonValue::CreateStringValue(L"composed")); return HostSuccess(value, resultJson); }
             JsonObject value; value.SetNamedValue(L"id", JsonValue::CreateStringValue(id)); value.SetNamedValue(L"open", JsonValue::CreateBooleanValue(true)); value.SetNamedValue(L"persistentSession", JsonValue::CreateBooleanValue(surface.persistent)); value.SetNamedValue(L"pending", JsonValue::CreateBooleanValue(surface.pending));
-            value.SetNamedValue(L"url", JsonValue::CreateStringValue(surface.view.Source() ? surface.view.Source().AbsoluteUri() : L"")); value.SetNamedValue(L"canGoBack", JsonValue::CreateBooleanValue(surface.view.CanGoBack())); value.SetNamedValue(L"canGoForward", JsonValue::CreateBooleanValue(surface.view.CanGoForward())); return HostSuccess(value, resultJson);
+            value.SetNamedValue(L"presentation", JsonValue::CreateStringValue(L"composed")); value.SetNamedValue(L"url", JsonValue::CreateStringValue(surface.view.Source() ? surface.view.Source().AbsoluteUri() : L"")); value.SetNamedValue(L"canGoBack", JsonValue::CreateBooleanValue(surface.view.CanGoBack())); value.SetNamedValue(L"canGoForward", JsonValue::CreateBooleanValue(surface.view.CanGoForward())); return HostSuccess(value, resultJson);
         }
 ` : '';
     const captureSupport = capture ? `
@@ -1563,6 +1636,7 @@ static int HandleNativeCapability(const char* rawCapability, const char* rawPayl
 /** @param {any} host */
 function windowsNativeSource(host) {
     const hybrid = host.hasWebViewFallbacks;
+    const managed = host.managedContentOrigins.length > 0;
     const needsWebView = hybrid || host.managedContentOrigins.length > 0;
     return `#include <windows.h>
 #include <shellapi.h>
@@ -1594,6 +1668,7 @@ using namespace Windows::Data::Json;
 
 static TachyonUIController* controller = nullptr;
 static Window mainWindow{ nullptr };
+${managed ? 'static Grid mainLayout{ nullptr };\nstatic FrameworkElement trustedRoot{ nullptr };' : ''}
 
 static void ApplySnapshot(const char* snapshot);
 
@@ -1648,7 +1723,11 @@ FrameworkElement TachyonNativeNode(JsonObject const& node) {
 
 static void ApplySnapshot(const char* snapshot) {
     auto document = JsonObject::Parse(to_hstring(snapshot));
-    mainWindow.Content(TachyonNativeNode(document.GetNamedObject(L"root")));
+    ${managed ? `EnsureMainLayout();
+    RemoveFromMainLayout(trustedRoot);
+    trustedRoot = TachyonNativeNode(document.GetNamedObject(L"root"));
+    Grid::SetColumn(trustedRoot, 0);
+    mainLayout.Children().Append(trustedRoot);` : 'mainWindow.Content(TachyonNativeNode(document.GetNamedObject(L"root")));'}
 }
 
 int __stdcall wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
