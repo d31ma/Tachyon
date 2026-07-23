@@ -157,8 +157,8 @@ declare global {
     path: string;
   }
   const screenCapture: {
-    state(): Promise<{ supported: true; permission: 'granted' | 'prompt' | 'denied'; format: 'png'; destinations: Array<'clipboard' | 'file' | 'both'> }>;
-    listWindows(options?: { visibleOnly?: boolean; excludeCurrentApp?: boolean }): Promise<{ windows: TachyonCaptureWindow[]; permission: 'granted' }>;
+    state(): Promise<{ supported: boolean; permission: 'granted' | 'prompt' | 'denied' | 'unsupported'; format: 'png'; destinations: Array<'clipboard' | 'file' | 'both'> }>;
+    listWindows(options?: { visibleOnly?: boolean; excludeCurrentApp?: boolean }): Promise<{ windows: TachyonCaptureWindow[]; permission: 'granted' | 'prompt' | 'unsupported' }>;
     captureWindow(options: { windowId: string; destination: 'clipboard' | 'file' | 'both'; format?: 'png' }): Promise<TachyonCaptureResult>;
   };
   const capabilities: {

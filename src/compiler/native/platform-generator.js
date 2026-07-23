@@ -78,7 +78,7 @@ export default class PlatformGenerator {
 
         const desktopPermissions = this.target === 'macos' || this.target === 'windows'
             ? new Set(['camera', 'microphone', 'screenCapture'])
-            : this.target === 'linux' ? new Set(['camera', 'microphone']) : undefined;
+            : this.target === 'linux' ? new Set(['camera', 'microphone', 'screenCapture']) : undefined;
         if (desktopPermissions) {
             const unsupported = [...this.requestedDevicePermissions].filter((permission) => !desktopPermissions.has(permission));
             if (unsupported.length) {

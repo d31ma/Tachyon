@@ -1122,6 +1122,7 @@ ${hybrid ? `private fun hybridDocument(fragment: String, theme: String): String 
 /** @param {any} host */
 function linuxHostSupport(host) {
     const managed = host.managedContentOrigins.length > 0;
+    const capture = host.requestedDevicePermissions.has('screenCapture');
     const capabilityChecks = /** @type {string[]} */ (host.hostCapabilities).map((capability) => `g_strcmp0(capability, ${JSON.stringify(capability)}) == 0`).join(' || ') || 'FALSE';
     const allowedOrigins = /** @type {string[]} */ (host.managedContentOrigins).map((origin) => `g_strcmp0(origin, ${JSON.stringify(origin)}) == 0`).join(' || ') || 'FALSE';
     const permissionChecks = /** @type {[string, string[]][]} */ (Object.entries(host.permissionOrigins)).flatMap(([permission, origins]) =>
@@ -1246,6 +1247,329 @@ static TachyonManagedSurface* require_surface(JsonObject* payload, char** error)
         result = success_json("{\\\"open\\\":true}", result_json); goto done;
     }
 ` : '';
+    const captureSupport = capture ? `
+static gboolean screen_capture_granted = FALSE;
+
+static gboolean portal_window_capture_available(void) {
+    GDBusProxy* proxy = portal_proxy("org.freedesktop.portal.Screenshot");
+    if (!proxy) return FALSE;
+    GVariant* targets = g_dbus_proxy_get_cached_property(proxy, "AvailableTargets");
+    guint32 available = 0;
+    if (targets) { available = g_variant_get_uint32(targets); g_variant_unref(targets); }
+    g_object_unref(proxy);
+    return (available & 2u) != 0;
+}
+
+static char* portal_capture_window(GError** error) {
+    GVariantBuilder options; g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
+    char* token = portal_token("screenshot");
+    g_variant_builder_add(&options, "{sv}", "handle_token", g_variant_new_string(token));
+    g_variant_builder_add(&options, "{sv}", "interactive", g_variant_new_boolean(TRUE));
+    g_variant_builder_add(&options, "{sv}", "target", g_variant_new_uint32(2));
+    g_free(token);
+    GVariant* results = portal_request("org.freedesktop.portal.Screenshot", "Screenshot",
+        g_variant_new("(s@a{sv})", "", g_variant_builder_end(&options)), error);
+    if (!results) return NULL;
+    const char* uri = NULL;
+    char* copy = g_variant_lookup(results, "uri", "&s", &uri) && uri ? g_strdup(uri) : NULL;
+    if (!copy && error && !*error) *error = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_FAILED, "The screenshot portal returned no image");
+    g_variant_unref(results); return copy;
+}
+
+static int capture_portal_window(JsonObject* payload, char** result_json, char** error) {
+    const char* id = json_object_get_string_member_with_default(payload, "windowId", "");
+    const char* destination = json_object_get_string_member_with_default(payload, "destination", "clipboard");
+    const char* format = json_object_get_string_member_with_default(payload, "format", "png");
+    if (g_strcmp0(id, "portal:window-picker") != 0) return fail_host(error, "Linux screen capture requires the portal:window-picker windowId");
+    if (g_strcmp0(format, "png") != 0) return fail_host(error, "Linux screen capture supports PNG only");
+    gboolean to_clipboard = g_strcmp0(destination, "clipboard") == 0 || g_strcmp0(destination, "both") == 0;
+    gboolean to_file = g_strcmp0(destination, "file") == 0 || g_strcmp0(destination, "both") == 0;
+    if (!to_clipboard && !to_file) return fail_host(error, "Screen capture destination must be clipboard, file, or both");
+    if (!portal_window_capture_available()) return fail_host(error, "Window capture is unsupported by the active desktop portal");
+
+    GError* portal_error = NULL; char* uri = portal_capture_window(&portal_error);
+    if (!uri) { int failed = fail_host(error, portal_error ? portal_error->message : "Screen capture was cancelled"); if (portal_error) g_error_free(portal_error); return failed; }
+    GFile* source = g_file_new_for_uri(uri); char* contents = NULL; gsize length = 0;
+    if (!g_file_load_contents(source, NULL, &contents, &length, NULL, &portal_error)) {
+        int failed = fail_host(error, portal_error ? portal_error->message : "Unable to read portal screenshot");
+        if (portal_error) g_error_free(portal_error); g_object_unref(source); g_free(uri); return failed;
+    }
+    if (to_clipboard) {
+        GdkPixbufLoader* loader = gdk_pixbuf_loader_new_with_type("png", &portal_error);
+        if (!loader || !gdk_pixbuf_loader_write(loader, (const guchar*)contents, length, &portal_error) || !gdk_pixbuf_loader_close(loader, &portal_error)) {
+            int failed = fail_host(error, portal_error ? portal_error->message : "Unable to decode portal screenshot");
+            if (portal_error) g_error_free(portal_error); if (loader) g_object_unref(loader); g_free(contents); g_object_unref(source); g_free(uri); return failed;
+        }
+        gtk_clipboard_set_image(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), gdk_pixbuf_loader_get_pixbuf(loader));
+        g_object_unref(loader);
+    }
+    char* output_path = g_strdup("");
+    if (to_file) {
+        const char* downloads = g_get_user_special_dir(G_USER_DIRECTORY_DOWNLOAD);
+        if (!downloads) downloads = g_get_tmp_dir();
+        g_free(output_path); output_path = g_strdup_printf("%s/tachyon-capture-%" G_GINT64_FORMAT ".png", downloads, g_get_real_time());
+        if (!g_file_set_contents(output_path, contents, (gssize)length, &portal_error)) {
+            int failed = fail_host(error, portal_error ? portal_error->message : "Unable to save portal screenshot");
+            if (portal_error) g_error_free(portal_error); g_free(output_path); g_free(contents); g_object_unref(source); g_free(uri); return failed;
+        }
+    }
+    screen_capture_granted = TRUE;
+    JsonBuilder* builder = json_builder_new(); json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "windowId"); json_builder_add_string_value(builder, id);
+    json_builder_set_member_name(builder, "destination"); json_builder_add_string_value(builder, destination);
+    json_builder_set_member_name(builder, "format"); json_builder_add_string_value(builder, "png");
+    json_builder_set_member_name(builder, "bytes"); json_builder_add_int_value(builder, (gint64)length);
+    json_builder_set_member_name(builder, "clipboard"); json_builder_add_boolean_value(builder, to_clipboard);
+    json_builder_set_member_name(builder, "path"); json_builder_add_string_value(builder, output_path);
+    json_builder_end_object(builder); int result = success_builder(builder, result_json);
+    g_object_unref(builder); g_free(output_path); g_free(contents); g_object_unref(source); g_free(uri); return result;
+}
+` : '';
+    const captureCases = capture ? `
+    if (g_strcmp0(capability, "screenCapture.state") == 0) {
+        gboolean supported = portal_window_capture_available();
+        char* value = g_strdup_printf("{\\\"supported\\\":%s,\\\"permission\\\":\\\"%s\\\",\\\"format\\\":\\\"png\\\",\\\"destinations\\\":[\\\"clipboard\\\",\\\"file\\\",\\\"both\\\"]}", supported ? "true" : "false", supported ? (screen_capture_granted ? "granted" : "prompt") : "unsupported");
+        result = success_json(value, result_json); g_free(value); goto done;
+    }
+    if (g_strcmp0(capability, "screenCapture.listWindows") == 0) {
+        if (!portal_window_capture_available()) { result = success_json("{\\\"windows\\\":[],\\\"permission\\\":\\\"unsupported\\\"}", result_json); goto done; }
+        result = success_json(screen_capture_granted
+            ? "{\\\"windows\\\":[{\\\"windowId\\\":\\\"portal:window-picker\\\",\\\"title\\\":\\\"Choose a window…\\\",\\\"application\\\":\\\"XDG Desktop Portal\\\",\\\"frame\\\":{\\\"x\\\":0,\\\"y\\\":0,\\\"width\\\":0,\\\"height\\\":0}}],\\\"permission\\\":\\\"granted\\\"}"
+            : "{\\\"windows\\\":[{\\\"windowId\\\":\\\"portal:window-picker\\\",\\\"title\\\":\\\"Choose a window…\\\",\\\"application\\\":\\\"XDG Desktop Portal\\\",\\\"frame\\\":{\\\"x\\\":0,\\\"y\\\":0,\\\"width\\\":0,\\\"height\\\":0}}],\\\"permission\\\":\\\"prompt\\\"}", result_json); goto done;
+    }
+    if (g_strcmp0(capability, "screenCapture.captureWindow") == 0) { result = capture_portal_window(payload, result_json, error); goto done; }
+` : '';
+    const desktopSupport = `
+#define PORTAL_BUS "org.freedesktop.portal.Desktop"
+#define PORTAL_PATH "/org/freedesktop/portal/desktop"
+${capture ? 'static gboolean portal_window_capture_available(void);\nstatic gboolean screen_capture_granted;' : ''}
+
+typedef struct { GMainLoop* loop; const char* path; guint response; GVariant* results; gboolean received; } PortalResponse;
+typedef struct { char* id; char* accelerator; char* session; int keycode; unsigned int modifiers; } LinuxShortcut;
+static GPtrArray* linux_shortcuts = NULL;
+static gboolean window_click_through = FALSE;
+static guint portal_shortcut_subscription = 0;
+static gboolean x11_shortcut_grab_failed = FALSE;
+
+static void linux_shortcut_free(gpointer value) {
+    LinuxShortcut* shortcut = (LinuxShortcut*)value; if (!shortcut) return;
+    if (shortcut->session) {
+        GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, NULL);
+        if (bus) { g_dbus_connection_call_sync(bus, PORTAL_BUS, shortcut->session, "org.freedesktop.portal.Session", "Close", NULL, NULL, G_DBUS_CALL_FLAGS_NONE, 2000, NULL, NULL); g_object_unref(bus); }
+    }
+    g_free(shortcut->id); g_free(shortcut->accelerator); g_free(shortcut->session); g_free(shortcut);
+}
+
+static LinuxShortcut* find_linux_shortcut(const char* id, guint* index) {
+    for (guint i = 0; linux_shortcuts && i < linux_shortcuts->len; i++) {
+        LinuxShortcut* shortcut = (LinuxShortcut*)g_ptr_array_index(linux_shortcuts, i);
+        if (g_strcmp0(shortcut->id, id) == 0) { if (index) *index = i; return shortcut; }
+    }
+    return NULL;
+}
+
+static GDBusProxy* portal_proxy(const char* interface_name) {
+    GError* error = NULL; GDBusProxy* proxy = g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE,
+        NULL, PORTAL_BUS, PORTAL_PATH, interface_name, NULL, &error);
+    if (!proxy || !g_dbus_proxy_get_name_owner(proxy)) { if (proxy) g_object_unref(proxy); proxy = NULL; }
+    if (error) g_error_free(error); return proxy;
+}
+
+static char* portal_token(const char* prefix) {
+    static guint counter = 0; return g_strdup_printf("tachyon_%s_%u_%u", prefix, (guint)getpid(), ++counter);
+}
+
+static void portal_response_signal(GDBusConnection* bus, const char* sender, const char* path, const char* interface_name, const char* signal, GVariant* parameters, gpointer data) {
+    (void)bus; (void)sender; (void)path; (void)interface_name; (void)signal;
+    PortalResponse* response = (PortalResponse*)data;
+    if (response->path && g_strcmp0(response->path, path) != 0) return;
+    g_variant_get(parameters, "(u@a{sv})", &response->response, &response->results);
+    response->received = TRUE; g_main_loop_quit(response->loop);
+}
+
+static gboolean portal_request_timeout(gpointer data) { PortalResponse* response = (PortalResponse*)data; if (!response->received) g_main_loop_quit(response->loop); return G_SOURCE_REMOVE; }
+
+static GVariant* portal_request(const char* interface_name, const char* method, GVariant* parameters, GError** error) {
+    GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, error); if (!bus) return NULL;
+    PortalResponse response = { g_main_loop_new(NULL, FALSE), NULL, 2, NULL, FALSE };
+    // Subscribe before invoking the portal method. A backend may emit Response
+    // immediately after returning its handle, so subscribing afterwards loses
+    // valid fast responses (the race described by the Request portal contract).
+    guint subscription = g_dbus_connection_signal_subscribe(bus, PORTAL_BUS, "org.freedesktop.portal.Request", "Response",
+        NULL, NULL, G_DBUS_SIGNAL_FLAGS_NONE, portal_response_signal, &response, NULL);
+    GVariant* reply = g_dbus_connection_call_sync(bus, PORTAL_BUS, PORTAL_PATH, interface_name, method, parameters,
+        G_VARIANT_TYPE("(o)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, error);
+    if (!reply) {
+        g_dbus_connection_signal_unsubscribe(bus, subscription); g_main_loop_unref(response.loop); g_object_unref(bus); return NULL;
+    }
+    const char* request_path = NULL; g_variant_get(reply, "(&o)", &request_path);
+    response.path = request_path;
+    guint timeout = g_timeout_add_seconds(120, portal_request_timeout, &response); g_main_loop_run(response.loop);
+    if (response.received) g_source_remove(timeout);
+    g_dbus_connection_signal_unsubscribe(bus, subscription); g_main_loop_unref(response.loop); g_variant_unref(reply); g_object_unref(bus);
+    if (!response.received || response.response != 0) {
+        if (response.results) g_variant_unref(response.results);
+        if (error && !*error) *error = g_error_new_literal(G_IO_ERROR, response.received ? G_IO_ERROR_CANCELLED : G_IO_ERROR_TIMED_OUT, response.received ? "Portal request was cancelled" : "Portal request timed out");
+        return NULL;
+    }
+    return response.results;
+}
+
+static gboolean is_x11_backend(void) { GdkDisplay* display = gdk_display_get_default(); return display && GDK_IS_X11_DISPLAY(display); }
+static gboolean global_shortcuts_portal_available(void) {
+    GDBusProxy* proxy = portal_proxy("org.freedesktop.portal.GlobalShortcuts"); if (!proxy) return FALSE;
+    GVariant* version = g_dbus_proxy_get_cached_property(proxy, "version"); gboolean available = version && g_variant_get_uint32(version) >= 1;
+    if (version) g_variant_unref(version); g_object_unref(proxy); return available;
+}
+
+static char* xdg_shortcut_trigger(const char* accelerator) {
+    char** parts = g_strsplit(accelerator ? accelerator : "", "+", -1); GString* output = g_string_new(NULL); int count = g_strv_length(parts);
+    for (int i = 0; i < count; i++) {
+        char* upper = g_ascii_strup(parts[i], -1); const char* mapped = upper;
+        if (g_strcmp0(upper, "PRIMARY") == 0 || g_strcmp0(upper, "CONTROL") == 0) mapped = "CTRL";
+        else if (g_strcmp0(upper, "COMMAND") == 0 || g_strcmp0(upper, "META") == 0 || g_strcmp0(upper, "SUPER") == 0) mapped = "LOGO";
+        else if (g_strcmp0(upper, "OPTION") == 0) mapped = "ALT";
+        if (output->len) g_string_append_c(output, '+');
+        if (i == count - 1 && strlen(mapped) == 1) g_string_append_c(output, g_ascii_tolower(mapped[0])); else g_string_append(output, mapped);
+        g_free(upper);
+    }
+    g_strfreev(parts); return g_string_free(output, FALSE);
+}
+
+static gboolean parse_x11_accelerator(const char* accelerator, int* keycode, unsigned int* modifiers) {
+    char** parts = g_strsplit(accelerator ? accelerator : "", "+", -1); int count = g_strv_length(parts); *modifiers = 0; KeySym symbol = NoSymbol;
+    for (int i = 0; i < count; i++) {
+        char* upper = g_ascii_strup(parts[i], -1);
+        if (g_strcmp0(upper, "PRIMARY") == 0 || g_strcmp0(upper, "CONTROL") == 0 || g_strcmp0(upper, "CTRL") == 0) *modifiers |= ControlMask;
+        else if (g_strcmp0(upper, "SHIFT") == 0) *modifiers |= ShiftMask;
+        else if (g_strcmp0(upper, "ALT") == 0 || g_strcmp0(upper, "OPTION") == 0) *modifiers |= Mod1Mask;
+        else if (g_strcmp0(upper, "COMMAND") == 0 || g_strcmp0(upper, "META") == 0 || g_strcmp0(upper, "SUPER") == 0) *modifiers |= Mod4Mask;
+        else if (i == count - 1) { char* key = strlen(parts[i]) == 1 ? g_ascii_strdown(parts[i], -1) : g_strdup(parts[i]); symbol = XStringToKeysym(key); g_free(key); }
+        else { g_free(upper); g_strfreev(parts); return FALSE; }
+        g_free(upper);
+    }
+    Display* display = is_x11_backend() ? gdk_x11_display_get_xdisplay(gdk_display_get_default()) : NULL;
+    *keycode = display && symbol != NoSymbol ? XKeysymToKeycode(display, symbol) : 0; g_strfreev(parts);
+    return *keycode != 0 && *modifiers != 0;
+}
+
+static void emit_linux_host_event(const char* name, const char* shortcut_id) {
+    if (!controller) return; JsonBuilder* builder = json_builder_new(); json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "type"); json_builder_add_string_value(builder, "tac:host-event");
+    json_builder_set_member_name(builder, "event"); json_builder_add_string_value(builder, name);
+    json_builder_set_member_name(builder, "payload"); json_builder_begin_object(builder); json_builder_set_member_name(builder, "id"); json_builder_add_string_value(builder, shortcut_id); json_builder_end_object(builder); json_builder_end_object(builder);
+    JsonGenerator* generator = json_generator_new(); JsonNode* node = json_builder_get_root(builder); json_generator_set_root(generator, node); char* event = json_generator_to_data(generator, NULL); char* error = NULL;
+    char* snapshot = tachyon_ui_controller_emit(controller, event, &error); if (snapshot) { apply_snapshot(snapshot); tachyon_ui_controller_free_string(snapshot); } else if (error) g_warning("Tachyon host event: %s", error);
+    tachyon_ui_controller_free_string(error); g_free(event); json_node_free(node); g_object_unref(generator); g_object_unref(builder);
+}
+
+static GdkFilterReturn x11_shortcut_filter(GdkXEvent* native_event, GdkEvent* event, gpointer data) {
+    (void)event; (void)data; XEvent* xevent = (XEvent*)native_event; if (xevent->type != KeyPress) return GDK_FILTER_CONTINUE;
+    unsigned int state = xevent->xkey.state & ~(LockMask | Mod2Mask);
+    for (guint i = 0; linux_shortcuts && i < linux_shortcuts->len; i++) { LinuxShortcut* shortcut = (LinuxShortcut*)g_ptr_array_index(linux_shortcuts, i); if (shortcut->keycode == xevent->xkey.keycode && shortcut->modifiers == state) { emit_linux_host_event("shortcut.activated", shortcut->id); return GDK_FILTER_REMOVE; } }
+    return GDK_FILTER_CONTINUE;
+}
+
+static void portal_shortcut_activated(GDBusConnection* bus, const char* sender, const char* path, const char* interface_name, const char* signal, GVariant* parameters, gpointer data) {
+    (void)bus; (void)sender; (void)path; (void)interface_name; (void)signal; (void)data;
+    const char* session = NULL; const char* id = NULL; guint64 timestamp = 0; GVariant* options = NULL;
+    g_variant_get(parameters, "(&o&st@a{sv})", &session, &id, &timestamp, &options); (void)timestamp;
+    LinuxShortcut* shortcut = find_linux_shortcut(id, NULL); if (shortcut && g_strcmp0(shortcut->session, session) == 0) emit_linux_host_event("shortcut.activated", shortcut->id);
+    g_variant_unref(options);
+}
+
+static gboolean bind_portal_shortcut(LinuxShortcut* shortcut, GError** error) {
+    GVariantBuilder session_options; g_variant_builder_init(&session_options, G_VARIANT_TYPE_VARDICT);
+    char* request_token = portal_token("shortcut"); char* session_token = portal_token("session");
+    g_variant_builder_add(&session_options, "{sv}", "handle_token", g_variant_new_string(request_token));
+    g_variant_builder_add(&session_options, "{sv}", "session_handle_token", g_variant_new_string(session_token)); g_free(request_token); g_free(session_token);
+    GVariant* created = portal_request("org.freedesktop.portal.GlobalShortcuts", "CreateSession", g_variant_new("(@a{sv})", g_variant_builder_end(&session_options)), error);
+    if (!created) return FALSE; const char* session = NULL;
+    if (!g_variant_lookup(created, "session_handle", "&s", &session) || !session) { g_variant_unref(created); if (error && !*error) *error = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_FAILED, "GlobalShortcuts portal returned no session"); return FALSE; }
+    shortcut->session = g_strdup(session); g_variant_unref(created);
+    char* trigger = xdg_shortcut_trigger(shortcut->accelerator);
+    GVariantBuilder properties; g_variant_builder_init(&properties, G_VARIANT_TYPE_VARDICT);
+    g_variant_builder_add(&properties, "{sv}", "description", g_variant_new_string(shortcut->id));
+    g_variant_builder_add(&properties, "{sv}", "preferred_trigger", g_variant_new_string(trigger)); g_free(trigger);
+    GVariantBuilder shortcuts; g_variant_builder_init(&shortcuts, G_VARIANT_TYPE("a(sa{sv})"));
+    g_variant_builder_add(&shortcuts, "(s@a{sv})", shortcut->id, g_variant_builder_end(&properties));
+    GVariantBuilder bind_options; g_variant_builder_init(&bind_options, G_VARIANT_TYPE_VARDICT); request_token = portal_token("bind");
+    g_variant_builder_add(&bind_options, "{sv}", "handle_token", g_variant_new_string(request_token)); g_free(request_token);
+    GVariant* bound = portal_request("org.freedesktop.portal.GlobalShortcuts", "BindShortcuts",
+        g_variant_new("(o@a(sa{sv})s@a{sv})", shortcut->session, g_variant_builder_end(&shortcuts), "", g_variant_builder_end(&bind_options)), error);
+    if (!bound) return FALSE;
+    GVariant* bound_shortcuts = g_variant_lookup_value(bound, "shortcuts", G_VARIANT_TYPE("a(sa{sv})")); gboolean accepted = FALSE;
+    if (bound_shortcuts) { GVariantIter iterator; const char* bound_id = NULL; GVariant* properties = NULL; g_variant_iter_init(&iterator, bound_shortcuts); while (g_variant_iter_next(&iterator, "(&s@a{sv})", &bound_id, &properties)) { if (g_strcmp0(bound_id, shortcut->id) == 0) accepted = TRUE; g_variant_unref(properties); } g_variant_unref(bound_shortcuts); }
+    g_variant_unref(bound);
+    if (!accepted) { if (error && !*error) *error = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_PERMISSION_DENIED, "The desktop portal did not bind the requested shortcut"); return FALSE; }
+    if (!portal_shortcut_subscription) { GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, error); if (!bus) return FALSE; portal_shortcut_subscription = g_dbus_connection_signal_subscribe(bus, PORTAL_BUS, "org.freedesktop.portal.GlobalShortcuts", "Activated", PORTAL_PATH, NULL, G_DBUS_SIGNAL_FLAGS_NONE, portal_shortcut_activated, NULL, NULL); g_object_unref(bus); }
+    return TRUE;
+}
+
+static int x11_shortcut_error(Display* display, XErrorEvent* event) { (void)display; if (event->error_code == BadAccess) x11_shortcut_grab_failed = TRUE; return 0; }
+
+static gboolean grab_x11_shortcut(LinuxShortcut* shortcut, GError** error) {
+    if (!parse_x11_accelerator(shortcut->accelerator, &shortcut->keycode, &shortcut->modifiers)) { if (error) *error = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "Invalid shortcut accelerator"); return FALSE; }
+    Display* display = gdk_x11_display_get_xdisplay(gdk_display_get_default()); Window root = DefaultRootWindow(display); unsigned int locks[] = { 0, LockMask, Mod2Mask, LockMask | Mod2Mask };
+    XSync(display, False); x11_shortcut_grab_failed = FALSE; int (*previous_handler)(Display*, XErrorEvent*) = XSetErrorHandler(x11_shortcut_error);
+    for (guint i = 0; i < G_N_ELEMENTS(locks); i++) XGrabKey(display, shortcut->keycode, shortcut->modifiers | locks[i], root, False, GrabModeAsync, GrabModeAsync);
+    XSync(display, False); XSetErrorHandler(previous_handler);
+    if (x11_shortcut_grab_failed) { for (guint i = 0; i < G_N_ELEMENTS(locks); i++) XUngrabKey(display, shortcut->keycode, shortcut->modifiers | locks[i], root); XSync(display, False); if (error) *error = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_EXISTS, "Shortcut accelerator is already registered"); return FALSE; }
+    return TRUE;
+}
+
+static void ungrab_x11_shortcut(LinuxShortcut* shortcut) {
+    if (!is_x11_backend() || !shortcut->keycode) return; Display* display = gdk_x11_display_get_xdisplay(gdk_display_get_default()); Window root = DefaultRootWindow(display); unsigned int locks[] = { 0, LockMask, Mod2Mask, LockMask | Mod2Mask };
+    for (guint i = 0; i < G_N_ELEMENTS(locks); i++) XUngrabKey(display, shortcut->keycode, shortcut->modifiers | locks[i], root); XSync(display, False);
+}
+
+static int success_builder(JsonBuilder* builder, char** result_json) {
+    JsonNode* node = json_builder_get_root(builder); JsonGenerator* generator = json_generator_new(); json_generator_set_root(generator, node); char* value = json_generator_to_data(generator, NULL);
+    int result = success_json(value, result_json); g_free(value); g_object_unref(generator); json_node_free(node); return result;
+}
+
+static void add_shortcut_snapshot(JsonBuilder* builder) {
+    json_builder_set_member_name(builder, "shortcuts"); json_builder_begin_array(builder);
+    for (guint i = 0; linux_shortcuts && i < linux_shortcuts->len; i++) { LinuxShortcut* shortcut = (LinuxShortcut*)g_ptr_array_index(linux_shortcuts, i); json_builder_begin_object(builder); json_builder_set_member_name(builder, "id"); json_builder_add_string_value(builder, shortcut->id); json_builder_set_member_name(builder, "accelerator"); json_builder_add_string_value(builder, shortcut->accelerator); json_builder_end_object(builder); }
+    json_builder_end_array(builder);
+}
+
+static const char* linux_capability_state(const char* capability) {
+    if (!capability_enabled(capability)) return "unsupported";
+    if (g_str_has_prefix(capability, "shortcuts.")) return is_x11_backend() ? "granted" : (global_shortcuts_portal_available() ? (linux_shortcuts && linux_shortcuts->len ? "granted" : "prompt") : "unsupported");
+    if (g_strcmp0(capability, "window.clickThrough") == 0) return window && gtk_widget_get_window(window) ? "granted" : "unsupported";
+    ${capture ? 'if (g_str_has_prefix(capability, "screenCapture.")) return portal_window_capture_available() ? (screen_capture_granted ? "granted" : "prompt") : "unsupported";' : ''}
+    return "granted";
+}
+`;
+    const desktopCases = `
+    if (g_strcmp0(capability, "window.clickThrough") == 0) {
+        GdkWindow* native_window = gtk_widget_get_window(window); if (!native_window) { result = fail_host(error, "Native window is not ready for click-through"); goto done; }
+        gboolean enabled = json_object_get_boolean_member_with_default(payload, "enabled", FALSE); cairo_region_t* empty = enabled ? cairo_region_create() : NULL;
+        gdk_window_input_shape_combine_region(native_window, empty, 0, 0); if (empty) cairo_region_destroy(empty); window_click_through = enabled;
+        char* value = g_strdup_printf("{\\\"alwaysOnTop\\\":%s,\\\"opacity\\\":%.3f,\\\"clickThrough\\\":%s}", window_always_on_top ? "true" : "false", gtk_widget_get_opacity(window), enabled ? "true" : "false"); result = success_json(value, result_json); g_free(value); goto done;
+    }
+    if (g_strcmp0(capability, "shortcuts.register") == 0) {
+        const char* id = json_object_get_string_member_with_default(payload, "id", ""); const char* accelerator = json_object_get_string_member_with_default(payload, "accelerator", ""); gboolean replace = json_object_get_boolean_member_with_default(payload, "replace", FALSE); guint existing_index = 0; LinuxShortcut* existing = find_linux_shortcut(id, &existing_index);
+        if (!*id || !*accelerator) { result = fail_host(error, "Shortcut id and accelerator are required"); goto done; }
+        if (existing && !replace) { result = fail_host(error, "Shortcut id is already registered"); goto done; }
+        if (existing) { ungrab_x11_shortcut(existing); g_ptr_array_remove_index(linux_shortcuts, existing_index); }
+        if (!linux_shortcuts) linux_shortcuts = g_ptr_array_new_with_free_func(linux_shortcut_free);
+        LinuxShortcut* shortcut = g_new0(LinuxShortcut, 1); shortcut->id = g_strdup(id); shortcut->accelerator = g_strdup(accelerator); GError* shortcut_error = NULL;
+        gboolean registered = is_x11_backend() ? grab_x11_shortcut(shortcut, &shortcut_error) : (global_shortcuts_portal_available() && bind_portal_shortcut(shortcut, &shortcut_error));
+        if (!registered) { result = fail_host(error, shortcut_error ? shortcut_error->message : "No supported global-shortcut backend is available"); if (shortcut_error) g_error_free(shortcut_error); linux_shortcut_free(shortcut); goto done; }
+        g_ptr_array_add(linux_shortcuts, shortcut); JsonBuilder* builder = json_builder_new(); json_builder_begin_object(builder); add_shortcut_snapshot(builder); json_builder_set_member_name(builder, "shortcut"); json_builder_begin_object(builder); json_builder_set_member_name(builder, "id"); json_builder_add_string_value(builder, id); json_builder_set_member_name(builder, "accelerator"); json_builder_add_string_value(builder, accelerator); json_builder_end_object(builder); json_builder_end_object(builder); result = success_builder(builder, result_json); g_object_unref(builder); goto done;
+    }
+    if (g_strcmp0(capability, "shortcuts.unregister") == 0) {
+        const char* id = json_object_get_string_member_with_default(payload, "id", ""); guint index = 0; LinuxShortcut* shortcut = find_linux_shortcut(id, &index); gboolean removed = shortcut != NULL; if (shortcut) { ungrab_x11_shortcut(shortcut); g_ptr_array_remove_index(linux_shortcuts, index); }
+        JsonBuilder* builder = json_builder_new(); json_builder_begin_object(builder); add_shortcut_snapshot(builder); json_builder_set_member_name(builder, "unregistered"); json_builder_add_boolean_value(builder, removed); json_builder_end_object(builder); result = success_builder(builder, result_json); g_object_unref(builder); goto done;
+    }
+    if (g_strcmp0(capability, "shortcuts.unregisterAll") == 0) {
+        guint count = linux_shortcuts ? linux_shortcuts->len : 0; for (guint i = 0; linux_shortcuts && i < linux_shortcuts->len; i++) ungrab_x11_shortcut((LinuxShortcut*)g_ptr_array_index(linux_shortcuts, i)); if (linux_shortcuts) g_ptr_array_set_size(linux_shortcuts, 0);
+        JsonBuilder* builder = json_builder_new(); json_builder_begin_object(builder); add_shortcut_snapshot(builder); json_builder_set_member_name(builder, "unregistered"); json_builder_add_int_value(builder, count); json_builder_end_object(builder); result = success_builder(builder, result_json); g_object_unref(builder); goto done;
+    }
+    if (g_strcmp0(capability, "shortcuts.list") == 0) { JsonBuilder* builder = json_builder_new(); json_builder_begin_object(builder); add_shortcut_snapshot(builder); json_builder_end_object(builder); result = success_builder(builder, result_json); g_object_unref(builder); goto done; }
+`;
     return `static char* duplicate_host_text(const char* value) {
     size_t length = value ? strlen(value) : 0; char* copy = (char*)malloc(length + 1);
     if (!copy) return NULL; if (length) memcpy(copy, value, length); copy[length] = 0; return copy;
@@ -1261,6 +1585,8 @@ static gboolean capability_enabled(const char* capability) { return ${capability
 static gboolean window_always_on_top = FALSE;
 
 ${managedSupport}
+${desktopSupport}
+${captureSupport}
 
 static int handle_native_capability(const char* capability, const char* payload_json, char** result_json, char** error, void* user_data) {
     (void)user_data; int result = 0;
@@ -1272,7 +1598,7 @@ static int handle_native_capability(const char* capability, const char* payload_
     JsonObject* payload = json_node_get_object(json_parser_get_root(parser));
     if (g_strcmp0(capability, "capabilities.state") == 0) {
         const char* requested = json_object_get_string_member_with_default(payload, "capability", "");
-        result = success_json(capability_enabled(requested) ? "\\\"granted\\\"" : "\\\"unsupported\\\"", result_json); goto done;
+        const char* state = linux_capability_state(requested); char* value = g_strdup_printf("\\\"%s\\\"", state); result = success_json(value, result_json); g_free(value); goto done;
     }
     if (g_strcmp0(capability, "app.info") == 0) { result = success_json(${JSON.stringify(JSON.stringify({ name: host.appName, runtime: 'linux-gtk', version: host.version }))}, result_json); goto done; }
     if (g_strcmp0(capability, "clipboard.readText") == 0) {
@@ -1281,10 +1607,12 @@ static int handle_native_capability(const char* capability, const char* payload_
     }
     if (g_strcmp0(capability, "clipboard.writeText") == 0) { const char* text = json_object_get_string_member_with_default(payload, "text", ""); gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), text, -1); result = success_json("{\\\"written\\\":true}", result_json); goto done; }
     if (g_strcmp0(capability, "openUrl") == 0) { const char* url = json_object_get_string_member_with_default(payload, "url", ""); if (!g_str_has_prefix(url, "https://") && !g_str_has_prefix(url, "http://")) { result = fail_host(error, "openUrl requires an http(s) URL"); goto done; } GError* launch_error = NULL; gboolean opened = g_app_info_launch_default_for_uri(url, NULL, &launch_error); if (!opened) { result = fail_host(error, launch_error ? launch_error->message : "Unable to open URL"); if (launch_error) g_error_free(launch_error); goto done; } result = success_json("{\\\"opened\\\":true}", result_json); goto done; }
-    if (g_strcmp0(capability, "window.state") == 0) { char* value = g_strdup_printf("{\\\"alwaysOnTop\\\":%s,\\\"opacity\\\":%.3f}", window_always_on_top ? "true" : "false", gtk_widget_get_opacity(window)); result = success_json(value, result_json); g_free(value); goto done; }
+    if (g_strcmp0(capability, "window.state") == 0) { char* value = g_strdup_printf("{\\\"alwaysOnTop\\\":%s,\\\"opacity\\\":%.3f,\\\"clickThrough\\\":%s}", window_always_on_top ? "true" : "false", gtk_widget_get_opacity(window), window_click_through ? "true" : "false"); result = success_json(value, result_json); g_free(value); goto done; }
     if (g_strcmp0(capability, "window.alwaysOnTop") == 0) { gboolean enabled = json_object_get_boolean_member_with_default(payload, "enabled", FALSE); gtk_window_set_keep_above(GTK_WINDOW(window), enabled); window_always_on_top = enabled; char* value = g_strdup_printf("{\\\"alwaysOnTop\\\":%s,\\\"opacity\\\":%.3f}", enabled ? "true" : "false", gtk_widget_get_opacity(window)); result = success_json(value, result_json); g_free(value); goto done; }
     if (g_strcmp0(capability, "window.opacity") == 0) { double opacity = json_object_get_double_member_with_default(payload, "value", 1.0); if (opacity < 0.1 || opacity > 1.0) { result = fail_host(error, "Window opacity must be between 0.1 and 1"); goto done; } gtk_widget_set_opacity(window, opacity); char* reply = g_strdup_printf("{\\\"alwaysOnTop\\\":%s,\\\"opacity\\\":%.3f}", window_always_on_top ? "true" : "false", opacity); result = success_json(reply, result_json); g_free(reply); goto done; }
+    ${desktopCases}
     ${managedCases}
+    ${captureCases}
     result = fail_host(error, "Unsupported native capability");
 done:
     g_object_unref(parser); return result;
@@ -1298,10 +1626,14 @@ function linuxNativeSource(host) {
     const managed = host.managedContentOrigins.length > 0;
     const needsWebKit = hybrid || host.managedContentOrigins.length > 0;
     return `#include <gtk/gtk.h>
+#include <gdk/gdkx.h>
 #include <json-glib/json-glib.h>
 ${needsWebKit ? '#include <webkit2/webkit2.h>' : ''}
+#include <X11/Xlib.h>
+#include <X11/keysym.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "tachyon_ui_controller.h"
 
 #define APP_NAME ${JSON.stringify(host.appName)}
@@ -1388,6 +1720,7 @@ static void activate(GtkApplication* app, gpointer user_data) {
     window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(window), APP_NAME);
     gtk_window_set_default_size(GTK_WINDOW(window), 1000, 700);
+    if (is_x11_backend()) gdk_window_add_filter(NULL, x11_shortcut_filter, NULL);
     ${managed ? `main_layout = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     trusted_slot = gtk_event_box_new(); managed_slot = gtk_event_box_new();
     gtk_paned_pack1(GTK_PANED(main_layout), trusted_slot, TRUE, FALSE);
@@ -1401,10 +1734,12 @@ static void activate(GtkApplication* app, gpointer user_data) {
 }
 
 int main(int argc, char** argv) {
-    GtkApplication* app = gtk_application_new("${host.appId}", G_APPLICATION_FLAGS_NONE);
+    GtkApplication* app = gtk_application_new("${host.appId}", G_APPLICATION_DEFAULT_FLAGS);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     int status = g_application_run(G_APPLICATION(app), argc, argv);
     ${managed ? 'if (managed_surfaces) g_hash_table_destroy(managed_surfaces);' : ''}
+    if (is_x11_backend()) gdk_window_remove_filter(NULL, x11_shortcut_filter, NULL);
+    if (linux_shortcuts) g_ptr_array_free(linux_shortcuts, TRUE);
     tachyon_ui_controller_destroy(controller);
     g_object_unref(app);
     return status;
@@ -1826,7 +2161,7 @@ FetchContent_Declare(quickjs
     URL_HASH SHA256=c4e813951b7c46845096a948e978c620b11ab4cf5fd622ca09c727ec31f42623)
 FetchContent_MakeAvailable(quickjs)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(GTK REQUIRED gtk+-3.0 json-glib-1.0${host.hasWebViewFallbacks || host.managedContentOrigins.length > 0 ? ' webkit2gtk-4.1' : ''})
+pkg_check_modules(GTK REQUIRED gtk+-3.0 json-glib-1.0 x11${host.hasWebViewFallbacks || host.managedContentOrigins.length > 0 ? ' webkit2gtk-4.1' : ''})
 add_executable(\${PROJECT_NAME} src/main.c src/tachyon_ui_controller.c)
 target_include_directories(\${PROJECT_NAME} PRIVATE \${GTK_INCLUDE_DIRS})
 target_link_libraries(\${PROJECT_NAME} PRIVATE \${GTK_LIBRARIES} qjs)

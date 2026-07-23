@@ -119,6 +119,33 @@ export default class {
         expect(output).not.toContain('await app.info()');
     });
 
+    test('lowers JavaScript providers only in executable code', () => {
+        const source = String.raw`
+export default class {
+    async inspect() {
+        const single = 'shortcuts.register'
+        const double = "contentSurface.open"
+        const template = ` + "`provider screenCapture.listWindows ${shortcuts.list()}`" + `
+        const pattern = /contentSurface\\.open|shortcuts\\.register/
+        // shortcuts.register and contentSurface.open are documentation here
+        /* screenCapture.listWindows remains diagnostic text */
+        await shortcuts.register({ id: 'toggle', accelerator: 'Primary+T' })
+        return { single, double, template, pattern }
+    }
+}
+`;
+
+        const output = Compiler.lowerJavaScriptNativeShims(source);
+
+        expect(output).toContain("const single = 'shortcuts.register'");
+        expect(output).toContain('const double = "contentSurface.open"');
+        expect(output).toContain('`provider screenCapture.listWindows ${this.tac.__native.shortcuts.list()}`');
+        expect(output).toContain('/contentSurface\\.open|shortcuts\\.register/');
+        expect(output).toContain('// shortcuts.register and contentSurface.open are documentation here');
+        expect(output).toContain('/* screenCapture.listWindows remains diagnostic text */');
+        expect(output).toContain('await this.tac.__native.shortcuts.register(');
+    });
+
     test('rejects removed JavaScript wrapper names', () => {
         expect(() => Compiler.assertNoLegacyJavaScriptPlatformWrappers(
             'export default class { open() { return Browser.open("https://tachyon.del.ma") } }',

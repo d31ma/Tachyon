@@ -171,15 +171,25 @@ timedTest('macOS native-first host accepts and advertises concrete CLOAK capabil
     expect(source).toContain('globalShortcutMonitor');
 });
 
-timedTest('desktop native-first hosts reject declarations without target adapters', { timeout: 30000 }, async () => {
+timedTest('Linux advertises capability-detected CLOAK adapters but not capture protection', { timeout: 30000 }, async () => {
     const linuxCwd = await createFixture();
     await writeFile(path.join(linuxCwd, 'package.json'), JSON.stringify({
         name: 'native-fixture', private: true,
         tachyon: { devicePermissions: ['screenCapture'] },
     }, null, 2));
-    await expect(runCli(linuxCwd, ['bun', bundleEntrypoint, '--target', 'linux']))
-        .rejects.toThrow(/linux.+do not implement device permission: screenCapture/i);
+    await runCli(linuxCwd, ['bun', bundleEntrypoint, '--target', 'linux']);
+    const manifest = JSON.parse(await readFile(path.join(linuxCwd, 'dist', 'linux', 'tachyon.host.json'), 'utf8'));
+    expect(manifest.hostCapabilities).toEqual(expect.arrayContaining([
+        'shortcuts.register', 'window.clickThrough', 'screenCapture.captureWindow',
+    ]));
+    expect(manifest.hostCapabilities).not.toContain('window.captureProtection');
 
+    const source = await readFile(path.join(linuxCwd, 'dist', 'linux', 'src', 'main.c'), 'utf8');
+    expect(source).toContain('org.freedesktop.portal.GlobalShortcuts');
+    expect(source).toContain('org.freedesktop.portal.Screenshot');
+});
+
+timedTest('desktop native-first hosts reject declarations without target adapters', { timeout: 30000 }, async () => {
     const windowsCwd = await createFixture();
     await writeFile(path.join(windowsCwd, 'package.json'), JSON.stringify({
         name: 'native-fixture', private: true,

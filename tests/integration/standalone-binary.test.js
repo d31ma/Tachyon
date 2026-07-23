@@ -1,6 +1,6 @@
 // @ts-check
 import { afterEach, expect, test } from 'bun:test';
-import { access, mkdtemp, readdir, rm } from 'fs/promises';
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'fs/promises';
 import path from 'path';
 import { tmpdir } from 'os';
 
@@ -47,6 +47,7 @@ async function run(cmd, options = {}) {
     if (exitCode !== 0) {
         throw new Error(`Command failed (${exitCode}): ${cmd.join(' ')}\n${stdout}\n${stderr}`);
     }
+    return { stdout, stderr };
 }
 
 /**
@@ -132,11 +133,73 @@ timedTest('compiled ty binary can init, bundle, and serve a client app', async (
     const nativeTarget = process.platform === 'darwin'
         ? 'macos'
         : process.platform === 'win32' ? 'windows' : 'linux';
+    await writeFile(path.join(appRoot, 'client', 'pages', 'tac.html'), `
+<script>let count = 0</script>
+<main>
+  <button on:click="count += 1">Add</button><p>Count: {count}</p>
+  <p>Required: {required.join('|')}</p><p>Events: {events.join('|')}</p>
+</main>
+`);
+    await writeFile(path.join(appRoot, 'client', 'pages', 'tac.js'), `
+export default class {
+  required = ['shortcuts.register', 'contentSurface.open']
+  events = []
+
+  @onMount
+  async initialize() {
+    host.on('shortcut.activated', ({ id }) => this.events.push(id))
+    await shortcuts.register({ id: 'example.toggle', accelerator: 'Primary+Shift+S', replace: true })
+    await contentSurface.open({ id: 'docs', url: 'https://example.com' })
+  }
+}
+`);
     await run([binaryPath, 'bundle', '--target', nativeTarget, '--skip-package'], {
         cwd: appRoot,
         env: cacheEnv,
         timeoutMs: 120000,
     });
     expect(await exists(path.join(appRoot, 'dist', nativeTarget, 'tachyon.host.json'))).toBe(true);
-    expect(await exists(path.join(appRoot, 'dist', nativeTarget, 'Resources', 'tachyon.native-controller.js'))).toBe(true);
+    const controllerPath = path.join(appRoot, 'dist', nativeTarget, 'Resources', 'tachyon.native-controller.js');
+    expect(await exists(controllerPath)).toBe(true);
+
+    const controllerSource = await readFile(controllerPath, 'utf8');
+    const runnerPath = path.join(root, 'native-controller-runner.js');
+    await writeFile(runnerPath, `
+const calls = [];
+globalThis.__tachyonNativeHostCall = (capability, payload) => {
+  const data = JSON.parse(payload || '{}');
+  calls.push({ capability, payload: data });
+  let value = {};
+  if (capability === '__tachyon.hostInfo') value = {
+    target: ${JSON.stringify(nativeTarget)}, platform: 'desktop',
+    capabilities: ['shortcuts.register', 'contentSurface.open', 'contentSurface.state', 'contentSurface.close'],
+  };
+  else if (capability === 'contentSurface.open') value = { pending: true };
+  else if (capability === 'contentSurface.state') value = { id: data.id, open: true };
+  return JSON.stringify({ ok: true, value });
+};
+${controllerSource}
+const initial = JSON.parse(await globalThis.__tachyonNativeUI.render());
+const findButton = (node) => node?.tag === 'button'
+  ? node
+  : (node?.children || []).map(findButton).find(Boolean);
+const button = findButton(initial.root);
+if (!button?.id) throw new Error('Compiled native button is missing its event id');
+const updated = JSON.parse(await globalThis.__tachyonNativeUI.dispatch({ elementId: button.id, type: 'click' }));
+await globalThis.__tachyonNativeUI.emit({ type: 'tac:host-event', event: 'surface.opened', payload: { id: 'docs' } });
+await Promise.resolve();
+const eventSnapshot = JSON.parse(await globalThis.__tachyonNativeUI.emit({
+  type: 'tac:host-event', event: 'shortcut.activated', payload: { id: 'example.toggle' },
+}));
+console.log(JSON.stringify({ initial, updated, eventSnapshot, calls }));
+`);
+    const controllerRun = await run(['bun', runnerPath], { timeoutMs: 30000 });
+    const snapshots = JSON.parse(controllerRun.stdout);
+    expect(JSON.stringify(snapshots.initial)).toContain('Count: 0');
+    expect(JSON.stringify(snapshots.initial)).toContain('shortcuts.register|contentSurface.open');
+    expect(JSON.stringify(snapshots.updated)).toContain('Count: 1');
+    expect(JSON.stringify(snapshots.eventSnapshot)).toContain('Events: example.toggle');
+    expect(snapshots.calls.map((entry) => entry.capability)).toEqual(expect.arrayContaining([
+        'shortcuts.register', 'contentSurface.open', 'contentSurface.state',
+    ]));
 }, 180000);

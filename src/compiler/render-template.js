@@ -306,6 +306,10 @@ const tc_createHelpers = (modulePath) => {
 
     const isBrowser = typeof window !== 'undefined' && !globalThis.__tc_prerender__
     const isServer = !isBrowser
+    const isNativeController = !isBrowser
+        && !globalThis.__tc_prerender__
+        && typeof (/** @type {any} */ (globalThis).__tcNativeBridge__)?.invoke === 'function'
+        && typeof (/** @type {any} */ (globalThis).__tcNativeBridge__)?.onMessage === 'function'
     let rerenderScheduled = false
     let suppressReactiveRerender = false
 
@@ -325,7 +329,24 @@ const tc_createHelpers = (modulePath) => {
 
     /** @param {() => void | Promise<void>} fn */
     const onMount = (fn) => {
-        if (!isBrowser) return
+        if (!isBrowser) {
+            // The DOM-free controller installs its bridge before it creates a
+            // route factory. Run mount work on the next microtask so companion
+            // construction and binding finish first, while server prerendering
+            // remains a no-op.
+            if (!isNativeController) return
+            queueMicrotask(() => {
+                try {
+                    const result = fn()
+                    if (result instanceof Promise)
+                        result.catch((error) => console.error('[tachyon] onMount callback error:', error))
+                }
+                catch (error) {
+                    console.error('[tachyon] onMount callback error:', error)
+                }
+            })
+            return
+        }
         // A controller can register after the renderer already flushed the
         // mount queue — e.g. a Dart companion whose runtime module loads
         // asynchronously. Late registrations run on the next microtask,

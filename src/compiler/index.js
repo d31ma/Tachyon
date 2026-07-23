@@ -842,6 +842,173 @@ export default class Compiler {
             .replace(/\/\/.*$/gm, (match) => ' '.repeat(match.length))
             .replace(/(['"`])(?:\\.|(?!\1).)*\1/g, (match) => ' '.repeat(match.length));
     }
+    /**
+     * Applies a source transform only to executable JavaScript spans. Literal
+     * text, comments, and regular expressions are copied exactly; executable
+     * expressions inside template literals are transformed recursively.
+     *
+     * @param {string} source
+     * @param {(code: string) => string} transform
+     */
+    static transformJavaScriptCode(source, transform) {
+        const regexPrefixKeywords = new Set([
+            'await', 'case', 'delete', 'do', 'else', 'in', 'instanceof', 'new',
+            'of', 'return', 'throw', 'typeof', 'void', 'yield',
+        ]);
+
+        /** @param {number} start @param {string} quote */
+        const stringEnd = (start, quote) => {
+            for (let index = start + 1; index < source.length; index += 1) {
+                if (source[index] === '\\') { index += 1; continue; }
+                if (source[index] === quote) return index + 1;
+            }
+            return source.length;
+        };
+
+        /** @param {number} start */
+        const regexEnd = (start) => {
+            let inClass = false;
+            let index = start + 1;
+            for (; index < source.length; index += 1) {
+                const character = source[index];
+                if (character === '\\') { index += 1; continue; }
+                if (character === '[') { inClass = true; continue; }
+                if (character === ']') { inClass = false; continue; }
+                if (character === '/' && !inClass) {
+                    index += 1;
+                    while (/[A-Za-z]/.test(source[index] ?? '')) index += 1;
+                    return index;
+                }
+                if (character === '\n' || character === '\r') return start + 1;
+            }
+            return start + 1;
+        };
+
+        /**
+         * @param {number} start
+         * @param {boolean} stopAtClosingBrace
+         * @returns {{ text: string, index: number }}
+         */
+        const transformCode = (start, stopAtClosingBrace = false) => {
+            let output = '';
+            let codeStart = start;
+            let index = start;
+            let braceDepth = 0;
+            let canStartRegex = true;
+
+            /** @param {number} end */
+            const flush = (end) => {
+                output += transform(source.slice(codeStart, end));
+            };
+
+            while (index < source.length) {
+                const character = source[index];
+                const next = source[index + 1];
+                if (/\s/.test(character)) { index += 1; continue; }
+
+                if (stopAtClosingBrace && character === '}' && braceDepth === 0) {
+                    flush(index);
+                    return { text: output, index };
+                }
+
+                if (character === '/' && next === '/') {
+                    flush(index);
+                    const end = source.indexOf('\n', index + 2);
+                    const tokenEnd = end < 0 ? source.length : end;
+                    output += source.slice(index, tokenEnd);
+                    index = tokenEnd;
+                    codeStart = index;
+                    continue;
+                }
+                if (character === '/' && next === '*') {
+                    flush(index);
+                    const close = source.indexOf('*/', index + 2);
+                    const tokenEnd = close < 0 ? source.length : close + 2;
+                    output += source.slice(index, tokenEnd);
+                    index = tokenEnd;
+                    codeStart = index;
+                    continue;
+                }
+                if (character === "'" || character === '"') {
+                    flush(index);
+                    const tokenEnd = stringEnd(index, character);
+                    output += source.slice(index, tokenEnd);
+                    index = tokenEnd;
+                    codeStart = index;
+                    canStartRegex = false;
+                    continue;
+                }
+                if (character === '`') {
+                    flush(index);
+                    output += '`';
+                    index += 1;
+                    let textStart = index;
+                    while (index < source.length) {
+                        if (source[index] === '\\') { index += 2; continue; }
+                        if (source[index] === '`') {
+                            output += source.slice(textStart, index + 1);
+                            index += 1;
+                            break;
+                        }
+                        if (source[index] === '$' && source[index + 1] === '{') {
+                            output += source.slice(textStart, index) + '${';
+                            const expression = transformCode(index + 2, true);
+                            output += `${expression.text}}`;
+                            index = expression.index + 1;
+                            textStart = index;
+                            continue;
+                        }
+                        index += 1;
+                    }
+                    codeStart = index;
+                    canStartRegex = false;
+                    continue;
+                }
+                if (character === '/' && canStartRegex) {
+                    const tokenEnd = regexEnd(index);
+                    if (tokenEnd > index + 1) {
+                        flush(index);
+                        output += source.slice(index, tokenEnd);
+                        index = tokenEnd;
+                        codeStart = index;
+                        canStartRegex = false;
+                        continue;
+                    }
+                }
+                if (/[A-Za-z_$]/.test(character)) {
+                    let end = index + 1;
+                    while (/[A-Za-z0-9_$]/.test(source[end] ?? '')) end += 1;
+                    canStartRegex = regexPrefixKeywords.has(source.slice(index, end));
+                    index = end;
+                    continue;
+                }
+                if (/[0-9]/.test(character)) {
+                    let end = index + 1;
+                    while (/[A-Za-z0-9_.]/.test(source[end] ?? '')) end += 1;
+                    canStartRegex = false;
+                    index = end;
+                    continue;
+                }
+                if (character === '{') {
+                    braceDepth += 1;
+                    canStartRegex = true;
+                }
+                else if (character === '}') {
+                    braceDepth = Math.max(0, braceDepth - 1);
+                    canStartRegex = false;
+                }
+                else if (character === ')' || character === ']') canStartRegex = false;
+                else if (character === '.') canStartRegex = false;
+                else if (character === '+' && next === '+' || character === '-' && next === '-') canStartRegex = false;
+                else canStartRegex = true;
+                index += 1;
+            }
+            flush(index);
+            return { text: output, index };
+        };
+
+        return transformCode(0).text;
+    }
     /** @param {string} source */
     static shouldInjectTacImport(source) {
         const stripped = Compiler.maskCommentsAndStrings(source);
@@ -2317,7 +2484,7 @@ ${transformed}
      * @param {string} source
      */
     static lowerJavaScriptNativeShims(source) {
-        return source
+        return Compiler.transformJavaScriptCode(source, (code) => code
             .replace(/\bapp\.isAvailable\(\)/g, 'this.tac.__native.app.available()')
             .replace(/\bapp\.info\(\)/g, 'this.tac.__native.app.info()')
             .replace(/\bclipboard\.writeText\(/g, 'this.tac.__native.clipboard.writeText(')
@@ -2349,7 +2516,7 @@ ${transformed}
             .replace(/\bcontentSurface\./g, 'this.tac.__native.contentSurface.')
             .replace(/\bscreenCapture\./g, 'this.tac.__native.screenCapture.')
             .replace(/\bcapabilities\.supports\(/g, 'this.tac.__native.capabilities.supports(')
-            .replace(/\bcapabilities\.state\(/g, 'this.tac.__native.capabilities.state(')
+            .replace(/\bcapabilities\.state\(/g, 'this.tac.__native.capabilities.state('));
     }
     /** @param {string} source @param {string} sourcePath */
     static assertNoLegacyJavaScriptPlatformWrappers(source, sourcePath) {

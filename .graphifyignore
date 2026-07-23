@@ -16,6 +16,12 @@ graphify-out/cypher.txt
 # Repo-local generated artifacts that Graphify does not skip by default
 bin/
 test-results/
+coverage/
+dist/
+dist-bin/
+node_modules/
+tests/fixtures/fullstack/db/
+**/__pycache__/
 
 # Private website submodule.
 website/
