@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [26.30.04] - 2026-07-23
+
+### Added
+
+- Generated Linux desktop hosts now provide capability-detected global
+  shortcuts, reversible window click-through, and declared window capture.
+  Wayland uses the XDG GlobalShortcuts and Screenshot portals, while X11 uses
+  an `XGrabKey` shortcut fallback. Unsupported compositor features remain
+  fail-closed, and Linux still does not advertise capture protection.
+
+### Fixed
+
+- DOM-free native controllers now run companion `@onMount` handlers only after
+  the host bridge is installed, allowing startup `host.on(...)` subscriptions
+  and managed `contentSurface.open(...)` calls without constructor delays.
+- JavaScript and TypeScript native-provider lowering now leaves strings,
+  template text, regular expressions, and comments byte-for-byte unchanged.
+- Controllers emitted by compiled `ty` release binaries no longer reference a
+  bundler-renamed, undeclared native-parser constant during render or dispatch.
+- Linux portal calls now subscribe for the asynchronous response before
+  invoking the portal method, so an immediate backend response cannot be lost.
+
 ## [26.30.03] - 2026-07-22
 
 ### Changed

@@ -2,7 +2,6 @@
 import { NATIVE_UI_ELEMENT_SET } from '../html-tags.js';
 
 const CUSTOM_ELEMENT_PATTERN = /^[a-z][.0-9_a-z]*-[.0-9_a-z-]*$/;
-const NON_VISUAL_ELEMENTS = new Set(['script', 'style', 'template', 'noscript']);
 
 /** @typedef {string[] | Record<string, string>} NativeUIAdapters */
 
@@ -22,6 +21,10 @@ function assertCustomElementTag(tag) {
  * @returns {NativeUIAdapters}
  */
 export function normalizeNativeUIAdapters(value) {
+    // Keep this set local: this function is serialized with Function#toString
+    // into standalone compiler output, where outer lexical names may be
+    // renamed independently by the executable bundler.
+    const nonVisualElements = new Set(['script', 'style', 'template', 'noscript']);
     if (value === undefined)
         return [];
     if (Array.isArray(value)) {
@@ -40,7 +43,7 @@ export function normalizeNativeUIAdapters(value) {
         const adapter = rawAdapter.trim().toLowerCase();
         const target = typeof rawTarget === 'string' ? rawTarget.trim().toLowerCase() : '';
         assertCustomElementTag(adapter);
-        if (!NATIVE_UI_ELEMENT_SET.has(target) || NON_VISUAL_ELEMENTS.has(target)) {
+        if (!NATIVE_UI_ELEMENT_SET.has(target) || nonVisualElements.has(target)) {
             throw new Error(`Native UI adapter '${adapter}' maps to <${target || String(rawTarget)}>, which has no visual schema-v1 native UI mapping.`);
         }
         mappings[adapter] = target;

@@ -10,7 +10,7 @@
  */
 
 import path from 'path';
-import { access, copyFile, mkdir, readdir, rename, rm, writeFile } from 'fs/promises';
+import { access, copyFile, mkdir, readFile, readdir, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 
 /**
@@ -252,9 +252,12 @@ async function packageLinux(options) {
     if (process.platform !== 'linux')
         return { skipped: 'Linux apps can only be built on Linux.' };
     if (!(await commandAvailable('cmake', ['--version'])))
-        return { skipped: 'cmake not found — `apt-get install cmake` (plus libgtk-3-dev and libwebkit2gtk-4.1-dev).' };
-    if ((await run(['pkg-config', '--exists', 'gtk+-3.0', 'webkit2gtk-4.1'])).exitCode !== 0)
-        return { skipped: 'GTK/WebKitGTK development packages not found — `apt-get install libgtk-3-dev libwebkit2gtk-4.1-dev`.' };
+        return { skipped: 'cmake not found — install CMake plus the GTK 3, json-glib, X11, and optional WebKitGTK development packages.' };
+    const cmakeSource = await readFile(path.join(options.projectRoot, 'CMakeLists.txt'), 'utf8').catch(() => '');
+    const modules = ['gtk+-3.0', 'json-glib-1.0', 'x11'];
+    if (cmakeSource.includes('webkit2gtk-4.1')) modules.push('webkit2gtk-4.1');
+    if ((await run(['pkg-config', '--exists', ...modules])).exitCode !== 0)
+        return { skipped: `Linux native development packages not found — \`apt-get install libgtk-3-dev libjson-glib-dev libx11-dev${modules.includes('webkit2gtk-4.1') ? ' libwebkit2gtk-4.1-dev' : ''}\`.` };
 
     const build = await run(['sh', 'build.sh'], { cwd: options.projectRoot });
     if (build.exitCode !== 0) {

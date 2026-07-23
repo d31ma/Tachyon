@@ -1009,7 +1009,7 @@ Decorator semantics:
 <tr><td><code>@publish</code> or <code>@publish(name)</code></td><td>field</td><td>Initial field value is retained as the signal value and future assignments publish retained updates. Bare <code>@publish</code> uses the field name as the signal name.</td></tr>
 <tr><td><code>@publish</code>, <code>@publish(name, options?)</code>, or <code>@publish(options)</code></td><td>method</td><td>Return value (or resolved value for async) is published as <code>name</code>. Bare <code>@publish</code> uses the method name as the signal name. Rejections propagate without publishing.</td></tr>
 <tr><td><code>@env(key, fallback?)</code></td><td>field</td><td>Field initialized from <code>tac.env(key, fallback)</code></td></tr>
-<tr><td><code>@onMount</code></td><td>method</td><td>Method registered as an <code>onMount</code> handler bound to the instance</td></tr>
+<tr><td><code>@onMount</code></td><td>method</td><td>Method registered as an <code>onMount</code> handler bound to the instance. Browser handlers run after DOM mount; DOM-free native-controller handlers run after the host event/capability bridge is ready.</td></tr>
 </table>
 
 `@subscribe` and `@env` mirror the underlying `tac.subscribe` / `tac.env` types and may return `undefined` when no fallback is supplied; declare the field's JSDoc type accordingly.
@@ -1542,6 +1542,9 @@ Native output includes `tachyon.native-ui.json` for the first frame and
 only application-facing view language; the platform tree is compiler output.
 WebView boundaries load the app's bundled CSS and module entrypoints from local
 resources; native-capable siblings remain SwiftUI, Compose, WinUI, or GTK.
+Companion `@onMount` methods run after the DOM-free controller installs its host
+bridge, so they are the supported startup point for `host.on(...)`, global
+shortcut registration, and `contentSurface.open(...)`.
 
 ### Native artifact export (`.apk` / `.ipa` / `.app` / Linux binary)
 
@@ -1566,7 +1569,7 @@ and remains buildable by hand.
   signed build through your Apple Developer team instead.
 - **macOS** — requires the Xcode Command Line Tools (`swiftc`). Emits an
   ad-hoc-signed `dist/macos/<App>.app`.
-- **Linux** — requires CMake, GTK 3, json-glib, and network access for the
+- **Linux** — requires CMake, GTK 3, json-glib, X11 development headers, and network access for the
   pinned QuickJS source. WebKitGTK 4.1 is required only when the compiled UI
   contains an inferred WebView boundary. Build on Linux; output is
   `dist/linux/<App>/` with the executable and `Resources/`.
@@ -1588,6 +1591,32 @@ export default {
   }
 }
 ```
+
+### Linux CLOAK capabilities
+
+Linux desktop hosts expose global shortcuts, click-through, and declared
+screen capture, but select the backend at runtime. Wayland uses the XDG
+Desktop Portal GlobalShortcuts and Screenshot interfaces; shortcut and capture
+calls remain `prompt` until the compositor portal grants them. X11 uses an
+audited `XGrabKey` fallback for shortcuts. Both backends apply click-through
+with an empty GTK/GDK input region. Linux deliberately does not advertise
+`window.captureProtection`, because there is no enforceable cross-compositor
+contract for it.
+
+On Debian/Ubuntu, install build and runtime support with:
+
+```sh
+sudo apt-get install cmake libgtk-3-dev libjson-glib-dev libx11-dev \
+  xdg-desktop-portal xdg-desktop-portal-gtk
+```
+
+Install the portal backend supplied by the desktop as well (for example GNOME,
+KDE, or wlroots). For manual validation, run once in a Wayland session and once
+in an Xorg session: check `capabilities.state`, register a recovery shortcut,
+toggle click-through and recover it globally, then choose a window in the
+screen-capture portal. A missing portal interface or compositor support reports
+`unsupported`; it never enables a weaker capture path. Managed remote-content
+surfaces remain bridge-free on every backend.
 
 Typical output:
 

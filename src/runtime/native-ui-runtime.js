@@ -12,8 +12,6 @@ import {
     scopeNativeUIBoundaryHTML,
 } from '../compiler/native-ui/adapters.js';
 
-const NON_VISUAL_ELEMENTS = new Set(['script', 'style', 'template', 'noscript']);
-
 /** @param {string} source */
 function decodeEntities(source) {
     return source.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi, (match, decimal, hexadecimal, named) => {
@@ -129,6 +127,10 @@ function appendText(children, raw) {
  * @param {{ route?: string, adapters?: string[] | Record<string, string> }} [options]
  */
 export function parseNativeUIFragment(html, options = {}) {
+    // This parser is serialized with Function#toString by the standalone CLI.
+    // A local binding keeps its declaration and references together if Bun
+    // renames symbols while compiling that CLI (see #131).
+    const nonVisualElements = new Set(['script', 'style', 'template', 'noscript']);
     const route = options.route ?? '/';
     const adapters = nativeUIAdapterMap(options.adapters);
     const scopedStyles = collectNativeUIScopedStyles(html);
@@ -217,7 +219,7 @@ export function parseNativeUIFragment(html, options = {}) {
             cursor = boundary;
             continue;
         }
-        const ignored = stack.at(-1)?.ignored || NON_VISUAL_ELEMENTS.has(tag);
+        const ignored = stack.at(-1)?.ignored || nonVisualElements.has(tag);
         if (ignored) {
             if (!selfClosing && !HTML_VOID_ELEMENT_SET.has(tag))
                 stack.push({ tag, node: { children: [] }, ignored: true });
@@ -326,7 +328,6 @@ const HTML_ELEMENT_SET = new Set(${JSON.stringify([...HTML_ELEMENT_SET])});
 const HTML_VOID_ELEMENT_SET = new Set(${JSON.stringify([...HTML_VOID_ELEMENT_SET])});
 const NATIVE_UI_ELEMENT_SET = new Set(${JSON.stringify([...NATIVE_UI_ELEMENT_SET])});
 const TAC_CONTROL_ELEMENT_SET = new Set(${JSON.stringify([...TAC_CONTROL_ELEMENT_SET])});
-const NON_VISUAL_ELEMENTS = new Set(${JSON.stringify([...NON_VISUAL_ELEMENTS])});
 ${decodeEntities.toString()}
 ${parseStyle.toString()}
 ${parseAttributes.toString()}

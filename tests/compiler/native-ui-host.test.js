@@ -194,7 +194,7 @@ for (const target of ['windows', 'linux']) {
         const outputRoot = path.join(root, `${target}-capabilities`);
         await generateNativeHost({
             target, assetRoot: assets, outputRoot, appName: 'Fixture', appId: 'ma.del.tachyon.fixture',
-            devicePermissions: target === 'windows' ? ['microphone', 'screenCapture'] : ['microphone'],
+            devicePermissions: ['microphone', 'screenCapture'],
             managedContentOrigins: ['https://chatgpt.com'],
             permissionOrigins: { microphone: ['https://chatgpt.com'] },
         });
@@ -241,9 +241,17 @@ for (const target of ['windows', 'linux']) {
             expect(source).not.toContain('success_json("{"written":true}", result_json)');
             expect(source).toContain('json_generator_to_data(generator, NULL)');
             expect(source).not.toContain('g_strescape');
-            expect(source).not.toContain('shortcuts.register');
-            expect(source).not.toContain('screenCapture.captureWindow');
-            expect(manifest.hostCapabilities).not.toContain('screenCapture.captureWindow');
+            expect(source).toContain('org.freedesktop.portal.GlobalShortcuts');
+            expect(source).toContain('org.freedesktop.portal.Screenshot');
+            expect(source).toContain('gdk_window_input_shape_combine_region');
+            expect(source).toContain('XGrabKey');
+            expect(source).toContain('screenCapture.captureWindow');
+            expect(source.indexOf('g_dbus_connection_signal_subscribe(bus, PORTAL_BUS, "org.freedesktop.portal.Request"'))
+                .toBeLessThan(source.indexOf('g_dbus_connection_call_sync(bus, PORTAL_BUS, PORTAL_PATH'));
+            expect(manifest.hostCapabilities).toEqual(expect.arrayContaining([
+                'shortcuts.register', 'window.clickThrough', 'screenCapture.captureWindow',
+            ]));
+            expect(manifest.hostCapabilities).not.toContain('window.captureProtection');
             if (process.platform === 'linux' && process.env.TACHYON_NATIVE_COMPILE_SMOKE === '1') {
                 const build = Bun.spawn(['sh', 'build.sh'], { cwd: outputRoot, stdout: 'pipe', stderr: 'pipe' });
                 const [buildOutput, buildError, buildExitCode] = await Promise.all([

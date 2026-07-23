@@ -99,7 +99,15 @@ export function nativeHostCapabilities(target, requestedRawCapabilities = [], op
         ...raw,
         ...extensionCapabilities,
     ]);
-    if (target === 'linux') return Object.freeze([...DESKTOP_CAPABILITIES, ...managedContent, ...raw, ...extensionCapabilities]);
+    if (target === 'linux') return Object.freeze([
+        ...DESKTOP_CAPABILITIES,
+        ...managedContent,
+        ...DESKTOP_SHORTCUT_CAPABILITIES,
+        'window.clickThrough',
+        ...(devicePermissions.has('screenCapture') ? SCREEN_CAPTURE_CAPABILITIES : []),
+        ...raw,
+        ...extensionCapabilities,
+    ]);
     return Object.freeze([]);
 }
 
