@@ -16,6 +16,8 @@ export default class {
     totalStorageBytes = 0
     /** @type {number} */
     sessionCount = 0
+    /** @type {HTMLElement | null} */
+    root = null
 
     /** @returns {string} */
     loadingState() {
@@ -25,6 +27,19 @@ export default class {
     get storageSummary() {
         if (this.totalStorageBytes < 1024) return `${this.totalStorageBytes} B`
         return `${(this.totalStorageBytes / 1024).toFixed(1)} KB`
+    }
+
+    showcaseSummary() {
+        return this.showcase
+            ? `${this.showcase.title}: ${this.showcase.summary}`
+            : 'Showcase data is not available yet.'
+    }
+
+    storageEntrySummary() {
+        if (this.storageEntries.length === 0) return 'No localStorage entries.'
+        return this.storageEntries.slice(0, 6)
+            .map((entry) => `${entry.key} — ${entry.size} B`)
+            .join('\n')
     }
 
     /** @returns {Promise<string>} */
@@ -55,7 +70,6 @@ export default class {
         this.sessionCount = sessionStorage.length
     }
 
-    @subscribe('tachyon:refresh', { onMount: true })
     async refresh() {
         this.loading = true
         try {
@@ -67,6 +81,13 @@ export default class {
             this.loading = false
         }
         this.scanStorage()
+        await this.root?.tachyonIsland?.refresh?.()
+    }
+
+    /** @param {HTMLElement} root */
+    hydrate(root) {
+        this.root = root
+        return this.refresh()
     }
 
 }

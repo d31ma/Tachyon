@@ -1,3 +1,5 @@
+@import url('/shared/styles/site.css');
+
 .atlas-shell {
   display: grid;
   grid-template-columns: 17rem minmax(0, 1fr);

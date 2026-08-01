@@ -1,0 +1,7 @@
+{
+  "contract_version": 1,
+  "application_id": "Catalog App",
+  "default_policy": "allow",
+  "remote_content_bridge": true,
+  "capabilities": []
+}

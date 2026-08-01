@@ -1,0 +1,14 @@
+{
+  "contract_version": 1,
+  "release_version": "0.0.0-phase0",
+  "commit": "not-a-commit",
+  "source_date_epoch": -1,
+  "target": {
+    "os": "plan9",
+    "architecture": "x86_64",
+    "abi": "unknown"
+  },
+  "toolchains": [],
+  "contracts": {},
+  "outputs": []
+}

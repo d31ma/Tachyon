@@ -2,13 +2,13 @@
 #   irm https://tachyon.del.ma/install.ps1 | iex
 # Downloads the latest `ty` Windows binary from GitHub releases, verifies its
 # checksum, installs it under %LOCALAPPDATA%\Tachyon (added to your user PATH),
-# then installs the `fylo`, `chex`, and `ttid` binaries Tachyon drives at runtime.
+# then installs the `chex` and `ttid` binaries Tachyon drives at runtime.
 $ErrorActionPreference = 'Stop'
 
 $repo = 'd31ma/Tachyon'
-$base = "https://github.com/$repo/releases/latest/download"
+$base = if ($env:TACHYON_BASE_URL) { $env:TACHYON_BASE_URL } else { "https://github.com/$repo/releases/latest/download" }
 $asset = 'ty-windows-x64.exe'
-$script:TachyonSteps = 8
+$script:TachyonSteps = 7
 $script:TachyonStep = 0
 
 function Write-TachyonStep {
@@ -28,7 +28,7 @@ Write-Host ''
 
 Write-TachyonStep "Detected windows/x64"
 
-$dest = Join-Path $env:LOCALAPPDATA 'Tachyon'
+$dest = if ($env:TACHYON_INSTALL_DIR) { $env:TACHYON_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Tachyon' }
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 $exe = Join-Path $dest 'ty.exe'
 Write-TachyonStep "Selected install directory: $dest"
@@ -36,21 +36,20 @@ Write-TachyonStep "Selected install directory: $dest"
 Write-TachyonStep "Downloading $asset"
 Invoke-WebRequest -Uri "$base/$asset" -OutFile $exe
 
-# Verify checksum (best-effort).
+# Verification is fail-closed: an unavailable checksum, a missing asset entry,
+# or a digest mismatch aborts the install.
 Write-TachyonStep 'Verifying release checksum'
-try {
-    $sums = (Invoke-WebRequest -Uri "$base/SHA256SUMS" -UseBasicParsing).Content
-    $line = ($sums -split "`n") | Where-Object { $_ -match "\s$([regex]::Escape($asset))$" } | Select-Object -First 1
-    if ($line) {
-        $expected = ($line -split '\s+')[0].ToLower()
-        $actual = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower()
-        if ($expected -ne $actual) {
-            Remove-Item $exe -Force
-            throw "Checksum mismatch for $asset. Aborting."
-        }
-    }
-} catch {
-    Write-Warning "Could not verify checksum: $_"
+$sums = (Invoke-WebRequest -Uri "$base/SHA256SUMS" -UseBasicParsing).Content
+$line = ($sums -split "`n") | Where-Object { $_.Trim() -match "^[0-9a-fA-F]{64}\s+$([regex]::Escape($asset))$" } | Select-Object -First 1
+if (-not $line) {
+    Remove-Item $exe -Force
+    throw "No checksum published for $asset. Aborting."
+}
+$expected = ($line.Trim() -split '\s+')[0].ToLower()
+$actual = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower()
+if ($expected -ne $actual) {
+    Remove-Item $exe -Force
+    throw "Checksum mismatch for $asset. Aborting."
 }
 
 Write-TachyonStep 'Installing ty'
@@ -64,13 +63,16 @@ if ($userPath -notlike "*$dest*") {
 
 Write-Host "Installed ty to $exe"
 
-# Tachyon drives the FYLO, CHEX, and TTID binaries at runtime — install them too.
-Write-TachyonStep 'Installing FYLO runtime'
-irm https://github.com/d31ma/Fylo/releases/latest/download/install.ps1 | iex
-Write-TachyonStep 'Installing CHEX validator'
-irm https://github.com/d31ma/Chex/releases/latest/download/install.ps1 | iex
-Write-TachyonStep 'Installing TTID generator'
-irm https://github.com/d31ma/TTID/releases/latest/download/install.ps1 | iex
+# Release CI skips optional tools so it can test this installer hermetically.
+if ($env:TACHYON_SKIP_OPTIONAL_TOOLS -eq '1') {
+    Write-TachyonStep 'Skipping optional CHEX validator'
+    Write-TachyonStep 'Skipping optional TTID generator'
+} else {
+    Write-TachyonStep 'Installing CHEX validator'
+    irm https://github.com/d31ma/Chex/releases/latest/download/install.ps1 | iex
+    Write-TachyonStep 'Installing TTID generator'
+    irm https://github.com/d31ma/TTID/releases/latest/download/install.ps1 | iex
+}
 
 Write-Progress -Activity 'Tachyon install' -Completed
 Write-Host "Run 'ty --help' to get started."

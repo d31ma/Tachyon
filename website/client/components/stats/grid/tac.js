@@ -11,27 +11,44 @@ export default class {
     companionStatus = 'starting'
     /** @type {string} */
     storageUsage = '—'
+    /** @type {HTMLElement | null} */
+    root = null
 
     constructor() {
-        this.$visits += 1
-        this.$$totalVisits += 1
+        try {
+            this.$visits = Number(sessionStorage.getItem('tachyon-atlas-visits') ?? 0) + 1
+            this.$$totalVisits = Number(localStorage.getItem('tachyon-atlas-total-visits') ?? 0) + 1
+            sessionStorage.setItem('tachyon-atlas-visits', String(this.$visits))
+            localStorage.setItem('tachyon-atlas-total-visits', String(this.$$totalVisits))
+        } catch {
+            this.$visits += 1
+            this.$$totalVisits += 1
+        }
     }
 
-    @subscribe('tachyon:refresh', { onMount: true })
+    /** @param {HTMLElement} root @param {AbortSignal} signal */
+    async hydrate(root, signal) {
+        this.root = root
+        const refresh = () => { void this.refresh() }
+        window.addEventListener('tachyon:refresh', refresh, { signal })
+        window.addEventListener('inventory:changed', refresh, { signal })
+        await this.refresh()
+    }
+
     async refresh() {
         await Promise.all([
             this.loadItemsCount(),
             this.verifyCompanions(),
             this.measureStorage(),
         ])
+        await this.root?.tachyonIsland?.refresh?.()
     }
 
     /** @returns {Promise<void>} */
-    @subscribe('inventory:changed')
     async loadItemsCount() {
         try {
-            const result = /** @type {{ docs?: unknown[] }} */ (await fylo['atlas-items'].find({}))
-            this.itemsCount = result.docs?.length ?? 0
+            const stored = JSON.parse(localStorage.getItem('atlas-messages') ?? '[]')
+            this.itemsCount = Array.isArray(stored) ? stored.length : 0
         } catch {
             this.itemsCount = 0
         }

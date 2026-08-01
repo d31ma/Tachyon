@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tachyon.del.ma/schema/view-ir/v1",
+  "title": "Tachyon View IR v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "source", "root"],
+  "properties": {
+    "contract_version": { "const": 1 },
+    "source": {
+      "type": "string",
+      "pattern": "^[^/\\\\][^\\\\]*$",
+      "maxLength": 512
+    },
+    "root": { "$ref": "#/$defs/node" }
+  },
+  "$defs": {
+    "expression": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "node": {
+      "oneOf": [
+        { "$ref": "#/$defs/element" },
+        { "$ref": "#/$defs/text" },
+        { "$ref": "#/$defs/conditional" },
+        { "$ref": "#/$defs/iteration" },
+        { "$ref": "#/$defs/component" }
+      ]
+    },
+    "children": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "tag", "attributes", "children"],
+      "properties": {
+        "kind": { "const": "element" },
+        "tag": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 128
+        },
+        "attributes": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_:][A-Za-z0-9_.:-]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "children": { "$ref": "#/$defs/children" }
+      }
+    },
+    "text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": { "const": "text" },
+        "value": {
+          "type": "string",
+          "maxLength": 1048576
+        }
+      }
+    },
+    "conditional": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "condition", "then", "else"],
+      "properties": {
+        "kind": { "const": "conditional" },
+        "condition": { "$ref": "#/$defs/expression" },
+        "then": { "$ref": "#/$defs/children" },
+        "else": { "$ref": "#/$defs/children" }
+      }
+    },
+    "iteration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "binding", "iterable", "body", "empty"],
+      "properties": {
+        "kind": { "const": "iteration" },
+        "binding": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$"
+        },
+        "iterable": { "$ref": "#/$defs/expression" },
+        "body": { "$ref": "#/$defs/children" },
+        "empty": { "$ref": "#/$defs/children" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name", "properties", "children"],
+      "properties": {
+        "kind": { "const": "component" },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*-[a-z0-9-]+$",
+          "maxLength": 128
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 65536
+          }
+        },
+        "children": { "$ref": "#/$defs/children" }
+      }
+    }
+  }
+}

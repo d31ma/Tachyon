@@ -3,26 +3,15 @@
   margin-bottom: 0.75rem;
 }
 
-.tel-table table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.tel-table th,
-.tel-table td {
-  text-align: left;
-  padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--w-text) 10%, transparent);
-  font-size: var(--w-font-sm);
-}
-
 .tel-actions {
   flex-wrap: wrap;
   margin-bottom: 0.75rem;
 }
 
-.tel-empty {
+.tel-output {
   margin: 0;
+  min-height: 3.25rem;
+  white-space: pre-wrap;
   color: var(--w-text-subtle);
   font-size: var(--w-font-sm);
 }

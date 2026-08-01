@@ -92,7 +92,7 @@ w-app-bar {
 /* ---- responsive navigation --------------------------------------------
    Navigation is viewport-driven, not device-driven. At desktop widths the app
    bar shows the full inline nav; below desktop it collapses to a right-aligned
-   dropdown menu, matching the FYLO site pattern. There is no bottom bar: as a
+   dropdown menu. There is no bottom bar: as a
    fixed element at the viewport edge it overlapped the OS gesture area on
    phones and intercepted taps. */
 

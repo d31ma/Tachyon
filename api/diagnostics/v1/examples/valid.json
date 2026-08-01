@@ -1,0 +1,18 @@
+{
+  "contract_version": 1,
+  "diagnostics": [
+    {
+      "code": "TY0001",
+      "severity": "error",
+      "message": "The route context contains two values named title.",
+      "help": "Rename one export or declare an explicit override.",
+      "spans": [
+        {
+          "file": "server/routes/products/yon.ts",
+          "start": 18,
+          "end": 23
+        }
+      ]
+    }
+  ]
+}

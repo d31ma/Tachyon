@@ -37,7 +37,7 @@
     },
     {
       "title": "Yon backend",
-      "summary": "Routes, middleware, validation, FYLO and observability.",
+      "summary": "Routes, middleware, validation and observability.",
       "topics": [
         "yon",
         "operations"
@@ -45,7 +45,7 @@
     },
     {
       "title": "Cookbook",
-      "summary": "Production-shaped recipes that combine Tac, Yon and FYLO.",
+      "summary": "Production-shaped recipes that combine Tac and Yon.",
       "topics": [
         "cookbook"
       ]
@@ -54,11 +54,11 @@
   "topics": {
     "introduction": {
       "title": "Introduction",
-      "summary": "Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Tac is the frontend layer, Yon is the backend/runtime layer, and FYLO is the document store beneath both.",
+      "summary": "Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Tac is the frontend layer and Yon is the backend/runtime layer.",
       "sections": [
         {
           "heading": "Install",
-          "body": "Tachyon ships as the standalone `ty` binary — no package manager or runtime toolchain required. The installer also pulls the `fylo` (document store), `chex` (schema validation), and `ttid` (identifier generation) binaries it drives at runtime. Scaffold an app and start the shape-aware dev server: Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
+          "body": "Tachyon ships as the standalone `ty` binary — no package manager or runtime toolchain required. The installer also pulls the `chex` (schema validation) and `ttid` (identifier generation) binaries it drives at runtime. Scaffold an app and start the shape-aware dev server: Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
           "code": "curl -fsSL https://tachyon.del.ma/install.sh | sh\nty init my-app --name \"My App\"\ncd my-app\nty serve"
         },
         {
@@ -83,18 +83,18 @@
           "code": "export class Handler {\n  static GET() { return { items: [] } }\n  static async POST(request) { return { created: request.body } }\n}"
         },
         {
-          "heading": "Validation",
-          "body": "An OPTIONS.schema.json beside each handler validates requests and responses with CHEX regex schemas, and feeds the generated OpenAPI 3.1 document served at /openapi.json with a docs UI at /api-docs."
+          "heading": "Handler protocol",
+          "body": "JavaScript and Python get class-style Handler adapters. Any other executable language can read one bounded JSON request from stdin and write one JSON response to stdout, with interpreters registered in .tachyonrc."
         }
       ]
     },
     "yon": {
       "title": "Yon backend",
-      "summary": "Yon is Tachyon's backend/runtime layer: filesystem-routed handlers, polyglot process adapters, CHEX validation, OpenAPI docs, FYLO data routes, SSE realtime, middleware, rate limiting and OpenTelemetry.",
+      "summary": "Yon is Tachyon's backend/runtime layer: filesystem-routed handlers, one supervised process protocol, middleware, scheduled workers and durable SSE topic logs.",
       "sections": [
         {
           "heading": "Serve modes",
-          "body": "ty serve is shape-aware. A client/ app serves frontend assets, a server/ app serves backend routes, a client/ + server/ app runs full-stack, and client/ + db/ can mount Tachyon's built-in FYLO browser routes when YON_DATA_BROWSER_ENABLED=true.",
+          "body": "ty serve is shape-aware. A client/ app serves frontend assets, a server/ app serves backend routes, and a client/ + server/ app runs full-stack.",
           "code": "ty serve\nYON_PORT=8000 ty serve\nYON_HOST=0.0.0.0 ty serve\nNODE_ENV=production ty serve"
         },
         {
@@ -104,63 +104,58 @@
         },
         {
           "heading": "Languages",
-          "body": "Yon ships ergonomic adapters for JavaScript, TypeScript, Python, Ruby, PHP, Dart, Java, C#, C++ and Rust. The adapter path lets authors write only Handler methods. Any other executable language can still run by speaking Yon JSON over stdin/stdout and declaring methods in OPTIONS.schema.json.",
-          "code": "server/yon.providers.js     # optional app-defined providers\n.tachyonrc                 # optional interpreter overrides"
+          "body": "JavaScript and Python get class-style Handler adapters. Ruby, Swift, Zig, shell scripts, prebuilt binaries and other languages run through the same JSON stdin/stdout protocol; .tachyonrc registers commands for non-executable sources.",
+          "code": ".tachyonrc\n\n[interpreters]\nrb = [\"ruby\"]"
         },
         {
           "heading": "Process lifecycle",
-          "body": "Yon invokes route handlers as processes and prewarms handlers after route discovery. When NODE_ENV=production, compiled-language adapters cache their build artifacts so later requests avoid recompilation work.",
+          "body": "Yon invokes one bounded process per request. The supervisor enforces deadlines and body limits, captures bounded diagnostics, and terminates a child that outlives its request.",
           "code": "YON_HANDLER_TIMEOUT_MS=30000\nYON_MAX_BODY_BYTES=1048576"
         },
         {
-          "heading": "Validation and status selection",
-          "body": "OPTIONS.schema.json is strictly CHEX. Request schemas validate declared request sections, response schemas validate the returned body, and status-code schemas let Yon infer the final HTTP status from the body shape.",
-          "code": "{\n  \"POST\": {\n    \"request\": { \"body\": { \"name\": \"^.{1,120}$\" } },\n    \"201\": { \"id\": \"^[0-9A-Za-z_-]+$\", \"name\": \"^.{1,120}$\" },\n    \"400\": { \"detail\": \"^name is required$\" }\n  }\n}"
+          "heading": "Protocol response",
+          "body": "A handler returns a status, headers and body through Handler Protocol v1. Static fields and GET response values can also compose the bounded context for a colocated yon.html view.",
+          "code": "{\n  \"status\": 201,\n  \"headers\": { \"content-type\": \"application/json\" },\n  \"body\": { \"id\": \"item-1\" }\n}"
         },
         {
-          "heading": "OpenAPI and docs UI",
-          "body": "Yon generates OpenAPI 3.1 from registered routes and OPTIONS.schema.json files. The JSON document is served at /openapi.json and the self-hosted Tachyon API docs UI is served at /api-docs by default.",
-          "code": "curl http://localhost:8080/openapi.json\nopen http://localhost:8080/api-docs"
+          "heading": "Specification boundary",
+          "body": "The Rust rewrite does not generate OpenAPI or host /api-docs. Generate a specification in your application pipeline or keep the legacy server for those endpoints; ty migrate check reports this difference.",
+          "code": "ty migrate check ."
         },
         {
-          "heading": "FYLO routes",
-          "body": "When YON_DATA_BROWSER_ENABLED=true, Yon mounts /_fylo for collection inspection and REST-style document operations. Keep it readonly by default; enable mutation only behind auth, explicit origins and rate limiting.",
-          "code": "YON_DATA_BROWSER_ENABLED=true\nYON_DATA_BROWSER_READONLY=true\nYON_DATA_BROWSER_READONLY=false"
-        },
-        {
-          "heading": "Realtime mailboxes",
-          "body": "YON_REALTIME_ENABLED mounts /_yon/realtime. Clients register a TTID, hold or reopen an SSE stream, and messages are stored durably in FYLO-backed topic logs for replay after reconnect.",
-          "code": "YON_REALTIME_ENABLED=true\ncurl -X POST /_yon/realtime/clients\ncurl '/_yon/realtime/stream?clientId=<TTID>'"
+          "heading": "Realtime topics",
+          "body": "A topic is a bounded append-only NDJSON log under .tachyon/topics. Browsers subscribe with EventSource, receive the log position as the event id and reconnect from the last position automatically.",
+          "code": "const releases = new EventSource('/.tachyon/topics/releases')\nreleases.onmessage = (event) => console.log(event.lastEventId, event.data)"
         },
         {
           "heading": "Security and middleware",
-          "body": "Yon rejects disallowed origins before route execution, applies security headers, supports Basic Auth hashes, request/body limits, middleware before/after hooks, and an optional app-provided rateLimiter.take(). Legacy middleware.js still works, and polyglot middleware can live at server/middleware/yon.<ext> or middleware/yon.<ext>.",
-          "code": "YON_ALLOW_ORIGINS=https://app.example\nYON_BASIC_AUTH_HASH=...\nYON_RATE_LIMIT_MAX=120\nYON_RATE_LIMIT_WINDOW_MS=60000"
+          "body": "The server binds loopback by default, rejects traversal, applies security headers and bounds requests and child processes. Root middleware can answer before a route or merge and replace responses afterward.",
+          "code": "ty serve\nYON_HANDLER_TIMEOUT_MS=30000\nYON_MAX_BODY_BYTES=1048576"
         },
         {
           "heading": "Polyglot middleware",
-          "body": "Use middleware.js when you want direct JavaScript Request and Response objects. Use polyglot middleware when the app team wants the same cross-language process model as Yon routes. Tachyon looks for server/middleware/yon.<ext> first, then middleware/yon.<ext>.",
-          "code": "server/\n  middleware/\n    yon.py          # class-style Middleware adapter\n  routes/\n    items/yon.ts\n\n# or, for package-level middleware:\nmiddleware/\n  yon.rb"
+          "body": "Middleware uses the same process protocol as routes and may be written in any configured executable language. A 204 continues; another status answers early in before or replaces the response in after.",
+          "code": "middleware/\n  yon.rb\nserver/\n  routes/\n    items/yon.js"
         },
         {
-          "heading": "Class-style middleware",
-          "body": "JavaScript, TypeScript, Python, Ruby and PHP can define a Middleware class. before can return a response envelope to stop the request, after can add headers or replace the response, and rateLimit can return the same decision object as middleware.js rateLimiter.take().",
-          "code": "class Middleware:\n    @staticmethod\n    def before(input):\n        request = input[\"request\"]\n        if request[\"headers\"].get(\"x-blocked\") == \"true\":\n            return {\n                \"action\": \"respond\",\n                \"status\": 403,\n                \"headers\": { \"content-type\": \"application/json\" },\n                \"body\": { \"detail\": \"blocked by Python middleware\" },\n            }\n        return { \"action\": \"continue\" }\n\n    @staticmethod\n    def after(input):\n        return {\n            \"headers\": {\n                \"x-request-id\": input[\"context\"][\"requestId\"],\n                \"x-powered-by\": \"yon-python-middleware\",\n            }\n        }\n\n    @staticmethod\n    def rateLimit(input):\n        return {\n            \"allowed\": True,\n            \"limit\": 100,\n            \"remaining\": 99,\n            \"resetAt\": 1780000000000,\n        }"
+          "heading": "Middleware phases",
+          "body": "The before phase receives request metadata and can continue or answer early. The after phase also receives response metadata and can merge headers or replace the response. A failed after hook preserves the original response.",
+          "code": "{ \"phase\": \"before\", \"request\": {}, \"context\": {} }\n{ \"phase\": \"after\", \"request\": {}, \"response\": {}, \"context\": {} }"
         },
         {
           "heading": "Raw shim middleware",
           "body": "Any other language can skip the class adapter and use the raw protocol. The middleware file reads a JSON envelope from stdin and writes one JSON result to stdout. This is useful for Go, Swift, Zig, shell scripts, or a prebuilt binary.",
-          "code": "import json\nimport sys\nimport time\n\ninput = json.load(sys.stdin)\n\nif input[\"phase\"] == \"before\":\n    print(json.dumps({ \"action\": \"continue\" }))\n\nif input[\"phase\"] == \"after\":\n    print(json.dumps({\n        \"headers\": { \"x-middleware-phase\": \"after\" }\n    }))\n\nif input[\"phase\"] == \"rateLimit\":\n    print(json.dumps({\n        \"allowed\": True,\n        \"limit\": 100,\n        \"remaining\": 99,\n        \"resetAt\": int(time.time() * 1000) + 60000,\n    }))"
+          "code": "import json\nimport sys\n\ninput = json.load(sys.stdin)\n\nif input[\"phase\"] == \"before\":\n    print(json.dumps({ \"status\": 204, \"headers\": {} }))\n\nif input[\"phase\"] == \"after\":\n    print(json.dumps({\n        \"status\": 204,\n        \"headers\": { \"x-middleware-phase\": \"after\" }\n    }))"
         },
         {
           "heading": "Middleware envelopes",
-          "body": "Process middleware receives metadata-only envelopes by default so it cannot accidentally consume request bodies or break streaming responses. The before envelope includes phase, request and context. The after envelope also includes response metadata. Result envelopes can continue, respond early, replace a response, or return a rate-limit decision.",
-          "code": "{ \"phase\": \"before\", \"request\": {}, \"context\": {} }\n{ \"phase\": \"after\", \"request\": {}, \"response\": {}, \"context\": {} }\n\n{ \"action\": \"continue\" }\n{ \"action\": \"respond\", \"status\": 403, \"headers\": {}, \"body\": {} }\n{ \"action\": \"replace\", \"response\": { \"status\": 200, \"headers\": {}, \"body\": {} } }\n{ \"allowed\": true, \"limit\": 100, \"remaining\": 99, \"resetAt\": 1780000000000 }"
+          "body": "Process middleware receives metadata-only envelopes so it cannot accidentally consume request bodies or break streaming responses. A 204 result continues or merges headers; any other status becomes the response.",
+          "code": "{ \"phase\": \"before\", \"request\": {}, \"context\": {} }\n{ \"phase\": \"after\", \"request\": {}, \"response\": {}, \"context\": {} }\n\n{ \"status\": 204, \"headers\": { \"x-request-id\": \"...\" } }\n{ \"status\": 403, \"headers\": {}, \"body\": \"forbidden\" }"
         },
         {
-          "heading": "Telemetry",
-          "body": "With YON_OTEL_ENABLED=true, Yon creates request and handler spans, continues traceparent, returns Traceparent and X-Trace-Id headers, and persists OTLP JSON trace documents into a FYLO collection.",
-          "code": "YON_OTEL_ENABLED=true\nYON_OTEL_SERVICE_NAME=my-api\nYON_OTEL_COLLECTION=otel-spans"
+          "heading": "Telemetry boundary",
+          "body": "The Rust rewrite does not emit OpenTelemetry spans. Instrument at your deployment boundary or keep the legacy server when emitted spans are a migration requirement; ty migrate check reports the difference.",
+          "code": "ty migrate check ."
         }
       ]
     },
@@ -170,7 +165,7 @@
       "sections": [
         {
           "heading": "Interpolation and events",
-          "body": "Braces evaluate JavaScript inside the async render function, so await is available anywhere. Event handlers are single expressions compiled to one delegated listener per event type, registered at the document and hydrated off the critical path with lossless replay.",
+          "body": "Braces use a bounded expression grammar with contextual escaping; authored source is never evaluated as JavaScript. Route-known values render on the server, while hydrated islands may defer text fields and method calls to their companion. Event bindings compile to structured data for one delegated listener per event type.",
           "code": "<h1>{headline}</h1>\n<button on:click=\"refresh()\">Refresh</button>\n<input :value=\"name\" on:input=\"name = $event.target.value\" />"
         },
         {
@@ -180,7 +175,7 @@
         },
         {
           "heading": "Components",
-          "body": "A component folder under client/components maps to a hyphenated tag: components/panel/users becomes panel-users. Props pass as attributes, and adding the lazy attribute defers loading until the component scrolls into view."
+          "body": "A component folder under client/components maps to a hyphenated tag: components/panel/users becomes panel-users. Props pass as attributes, and hydrate=\"visible\" activates an island when it approaches the viewport."
         },
         {
           "heading": "Island hydration",
@@ -229,42 +224,42 @@
     },
     "companions": {
       "title": "Companions",
-      "summary": "A tac.js or tac.ts file beside a template is instantiated automatically; its fields and methods are visible to the template without wiring.",
+      "summary": "A tac.js or tac.ts file beside a hydrated component becomes its browser-side island instance; bounded fields and methods remain explicit.",
       "sections": [
         {
-          "heading": "Reactive fields",
-          "body": "Assigning to a declared field schedules one batched rerender of the component subtree. Fields prefixed with $ persist to sessionStorage; $$ fields persist to localStorage. Props auto-bind onto same-named declared fields.",
-          "code": "export default class {\n  count = 0\n  $visits = 0\n  $$theme = 'light'\n\n  increment() { this.count += 1 }\n}"
+          "heading": "Island fields",
+          "body": "The server renders everything it can from route context and props. Inside a hydrated island, unresolved text expressions are encoded as bounded expression trees and refreshed after event handlers run. Structure and dynamic attributes still need server-known values or an explicit hydrate hook.",
+          "code": "export default class {\n  count = 0\n\n  doubled() { return this.count * 2 }\n  hydrate(root, signal) {}\n}\n\n<!-- inside the component template -->\n<strong>{count}</strong>\n<button on:click=\"count += 1\">Increment</button>"
         },
         {
-          "heading": "Decorators",
-          "body": "Stage 3 decorators expose the same helpers declaratively — publish and subscribe for cross-component signals, env for allowlisted browser config, and onMount for lifecycle. The compiler auto-imports them.",
-          "code": "export default class {\n  @subscribe release\n  @publish('release') appVersion = 'TACHYON'\n  @env('PUBLIC_API_BASE', '/language') apiBase\n\n  @subscribe('demo-refresh', { onMount: true })\n  refresh() {}\n}"
+          "heading": "Browser lifecycle and storage",
+          "body": "hydrate(root, signal) is the explicit browser lifecycle. Use standards such as sessionStorage, localStorage and CustomEvent directly; the AbortSignal gives listeners and asynchronous work a deterministic teardown boundary.",
+          "code": "export default class {\n  hydrate(root, signal) {\n    const saved = localStorage.getItem('count')\n    window.addEventListener('inventory:changed', () => this.refresh(), { signal })\n  }\n}"
         }
       ]
     },
     "polyglot": {
       "title": "Polyglot companions",
-      "summary": "Tac companions are colocated controllers for templates. They are portable across web, desktop and mobile outputs and do not require a client worker endpoint.",
+      "summary": "Component companions can be compiled by real native-language toolchains and exposed to browser islands through one bounded ABI.",
       "sections": [
         {
           "heading": "Choose a companion language",
-          "body": "A component or page may use tac.js, tac.ts, tac.dart, tac.rs, tac.kt, tac.swift, or tac.cs beside its tac.html file. JavaScript and TypeScript use Bun, Dart uses the managed Dart bridge, and Rust, Kotlin, Swift, and C# use Tachyon's portable companion subset.",
-          "code": "client/components/counter/\n  tac.html\n  tac.swift\n\nfinal class Counter: Tac {\n  var count: Int = 0\n  func increment() { self.count += 1 }\n}"
+          "body": "A browser component may use tac.js, tac.ts, tac.dart, tac.rs, tac.kt, tac.swift, or tac.cs beside tac.html. JavaScript and TypeScript emit modules; Rust, Dart, Kotlin, Swift and C# are compiled by rustc, dart, kotlinc-js, swiftc and dotnet rather than by a Tachyon language subset.",
+          "code": "client/components/counter/\n  tac.html\n  tac.swift\n\nvar count = 6\nfunc doubled() -> Int { count * 2 }\nlet tac: [String: TacMember] = [\n  \"count\": .field({ count }, { count = $0 as? Int ?? count }),\n  \"doubled\": .method({ _ in doubled() }),\n]"
         },
         {
-          "heading": "Use native-shaped shims",
-          "body": "Companion source never calls Tac transport APIs. Every language gets an implicit platform prelude for local/session storage, browser context, local-first FYLO collections and capability-checked device calls. Browser output services standards-backed operations today; unavailable and native-only operations remain feature-detectable and fail closed. Raw OPFS handles remain private to FYLO's bundled browser engine.",
-          "code": "// Rust\nlocal_storage().set_item(\"theme\", \"calm\");\nlet notes = await fylo().collection(\"notes\").find({});\nif capabilities().supports(\"fs.readDir\") {\n  let entries = await file_system().read_dir(\".\");\n}\n\n// Swift\nlet notes = await fylo.collection(\"notes\").find({})\nawait clipboard.writeText(\"Ready\")\n\n// Dart\nfinal notes = await fylo.collection('notes').find({});"
+          "heading": "Declare the ABI",
+          "body": "A native-language companion declares the readable fields, writable fields and callable methods its island may reach. The host exposes those members through get, set and call operations, so it never guesses from reflection and never evaluates companion source.",
+          "code": "public static readonly Dictionary<string, TacMember> Tac = new() {\n  [\"count\"] = TacMember.Field(() => Count, value => Count = Convert.ToInt32(value)),\n  [\"doubled\"] = TacMember.Method(arguments => Count * 2),\n};"
         },
         {
           "heading": "Contracts stay on the server",
-          "body": "OPTIONS.schema.json remains the Yon route contract for incoming requests and outgoing responses. Tac companions are UI controllers, so they call normal HTTP endpoints through the local-first fetch binding rather than declaring a second route protocol."
+          "body": "OPTIONS.schema.json remains the Yon route contract for incoming requests and outgoing responses. Browser companions are UI controllers, so JavaScript and TypeScript use normal browser HTTP APIs rather than declaring a second route protocol."
         },
         {
-          "heading": "Device boundary",
-          "body": "Browser builds use standards-backed implementations or fail closed when a capability is unavailable. Desktop native-first hosts expose only operations backed by their generated platform adapter; the exact list is written to tachyon.host.json and drives capabilities.supports/state. Keep capability checks around target-specific calls. Unsupported permission or raw-capability declarations fail the bundle instead of producing a misleading manifest.",
-          "code": "// JavaScript / TypeScript\nif (capabilities.supports('window.opacity')) {\n  await appWindow.setOpacity(0.92)\n}\nif (capabilities.supports('shell.exec')) {\n  await shell.exec('git', ['status', '--short'])\n}\n\n# shell.exec is currently a declared macOS-only raw capability\nty bundle --target macos"
+          "heading": "Toolchain boundary",
+          "body": "The WebAssembly ABI intentionally exposes data and methods, not an implicit browser or native SDK. Keep browser APIs in JavaScript or TypeScript islands and keep native host capabilities behind the generated platform controller. A missing toolchain fails the build with ty doctor guidance.",
+          "code": "ty doctor\nty build\n\n# Native-language browser companions require matching compilers:\n# rustc, dart, kotlinc-js, swiftc + WebAssembly SDK, or dotnet"
         }
       ]
     },
@@ -300,41 +295,31 @@
     },
     "storage": {
       "title": "Storage and data",
-      "summary": "FYLO is filesystem-first: collections, indexes, event journals and WORM history all live under one root that Yon serves through /_fylo.",
+      "summary": "Tac caches reads in the browser and Yon streams live updates over Server-Sent Events.",
       "sections": [
-        {
-          "heading": "Local-first browser reads",
-          "body": "Inside Tac scripts, fetch() caches successful GET responses into IndexedDB. Every companion language can use the bundled FYLO browser engine through its implicit fylo collection facade; it mirrors documents into OPFS with cache-first, network-first, reload and no-store policies.",
-          "code": "const result = await fylo.users.find(\n  { order: 'email.asc' },\n  { cache: 'network-first' },\n)\nthis.users = (result.docs ?? []).map((entry) => entry.doc)"
-        },
         {
           "heading": "Live subscriptions",
           "body": "subscribe() runs an initial find, listens to the browser-local mirror for same-tab mutations, and follows the server event stream for remote changes — falling back to polling when SSE is unavailable."
         },
         {
           "heading": "Realtime mailboxes",
-          "body": "Yon realtime persists messages into durable FYLO queues and delivers them over Server-Sent Events; reconnecting clients replay from their last cursor, so offline browsers never lose messages."
+          "body": "Yon realtime persists messages into durable append-only queues and delivers them over Server-Sent Events; reconnecting clients replay from their last cursor, so offline browsers never lose messages."
         }
       ]
     },
     "cookbook": {
       "title": "Cookbook",
-      "summary": "Concrete recipes for building Tachyon apps without leaving the frontend-first workflow. This website is frontend-only, so these patterns can be explored with Tac companions and the browser FYLO client before a Yon server exists.",
+      "summary": "Concrete recipes for building Tachyon apps without leaving the frontend-first workflow. This website is frontend-only, so these patterns can be explored with Tac companions before a Yon server exists.",
       "sections": [
         {
           "heading": "Frontend-only prototype",
-          "body": "Start with client/ and db/ only. Tac renders pages and components, companions provide the reactive UI controller, and the browser FYLO client stores documents locally. When you later add server/routes, the UI contract can stay the same.",
+          "body": "Start with client/ only. Tac renders pages and components, and companions provide the reactive UI controller. When you later add server/routes, the UI contract can stay the same.",
           "code": "client/\n  pages/tac.html\n  components/panel/users/tac.html\n  components/panel/users/tac.kt\n  shared/data/docs.json\ndb/\n  schemas/users/manifest.json"
         },
         {
-          "heading": "Local-first collection",
-          "body": "JavaScript and TypeScript can use fylo.users or fylo.collection('users'). Dart, Kotlin, Swift and C# use fylo.collection('users'); Rust uses fylo().collection('users'). Tachyon lowers each form to the same browser mirror. The engine keeps OPFS private and can synchronize with Yon /_fylo routes when a backend is present.",
-          "code": "// JavaScript / TypeScript\nconst result = await fylo.collection('users').find({ order: 'name.asc' })\n\n// Dart / Kotlin / Swift\nfinal result = await fylo.collection('users').find({})\n\n// Rust\nlet result = await fylo().collection(\"users\").find({});"
-        },
-        {
-          "heading": "Signal-driven UI",
-          "body": "Publish and subscribe decorators replace manual event wiring between companion scripts. A form can publish a collection change and every interested panel can refresh itself without knowing who sent the signal.",
-          "code": "export default class {\n  @publish('users:changed') changed = 0\n\n  async save() {\n    await fylo.users.create(this.form)\n    this.changed += 1\n  }\n}\n\nexport default class {\n  @subscribe('users:changed', { onMount: true })\n  async refresh() {}\n}"
+          "heading": "Event-driven islands",
+          "body": "Browser CustomEvent provides explicit communication between islands. A form can dispatch a collection change and interested islands can subscribe through their hydrate AbortSignal without knowing who sent it.",
+          "code": "export default class {\n  hydrate(root, signal) {\n    window.addEventListener('users:changed', () => this.refresh(), { signal })\n  }\n\n  async save() {\n    await fetch('/users', { method: 'POST' })\n    window.dispatchEvent(new CustomEvent('users:changed'))\n  }\n}"
         },
         {
           "heading": "Polyglot middleware boundary",
@@ -343,18 +328,18 @@
         },
         {
           "heading": "Native target polish",
-          "body": "Design once against the environment and platform globals, then bundle to web, desktop and mobile outputs. The same Tac template can choose browser, desktop or mobile copy without creating separate pages.",
-          "code": "<switch :value=\"environment\">\n  <case :when=\"'desktop'\">Desktop workspace for {platform}</case>\n  <case :when=\"'mobile'\">Pocket workspace for {platform}</case>\n  <case default>Browser workspace</case>\n</switch>"
+          "body": "Author semantic HTML once, then bundle web, desktop and mobile outputs. The native planner lowers supported structure into platform controls and isolates only unmapped subtrees in local WebView boundaries.",
+          "code": "<main>\n  <h1>Workspace</h1>\n  <button on:click=\"save()\">Save</button>\n</main>\n\nty bundle --target macos\nty bundle --target android"
         }
       ]
     },
     "operations": {
       "title": "Operations",
-      "summary": "Health and readiness endpoints, generated OpenAPI docs, middleware hooks, rate limiting, and OpenTelemetry spans persisted into FYLO come built in.",
+      "summary": "Loopback-safe serving, bounded child processes, middleware phases, deterministic builds and stable diagnostics form the operational baseline.",
       "sections": [
         {
-          "heading": "Observability",
-          "body": "With YON_OTEL_ENABLED, Yon writes request and handler spans as OTLP JSON into the otel-spans collection, continues incoming traceparent headers, and emits Traceparent and X-Trace-Id on responses. This site's telemetry panel reads them back from /language/telemetry."
+          "heading": "Diagnostics and migration evidence",
+          "body": "Compiler, server and toolchain failures use stable TY diagnostics with bounded details. ty doctor reports companion toolchains and ty migrate check records intentional compatibility changes before cutover."
         },
         {
           "heading": "Build and deploy",
@@ -363,7 +348,7 @@
         },
         {
           "heading": "Security",
-          "body": "Security headers on every response, hashed Basic Auth, request limits and handler timeouts, origin-aware CORS rejection, and schema validation are all on by default in production."
+          "body": "Security headers, loopback-only default binding, traversal rejection, request limits and handler deadlines are enforced by the Rust server. Application authentication and API schema generation stay explicit deployment concerns."
         }
       ]
     },
@@ -387,9 +372,9 @@
           "code": "ty bundle --target macos --skip-package\n# inspect dist/macos/tachyon.host.json\n\nif (await capabilities.state('screenCapture.captureWindow') === 'prompt') {\n  await screenCapture.listWindows()\n}"
         },
         {
-          "heading": "Portable companion spelling",
-          "body": "Companion source stays transport-free. JavaScript and TypeScript use camelCase helpers; Dart, Kotlin, and Swift use the same family names; Rust and C# keep language-native casing. Unavailable operations such as auth.verifyUser and filesystem access remain detectable by name and fail closed instead of silently falling back.",
-          "code": "// JavaScript / TypeScript\nif (capabilities.supports('auth.verifyUser')) {\n  await auth.verifyUser('Confirm access')\n}\n\n// Rust\nif capabilities().supports(\"fs.readText\") {\n  let text = await file_system().read_text(\"notes.txt\");\n}"
+          "heading": "Companion boundary",
+          "body": "JavaScript and TypeScript browser islands can use standards-backed browser APIs directly. Native-language WebAssembly companions expose only the fields and methods they declare in their tac member map; native host capabilities remain in the generated platform controller rather than an implicit language prelude.",
+          "code": "// Browser island\nexport default class {\n  async copy() { await navigator.clipboard.writeText('Ready') }\n  hydrate() {}\n}\n\n// Native-language wasm companion: declare fields and methods in tac"
         },
         {
           "heading": "Events and isolated WebViews",

@@ -49,15 +49,15 @@ afterAll(() => {
 describe('homepage DOM', () => {
     test('ships the Tachyon bootstrap shell', async () => {
         const shell = await read('dist/web/index.html')
-        expect(shell).toContain('spa-renderer.js')
-        expect(shell).toContain('imports.js')
-        expect(shell).toContain('fylo-browser-path')
+        const header = await read('dist/web/.tachyon/components/site-header.js')
+        expect(shell).toContain('/.tachyon/islands.js')
+        expect(header).toContain("import '../../shared/scripts/imports.js'")
     })
 
     test('renders the DuVay shell: app bar, mobile dropdown, footer', () => {
         expect(home.document.querySelector('w-app-bar')).toBeTruthy()
-        // Below-desktop navigation is a right-aligned dropdown, matching FYLO's
-        // mobile shell. No bottom bar: it overlapped the OS gesture area.
+        // Below-desktop navigation is a right-aligned dropdown. No bottom bar:
+        // it overlapped the OS gesture area.
         expect(home.document.querySelector('button.header-burger[aria-controls="mobile-menu"]')).toBeTruthy()
         expect(home.document.querySelector('nav#mobile-menu[w-dropdown]')).toBeTruthy()
         expect(home.document.querySelector('w-navigation-drawer')).toBeFalsy()
@@ -71,9 +71,9 @@ describe('homepage DOM', () => {
         expect(hero?.textContent).toContain('Ship the whole stack')
         const cards = home.document.querySelectorAll('.features-grid w-card')
         expect(cards.length).toBe(8)
-        expect(home.document.querySelector('.hero-install code')?.textContent).toContain('ty init my-app')
+        expect(home.document.querySelector('.hero-install tachyon-expr')?.getAttribute('data-tachyon-expression')).toContain('installCommand')
         expect(home.document.querySelector('[data-tac-scope="home-yon"]')).toBeTruthy()
-        expect(home.document.querySelector('.yon-languages')?.textContent).toContain('TypeScript')
+        expect(home.document.querySelector('.yon-languages')?.textContent).toContain('Any executable protocol adapter')
         expect(home.document.querySelector('[data-tac-scope="home-targets"]')).toBeTruthy()
         expect(home.document.querySelector('.target-terminal pre code')?.textContent).toContain('ty bundle --target all')
         const titles = [...cards].map((card) => card.getAttribute('title'))
@@ -139,10 +139,14 @@ describe('atlas DOM', () => {
             react: ['panel-helpers', 'panel-live', 'panel-realtime'],
             connect: [
                 'panel-diagnostics', 'panel-polyglot', 'panel-portablebridge', 'panel-desktop',
-                'language-javascript', 'language-dart', 'language-kotlin', 'language-swift', 'language-csharp',
             ],
-            store: ['panel-inventory', 'panel-fylo', 'panel-users', 'panel-showcase'],
+            store: ['panel-showcase'],
             observe: ['panel-telemetry'],
+        }
+        for (const language of ['javascript', 'dart', 'kotlin', 'swift', 'csharp']) {
+            expect(atlasSections.connect.document.querySelector(
+                `tachyon-island[data-tachyon-component="language-${language}"]`,
+            )).toBeTruthy()
         }
         for (const [section, scopes] of Object.entries(panelsBySection)) {
             for (const scope of scopes) {

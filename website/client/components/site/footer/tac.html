@@ -7,8 +7,8 @@
     </div>
 
     <p class="footer-note">
-      <logic :if="platform === 'desktop'">Running the {os} desktop bundle.</logic><logic :else-if="platform === 'mobile'">Running the {os} mobile bundle.</logic><logic else>Running on the web platform.</logic>
-      This site is frontend-only: Tac companions power its UI, the FYLO OPFS mirror is its database, and the theme, fetch cache and documents all live in your browser.
+      Running on the web platform.
+      This site is frontend-only: Tac companions power its UI, and the theme, fetches and stored data all live in your browser.
     </p>
 
     <nav class="w-row ga-3 footer-links" aria-label="Footer">
@@ -18,6 +18,6 @@
       <a href="https://github.com/d31ma/Tachyon" target="_blank" rel="noopener">GitHub</a>
     </nav>
 
-    <p class="footer-note">MIT licensed. Interface built with DuVay web components, vendored at {duvayVersion}. Package {packageName}.</p>
+    <p class="footer-note">MIT licensed. Interface built with DuVay web components, vendored at v26.27.06. Package @d31ma/tachyon.</p>
   </w-container>
 </w-footer>

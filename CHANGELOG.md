@@ -2,10 +2,169 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Released Tachyon products use UTC CalVer; public machine contracts carry
+independent major versions.
 
 ## [Unreleased]
+
+## [26.31.06] - 2026-08-01
+
+### Removed
+
+- **FYLO is no longer part of Tachyon.** The binary, its vendored shim, and
+  every integration point are gone: the compiler-injected browser client, the
+  `fylo` facade in the polyglot companion preludes and template capabilities,
+  the `/_fylo` browser routes, the `db/` scaffold, and the installer step that
+  fetched it. CHEX and TTID are unaffected and still installed, so
+  `OPTIONS.schema.json` validation and status selection work as before.
+  Consequences a project should plan for:
+  - OpenTelemetry spans are appended to `otel-spans.ndjson` under the
+    telemetry root instead of being written to a FYLO collection.
+  - Yon realtime keeps its append-only topic logs and integer-position SSE
+    cursor; it no longer registers clients into a collection, which nothing
+    read back. Its default root is `.yon-realtime` rather than `.fylo-data`.
+  - Companion scripts referencing a bare `fylo` no longer get an injected
+    import, and `ty migrate check` no longer reports FYLO constructs.
+
+### Added
+
+- Completed the greenfield Rust rewrite through Phase 7 and made the Rust
+  implementation the sole stable release candidate. The immutable
+  compatibility oracle remains external to the shipped runtime.
+- Added iOS, Linux, Windows, and Android native host generators alongside
+  macOS, sharing one platform-neutral staging path and one planner, with
+  per-target output isolation and per-platform toolchain recording.
+- Added reproducible per-platform gates: an iOS simulator run, a pinned Linux
+  container that reads accessible names and drives the UI over AT-SPI, an
+  Android emulator run asserting native widget classes through `uiautomator`,
+  and a Windows UI Automation gate for CI.
+- Re-verified the cutover evidence by execution on 2026-07-31: the
+  compatibility differential (3/3 corpus projects), the release lifecycle drill,
+  and the iOS, Android, and Linux native gates. `docs/CUTOVER.md` now records
+  each condition's basis as either an execution result or a named maintainer
+  decision.
+- Added build-provenance attestation to the release lifecycle job, so a
+  published artifact can be traced to the workflow and commit that built it
+  with `gh attestation verify` and without a maintainer key.
+- Added ARIA-role adapter mapping for native targets. A tag the compiler has
+  never heard of still says what it is when its author declared a role, so a
+  design system reaches native widgets by naming the roles it owes its users
+  anyway, rather than by this compiler knowing the design system.
+- Added browser companions in Dart, Kotlin, Swift, and C# beside the existing
+  Rust one, each compiled by its own language's compiler and proven in a real
+  browser by `scripts/wasm/companion-browser-test.mjs`, which drives all five
+  on one page. An authoring prelude carries the ABI so a companion is plain
+  code in its language, not a subset a transpiler understands. Dart, Kotlin,
+  and C# cannot emit a module that instantiates on its own, so ADR 0011 gains a
+  second shape for them; Swift satisfies the original one, given a do-nothing
+  WASI environment the island runtime now supplies.
+- Added capability probes to `ty doctor`: each wasm toolchain is asked to build
+  for its wasm target rather than for its version, because all of these
+  languages ship wasm support separately from the compiler. Four toolchains
+  reported ready on a machine where none of them could build.
+- Added `ty migrate check`, which classifies a legacy project against the Rust
+  surface without executing it and attaches a required action to every
+  unsupported or changed finding.
+- Added a shared compatibility corpus and a browser-based differential that
+  compares route graphs, semantic DOM, and HTTP status across both
+  implementations, with declared divergences kept visible.
+- Added `docs/PARITY_LEDGER.md` recording every feature as identical,
+  equivalent, changed, unsupported, or Rust-only.
+- Added four fuzz targets covering every trust boundary, run under
+  `AddressSanitizer`, plus sanitizer, soak, recovery-drill, performance-budget,
+  SBOM, and auditable-build gates.
+- Added reproducible release artifacts with per-file checksums and a lifecycle
+  drill covering verification, tamper detection, install, upgrade, rollback,
+  and uninstall.
+
+### Fixed
+
+- A native build rejected the compiler's own output. Only scripts under
+  `/.tachyon/` were stripped before native planning, so a route's own
+  `/client.js` survived and the view contract refused it with `TY1306` — which
+  means no page with a companion or an event binding could be built for any
+  native target. Every script in generated HTML is generated, because an
+  authored one is rejected before rendering.
+- Two routes wrote one `WebSurface` over another. Node ids restart at
+  `n_000001` per route and the payload directory was named after the id, so the
+  second route built replaced the first one's page; the website's home content
+  was being served another route's empty surface. The payload path now carries
+  the route, while the node id stays what the Native UI contract specifies.
+- A `WebSurface` was given a fixed height on every platform — 180 points on
+  iOS, macOS, and GTK, 480 pixels on Android — so a subtree taller than that
+  was clipped with no scroll of its own to reveal the rest. Each host now
+  follows the document's own height.
+- A fallback subtree rendered unstyled, because the route's stylesheet link is
+  stripped as a generated asset. The stylesheets a route links are inlined into
+  the fallback document instead, which also restores the media queries that
+  decide which of a responsive page's variants is visible.
+- An island whose content is entirely deferred could not be planned at all: an
+  `aria-label` written on a component becomes a property of its companion
+  rather than an attribute of the island, so nothing could name it and every
+  native build failed with `TY1603`. The name is now read from the props.
+
+- Every gate script in `scripts/` was committed without its executable bit, so
+  the release lifecycle drill failed at `build-artifact.sh: Permission denied`
+  from a clean checkout, and CI's `./scripts/linux/native-test.sh` would have
+  failed the same way. Found by running the drill rather than by reading it.
+
+- Accessible names set on generic GTK4 containers never reached AT-SPI, and a
+  GTK4 button with an intrinsic label ignored its declared accessible name.
+  Both were found by running the real accessibility bus, not by inspection.
+
+### Changed
+
+- `NativeBuildOptions` now carries a `NativeTarget`, and native artifacts
+  publish under a per-target directory.
+
+### Added
+
+- Completed the Rust Phase 4 macOS native vertical slice: Native UI v1,
+  semantic SwiftUI adapters, deterministic accessibility identities, bounded
+  declarative state/actions, route and controller lifecycle logging, and
+  atomic `.app` packaging.
+- Added smallest-subtree local WebSurface fallback, isolated HTTPS
+  WebSurfaces with no bridge, deny-by-default Capability Manifest v1, and
+  digest-complete Artifact Manifest v1.
+- Added a real macOS application gate that drives AppKit controls through
+  Accessibility and keyboard events, compares required semantics with a
+  mobile Chromium reference, and enforces a coarse screenshot-layout budget.
+- Completed the Rust Phase 3 view pipeline: bounded expressions, escaped
+  bindings, both Tac control syntaxes, recursive components and slots, composed
+  JavaScript/Python Yon context, server-rendered islands, View IR, source maps,
+  multi-diagnostic recovery, and verified incremental route reuse.
+- Added all five island activation policies with deterministic wrappers,
+  same-origin generated modules, SSR-preserving failure behavior, interaction
+  replay, and a real Chromium acceptance gate.
+- Added View Source Map v1, the safe-view/island ADR, Phase 3 normative
+  specification and evidence, and threat-model/support updates.
+- Completed the Rust Phase 2 Yon handler boundary: typed Handler Protocol v1
+  request, response, error, and cancellation envelopes; deterministic
+  JavaScript and Python handler discovery; and a compiled `ty handler invoke`
+  workflow.
+- Added direct-spawn, one-process-per-request supervision with strict framed
+  stdout, bounded stderr, queue-inclusive deadlines, cooperative cancellation,
+  forced termination and reaping, concurrency limits, crash recovery, and a
+  deny-by-default child environment.
+- Added shared real-runtime and real-binary contract suites covering sync and
+  async handlers, Unicode paths and data, all protocol HTTP methods,
+  environment allowlisting, adapter authoring failures, process crashes,
+  malformed and oversized output, stdout smuggling, stderr flooding, and
+  concurrency admission.
+- Completed the Rust Phase 1 vertical slice: deterministic Tac/Yon static route
+  discovery, bounded HTML validation, Route Manifest v1 output, stable
+  diagnostics, atomic publication, project scaffolding, and a loopback-safe
+  development server.
+- Added real-binary acceptance tests for initialization, repeatable builds,
+  failure recovery, HTTP behavior, security headers, and cross-platform
+  execution, plus a uniform 90% Rust coverage ratchet.
+- Established the greenfield Rust rewrite foundation with an exact toolchain,
+  workspace-wide safety and lint policies, and executable schema contracts.
+- Added product context, six accepted architecture decisions, an initial
+  threat model, support vocabulary, governance, and release engineering.
+- Added dedicated Linux, macOS, and Windows Rust CI with dependency, license,
+  schema, documentation, and immutable-action gates.
 
 ## [26.30.04] - 2026-07-23
 
@@ -710,7 +869,9 @@ should expect to touch imports, bin names, and any code that assumed the old
 
 See the Git history and GitHub release notes for pre-2.0 changes.
 
-[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.22.03...HEAD
+[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.31.06...HEAD
+[26.31.06]: https://github.com/d31ma/Tachyon/compare/v26.30.04...v26.31.06
+[26.30.04]: https://github.com/d31ma/Tachyon/compare/v26.30.03...v26.30.04
 [26.22.03]: https://github.com/d31ma/Tachyon/compare/v26.21.7...v26.22.03
 [26.21.7]: https://github.com/d31ma/Tachyon/compare/v26.21.05...v26.21.7
 [26.21.05]: https://github.com/d31ma/Tachyon/compare/v2.0.0...v26.21.05

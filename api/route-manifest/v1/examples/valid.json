@@ -1,0 +1,35 @@
+{
+  "contract_version": 1,
+  "routes": [
+    {
+      "route": "/products",
+      "kind": "page",
+      "methods": [
+        "GET"
+      ],
+      "view": "client/pages/products/yon.html",
+      "handlers": [
+        {
+          "source": "server/routes/products/yon.ts",
+          "language": "typescript",
+          "runtime": "javascript.v1"
+        },
+        {
+          "source": "server/routes/products/yon.py",
+          "language": "python",
+          "runtime": "python.v1"
+        }
+      ],
+      "context": {
+        "collision_policy": "error",
+        "static_exports": [
+          "title"
+        ],
+        "response_exports": [
+          "products"
+        ]
+      },
+      "parameters": []
+    }
+  ]
+}

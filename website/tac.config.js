@@ -13,10 +13,9 @@
 import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
 
-const SITE_URL = 'https://tachyon.dev';        // production origin, no trailing slash
+const SITE_URL = 'https://tachyon.del.ma';     // production origin, no trailing slash
 const SITE_NAME = 'Tachyon';
-const TWITTER = '@tachyon';                     // brand handle (verify)
-const OG_IMAGE = `${SITE_URL}/shared/assets/logo.svg`; // TODO: prefer a 1200×630 PNG for richer cards
+const OG_IMAGE = `${SITE_URL}/shared/assets/logo.svg`;
 
 /**
  * Per-route SEO. `title` overrides the page's <title>; `description` drives the
@@ -28,7 +27,7 @@ const ROUTES = {
     '/': {
         file: 'index.html',
         title: 'Tachyon — the polyglot full-stack framework for ty',
-        description: 'Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Author strict HTML that becomes reactive browser DOM or native SwiftUI, Compose, WinUI and GTK controls; serve polyglot Yon routes and persist data with FYLO.',
+        description: 'Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Author strict HTML that becomes reactive browser DOM or native SwiftUI, Compose, WinUI and GTK controls; serve polyglot Yon routes in any language.',
     },
     '/atlas': {
         file: 'atlas/index.html',
@@ -59,12 +58,12 @@ const ROUTES = {
     '/atlas/store': {
         file: 'atlas/store/index.html',
         title: 'Store — Tachyon capability atlas',
-        description: "FYLO document collections mirrored into your browser's origin-private file system.",
+        description: "Responses cached in IndexedDB, awaited right inside the template.",
     },
     '/atlas/observe': {
         file: 'atlas/observe/index.html',
         title: 'Observe — Tachyon capability atlas',
-        description: 'Companion fetches timed client-side and persisted as telemetry spans into a local FYLO collection.',
+        description: 'Companion fetches timed client-side and persisted as telemetry spans in the browser.',
     },
     '/atlas/extend': {
         file: 'atlas/extend/index.html',
@@ -74,7 +73,7 @@ const ROUTES = {
     '/docs': {
         file: 'docs/index.html',
         title: 'Documentation — Tachyon',
-        description: 'Guides for building Tachyon apps with file-system routing, island hydration, native-by-default HTML rendering, polyglot Tac and Yon code, and FYLO storage.',
+        description: 'Guides for building Tachyon apps with file-system routing, island hydration, native-by-default HTML rendering, polyglot Tac and Yon code, and browser storage.',
     },
     '/docs/_topic': {
         file: 'docs/_topic/index.html',
@@ -137,7 +136,6 @@ function headFor(route, meta) {
             `<meta property="og:url" content="${attr(canonical)}">`,
             `<meta property="og:image" content="${attr(OG_IMAGE)}">`,
             '<meta name="twitter:card" content="summary_large_image">',
-            `<meta name="twitter:site" content="${attr(TWITTER)}">`,
             `<meta name="twitter:title" content="${attr(title)}">`,
             description && `<meta name="twitter:description" content="${attr(description)}">`,
             `<meta name="twitter:image" content="${attr(OG_IMAGE)}">`,

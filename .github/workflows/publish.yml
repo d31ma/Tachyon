@@ -1,149 +1,381 @@
-name: Release
+name: Stable Release
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch:
+    tags:
+      - "v*"
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.repository }}
+  group: stable-release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.97.1"
+
 jobs:
-  test:
-    name: Test before release
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Install FYLO, CHEX, and TTID binaries
-        run: |
-          sh ./scripts/install-vendor-bins.sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Type check
-        run: bun run typecheck
-
-      - name: Run tests
-        run: bun run test
-        env:
-          HOSTNAME: 127.0.0.1
-          BASIC_AUTH: admin:pass
-
-  version:
-    name: Read version
-    runs-on: ubuntu-latest
+  validate:
+    name: Validate immutable release identity
+    runs-on: ubuntu-24.04
     outputs:
-      version: ${{ steps.read.outputs.version }}
-      tag_exists: ${{ steps.check.outputs.exists }}
-
+      version: ${{ steps.identity.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
-      - name: Read package version
-        id: read
+      - name: Validate tag, versions, changelog, and commit
+        id: identity
+        shell: bash
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Version: $VERSION"
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+          test "$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")" = tag
+          test "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" = "${GITHUB_SHA}"
+          test "$(node -p "require('./package.json').version")" = "${version}"
+          test "$(node -p "require('./website/package.json').version")" = "${version}"
+          test "$(node -p "require('./website/tachyon.json').application.version")" = "${version}"
+          grep -Eq "^## \[${version}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md
+          git diff --exit-code
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
-      - name: Check version tag
-        id: check
+  qualification:
+    name: Complete enterprise qualification
+    uses: ./.github/workflows/rust-ci.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+  build:
+    name: Native release artifact (${{ matrix.asset }})
+    needs: [validate, qualification]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            asset: ty-linux-x64
+            binary: ty
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: ty-linux-arm64
+            binary: ty
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            asset: ty-macos-x64
+            binary: ty
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            asset: ty-macos-arm64
+            binary: ty
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            asset: ty-windows-x64.exe
+            binary: ty.exe
+
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install the exact Rust toolchain and target
+        shell: bash
+        run: |
+          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal
+          rustup default "${RUST_TOOLCHAIN}"
+          rustup target add "${{ matrix.target }}"
+
+      - name: Install pinned auditable-build tooling
+        shell: bash
+        run: cargo install cargo-auditable --version 0.7.0 --locked
+
+      - name: Build a deterministic auditable archive
+        shell: bash
         env:
-          TAG: v${{ steps.read.outputs.version }}
+          TACHYON_AUDITABLE: "1"
+          TACHYON_RELEASE_TARGET: ${{ matrix.target }}
         run: |
-          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Tag $TAG already exists; skipping release."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          set -euo pipefail
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          ./scripts/release/build-artifact.sh
+          mkdir -p release
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "release/${{ matrix.asset }}"
+          archive="$(find target/release-artifact -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "${archive}"
+          cp "${archive}" release/
+          chmod 0755 "release/${{ matrix.asset }}"
+          "release/${{ matrix.asset }}" --version | grep -Fx "${{ needs.validate.outputs.version }}"
 
-  github-release:
-    name: Build binaries and release
-    runs-on: ubuntu-latest
-    needs: [test, version]
-    if: >-
-      ${{
-        needs.test.result == 'success' &&
-        needs.version.result == 'success' &&
-        needs.version.outputs.tag_exists == 'false'
-      }}
+      - name: Attest the native executable and archive
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: release/*
+
+      - name: Upload the native executable and archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.asset }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
+
+  sbom:
+    name: Release CycloneDX SBOM
+    needs: [validate, qualification]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install the exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Generate the release SBOM
+        run: |
+          set -euo pipefail
+          cargo install cargo-cyclonedx --version 0.5.7 --locked
+          cargo cyclonedx --all --format json
+          mkdir release
+          find . -type f -name '*.cdx.json' -print0 \
+            | LC_ALL=C sort -z \
+            | tar --null --files-from=- -czf "release/tachyon-${{ needs.validate.outputs.version }}-sbom.cdx.tar.gz"
+
+      - name: Attest the SBOM bundle
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: release/*
+
+      - name: Upload the SBOM bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-sbom
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
+
+  stage-release:
+    name: Sign and stage immutable draft release
+    needs: [validate, build, sbom]
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
-
+      id-token: write
+      attestations: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Download every qualified artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          fetch-depth: 0
+          pattern: release-*
+          path: release
+          merge-multiple: true
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build cross-platform binaries
+      - name: Add release metadata and fail-closed checksums
         run: |
           set -euo pipefail
-          mkdir -p dist-bin
-          build() {
-            echo "::group::$2"
-            bun build --compile --target="$1" ./src/cli/index.js --outfile "dist-bin/$2"
-            echo "::endgroup::"
+          cp install.sh install.ps1 LICENSE NOTICE release/
+          cd release
+          : > SHA256SUMS
+          for file in *; do
+            test "${file}" = SHA256SUMS && continue
+            sha256sum "${file}"
+          done | LC_ALL=C sort -k2 > SHA256SUMS
+          sha256sum --check --strict SHA256SUMS
+
+      - name: Attest all distributed inputs
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: release/*
+
+      - name: Install pinned Sigstore client
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Sign every release asset with the workflow identity
+        run: |
+          set -euo pipefail
+          for file in release/*; do
+            cosign sign-blob --yes --bundle "${file}.sigstore.json" "${file}"
+          done
+
+      - name: Create a non-public draft from the existing tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          awk -v version="${VERSION}" '
+            index($0, "## [" version "] - ") == 1 { emit=1; next }
+            emit && /^## \[/ { exit }
+            emit { print }
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+          gh release create "${TAG}" --verify-tag --draft \
+            --title "Tachyon ${VERSION}" --notes-file release-notes.md release/*
+
+  verify-release:
+    name: Verify staged release (${{ matrix.os }})
+    needs: [validate, stage-release]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux-x64
+            runner: ubuntu-24.04
+            asset: ty-linux-x64
+            installer: install.sh
+          - os: linux-arm64
+            runner: ubuntu-24.04-arm
+            asset: ty-linux-arm64
+            installer: install.sh
+          - os: macos-x64
+            runner: macos-15-intel
+            asset: ty-macos-x64
+            installer: install.sh
+          - os: macos-arm64
+            runner: macos-15
+            asset: ty-macos-arm64
+            installer: install.sh
+          - os: windows-x64
+            runner: windows-2025
+            asset: ty-windows-x64.exe
+            installer: install.ps1
+    steps:
+      - name: Install GitHub CLI and Python
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: 3.14.6
+
+      - name: Download the non-public staged release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir release
+          gh release download "${TAG}" --dir release
+
+      - name: Verify checksums, attestations, and signatures
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd release
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum --check --strict SHA256SUMS
+          else
+            shasum -a 256 --check --strict SHA256SUMS
+          fi
+          for file in *; do
+            case "${file}" in *.sigstore.json) continue ;; esac
+            gh attestation verify "${file}" --repo "${REPOSITORY}"
+          done
+
+      - name: Install pinned Sigstore client
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify workflow-identity signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in release/*; do
+            case "${file}" in *.sigstore.json) continue ;; esac
+            cosign verify-blob \
+              --bundle "${file}.sigstore.json" \
+              --certificate-identity-regexp '^https://github.com/d31ma/Tachyon/.github/workflows/publish.yml@refs/tags/v' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "${file}"
+          done
+
+      - name: Run and clean-install the Unix executable
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          set -euo pipefail
+          chmod 0755 "release/${ASSET}"
+          test "$("release/${ASSET}" --version)" = "${VERSION}"
+          python3 -m http.server 38191 --bind 127.0.0.1 --directory release >/tmp/tachyon-release-http.log 2>&1 &
+          server=$!
+          trap 'kill "${server}"' EXIT
+          for attempt in 1 2 3 4 5; do
+            curl --fail --silent http://127.0.0.1:38191/SHA256SUMS >/dev/null && break
+            sleep 1
+          done
+          TACHYON_BASE_URL=http://127.0.0.1:38191 \
+          TACHYON_INSTALL_DIR="${RUNNER_TEMP}/tachyon-bin" \
+          TACHYON_SKIP_OPTIONAL_TOOLS=1 \
+            sh release/install.sh
+          test "$("${RUNNER_TEMP}/tachyon-bin/ty" --version)" = "${VERSION}"
+
+      - name: Run and clean-install the Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          if ((& "release/$env:ASSET" --version) -ne $env:VERSION) { throw 'raw executable version mismatch' }
+          $server = Start-Process python -ArgumentList '-m','http.server','38191','--bind','127.0.0.1','--directory','release' -PassThru
+          try {
+            foreach ($attempt in 1..5) {
+              try {
+                Invoke-WebRequest -Uri 'http://127.0.0.1:38191/SHA256SUMS' -UseBasicParsing | Out-Null
+                break
+              } catch {
+                if ($attempt -eq 5) { throw }
+                Start-Sleep -Seconds 1
+              }
+            }
+            $env:TACHYON_BASE_URL = 'http://127.0.0.1:38191'
+            $env:TACHYON_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'tachyon-bin'
+            $env:TACHYON_SKIP_OPTIONAL_TOOLS = '1'
+            & ./release/install.ps1
+            if ((& "$env:TACHYON_INSTALL_DIR/ty.exe" --version) -ne $env:VERSION) { throw 'installed executable version mismatch' }
+          } finally {
+            Stop-Process -Id $server.Id -Force
           }
-          build bun-linux-x64     ty-linux-x64
-          build bun-linux-arm64   ty-linux-arm64
-          build bun-darwin-x64    ty-macos-x64
-          build bun-darwin-arm64  ty-macos-arm64
-          build bun-windows-x64   ty-windows-x64.exe
-          cd dist-bin && sha256sum ty-* > SHA256SUMS
 
-      - name: Create and push version tag
+  publish:
+    name: Publish verified stable release
+    needs: [verify-release]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    environment: packages-prod
+    steps:
+      - name: Make the fully verified release public
         env:
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v$VERSION" -m "v$VERSION"
-          git push origin "v$VERSION"
-
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          gh release create "v$VERSION" \
-            --title "v$VERSION" \
-            --generate-notes
-
-      - name: Upload binaries, checksums, and installers
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          gh release upload "v$VERSION" \
-            dist-bin/ty-* dist-bin/SHA256SUMS \
-            install.sh install.ps1 \
-            --clobber
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "${TAG}" --draft=false --latest

@@ -1,5 +1,5 @@
 <w-card variant="outlined" class="panel-card">
-  <w-card-item title="Local-first fetch and storage" subtitle="Tac wraps fetch() with an IndexedDB cache; awaited expressions run right inside this template.">
+  <w-card-item title="Browser fetch and storage" subtitle="A hydrated companion uses standard fetch() and storage APIs; awaited bounded expressions update its text output.">
   </w-card-item>
   <w-card-text>
     <div class="w-row ga-2 sc-status">
@@ -8,18 +8,12 @@
       <w-chip size="small">{sessionCount} sessionStorage keys</w-chip>
     </div>
 
-    <logic :if="showcase">
-      <p class="sc-summary"><strong>{showcase.title}:</strong> {showcase.summary}</p>
-    </logic>
+    <p class="sc-summary">{showcaseSummary()}</p>
     <p class="sc-awaited">{await awaitedTemplateNote()}</p>
 
     <details>
       <summary>Largest persisted keys</summary>
-      <ul class="sc-entries">
-        <loop :for="entry of storageEntries.slice(0, 6)">
-          <li><code>{entry.key}</code> <span>{entry.size} B</span></li>
-        </loop>
-      </ul>
+      <pre class="sc-entries">{storageEntrySummary()}</pre>
     </details>
   </w-card-text>
 </w-card>

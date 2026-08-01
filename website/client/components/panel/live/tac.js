@@ -16,6 +16,8 @@ export default class {
     listenRequested = false
     /** @type {AbortController | null} */
     streamController = null
+    /** @type {HTMLElement | null} */
+    root = null
     get isStreaming() {
         return this.status === 'streaming'
     }
@@ -32,14 +34,23 @@ export default class {
         return 'ready'
     }
 
+    errorLabel() {
+        return this.lastError ? `Stream note: ${this.lastError}` : 'Stream note: no errors.'
+    }
+
+    refresh() {
+        void this.root?.tachyonIsland?.refresh?.()
+    }
+
     stop() {
         this.listenRequested = false
         this.streamController?.abort()
         this.streamController = null
         if (this.status === 'streaming') this.status = 'idle'
+        this.refresh()
     }
 
-    async start() {
+    start() {
         if (this.listenRequested)
             return
         this.stop()
@@ -49,7 +60,12 @@ export default class {
         this.lastError = ''
         const controller = new AbortController()
         this.streamController = controller
+        this.refresh()
+        void this.consumeStream(controller)
+    }
 
+    /** @param {AbortController} controller */
+    async consumeStream(controller) {
         try {
             const response = await fetch(WIKIMEDIA_RECENTCHANGE_URL, {
                 cache: 'no-store',
@@ -75,6 +91,7 @@ export default class {
         finally {
             if (this.streamController === controller)
                 this.streamController = null
+            this.refresh()
         }
     }
 
@@ -122,6 +139,7 @@ export default class {
 
         this.editTimestamps = [...this.editTimestamps, timestamp]
         this.pruneEditTimestamps(timestamp)
+        this.refresh()
     }
 
     /**
@@ -148,9 +166,11 @@ export default class {
             this.editTimestamps = next
     }
 
-    @onMount
-    prepare() {
+    /** @param {HTMLElement} root @param {AbortSignal} signal */
+    hydrate(root, signal) {
+        this.root = root
         this.status = 'idle'
         this.start()
+        signal.addEventListener('abort', () => this.stop(), { once: true })
     }
 }

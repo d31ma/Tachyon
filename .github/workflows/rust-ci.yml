@@ -1,0 +1,487 @@
+name: Rust Rewrite
+
+on:
+  workflow_call:
+  pull_request:
+    branches: [main, codex/rust-rewrite]
+    types: [opened, reopened, ready_for_review, synchronize]
+  push:
+    branches: [codex/rust-rewrite]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  RUST_TOOLCHAIN: "1.97.1"
+
+jobs:
+  native:
+    name: Native Rust gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt && rustup default 1.97.1
+
+      - name: Install Phase 2 JavaScript runtime
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+
+      - name: Install Phase 2 Python runtime
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: 3.14.6
+
+      - name: Install the pinned TypeScript compiler for tac.ts emission
+        run: npm install --no-save typescript@7.0.2 && npx tsc --version
+
+      - name: Show toolchain
+        run: rustc --version --verbose && cargo --version --verbose && node --version && python --version
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Check all targets and features
+        run: cargo check --workspace --all-targets --all-features --locked
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Run unit and Phase 4 real-process acceptance tests
+        run: cargo test --workspace --all-targets --all-features --locked
+
+      - name: Smoke-test the release binary
+        run: cargo run --release --locked --bin ty -- --version
+
+      - name: Build documentation
+        run: cargo doc --workspace --all-features --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  supply-chain:
+    name: Dependency, license, and source policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Install pinned cargo-deny
+        run: cargo install cargo-deny --version 0.19.7 --locked
+
+      - name: Check advisories, bans, licenses, and sources
+        run: cargo deny check advisories bans licenses sources
+
+  browser:
+    name: Phase 3 Chromium island behavior
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.6
+
+      - name: Install locked browser dependencies
+        run: bun install --frozen-lockfile && bunx playwright install --with-deps chromium
+
+      - name: Build the Phase 3 CLI
+        run: cargo build --locked --bin ty
+
+      - name: Run the real-browser island contract
+        run: bun run test:rust-browser
+
+      - name: Build the release CLI for the event gate
+        run: cargo build --release --locked --bin ty
+
+      - name: Run the real-browser event hydration contract
+        run: bun run test:rust-events
+
+      - name: Run the real-browser offline cache contract
+        run: bun run test:rust-offline
+
+      - name: Run the real-browser island expression contract
+        run: bun run test:rust-islands
+
+      - name: Probe the wasm companion ABI
+        run: |
+          rustup target add wasm32-unknown-unknown
+          bun run test:wasm-abi
+          bun run test:wasm-companion
+
+      - name: Verify every claim in the parity ledger
+        run: bash scripts/compat/verify-ledger.sh
+
+  macos-native:
+    name: Phase 4 macOS native and mobile-web parity
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.6
+
+      - name: Install locked browser dependencies
+        run: bun install --frozen-lockfile && bunx playwright install chromium
+
+      - name: Build the Phase 4 CLI
+        run: cargo build --locked --bin ty
+
+      - name: Run native launch, accessibility, lifecycle, and visual parity gate
+        run: bun run test:rust-macos
+
+  linux-native:
+    name: Phase 5 Linux GTK4 native gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Build the pinned Linux execution image
+        run: docker build -f scripts/linux/Dockerfile -t tachyon-linux-gate:${{ env.RUST_TOOLCHAIN }} scripts/linux
+
+      - name: Compile, launch, and read accessible names over AT-SPI
+        run: >-
+          docker run --rm
+          --cap-add SYS_ADMIN --cap-add NET_ADMIN
+          --security-opt seccomp=unconfined --security-opt apparmor=unconfined
+          -v "$PWD":/workspace -w /workspace
+          -e CARGO_TARGET_DIR=/tmp/ty-target
+          tachyon-linux-gate:${{ env.RUST_TOOLCHAIN }}
+          ./scripts/linux/native-test.sh
+
+  windows-native:
+    name: Phase 5 Windows Win32 native gate
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Show the platform C toolchain
+        run: gcc --version
+
+      - name: Build, launch, and drive the generated application
+        shell: pwsh
+        run: ./scripts/windows/native-test.ps1
+
+  android-native:
+    name: Phase 5 Android native gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Select the runner's preinstalled JDK and Gradle
+        run: |
+          set -euo pipefail
+          echo "JAVA_HOME=${JAVA_HOME_21_X64}" >> "${GITHUB_ENV}"
+          echo "${JAVA_HOME_21_X64}/bin" >> "${GITHUB_PATH}"
+          gradle --version
+          java -version
+
+      - name: Install the pinned Android SDK packages
+        run: |
+          set -euo pipefail
+          sdkmanager="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "${sdkmanager}" --licenses > /dev/null
+          "${sdkmanager}" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "emulator" \
+            "system-images;android-35;google_apis;x86_64"
+
+      - name: Enable hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+
+      - name: Boot a headless emulator
+        run: |
+          set -euo pipefail
+          avdmanager="${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager"
+          echo no | "${avdmanager}" create avd -n tachyon-gate \
+            -k "system-images;android-35;google_apis;x86_64" --device pixel_6 --force
+          nohup "${ANDROID_HOME}/emulator/emulator" -avd tachyon-gate \
+            -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect \
+            > /tmp/emulator.log 2>&1 &
+          "${ANDROID_HOME}/platform-tools/adb" wait-for-device
+          timeout 600 bash -c \
+            'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = "1" ]; do sleep 5; done'
+
+      - name: Assemble, launch, and drive the generated application
+        run: ./scripts/android/native-test.sh
+
+  compatibility:
+    name: Phase 6 legacy compatibility differential
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.6
+
+      - name: Install locked browser dependencies
+        run: bun install --frozen-lockfile && bunx playwright install --with-deps chromium
+
+      - name: Build the Phase 6 CLI
+        run: cargo build --locked --bin ty
+
+      - name: Fetch the immutable v26.30.04 compatibility oracle
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/tachyon-compat"
+          curl --fail --location --silent --show-error \
+            --output "${RUNNER_TEMP}/tachyon-compat/ty-linux-x64" \
+            https://github.com/d31ma/Tachyon/releases/download/v26.30.04/ty-linux-x64
+          printf '%s  %s\n' \
+            '0ccf5db78f196db3d9279b2a533a22e2413a146c91968775aa7c988d0c89f72d' \
+            "${RUNNER_TEMP}/tachyon-compat/ty-linux-x64" \
+            | sha256sum --check --strict
+          chmod 0755 "${RUNNER_TEMP}/tachyon-compat/ty-linux-x64"
+          echo "LEGACY_TY_BIN=${RUNNER_TEMP}/tachyon-compat/ty-linux-x64" >> "${GITHUB_ENV}"
+
+      - name: Compare both implementations over the shared corpus
+        run: bun run test:compat
+
+      - name: Run the released standalone workflow against Rust
+        run: bun run test:rust-standalone
+
+      - name: Classify the legacy fixture
+        run: ./target/debug/ty migrate check tests/fixtures/fullstack --allow-unsupported
+
+  fuzz:
+    name: Phase 7 fuzzing
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install the pinned nightly toolchain
+        run: rustup toolchain install nightly-2026-07-20 --profile minimal --component rust-src
+
+      - name: Install pinned cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.1 --locked
+
+      - name: Fuzz every trust boundary under AddressSanitizer
+        run: |
+          set -euo pipefail
+          for target in html_frontend template_frontend handler_frame native_planner; do
+            echo "==> ${target}"
+            cargo +nightly-2026-07-20 fuzz run "${target}" -- \
+              -max_total_time=${FUZZ_SECONDS} -rss_limit_mb=2048 -timeout=10
+          done
+        env:
+          FUZZ_SECONDS: "300"
+
+      - name: Publish any crashing input
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+
+  sanitizers:
+    name: Phase 7 sanitizers
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install the pinned nightly toolchain
+        run: rustup toolchain install nightly-2026-07-20 --profile minimal --component rust-src
+
+      - name: Install Phase 2 runtimes
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+
+      - name: Run the library suite under AddressSanitizer
+        run: >-
+          RUSTFLAGS="-Zsanitizer=address"
+          cargo +nightly-2026-07-20 test -p tachyon-core --lib
+          --target x86_64-unknown-linux-gnu
+
+      - name: Run the library suite under LeakSanitizer
+        run: >-
+          RUSTFLAGS="-Zsanitizer=leak"
+          cargo +nightly-2026-07-20 test -p tachyon-core --lib
+          --target x86_64-unknown-linux-gnu
+
+      - name: Run the library suite under ThreadSanitizer
+        run: >-
+          RUSTFLAGS="-Zsanitizer=thread"
+          cargo +nightly-2026-07-20 test -p tachyon-core --lib
+          --target x86_64-unknown-linux-gnu
+
+  soak:
+    name: Phase 7 soak and recovery drills
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Run interruption, corruption, contention, and load drills
+        run: cargo test --locked -p tachyon-cli --test phase7_cli -- --test-threads=1
+        env:
+          TACHYON_SOAK_ITERATIONS: "200"
+
+  provenance:
+    name: Phase 7 supply-chain evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Install pinned SBOM and audit tooling
+        run: |
+          cargo install cargo-cyclonedx --version 0.5.7 --locked
+          cargo install cargo-auditable --version 0.7.0 --locked
+
+      - name: Generate a CycloneDX software bill of materials
+        run: cargo cyclonedx --all --format json
+
+      - name: Build a release binary with an embedded dependency list
+        run: cargo auditable build --release --locked --bin ty
+
+      - name: Publish the bill of materials
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom
+          path: "**/*.cdx.json"
+
+  release-lifecycle:
+    name: Cutover release lifecycle drill
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    # Provenance is attested from the workflow's own identity, so the build
+    # that produced an artifact is verifiable without a maintainer key.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Verify, install, upgrade, roll back, and uninstall a real artifact
+        run: ./scripts/release/lifecycle-drill.sh
+
+      - name: Attest what built this artifact
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: target/release-artifact/*.tar.gz
+
+      - name: Publish the verified artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tachyon-${{ matrix.os }}
+          path: target/release-artifact/*.tar.gz
+
+  coverage:
+    name: Rust coverage ratchet
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal --component llvm-tools-preview && rustup default 1.97.1
+
+      - name: Install pinned coverage tool
+        run: cargo install cargo-llvm-cov --version 0.8.6 --locked
+
+      - name: Enforce the Phase 4 coverage floor
+        run: >-
+          cargo llvm-cov
+          --workspace
+          --all-features
+          --locked
+          --ignore-filename-regex 'crates/tachyon-core/src/native/(compiler|macos)\.rs'
+          --fail-under-lines 90
+          --fail-under-functions 90
+          --fail-under-regions 90

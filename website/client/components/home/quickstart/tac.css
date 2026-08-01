@@ -12,9 +12,29 @@
   color: var(--w-text-subtle);
 }
 
-.quickstart-tabs {
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
+.quickstart-samples {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.quickstart-samples details {
+  border: 1px solid var(--w-border-color);
+  border-radius: var(--w-radius-md);
+  padding: 0.75rem;
+}
+
+.quickstart-samples summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.quickstart-samples .code-block {
+  margin-top: 0.75rem;
+}
+
+.quickstart-samples code:empty::before {
+  content: attr(data-fallback);
+  white-space: pre;
 }
 
 .quickstart-note {

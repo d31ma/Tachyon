@@ -1,0 +1,10 @@
+Tachyon
+Copyright (c) 2026 Chidelma
+
+This product includes third-party software distributed under its respective
+licenses. The exact dependency names, versions, and license identifiers for a
+release are recorded in the software bill of materials shipped with that
+release. The repository's dependency policy is enforced by `cargo deny`.
+
+Tachyon itself is distributed under the MIT License. See LICENSE for the full
+license text.

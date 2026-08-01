@@ -11,7 +11,7 @@ describe('enterprise SEO is baked into the prerendered output', () => {
         const html = await read('dist/web/index.html');
         expect(html).toContain('<meta name="description" content="Tachyon is a polyglot');
         expect(html).toContain('native SwiftUI, Compose, WinUI and GTK controls');
-        expect(html).toContain('<link rel="canonical" href="https://tachyon.dev/">');
+        expect(html).toContain('<link rel="canonical" href="https://tachyon.del.ma/">');
         expect(html).toContain('property="og:title"');
         expect(html).toContain('name="twitter:card" content="summary_large_image"');
         expect(html).toContain('"@type":"Organization"');
@@ -25,9 +25,9 @@ describe('enterprise SEO is baked into the prerendered output', () => {
             read('dist/web/docs/index.html'),
         ]);
         const canonical = (h) => (h.match(/rel="canonical" href="([^"]+)"/) || [])[1];
-        expect(canonical(home)).toBe('https://tachyon.dev/');
-        expect(canonical(atlas)).toBe('https://tachyon.dev/atlas');
-        expect(canonical(docs)).toBe('https://tachyon.dev/docs');
+        expect(canonical(home)).toBe('https://tachyon.del.ma/');
+        expect(canonical(atlas)).toBe('https://tachyon.del.ma/atlas');
+        expect(canonical(docs)).toBe('https://tachyon.del.ma/docs');
         // Descriptions differ per page (no copy-paste boilerplate).
         const desc = (h) => (h.match(/name="description" content="([^"]+)"/) || [])[1];
         expect(new Set([desc(home), desc(atlas), desc(docs)]).size).toBe(3);
@@ -44,22 +44,22 @@ describe('enterprise SEO is baked into the prerendered output', () => {
     test('robots.txt allows crawling and points at the sitemap', async () => {
         const robots = await read('dist/web/robots.txt');
         expect(robots).toContain('User-agent: *');
-        expect(robots).toContain('Sitemap: https://tachyon.dev/sitemap.xml');
+        expect(robots).toContain('Sitemap: https://tachyon.del.ma/sitemap.xml');
     });
 
     test('sitemap.xml lists every indexable route and excludes redirect shells', async () => {
         const sitemap = await read('dist/web/sitemap.xml');
         const locs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
         expect(locs).toEqual([
-            'https://tachyon.dev/',
-            'https://tachyon.dev/atlas/overview',
-            'https://tachyon.dev/atlas/compose',
-            'https://tachyon.dev/atlas/react',
-            'https://tachyon.dev/atlas/connect',
-            'https://tachyon.dev/atlas/store',
-            'https://tachyon.dev/atlas/observe',
-            'https://tachyon.dev/atlas/extend',
-            'https://tachyon.dev/docs',
+            'https://tachyon.del.ma/',
+            'https://tachyon.del.ma/atlas/overview',
+            'https://tachyon.del.ma/atlas/compose',
+            'https://tachyon.del.ma/atlas/react',
+            'https://tachyon.del.ma/atlas/connect',
+            'https://tachyon.del.ma/atlas/store',
+            'https://tachyon.del.ma/atlas/observe',
+            'https://tachyon.del.ma/atlas/extend',
+            'https://tachyon.del.ma/docs',
         ]);
     });
 });

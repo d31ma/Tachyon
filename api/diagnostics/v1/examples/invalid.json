@@ -1,0 +1,11 @@
+{
+  "contract_version": 1,
+  "diagnostics": [
+    {
+      "code": "error-1",
+      "severity": "fatal",
+      "message": "",
+      "spans": []
+    }
+  ]
+}

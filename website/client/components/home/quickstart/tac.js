@@ -1,69 +1,59 @@
 // @ts-check
 
+const samples = {
+  template: `<section class="hero">
+  <h1>{headline}</h1>
+  <button on:click="refresh()">Refresh</button>
+</section>
+
+<loop :for="post of posts">
+  <product-card :product="post" hydrate="visible" />
+</loop>`,
+  companion: `export default class {
+  headline = "Tac + Yon"
+  visits = 0
+
+  hydrate(root, signal) {
+    this.visits = Number(sessionStorage.getItem("visits") ?? 0) + 1
+    sessionStorage.setItem("visits", String(this.visits))
+  }
+}`,
+  yon: `// server/routes/posts/yon.js  ->  /posts
+export class Handler {
+  static GET() {
+    return { posts: [] }
+  }
+
+  static async POST(request) {
+    return { created: request.body }
+  }
+}`,
+  polyglot: `// client/components/counter/tachyon-wasm.swift
+var count: Int = 0
+
+func increment() {
+  count += 1
+}
+
+let tac: [String: TacMember] = [
+  "count": .field({ count }, { count = $0 }),
+  "increment": .method(increment),
+]`,
+}
+
+function populateSamples() {
+  for (const code of document.querySelectorAll('[data-sample]')) {
+    const name = /** @type {keyof typeof samples | undefined} */ (code.getAttribute('data-sample') ?? undefined)
+    if (name && samples[name]) code.textContent = samples[name]
+  }
+}
+
 export default class {
-  /** @type {string} */
-  $active = 'template'
-
-  get active() {
-    return this.$active
-  }
-
-  tabs = [
-    { id: 'template', label: 'Tac template' },
-    { id: 'companion', label: 'Companion' },
-    { id: 'route', label: 'Yon route' },
-    { id: 'polyglot', label: 'Polyglot companion' },
-  ]
-
-  samples = {
-    template: [
-      '<section class="hero">',
-      '  <h1>{headline}</h1>',
-      '  <button on:click="refresh()">Refresh</button>',
-      '</section>',
-      '',
-      '<loop :for="post of posts">',
-      '  <product-card :product="post" hydrate="visible" />',
-      '</loop>',
-    ].join('\n'),
-    companion: [
-      'export default class {',
-      '  headline = "Tac + Yon"',
-      '  $visits = 0        // sessionStorage',
-      '  $$theme = "light"  // localStorage',
-      '',
-      '  async refresh() {',
-      '    const res = await this.fetch("/posts")',
-      '    this.posts = (await res.json()).posts',
-      '  }',
-      '}',
-    ].join('\n'),
-    route: [
-      '// server/routes/posts/yon.js  ->  /posts',
-      'export class Handler {',
-      '  static GET() {',
-      '    return { posts: [] }',
-      '  }',
-      '',
-      '  static async POST(request) {',
-      '    return { created: request.body }',
-      '  }',
-      '}',
-    ].join('\n'),
-    polyglot: [
-      '// client/components/counter/tac.swift',
-      'final class Counter: Tac {',
-      '  var count: Int = 0',
-      '',
-      '  func increment() {',
-      '    self.count += 1',
-      '  }',
-      '}',
-    ].join('\n'),
-  }
-
-  /** @param {string} id */
-  select(id) {
-    this.$active = id
+  /** @param {Record<string, unknown>} _props @param {{ onMount(callback: () => void): void }} tac */
+  constructor(_props, tac) {
+    tac.onMount(populateSamples)
+    if (typeof window !== 'undefined' && !globalThis.__tc_prerender__) {
+      setTimeout(populateSamples, 0)
+    }
   }
 }

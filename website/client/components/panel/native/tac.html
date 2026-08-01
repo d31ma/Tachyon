@@ -7,18 +7,18 @@
         <canvas width="720" height="330" aria-label="Reactive canvas visualisation"></canvas>
         <figcaption class="studio-caption">
           <output aria-live="polite">{message}</output>
-          <time :datetime="lastPaintIso">{lastPaintLabel}</time>
+          <time>{lastPaintLabel}</time>
         </figcaption>
       </figure>
 
       <section class="studio-controls" aria-label="Canvas controls and semantic status">
         <label class="energy">
           <span>Rendering energy <strong>{intensity}%</strong></span>
-          <input type="range" min="5" max="100" :value="intensity" on:input="setIntensity($event.target.value)" />
+          <input type="range" min="5" max="100" value="62" on:input="setIntensity($event.target.value)" />
         </label>
         <div class="gauges">
-          <label>Task progress <progress max="100" :value="intensity">{intensity}%</progress></label>
-          <label>Visual density <meter min="0" max="100" low="28" high="78" optimum="62" :value="intensity">{intensity}</meter></label>
+          <label>Task progress <progress max="100" value="62">{intensity}%</progress></label>
+          <label>Visual density <meter min="0" max="100" low="28" high="78" optimum="62" value="62">{intensity}</meter></label>
         </div>
         <div class="w-row ga-2">
           <w-btn size="sm" variant="outlined" on:click="chooseMood('calm')">Calm</w-btn>

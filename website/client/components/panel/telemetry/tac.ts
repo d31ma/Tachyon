@@ -4,7 +4,26 @@ type Span = {
     startedAt: string
 }
 
-type SpanDocEntry = { id: string, doc: Span }
+// Spans live in localStorage: a browser-side demo needs somewhere durable to
+// put them, and this is the platform's own answer.
+const STORE_KEY = 'atlas-spans'
+
+function readStoredSpans(): Span[] {
+    try {
+        const stored = JSON.parse(localStorage.getItem(STORE_KEY) ?? '[]') as Span[]
+        return Array.isArray(stored) ? stored : []
+    } catch {
+        return []
+    }
+}
+
+function writeStoredSpans(spans: Span[]): void {
+    try {
+        localStorage.setItem(STORE_KEY, JSON.stringify(spans))
+    } catch {
+        /* Storage can be full or blocked; the panel still renders. */
+    }
+}
 
 export default class {
     spans: Span[] = []
@@ -35,17 +54,26 @@ export default class {
         return this.spans.slice(0, 8)
     }
 
-    @subscribe('tachyon:refresh', { onMount: true })
+    hydrate(): void {
+        void this.load()
+    }
+
+    recentSummary(): string {
+        if (this.loading) return 'Loading locally stored spans…'
+        if (this.spans.length === 0) {
+            return 'No spans yet — run the benchmark to time browser fetches and persist the results.'
+        }
+        return this.recent
+            .map((span) => `${span.name.padEnd(20)} ${span.durationMs.toFixed(1).padStart(7)} ms  ${span.startedAt}`)
+            .join('\n')
+    }
+
     async load(): Promise<void> {
         this.loading = true
         try {
-            const result = await fylo['atlas-spans'].find({}) as { docs?: SpanDocEntry[] }
-            this.spans = (result.docs ?? [])
-                .map((entry) => entry.doc)
+            this.spans = readStoredSpans()
                 .filter((doc) => typeof doc?.durationMs === 'number')
                 .sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''))
-        } catch {
-            this.spans = []
         } finally {
             this.loading = false
         }
@@ -61,14 +89,14 @@ export default class {
                 const startedAt = new Date().toISOString()
                 const start = performance.now()
                 try {
-                    await this.tac.fetch('/shared/data/showcase.json', { cache: 'reload' })
+                    await fetch('/shared/data/showcase.json', { cache: 'reload' })
                     spans.push({ name, durationMs: Math.max(0.1, performance.now() - start), startedAt })
                 } catch {
                     /* Keep a failed local request out of the demonstration. */
                 }
             }
             if (spans.length > 0) {
-                await fylo['atlas-spans'].batchPut(spans)
+                writeStoredSpans([...readStoredSpans(), ...spans])
             }
             await this.load()
         } finally {
@@ -77,14 +105,7 @@ export default class {
     }
 
     async clearSpans(): Promise<void> {
-        try {
-            const result = await fylo['atlas-spans'].find({}) as { docs?: SpanDocEntry[] }
-            for (const entry of result.docs ?? []) {
-                await fylo['atlas-spans'].del(entry.id)
-            }
-        } catch {
-            /* nothing stored */
-        }
+        writeStoredSpans([])
         this.spans = []
     }
 }

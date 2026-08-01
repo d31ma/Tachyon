@@ -1,0 +1,294 @@
+//! Repository-wide policy gates owned by the canonical contract crate.
+
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+use tachyon_contracts::CONTRACTS;
+
+fn repository_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .map_or_else(
+            || PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+            Path::to_path_buf,
+        )
+}
+
+fn collect_files(root: &Path, extension: &str) -> Result<Vec<PathBuf>, std::io::Error> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut files = Vec::new();
+
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(directory)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().and_then(|value| value.to_str()) == Some(extension) {
+                files.push(path);
+            }
+        }
+    }
+
+    files.sort();
+    Ok(files)
+}
+
+fn relative_markdown_links(contents: &str) -> Vec<&str> {
+    contents
+        .split("](")
+        .skip(1)
+        .filter_map(|tail| tail.split(')').next())
+        .map(str::trim)
+        .filter(|target| {
+            !target.is_empty()
+                && !target.starts_with('#')
+                && !target.contains("://")
+                && !target.starts_with("mailto:")
+        })
+        .collect()
+}
+
+#[test]
+fn required_foundation_documents_are_present_and_substantive()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    let required = [
+        "AGENTS.md",
+        "CHANGELOG.md",
+        "CODE_OF_CONDUCT.md",
+        "CONTEXT.md",
+        "CONTRIBUTING.md",
+        "GOVERNANCE.md",
+        "README.md",
+        "SECURITY.md",
+        "SUPPORT.md",
+        "docs/ENGINEERING_STANDARDS.md",
+        "docs/PHASE_1_EVIDENCE.md",
+        "docs/PHASE_1_SPEC.md",
+        "docs/PHASE_2_EVIDENCE.md",
+        "docs/PHASE_2_SPEC.md",
+        "docs/PHASE_3_EVIDENCE.md",
+        "docs/PHASE_3_IMPLEMENTATION_PLAN.md",
+        "docs/PHASE_3_SPEC.md",
+        "docs/PHASE_4_EVIDENCE.md",
+        "docs/PHASE_4_IMPLEMENTATION_PLAN.md",
+        "docs/PHASE_4_SPEC.md",
+        "docs/PROJECT_PLAN.md",
+        "docs/RELEASE_ENGINEERING.md",
+        "docs/SUPPORT_TIERS.md",
+        "docs/THREAT_MODEL.md",
+        "docs/architecture/OVERVIEW.md",
+    ];
+
+    for relative in required {
+        let contents = fs::read_to_string(root.join(relative))?;
+        assert!(
+            contents.lines().count() >= 10,
+            "{relative} is missing or not substantive"
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn release_artifact_inputs_are_present_and_nonempty() -> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    for relative in ["LICENSE", "NOTICE", "VERSION", "docs/SUPPORT_TIERS.md"] {
+        let contents = fs::read(root.join(relative))?;
+        assert!(!contents.is_empty(), "{relative} is empty");
+    }
+    Ok(())
+}
+
+#[test]
+fn architecture_adrs_are_accepted_and_numbered() -> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    let adrs = collect_files(&root.join("docs/adr"), "md")?;
+    let numbered = adrs
+        .iter()
+        .filter(|path| {
+            path.file_name()
+                .and_then(|value| value.to_str())
+                .is_some_and(|name| name.starts_with("000"))
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(numbered.len(), 9);
+    for adr in numbered {
+        let contents = fs::read_to_string(adr)?;
+        assert!(contents.contains("- Status: Accepted"), "{}", adr.display());
+        assert!(contents.contains("## Acceptance Gate"), "{}", adr.display());
+    }
+
+    Ok(())
+}
+
+#[test]
+fn schema_directories_and_registry_cannot_drift() -> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    let schemas = collect_files(&root.join("api"), "json")?
+        .into_iter()
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) == Some("schema.json"))
+        .collect::<Vec<_>>();
+
+    let registered = CONTRACTS
+        .iter()
+        .map(|contract| contract.name)
+        .collect::<BTreeSet<_>>();
+    let on_disk = schemas
+        .iter()
+        .filter_map(|path| {
+            path.ancestors()
+                .nth(2)
+                .and_then(Path::file_name)
+                .and_then(|name| name.to_str())
+        })
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(on_disk, registered);
+    Ok(())
+}
+
+#[test]
+fn github_actions_are_pinned_to_full_commits() -> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    let workflows = collect_files(&root.join(".github/workflows"), "yml")?;
+
+    for workflow in workflows {
+        let contents = fs::read_to_string(&workflow)?;
+        for line in contents.lines() {
+            let trimmed = line.trim();
+            let Some(action) = trimmed.strip_prefix("uses: ") else {
+                continue;
+            };
+            if let Some(local) = action
+                .split_whitespace()
+                .next()
+                .filter(|value| value.starts_with("./"))
+            {
+                assert!(
+                    root.join(local.trim_start_matches("./")).exists(),
+                    "{} references a missing local workflow: {action}",
+                    workflow.display()
+                );
+                continue;
+            }
+            let revision = action
+                .split('#')
+                .next()
+                .and_then(|value| value.rsplit_once('@'))
+                .map(|(_, revision)| revision.trim())
+                .unwrap_or_default();
+            assert!(
+                revision.len() == 40 && revision.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                "{} contains an unpinned action: {action}",
+                workflow.display()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
+fn stable_release_is_tag_gated_and_fail_closed() -> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    let workflow = fs::read_to_string(root.join(".github/workflows/publish.yml"))?;
+    let unix_installer = fs::read_to_string(root.join("install.sh"))?;
+    let windows_installer = fs::read_to_string(root.join("install.ps1"))?;
+
+    assert!(workflow.contains("tags:"));
+    assert!(!workflow.contains("branches: [main]"));
+    assert!(workflow.contains("git cat-file -t"));
+    assert!(workflow.contains("uses: ./.github/workflows/rust-ci.yml"));
+    assert!(workflow.contains("--verify-tag --draft"));
+    assert!(workflow.contains("gh attestation verify"));
+    assert!(workflow.contains("cosign verify-blob"));
+    assert!(workflow.contains("sha256sum --check --strict SHA256SUMS"));
+    assert!(workflow.contains("gh release edit \"${TAG}\" --draft=false --latest"));
+
+    assert!(unix_installer.contains("No checksum published for ${asset}. Aborting."));
+    assert!(!unix_installer.contains("SHA256SUMS\" -o \"$tmp/SHA256SUMS\" || true"));
+    assert!(windows_installer.contains("No checksum published for $asset. Aborting."));
+    assert!(!windows_installer.contains("Could not verify checksum"));
+    assert!(!unix_installer.contains("d31ma/Fylo"));
+    assert!(!windows_installer.contains("d31ma/Fylo"));
+    Ok(())
+}
+
+#[test]
+fn foundation_document_links_resolve_locally() -> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    let mut documents = collect_files(&root.join("docs"), "md")?;
+    documents.push(root.join("AGENTS.md"));
+    documents.push(root.join("CONTEXT.md"));
+    documents.push(root.join("CONTRIBUTING.md"));
+    documents.push(root.join("GOVERNANCE.md"));
+    documents.push(root.join("SECURITY.md"));
+    documents.push(root.join("SUPPORT.md"));
+    documents.push(root.join("api/README.md"));
+
+    for document in documents {
+        let contents = fs::read_to_string(&document)?;
+        let parent = document.parent().unwrap_or(&root);
+        for target in relative_markdown_links(&contents) {
+            let path = target.split('#').next().unwrap_or_default();
+            assert!(
+                parent.join(path).exists(),
+                "{} links to missing path {target}",
+                document.display()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[test]
+fn exact_toolchain_is_consistent_across_repository_controls()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    let toolchain = fs::read_to_string(root.join("rust-toolchain.toml"))?;
+    let workspace = fs::read_to_string(root.join("Cargo.toml"))?;
+    let workflow = fs::read_to_string(root.join(".github/workflows/rust-ci.yml"))?;
+
+    assert!(toolchain.contains("channel = \"1.97.1\""));
+    assert!(workspace.contains("rust-version = \"1.97.1\""));
+    assert!(workflow.contains("RUST_TOOLCHAIN: \"1.97.1\""));
+    assert!(workflow.contains("rustup toolchain install 1.97.1"));
+    Ok(())
+}
+
+#[test]
+fn completed_phase_acceptance_is_enforced_by_ci_and_documentation()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    let workflow = fs::read_to_string(root.join(".github/workflows/rust-ci.yml"))?;
+    let plan = fs::read_to_string(root.join("docs/PROJECT_PLAN.md"))?;
+    let version = fs::read_to_string(root.join("VERSION"))?;
+
+    assert!(workflow.contains("Run unit and Phase 4 real-process acceptance tests"));
+    assert!(workflow.contains("actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"));
+    assert!(workflow.contains("node-version: 24.18.0"));
+    assert!(workflow.contains("actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"));
+    assert!(workflow.contains("python-version: 3.14.6"));
+    assert!(workflow.contains("cargo run --release --locked --bin ty -- --version"));
+    assert!(workflow.contains("--fail-under-lines 90"));
+    assert!(workflow.contains("--fail-under-functions 90"));
+    assert!(workflow.contains("--fail-under-regions 90"));
+    assert!(workflow.contains(
+        "--ignore-filename-regex 'crates/tachyon-core/src/native/(compiler|macos)\\.rs'"
+    ));
+    assert!(workflow.contains("Phase 3 Chromium island behavior"));
+    assert!(workflow.contains("bun run test:rust-browser"));
+    assert!(workflow.contains("Phase 4 macOS native and mobile-web parity"));
+    assert!(workflow.contains("bun run test:rust-macos"));
+    assert!(plan.contains("## Phase 3: Tac and Yon View Semantics"));
+    assert!(plan.contains("## Phase 4: Native Vertical Slice"));
+    assert!(plan.matches("Status: complete on 2026-07-26").count() >= 4);
+    assert_eq!(version.trim(), "26.31.06");
+    assert_eq!(version.trim(), tachyon_contracts::PRODUCT_VERSION);
+    Ok(())
+}

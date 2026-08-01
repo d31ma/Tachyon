@@ -1,0 +1,12 @@
+{
+  "protocol_version": 1,
+  "kind": "request",
+  "request_id": "req_01",
+  "operation": "route.invoke",
+  "route": "/products",
+  "method": "GET",
+  "deadline_ms": 30000,
+  "headers": {
+    "accept": ["text/html"]
+  }
+}

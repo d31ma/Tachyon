@@ -1,0 +1,14 @@
+{
+  "contract_version": 1,
+  "application_id": "ma.del.catalog",
+  "default_policy": "deny",
+  "remote_content_bridge": false,
+  "capabilities": [
+    {
+      "name": "network",
+      "scope": ["https://api.example.test"],
+      "reason": "Load the product catalog",
+      "targets": ["web", "macos", "android"]
+    }
+  ]
+}
