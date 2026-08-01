@@ -5,6 +5,7 @@ use super::frame::{
 use super::{HandlerLanguage, HandlerSource};
 use crate::Failure;
 use crate::failure::diagnostic;
+use command_group::{AsyncCommandGroup, AsyncGroupChild};
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs;
@@ -14,15 +15,16 @@ use std::sync::Arc;
 use std::time::Duration;
 use tachyon_contracts::{HandlerRequest, HandlerResponse};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::{ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
-use tokio::time::{Instant, sleep_until, timeout};
+use tokio::time::{Instant, sleep_until, timeout_at};
 use tokio_util::sync::CancellationToken;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_TIMEOUT: Duration = Duration::from_mins(5);
 const DEFAULT_CANCEL_GRACE: Duration = Duration::from_millis(100);
+const PROCESS_REAP_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_STDERR_LIMIT: usize = 64 * 1024;
 const DEFAULT_MAX_CONCURRENCY: usize = 16;
 const JAVASCRIPT_RUNNER: &str = include_str!("adapters/javascript_runner.mjs");
@@ -245,38 +247,25 @@ impl HandlerSupervisor {
         let adapter = materialize_adapter(source.language())?;
         let mut command = self.command(source, &adapter);
         self.options.environment.apply(&mut command);
-        let program = command
-            .as_std()
-            .get_program()
-            .to_string_lossy()
-            .into_owned();
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                return Err(Failure::one(diagnostic(
-                    2101,
-                    format!("Cannot start handler runtime '{program}': {error}"),
-                    Some(String::from(
-                        "Install the selected runtime or pass its executable path explicitly.",
-                    )),
-                    None,
-                )));
+        let mut child = spawn_process(&mut command)?;
+        let (mut stdin, stdout, stderr) = match take_process_pipes(&mut child) {
+            Ok(pipes) => pipes,
+            Err(failure) => {
+                terminate(&mut child).await;
+                return Err(failure);
             }
-        };
-        let Some(mut stdin) = child.stdin.take() else {
-            return Err(process_pipe_failure("stdin"));
-        };
-        let Some(stdout) = child.stdout.take() else {
-            return Err(process_pipe_failure("stdout"));
-        };
-        let Some(stderr) = child.stderr.take() else {
-            return Err(process_pipe_failure("stderr"));
         };
         let stdout_task = tokio::spawn(drain(stdout, MAX_FRAME_BYTES + FRAME_PREFIX_BYTES));
         let stderr_task = tokio::spawn(drain(stderr, self.options.stderr_limit));
 
-        if let Err(failure) = write_request(&mut stdin, request_bytes).await {
+        let write_failure = tokio::select! {
+            result = write_request(&mut stdin, request_bytes) => result.err(),
+            () = cancellation.token.cancelled() => Some(cancelled()),
+            () = sleep_until(deadline) => Some(timed_out()),
+        };
+        if let Some(failure) = write_failure {
             terminate(&mut child).await;
+            let _settled = settle_tasks(stdout_task, stderr_task, deadline).await;
             return Err(failure);
         }
 
@@ -291,7 +280,7 @@ impl HandlerSupervisor {
         };
 
         let outcome = tokio::select! {
-            status = child.wait() => ProcessOutcome::Exit(status),
+            status = child.inner().wait() => ProcessOutcome::Exit(status),
             () = cancellation.token.cancelled() => ProcessOutcome::Cancelled,
             () = sleep_until(deadline) => ProcessOutcome::TimedOut,
         };
@@ -302,9 +291,10 @@ impl HandlerSupervisor {
                     stdin.as_mut(),
                     &request.request_id,
                     self.options.cancellation_grace,
+                    deadline,
                 )
                 .await;
-                settle_tasks(stdout_task, stderr_task).await?;
+                let _settled = settle_tasks(stdout_task, stderr_task, deadline).await;
                 Err(cancelled())
             }
             ProcessOutcome::TimedOut => {
@@ -313,9 +303,10 @@ impl HandlerSupervisor {
                     stdin.as_mut(),
                     &request.request_id,
                     self.options.cancellation_grace,
+                    deadline,
                 )
                 .await;
-                settle_tasks(stdout_task, stderr_task).await?;
+                let _settled = settle_tasks(stdout_task, stderr_task, deadline).await;
                 Err(timed_out())
             }
             ProcessOutcome::Exit(status) => {
@@ -323,6 +314,8 @@ impl HandlerSupervisor {
                 let status = match status {
                     Ok(status) => status,
                     Err(error) => {
+                        terminate(&mut child).await;
+                        let _settled = settle_tasks(stdout_task, stderr_task, deadline).await;
                         return Err(Failure::one(diagnostic(
                             2104,
                             format!("Cannot observe handler process exit: {error}"),
@@ -331,7 +324,12 @@ impl HandlerSupervisor {
                         )));
                     }
                 };
-                let (stdout, stderr) = settle_tasks(stdout_task, stderr_task).await?;
+                // A successful handler may have spawned a descendant that
+                // inherited its pipes. The leader's exit is the end of the
+                // invocation, so terminate the rest of its process group
+                // before waiting for EOF from those pipes.
+                terminate(&mut child).await;
+                let (stdout, stderr) = settle_tasks(stdout_task, stderr_task, deadline).await?;
                 validate_process_output(status, &stdout, &stderr)?;
                 if source.language() == HandlerLanguage::Direct {
                     direct_response(&stdout.bytes, &request.request_id)
@@ -496,6 +494,40 @@ struct AdapterFiles {
     runner: PathBuf,
 }
 
+fn spawn_process(command: &mut Command) -> Result<AsyncGroupChild, Failure> {
+    let program = command
+        .as_std()
+        .get_program()
+        .to_string_lossy()
+        .into_owned();
+    command.group().kill_on_drop(true).spawn().map_err(|error| {
+        Failure::one(diagnostic(
+            2101,
+            format!("Cannot start handler runtime '{program}': {error}"),
+            Some(String::from(
+                "Install the selected runtime or pass its executable path explicitly.",
+            )),
+            None,
+        ))
+    })
+}
+
+fn take_process_pipes(
+    child: &mut AsyncGroupChild,
+) -> Result<(ChildStdin, ChildStdout, ChildStderr), Failure> {
+    let process = child.inner();
+    match (
+        process.stdin.take(),
+        process.stdout.take(),
+        process.stderr.take(),
+    ) {
+        (Some(stdin), Some(stdout), Some(stderr)) => Ok((stdin, stdout, stderr)),
+        (None, _, _) => Err(process_pipe_failure("stdin")),
+        (_, None, _) => Err(process_pipe_failure("stdout")),
+        (_, _, None) => Err(process_pipe_failure("stderr")),
+    }
+}
+
 fn materialize_adapter(language: HandlerLanguage) -> Result<AdapterFiles, Failure> {
     let directory = match tempfile::Builder::new()
         .prefix("tachyon-handler-")
@@ -570,13 +602,28 @@ where
 }
 
 async fn settle_tasks(
-    stdout: JoinHandle<Drained>,
-    stderr: JoinHandle<Drained>,
+    mut stdout: JoinHandle<Drained>,
+    mut stderr: JoinHandle<Drained>,
+    deadline: Instant,
 ) -> Result<(Drained, Drained), Failure> {
-    let Ok(stdout) = stdout.await else {
+    let Ok(stdout_result) = timeout_at(deadline, &mut stdout).await else {
+        stdout.abort();
+        stderr.abort();
+        let _stdout = stdout.await;
+        let _stderr = stderr.await;
+        return Err(timed_out());
+    };
+    let Ok(stdout) = stdout_result else {
+        stderr.abort();
+        let _stderr = stderr.await;
         return Err(protocol_failure(2101, "Handler stdout drain task failed."));
     };
-    let Ok(stderr) = stderr.await else {
+    let Ok(stderr_result) = timeout_at(deadline, &mut stderr).await else {
+        stderr.abort();
+        let _stderr = stderr.await;
+        return Err(timed_out());
+    };
+    let Ok(stderr) = stderr_result else {
         return Err(protocol_failure(2101, "Handler stderr drain task failed."));
     };
     Ok((stdout, stderr))
@@ -637,27 +684,39 @@ fn validate_process_output(
 }
 
 async fn cancel_and_reap(
-    child: &mut Child,
+    child: &mut AsyncGroupChild,
     stdin: Option<&mut ChildStdin>,
     request_id: &str,
     grace: Duration,
+    deadline: Instant,
 ) {
+    let grace_deadline = deadline.min(Instant::now() + grace);
     // A direct handler has no open input to cancel through; it is reaped by
     // the grace period below instead.
     if let Some(stdin) = stdin
         && let Ok(frame) = cancel_frame(request_id)
     {
-        let _write = stdin.write_all(&frame).await;
-        let _flush = stdin.flush().await;
+        let _cancel = timeout_at(grace_deadline, async {
+            let _write = stdin.write_all(&frame).await;
+            let _flush = stdin.flush().await;
+        })
+        .await;
     }
-    if timeout(grace, child.wait()).await.is_err() {
-        terminate(child).await;
+    if Instant::now() < grace_deadline {
+        let _exit = timeout_at(grace_deadline, child.inner().wait()).await;
     }
+    // Always terminate the group after cooperative cancellation: the leader
+    // may have exited while a descendant kept running with inherited handles.
+    terminate(child).await;
 }
 
-async fn terminate(child: &mut Child) {
-    let _kill = child.kill().await;
-    let _wait = child.wait().await;
+async fn terminate(child: &mut AsyncGroupChild) {
+    let _kill = child.start_kill();
+    // Reaping is cleanup, not handler work. Give it its own short bound even
+    // when the invocation deadline has already expired; pipe settlement still
+    // uses the original absolute deadline and cannot hold a permit open.
+    let cleanup_deadline = Instant::now() + PROCESS_REAP_TIMEOUT;
+    let _wait = timeout_at(cleanup_deadline, child.wait()).await;
 }
 
 fn process_pipe_failure(name: &str) -> Failure {
@@ -740,6 +799,7 @@ mod tests {
     use std::task::{Context, Poll};
     use std::time::Duration;
     use tokio::io::{AsyncRead, ReadBuf};
+    use tokio::time::Instant;
 
     #[test]
     fn environment_names_and_resource_limits_fail_closed() {
@@ -803,7 +863,7 @@ mod tests {
                 read_error: false,
             }
         });
-        let failure = settle_tasks(failed, healthy)
+        let failure = settle_tasks(failed, healthy, Instant::now() + Duration::from_secs(1))
             .await
             .expect_err("join failure");
         assert!(failure.to_string().contains("TY2101"));
@@ -817,10 +877,21 @@ mod tests {
         });
         let failed = tokio::spawn(std::future::pending::<Drained>());
         failed.abort();
-        let failure = settle_tasks(healthy, failed)
+        let failure = settle_tasks(healthy, failed, Instant::now() + Duration::from_secs(1))
             .await
             .expect_err("join failure");
         assert!(failure.to_string().contains("TY2101"));
+
+        let pending_stdout = tokio::spawn(std::future::pending::<Drained>());
+        let pending_stderr = tokio::spawn(std::future::pending::<Drained>());
+        let failure = settle_tasks(
+            pending_stdout,
+            pending_stderr,
+            Instant::now() + Duration::from_millis(10),
+        )
+        .await
+        .expect_err("settlement deadline");
+        assert!(failure.to_string().contains("TY2110"));
     }
 
     #[test]

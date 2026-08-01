@@ -126,6 +126,7 @@ const C_HOST: &str = r#"#include <gtk/gtk.h>
 #include <webkit/webkit.h>
 
 #include <limits.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -157,6 +158,10 @@ typedef struct {
 typedef struct {
   gchar *source;
   gchar *location;
+  gchar *resource_root;
+  gchar *surface_root;
+  gchar *bundle_root;
+  gchar *entry_uri;
 } TachyonSurfacePolicy;
 
 static void tachyon_record(TachyonModel *model, const char *event) {
@@ -354,7 +359,224 @@ static void tachyon_surface_policy_free(gpointer data, GClosure *closure) {
   TachyonSurfacePolicy *policy = data;
   g_free(policy->source);
   g_free(policy->location);
+  g_free(policy->resource_root);
+  g_free(policy->surface_root);
+  g_free(policy->bundle_root);
+  g_free(policy->entry_uri);
   g_free(policy);
+}
+
+static gboolean tachyon_path_within(const gchar *path, const gchar *root) {
+  if (path == NULL || root == NULL || !g_str_has_prefix(path, root)) {
+    return FALSE;
+  }
+  gsize length = strlen(root);
+  return path[length] == '\0' || path[length] == G_DIR_SEPARATOR;
+}
+
+static gboolean tachyon_valid_surface_location(const gchar *location) {
+  const gchar *prefix = "WebSurfaces/";
+  if (location == NULL || !g_str_has_prefix(location, prefix)) {
+    return FALSE;
+  }
+  const gchar *identifier = location + strlen(prefix);
+  const gchar *separator = strchr(identifier, '/');
+  if (separator == NULL || separator == identifier ||
+      g_strcmp0(separator, "/index.html") != 0) {
+    return FALSE;
+  }
+  for (const gchar *cursor = identifier; cursor < separator; cursor += 1) {
+    if (!g_ascii_isalnum(*cursor) && *cursor != '_' && *cursor != '-') {
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
+/* Resolve a packaged path without allowing lexical traversal or any symlink
+ * component. Comparing the lexical canonical path with realpath's result is
+ * deliberate: a symlink that remains inside the bundle is still rejected. */
+static gchar *tachyon_resolve_packaged_path(const gchar *resource_root,
+                                            const gchar *relative_path) {
+  if (resource_root == NULL || relative_path == NULL || *relative_path == '\0' ||
+      g_path_is_absolute(relative_path)) {
+    return NULL;
+  }
+  gchar *joined = g_build_filename(resource_root, relative_path, NULL);
+  gchar *lexical = g_canonicalize_filename(joined, NULL);
+  gchar *resolved = realpath(joined, NULL);
+  g_free(joined);
+  if (resolved == NULL || g_strcmp0(lexical, resolved) != 0 ||
+      !tachyon_path_within(resolved, resource_root) ||
+      !g_file_test(resolved, G_FILE_TEST_IS_REGULAR)) {
+    g_free(lexical);
+    free(resolved);
+    return NULL;
+  }
+  g_free(lexical);
+  return resolved;
+}
+
+static gboolean tachyon_prepare_local_policy(TachyonModel *model,
+                                             TachyonSurfacePolicy *policy) {
+  if (!tachyon_valid_surface_location(policy->location)) {
+    return FALSE;
+  }
+  gchar *resource_root = realpath(model->resource_root, NULL);
+  if (resource_root == NULL) {
+    return FALSE;
+  }
+  gchar *document = tachyon_resolve_packaged_path(resource_root, policy->location);
+  gchar *surfaces_path = g_build_filename(resource_root, "WebSurfaces", NULL);
+  gchar *bundle_path = g_build_filename(resource_root, "WebBundle", NULL);
+  gchar *surfaces_lexical = g_canonicalize_filename(surfaces_path, NULL);
+  gchar *bundle_lexical = g_canonicalize_filename(bundle_path, NULL);
+  gchar *surfaces_root = realpath(surfaces_path, NULL);
+  gchar *bundle_root = realpath(bundle_path, NULL);
+  g_free(surfaces_path);
+  g_free(bundle_path);
+  if (document == NULL || surfaces_root == NULL || bundle_root == NULL ||
+      g_strcmp0(surfaces_lexical, surfaces_root) != 0 ||
+      g_strcmp0(bundle_lexical, bundle_root) != 0 ||
+      !tachyon_path_within(surfaces_root, resource_root) ||
+      !tachyon_path_within(bundle_root, resource_root) ||
+      !tachyon_path_within(document, surfaces_root)) {
+    free(resource_root);
+    free(document);
+    g_free(surfaces_lexical);
+    g_free(bundle_lexical);
+    free(surfaces_root);
+    free(bundle_root);
+    return FALSE;
+  }
+  policy->surface_root = g_path_get_dirname(document);
+  policy->resource_root = g_strdup(resource_root);
+  policy->bundle_root = g_strdup(bundle_root);
+  policy->entry_uri = g_strdup_printf("tachyon-resource://app/%s", policy->location);
+  free(resource_root);
+  free(document);
+  g_free(surfaces_lexical);
+  g_free(bundle_lexical);
+  free(surfaces_root);
+  free(bundle_root);
+  return TRUE;
+}
+
+static gchar *tachyon_local_uri_path(TachyonSurfacePolicy *policy, const gchar *uri,
+                                     gboolean navigation) {
+  const gchar *prefix = "tachyon-resource://app/";
+  if (policy == NULL || policy->resource_root == NULL || policy->surface_root == NULL ||
+      policy->bundle_root == NULL || uri == NULL || !g_str_has_prefix(uri, prefix)) {
+    return NULL;
+  }
+  const gchar *encoded = uri + strlen(prefix);
+  gsize length = strcspn(encoded, "?#");
+  gchar *encoded_path = g_strndup(encoded, length);
+  gchar *relative_path = g_uri_unescape_string(encoded_path, NULL);
+  g_free(encoded_path);
+  if (relative_path == NULL || *relative_path == '\0' ||
+      g_path_is_absolute(relative_path) || !g_utf8_validate(relative_path, -1, NULL)) {
+    g_free(relative_path);
+    return NULL;
+  }
+  gchar *resolved = tachyon_resolve_packaged_path(policy->resource_root, relative_path);
+  g_free(relative_path);
+  gboolean allowed = resolved != NULL &&
+                     (navigation ? tachyon_path_within(resolved, policy->surface_root)
+                                 : (tachyon_path_within(resolved, policy->surface_root) ||
+                                    tachyon_path_within(resolved, policy->bundle_root)));
+  if (!allowed) {
+    free(resolved);
+    return NULL;
+  }
+  return resolved;
+}
+
+static void tachyon_finish_scheme_error(WebKitURISchemeRequest *request, GIOErrorEnum code,
+                                        const gchar *message) {
+  GError *error = g_error_new_literal(G_IO_ERROR, code, message);
+  webkit_uri_scheme_request_finish_error(request, error);
+  g_error_free(error);
+}
+
+static void tachyon_resource_request(WebKitURISchemeRequest *request, gpointer data) {
+  (void)data;
+  WebKitWebView *view = webkit_uri_scheme_request_get_web_view(request);
+  TachyonSurfacePolicy *policy = view != NULL
+                                     ? g_object_get_data(G_OBJECT(view), "tachyon-surface-policy")
+                                     : NULL;
+  gchar *path = tachyon_local_uri_path(policy, webkit_uri_scheme_request_get_uri(request), FALSE);
+  if (path == NULL) {
+    tachyon_finish_scheme_error(request, G_IO_ERROR_PERMISSION_DENIED,
+                                "Tachyon resource request escaped its generated roots.");
+    return;
+  }
+  GFile *file = g_file_new_for_path(path);
+  GError *error = NULL;
+  GFileInfo *info = g_file_query_info(
+      file,
+      G_FILE_ATTRIBUTE_STANDARD_TYPE "," G_FILE_ATTRIBUTE_STANDARD_SIZE ","
+      G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+      G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS, NULL, &error);
+  GFileInputStream *stream = info != NULL && g_file_info_get_file_type(info) == G_FILE_TYPE_REGULAR
+                                 ? g_file_read(file, NULL, &error)
+                                 : NULL;
+  if (stream == NULL || info == NULL) {
+    if (error == NULL) {
+      error = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_NOT_REGULAR_FILE,
+                                  "Tachyon resource is not a regular file.");
+    }
+    webkit_uri_scheme_request_finish_error(request, error);
+    g_clear_error(&error);
+  } else {
+    const gchar *content_type = g_file_info_get_content_type(info);
+    gchar *mime_type = content_type != NULL ? g_content_type_get_mime_type(content_type) : NULL;
+    webkit_uri_scheme_request_finish(request, G_INPUT_STREAM(stream),
+                                     g_file_info_get_size(info),
+                                     mime_type != NULL ? mime_type : "application/octet-stream");
+    g_free(mime_type);
+  }
+  g_clear_object(&stream);
+  g_clear_object(&info);
+  g_object_unref(file);
+  free(path);
+}
+
+static gint tachyon_effective_port(GUri *uri) {
+  gint port = g_uri_get_port(uri);
+  if (port >= 0) {
+    return port;
+  }
+  const gchar *scheme = g_uri_get_scheme(uri);
+  if (g_ascii_strcasecmp(scheme, "https") == 0) {
+    return 443;
+  }
+  if (g_ascii_strcasecmp(scheme, "http") == 0) {
+    return 80;
+  }
+  return -1;
+}
+
+static gboolean tachyon_same_remote_origin(const gchar *declared_uri,
+                                           const gchar *candidate_uri) {
+  GUri *declared = g_uri_parse(declared_uri, G_URI_FLAGS_NONE, NULL);
+  GUri *candidate = g_uri_parse(candidate_uri, G_URI_FLAGS_NONE, NULL);
+  gboolean allowed = FALSE;
+  if (declared != NULL && candidate != NULL && g_uri_get_scheme(declared) != NULL &&
+      g_uri_get_scheme(candidate) != NULL && g_uri_get_host(declared) != NULL &&
+      g_uri_get_host(candidate) != NULL) {
+    allowed = g_ascii_strcasecmp(g_uri_get_scheme(declared), "https") == 0 &&
+              g_ascii_strcasecmp(g_uri_get_scheme(candidate), "https") == 0 &&
+              g_ascii_strcasecmp(g_uri_get_host(candidate), g_uri_get_host(declared)) == 0 &&
+              tachyon_effective_port(candidate) == tachyon_effective_port(declared);
+  }
+  if (declared != NULL) {
+    g_uri_unref(declared);
+  }
+  if (candidate != NULL) {
+    g_uri_unref(candidate);
+  }
+  return allowed;
 }
 
 static gboolean tachyon_decide_policy(WebKitWebView *view, WebKitPolicyDecision *decision,
@@ -374,20 +596,11 @@ static gboolean tachyon_decide_policy(WebKitWebView *view, WebKitPolicyDecision 
   }
   gboolean allowed = FALSE;
   if (g_strcmp0(policy->source, "local_bundle") == 0) {
-    allowed = g_str_has_prefix(uri, "file://");
+    gchar *path = tachyon_local_uri_path(policy, uri, TRUE);
+    allowed = path != NULL;
+    free(path);
   } else if (g_strcmp0(policy->source, "remote_url") == 0 && policy->location != NULL) {
-    GUri *declared = g_uri_parse(policy->location, G_URI_FLAGS_NONE, NULL);
-    GUri *candidate = g_uri_parse(uri, G_URI_FLAGS_NONE, NULL);
-    if (declared != NULL && candidate != NULL) {
-      allowed = g_strcmp0(g_uri_get_scheme(candidate), "https") == 0 &&
-                g_strcmp0(g_uri_get_host(candidate), g_uri_get_host(declared)) == 0;
-    }
-    if (declared != NULL) {
-      g_uri_unref(declared);
-    }
-    if (candidate != NULL) {
-      g_uri_unref(candidate);
-    }
+    allowed = tachyon_same_remote_origin(policy->location, uri);
   }
   if (allowed) {
     webkit_policy_decision_use(decision);
@@ -457,17 +670,17 @@ static GtkWidget *tachyon_build_web_surface(TachyonModel *model, JsonObject *nod
   webkit_settings_set_enable_javascript(settings,
                                         g_strcmp0(policy->source, "local_bundle") == 0);
   webkit_settings_set_enable_developer_extras(settings, FALSE);
+  webkit_settings_set_allow_file_access_from_file_urls(settings, FALSE);
+  webkit_settings_set_allow_universal_access_from_file_urls(settings, FALSE);
+  webkit_settings_set_allow_top_navigation_to_data_urls(settings, FALSE);
   g_signal_connect_data(view, "decide-policy", G_CALLBACK(tachyon_decide_policy), policy,
                         tachyon_surface_policy_free, 0);
+  g_object_set_data(G_OBJECT(view), "tachyon-surface-policy", policy);
 
   if (g_strcmp0(policy->source, "local_bundle") == 0 && policy->location != NULL) {
-    gchar *path = g_build_filename(model->resource_root, policy->location, NULL);
-    gchar *uri = g_filename_to_uri(path, NULL, NULL);
-    if (uri != NULL) {
-      webkit_web_view_load_uri(WEBKIT_WEB_VIEW(view), uri);
-      g_free(uri);
+    if (tachyon_prepare_local_policy(model, policy)) {
+      webkit_web_view_load_uri(WEBKIT_WEB_VIEW(view), policy->entry_uri);
     }
-    g_free(path);
   } else if (policy->location != NULL) {
     webkit_web_view_load_uri(WEBKIT_WEB_VIEW(view), policy->location);
   }
@@ -756,6 +969,13 @@ int main(int argc, char **argv) {
   model.lifecycle = "created";
   tachyon_record(&model, "controller.created");
 
+  WebKitWebContext *web_context = webkit_web_context_get_default();
+  webkit_web_context_register_uri_scheme(web_context, "tachyon-resource",
+                                         tachyon_resource_request, NULL, NULL);
+  WebKitSecurityManager *security = webkit_web_context_get_security_manager(web_context);
+  webkit_security_manager_register_uri_scheme_as_local(security, "tachyon-resource");
+  webkit_security_manager_register_uri_scheme_as_secure(security, "tachyon-resource");
+
   GtkApplication *app = gtk_application_new(TACHYON_GTK_APP_ID, G_APPLICATION_DEFAULT_FLAGS);
   g_signal_connect(app, "activate", G_CALLBACK(tachyon_activate), &model);
   g_signal_connect(app, "shutdown", G_CALLBACK(tachyon_shutdown), &model);
@@ -796,6 +1016,59 @@ mod tests {
         assert!(source.contains("control.disclosure"));
         assert!(source.contains(r#"g_strcmp0(target, "linux")"#));
         assert!(!source.contains("webkit_user_content_manager_register_script_message_handler"));
+    }
+
+    #[test]
+    fn generated_host_confines_local_surface_resources_and_navigation() {
+        let source = c_source(&application());
+
+        // Local pages never receive a file:// origin. The private loader
+        // percent-decodes before canonicalization, refuses any symlink
+        // component, and associates every request with its initiating view.
+        assert!(source.contains("tachyon-resource://app/"));
+        assert!(source.contains("g_uri_unescape_string(encoded_path, NULL)"));
+        assert!(source.contains("g_canonicalize_filename(joined, NULL)"));
+        assert!(source.contains("realpath(joined, NULL)"));
+        assert!(source.contains("g_strcmp0(lexical, resolved) != 0"));
+        assert!(source.contains("webkit_uri_scheme_request_get_web_view(request)"));
+        assert!(source.contains("G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS"));
+        assert!(source.contains("tachyon_valid_surface_location(policy->location)"));
+
+        // Navigation is limited to this view's generated WebSurface root;
+        // resource loads may additionally read only the generated WebBundle.
+        assert!(
+            source.contains("navigation ? tachyon_path_within(resolved, policy->surface_root)")
+        );
+        assert!(source.contains("tachyon_path_within(resolved, policy->bundle_root)"));
+        assert!(source.contains("g_strcmp0(separator, \"/index.html\") != 0"));
+
+        // Absolute file URLs, encoded traversal, symlink paths, and another
+        // surface root all fail one of the prefix/decode/canonical/root gates.
+        assert!(!source.contains("g_str_has_prefix(uri, \"file://\")"));
+        assert!(source.contains("g_path_is_absolute(relative_path)"));
+        assert!(source.contains("!tachyon_path_within(resolved, resource_root)"));
+        assert!(
+            source
+                .contains("webkit_settings_set_allow_file_access_from_file_urls(settings, FALSE)")
+        );
+        assert!(source.contains(
+            "webkit_settings_set_allow_universal_access_from_file_urls(settings, FALSE)"
+        ));
+    }
+
+    #[test]
+    fn generated_host_requires_an_exact_remote_origin_including_effective_port() {
+        let source = c_source(&application());
+        assert!(source.contains("tachyon_same_remote_origin(policy->location, uri)"));
+        assert!(source.contains("g_ascii_strcasecmp(g_uri_get_scheme(candidate), \"https\")"));
+        assert!(source.contains(
+            "g_ascii_strcasecmp(g_uri_get_host(candidate), g_uri_get_host(declared)) == 0"
+        ));
+        assert!(
+            source
+                .contains("tachyon_effective_port(candidate) == tachyon_effective_port(declared)")
+        );
+        assert!(source.contains("return 443;"));
     }
 
     #[test]

@@ -15,11 +15,13 @@
 .quickstart-samples {
   display: grid;
   gap: 0.65rem;
+  min-width: 0;
 }
 
 .quickstart-samples details {
   border: 1px solid var(--w-border-color);
   border-radius: var(--w-radius-md);
+  min-width: 0;
   padding: 0.75rem;
 }
 

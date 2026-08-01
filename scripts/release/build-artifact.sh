@@ -91,6 +91,14 @@ cd "${OUT}"
 # A reproducible archive: sorted entries, fixed ownership and timestamps. GNU
 # tar and bsdtar spell these differently, so the flavor is detected rather
 # than assumed.
+# Normalize the staged files first because bsdtar has no portable archive-time
+# override. This also keeps the GNU and BSD paths covered by the same invariant.
+if date -u -r "${SOURCE_DATE_EPOCH}" +%Y%m%d%H%M.%S >/dev/null 2>&1; then
+  ARCHIVE_TIMESTAMP="$(date -u -r "${SOURCE_DATE_EPOCH}" +%Y%m%d%H%M.%S)"
+else
+  ARCHIVE_TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y%m%d%H%M.%S)"
+fi
+TZ=UTC find "${NAME}" -type f -exec touch -t "${ARCHIVE_TIMESTAMP}" {} +
 FILES="$(cd "${OUT}" && find "${NAME}" -type f | LC_ALL=C sort)"
 if tar --version 2>/dev/null | grep -q GNU; then
   printf '%s\n' "${FILES}" | tar --format=ustar \

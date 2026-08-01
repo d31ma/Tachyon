@@ -712,3 +712,51 @@ async fn topics_stream_as_server_sent_events_with_a_resumable_cursor() {
     let _stopped = stop.send(());
     let _joined = running.await;
 }
+
+#[tokio::test]
+async fn process_diagnostics_never_cross_the_http_boundary() {
+    let project = tempfile::tempdir().expect("project");
+    write(
+        &project.path().join("server/routes/leak/yon.js"),
+        r#"export class Handler {
+  static GET() {
+    process.stdout.write("secret-canary");
+    return { ok: true };
+  }
+}
+"#,
+    );
+
+    let server = DevServer::bind(
+        project.path(),
+        &DevServerOptions {
+            port: 0,
+            watch: false,
+            ..DevServerOptions::default()
+        },
+    )
+    .await
+    .expect("bind");
+    let port = server.address().port();
+    let (stop, wait) = tokio::sync::oneshot::channel::<()>();
+    let running = tokio::spawn(async move {
+        server
+            .run_until(async {
+                let _stopped = wait.await;
+            })
+            .await
+    });
+
+    let response = get(port, "/leak").await;
+    assert!(response.contains("500 Internal Server Error"), "{response}");
+    assert!(response.contains("x-tachyon-request-id:"), "{response}");
+    assert!(
+        response.contains("Handler execution failed. Reference:"),
+        "{response}"
+    );
+    assert!(!response.contains("secret-canary"), "{response}");
+    assert!(!response.contains("TY21"), "{response}");
+
+    let _stopped = stop.send(());
+    let _joined = running.await;
+}

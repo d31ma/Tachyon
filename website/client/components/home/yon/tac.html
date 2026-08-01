@@ -19,7 +19,7 @@ ty serve</code></pre>
   <div class="yon-grid">
     <w-card class="yon-card" variant="outlined" title="Shape-aware serving" subtitle="client, server, or full stack">
       <w-card-text>
-        <p>ty serve detects whether the app has client/, server/, db/, or a mix, then serves the right runtime on one port.</p>
+        <p>ty serve detects whether the app has client/, server/, or both, then serves the right runtime on one port.</p>
         <pre class="code-block"><code>ty serve
 YON_PORT=8000 ty serve
 NODE_ENV=production ty serve</code></pre>
@@ -51,7 +51,7 @@ NODE_ENV=production ty serve</code></pre>
     <w-card class="yon-card" variant="outlined" title="Polyglot middleware" subtitle="before and after phases">
       <w-card-text>
         <p>Root middleware uses the same supervised protocol as handlers. Return 204 to continue, answer early from before, or merge response headers in after.</p>
-        <pre class="code-block"><code>server/middleware/yon.rb
+        <pre class="code-block"><code>middleware.rb
 .tachyonrc</code></pre>
       </w-card-text>
     </w-card>

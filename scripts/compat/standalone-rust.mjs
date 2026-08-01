@@ -51,6 +51,14 @@ async function waitForHttp(url, deadline = Date.now() + 15_000) {
   throw last ?? new Error(`Timed out waiting for ${url}`);
 }
 
+async function stop(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise((resolve) => {
+    child.once('close', resolve);
+    child.kill('SIGTERM');
+  });
+}
+
 let server;
 let preview;
 let browser;
@@ -65,9 +73,11 @@ try {
     'client/shared/assets/.gitkeep', 'client/shared/data/.gitkeep',
     'client/shared/scripts/imports.js', 'client/shared/styles/app.css',
     'server/routes/yon.js', 'server/data/.gitkeep', 'server/deps/.gitkeep',
-    'db/README.md', 'db/schemas/.gitkeep', 'db/.collections/.gitkeep',
   ];
   for (const file of expectedScaffold) assert.equal(await exists(path.join(project, file)), true, file);
+  assert.equal(await exists(path.join(project, 'db')), false, 'removed db scaffold');
+  assert.doesNotMatch(await readFile(path.join(project, '.env.example'), 'utf8'), /FYLO_/);
+  assert.doesNotMatch(await readFile(path.join(project, 'tachyon-env.d.ts'), 'utf8'), /\bfylo\b/i);
 
   await run(['bundle', '--target', 'web'], { cwd: project });
   assert.equal(await exists(path.join(project, 'dist', 'web', 'index.html')), true);
@@ -168,13 +178,7 @@ export default class {
   process.stdout.write(`PASS: released standalone workflow matches Rust ty (${nativeTarget})\n`);
 } finally {
   if (browser) await browser.close();
-  if (preview) {
-    preview.kill('SIGTERM');
-    await new Promise((resolve) => preview.once('close', resolve));
-  }
-  if (server) {
-    server.kill('SIGTERM');
-    await new Promise((resolve) => server.once('close', resolve));
-  }
+  await stop(preview);
+  await stop(server);
   await rm(workspace, { recursive: true, force: true });
 }

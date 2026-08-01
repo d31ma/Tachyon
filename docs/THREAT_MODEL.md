@@ -113,15 +113,20 @@ trust boundaries, abuse cases, and validation evidence.
 - stderr is drained concurrently and capped at 64 KiB. Adapter console output,
   exceptions, and syntax/load errors produce bounded public messages without
   tracebacks or environment values.
-- One deadline covers semaphore admission, spawn, execution, response, and
-  exit. Cancellation sends a typed frame before a 100 ms default grace period;
-  timeout and cancellation kill and reap uncooperative children.
+- One deadline covers semaphore admission, spawn, execution, response, pipe
+  settlement, and exit. Each invocation owns a POSIX process group or Windows
+  kill-on-close Job Object. Cancellation sends a typed frame before a 100 ms
+  default grace period; success, timeout, and cancellation terminate and
+  boundedly reap the complete process tree.
 - One process serves one request. Tests prove crash isolation and successful
   recovery through a fresh child, plus forced termination of an infinite loop.
 - Real-process adversarial tests cover trailing-output smuggling, oversized
   output, mismatched request IDs, stderr floods, missing methods and classes,
   syntax errors, exceptions, non-serializable results, concurrency queue
-  expiry, Unicode paths and payloads, and absent runtimes.
+  expiry, Unicode paths and payloads, absent runtimes, and descendants that
+  inherit protocol pipes. HTTP dispatch returns only a request reference for
+  supervisor failures; a secret-canary test proves process diagnostics do not
+  cross the network boundary.
 
 Phase 2 is process supervision, not a security sandbox. Application handlers
 retain the invoking developer account's ambient filesystem and network access,
@@ -188,6 +193,10 @@ controls exist.
 - No generated host exposes a script message handler, a JavaScript interface,
   or any other bridge to web content. Unit tests assert the absence of each
   platform's bridge API by name.
+- Linux local WebSurfaces use a private resource scheme rather than `file://`;
+  decoded paths must resolve as regular, non-symlinked files beneath the
+  initiating surface or generated WebBundle root. Remote surfaces on every
+  platform compare HTTPS scheme, host, and effective port.
 - Capability Manifest v1 is emitted deny-by-default for every target, with
   `remote_content_bridge` false.
 - Every platform toolchain is invoked directly, never through a shell.

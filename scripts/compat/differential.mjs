@@ -213,12 +213,47 @@ async function compareScaffold() {
     }
     const legacyTree = await treeOf(legacyRoot);
     const rustTree = await treeOf(rustRoot);
-    if (JSON.stringify(legacyTree) === JSON.stringify(rustTree)) {
-      return { ok: true, detail: `${Object.keys(legacyTree).length} generated files are byte-identical` };
-    }
+    const intentionallyChanged = new Set([
+      '.env.example',
+      '.env.test',
+      'README.md',
+      'tachyon-env.d.ts',
+    ]);
+    const intentionallyRemoved = new Set([
+      'db/.collections/.gitkeep',
+      'db/README.md',
+      'db/schemas/.gitkeep',
+    ]);
     const names = [...new Set([...Object.keys(legacyTree), ...Object.keys(rustTree)])].sort();
-    const difference = names.find((name) => legacyTree[name] !== rustTree[name]);
-    return { ok: false, detail: `first generated-file difference: ${difference}` };
+    const differences = names.filter((name) => legacyTree[name] !== rustTree[name]);
+    const expected = new Set([...intentionallyChanged, ...intentionallyRemoved]);
+    const unexpected = differences.find((name) => !expected.has(name));
+    const missingDifference = [...expected].find((name) => !differences.includes(name));
+    if (unexpected || missingDifference) {
+      return {
+        ok: false,
+        detail: unexpected
+          ? `unexpected generated-file difference: ${unexpected}`
+          : `expected generated-file migration is absent: ${missingDifference}`,
+      };
+    }
+    const invalidRemoval = [...intentionallyRemoved].find(
+      (name) => legacyTree[name] === undefined || rustTree[name] !== undefined,
+    );
+    if (invalidRemoval) {
+      return { ok: false, detail: `removed scaffold file has the wrong shape: ${invalidRemoval}` };
+    }
+    const invalidChange = [...intentionallyChanged].find(
+      (name) => legacyTree[name] === undefined || rustTree[name] === undefined,
+    );
+    if (invalidChange) {
+      return { ok: false, detail: `changed scaffold file is missing: ${invalidChange}` };
+    }
+    const retained = names.length - intentionallyChanged.size - intentionallyRemoved.size;
+    return {
+      ok: true,
+      detail: `${retained} retained files are byte-identical; 4 FYLO-facing files changed and 3 db files removed`,
+    };
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

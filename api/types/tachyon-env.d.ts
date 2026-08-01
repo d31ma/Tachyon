@@ -9,9 +9,8 @@ declare module '*.css' {
 }
 
 // Material Web Components — loaded at runtime via importmap from esm.sh in
-// the /_fylo and /api-docs admin shells. Tachyon does not bundle the package
-// itself; these ambient declarations satisfy the typechecker for side-effect
-// imports.
+// application-owned admin shells. Tachyon does not bundle the package itself;
+// these ambient declarations satisfy the typechecker for side-effect imports.
 declare module '@material/web/chips/assist-chip.js';
 declare module '@material/web/list/list.js';
 declare module '@material/web/list/list-item.js';
@@ -165,31 +164,6 @@ declare global {
     supports(capability: string): boolean;
     state(capability: string): Promise<'granted' | 'denied' | 'prompt' | 'unsupported'>;
   };
-  /**
-   * FYLO collection query helper — globally available in Tac companion scripts
-   * and on `window` for plain script tags. Bootstrapped by
-   * `src/runtime/fylo-global.js`, which self-creates `window.fylo` from the
-   * shell-injected `<meta name="fylo-browser-path">` tag.
-   *
-   * Usage:
-   *   await fylo.users.find({ $ops: [{ role: { $eq: 'admin' } }] })
-   *   await fylo.users.get('usr_xxx')
-   *   await fylo.users.batchPut([{ name: 'Ada' }, { name: 'Grace' }])
-   *   await fylo.users.patch('usr_xxx', { role: 'admin' })
-   *   await fylo.users.patchMany({ query: { role: 'eq.admin' }, patch: { reviewed: true } })
-   *   await fylo.users.del('usr_xxx')
-   *   await fylo.users.restore('usr_xxx')
-   *   await fylo.sql('SELECT * FROM users LIMIT 10')
-   *   await fylo.createCollection('users')
-   *   await fylo.collections()
-   *   fylo.setCredentials('user', 'pass')
-   *   fylo.clearCredentials()
-   *
-   * Reserved property names (not usable as collection names): enabled, root,
-   * sql, collections, setCredentials, clearCredentials, meta.
-   */
-  const fylo: FyloApi;
-
   interface Window {
     __tc_fetch_cache_db__?: IDBDatabase | null;
     __tc_onMount_flushed__?: boolean;
@@ -224,131 +198,9 @@ declare global {
       register: (path: string, factory: unknown) => unknown;
       load: (path: string) => Promise<unknown>;
     };
-    /**
-     * Global FYLO client. Same as the global `fylo` — populated by
-     * src/runtime/fylo-browser-sync.js (re-exported from fylo-global.js).
-     * Property access returns a per-collection proxy; collections/meta
-     * live as own properties.
-     */
-    fylo?: FyloApi;
   }
 
   var __tcNativeCapabilities__: Record<string, (payload: unknown, request?: unknown) => unknown | Promise<unknown>> | undefined;
-
-  /**
-   * Per-collection proxy returned by `fylo.<collectionName>` property access.
-   * All methods are async and return JSON envelopes from the /_fylo/api/* server.
-   */
-  type FyloCachePolicy = 'cache-first' | 'network-first' | 'reload' | 'no-store';
-  interface FyloQueryOptions {
-    cache?: FyloCachePolicy;
-  }
-
-  interface FyloQueryResult {
-    docs: Array<{ id: string; doc: unknown }>;
-    collection: string;
-    encryptedFields?: string[];
-    local?: boolean;
-    error?: string;
-  }
-  interface FyloDocResponse {
-    doc: unknown | null;
-    docError?: string;
-    error?: string;
-  }
-  interface FyloCollectionsResponse {
-    root: string;
-    collections: Array<string | { name: string; count?: number }>;
-    error?: string;
-  }
-  type FyloSubscribeSource = 'initial' | 'event-stream' | 'poll' | 'local';
-  interface FyloSubscribeMeta {
-    collection: string;
-    events: unknown[];
-    offset: number;
-    source: FyloSubscribeSource;
-  }
-  type FyloSubscribeCallback = (payload: FyloQueryResult, meta: FyloSubscribeMeta) => void | Promise<void>;
-  type FyloSubscribeOptions = FyloQueryOptions & {
-    pollMs?: number;
-    since?: number;
-    onError?: (error: unknown) => void;
-  };
-
-  interface FyloCollectionProxy {
-    /**
-     * Query the collection using PostgREST-style filters.
-     * Values follow `operator.value` syntax: `{ role: 'eq.admin', age: 'gt.18' }`.
-     * Reserved keys: `select` (vertical filter), `order` (sort), `limit`, `offset`.
-     */
-    find(query?: Record<string, unknown>, options?: FyloQueryOptions): Promise<FyloQueryResult>;
-    list(limit?: number, options?: FyloQueryOptions): Promise<{ docs: Array<{ id: string; doc: unknown }>; error?: string; encryptedFields?: string[]; revealed?: boolean }>;
-    get(id: string, options?: FyloQueryOptions): Promise<FyloDocResponse>;
-    events(since?: number): Promise<{ collection: string; events: unknown[]; offset: number; exists: boolean; error?: string }>;
-    subscribe(callback: FyloSubscribeCallback, options?: FyloSubscribeOptions): () => void;
-    subscribe(query: Record<string, unknown>, callback: FyloSubscribeCallback, options?: FyloSubscribeOptions): () => void;
-    create(doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; doc?: unknown; error?: string }>;
-    put(id: string, doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; error?: string }>;
-    patch(id: string, doc: Record<string, unknown>): Promise<{ ok?: boolean; id?: string; error?: string }>;
-    del(id: string): Promise<{ ok?: boolean; error?: string }>;
-    delete(id: string): Promise<{ ok?: boolean; error?: string }>;
-    createCollection(): Promise<{ ok?: boolean; error?: string }>;
-    dropCollection(): Promise<{ ok?: boolean; error?: string }>;
-    inspect(): Promise<unknown>;
-    rebuild(): Promise<{ ok?: boolean; result?: unknown; error?: string }>;
-    batchPut(docs: Array<Record<string, unknown>>): Promise<{ ok?: boolean; ids?: unknown[]; error?: string }>;
-    patchMany(update: Record<string, unknown>): Promise<{ ok?: boolean; result?: unknown; error?: string }>;
-    deleteMany(query: Record<string, unknown>): Promise<{ ok?: boolean; result?: unknown; error?: string }>;
-    restore(id: string): Promise<{ ok?: boolean; id?: string; error?: string }>;
-    latest(id: string): Promise<{ doc: unknown | null }>;
-  }
-
-  /**
-   * Reserved (non-collection) properties on the FYLO global. Backed by a Proxy
-   * — any other string property access returns a `FyloCollectionProxy`.
-   */
-  interface FyloApiCommands {
-    enabled: boolean;
-    root?: string;
-    setCredentials(user: string, pass: string): void;
-    clearCredentials(): void;
-    collections(): Promise<FyloCollectionsResponse>;
-    meta(): Promise<{ root: string; readOnly: boolean; revealed: boolean; path: string } | null>;
-    sql(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown>;
-    collection(collection: string): FyloCollectionProxy;
-    request(apiPath: string, init?: RequestInit & { cache?: FyloCachePolicy }): Promise<Response>;
-    createCollection(collection: string): Promise<{ ok?: boolean; error?: string }>;
-    dropCollection(collection: string): Promise<{ ok?: boolean; error?: string }>;
-    inspectCollection(collection: string): Promise<unknown>;
-    rebuildCollection(collection: string): Promise<unknown>;
-  }
-
-  /**
-   * Property-access global. `fylo.users` returns a per-collection proxy;
-   * reserved keys (`collections`, `enabled`, `root`) keep their
-   * specific types.
-   */
-  type FyloApi = FyloApiCommands & { readonly [collection: string]: FyloCollectionProxy };
 }
-/**
- * @typedef {Object} FyloQueryResult
- * @property {string} [error]
- * @property {Array<{ id: string, doc: unknown }>} [docs]
- * @property {string} [collection]
- * @property {string[]} [encryptedFields]
- * @property {boolean} [revealed]
- */
-/**
- * @typedef {Object} FyloCollectionsResponse
- * @property {string} root
- * @property {Array<{ name: string, exists: boolean, docsStored?: number, indexedDocs?: number, worm?: boolean, error?: string }>} collections
- */
-/**
- * @typedef {Object} FyloDocResponse
- * @property {Record<string, unknown>} [doc]
- * @property {string} [docError]
- * @property {string[]} [encryptedFields]
- * @property {boolean} [revealed]
- */
 
 export {};

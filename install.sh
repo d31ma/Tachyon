@@ -2,13 +2,12 @@
 # Tachyon installer for macOS and Linux.
 #   curl -fsSL https://tachyon.del.ma/install.sh | sh
 # Downloads the right `ty` binary from the latest GitHub release, verifies its
-# checksum, installs it to a directory on your PATH, then installs the `chex`
-# and `ttid` binaries Tachyon drives at runtime.
+# checksum, then installs it to a directory on your PATH.
 set -eu
 
 REPO="d31ma/Tachyon"
 BASE="${TACHYON_BASE_URL:-https://github.com/${REPO}/releases/latest/download}"
-TACHYON_STEPS=7
+TACHYON_STEPS=5
 tachyon_step=0
 
 repeat_char() {
@@ -67,11 +66,12 @@ else
 fi
 tachyon_progress "Selected install directory: ${dest}"
 
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+tmp=$(mktemp "${dest}/.ty.download.XXXXXX")
+checksums=$(mktemp)
+trap 'rm -f "$tmp" "$checksums"' EXIT
 
 tachyon_progress "Downloading ${asset}"
-curl -fsSL "$url" -o "$tmp/ty"
+curl -fsSL "$url" -o "$tmp"
 
 # Verification is fail-closed: an unavailable checksum, a missing asset entry,
 # or a digest mismatch aborts the install.
@@ -79,27 +79,16 @@ tachyon_progress "Verifying release checksum"
 if command -v sha256sum >/dev/null 2>&1; then hash_cmd="sha256sum"; \
     elif command -v shasum >/dev/null 2>&1; then hash_cmd="shasum -a 256"; \
     else echo "No SHA-256 utility found. Aborting." >&2; exit 1; fi
-curl -fsSL "${BASE}/SHA256SUMS" -o "$tmp/SHA256SUMS"
-expected=$(awk -v asset="$asset" '$2 == asset { print $1; exit }' "$tmp/SHA256SUMS")
+curl -fsSL "${BASE}/SHA256SUMS" -o "$checksums"
+expected=$(awk -v asset="$asset" '$2 == asset { print $1; exit }' "$checksums")
 [ -n "$expected" ] || { echo "No checksum published for ${asset}. Aborting." >&2; exit 1; }
-actual=$($hash_cmd "$tmp/ty" | awk '{print $1}')
+actual=$($hash_cmd "$tmp" | awk '{print $1}')
 [ "$expected" = "$actual" ] || { echo "Checksum mismatch for ${asset}. Aborting." >&2; exit 1; }
 
 tachyon_progress "Installing ty"
-chmod +x "$tmp/ty"
-mv "$tmp/ty" "$dest/ty"
+chmod 0755 "$tmp"
+mv "$tmp" "$dest/ty"
 echo "Installed ty to ${dest}/ty"
-
-# Release CI skips optional tools so it can test this installer hermetically.
-if [ "${TACHYON_SKIP_OPTIONAL_TOOLS:-0}" = "1" ]; then
-    tachyon_progress "Skipping optional CHEX validator"
-    tachyon_progress "Skipping optional TTID generator"
-else
-    tachyon_progress "Installing CHEX validator"
-    curl -fsSL https://github.com/d31ma/Chex/releases/latest/download/install.sh | sh
-    tachyon_progress "Installing TTID generator"
-    curl -fsSL https://github.com/d31ma/TTID/releases/latest/download/install.sh | sh
-fi
 
 case ":$PATH:" in
     *":$dest:"*) : ;;

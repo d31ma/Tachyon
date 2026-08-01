@@ -334,7 +334,31 @@ jobs:
           done
           TACHYON_BASE_URL=http://127.0.0.1:38191 \
           TACHYON_INSTALL_DIR="${RUNNER_TEMP}/tachyon-bin" \
-          TACHYON_SKIP_OPTIONAL_TOOLS=1 \
+            sh release/install.sh
+          installed="${RUNNER_TEMP}/tachyon-bin/ty"
+          installed_mode=$(stat -c '%a' "${installed}" 2>/dev/null || stat -f '%Lp' "${installed}")
+          test "${installed_mode}" = "755" || {
+            echo "installer produced mode ${installed_mode}; expected 755" >&2
+            exit 1
+          }
+          printf 'known-good' >"${installed}"
+          known_good=$(sha256sum "${installed}" | awk '{print $1}')
+          cp release/SHA256SUMS release/SHA256SUMS.valid
+          awk -v asset="${ASSET}" '$2 == asset {$1="0000000000000000000000000000000000000000000000000000000000000000"} {print}' \
+            release/SHA256SUMS.valid >release/SHA256SUMS
+          if TACHYON_BASE_URL=http://127.0.0.1:38191 \
+             TACHYON_INSTALL_DIR="${RUNNER_TEMP}/tachyon-bin" \
+             sh release/install.sh; then
+            echo "installer accepted a mismatched checksum" >&2
+            exit 1
+          fi
+          test "$(sha256sum "${installed}" | awk '{print $1}')" = "${known_good}" || {
+            echo "failed upgrade replaced the installed executable" >&2
+            exit 1
+          }
+          mv release/SHA256SUMS.valid release/SHA256SUMS
+          TACHYON_BASE_URL=http://127.0.0.1:38191 \
+          TACHYON_INSTALL_DIR="${RUNNER_TEMP}/tachyon-bin" \
             sh release/install.sh
           test "$("${RUNNER_TEMP}/tachyon-bin/ty" --version)" = "${VERSION}"
 
@@ -359,7 +383,22 @@ jobs:
             }
             $env:TACHYON_BASE_URL = 'http://127.0.0.1:38191'
             $env:TACHYON_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'tachyon-bin'
-            $env:TACHYON_SKIP_OPTIONAL_TOOLS = '1'
+            New-Item -ItemType Directory -Force -Path $env:TACHYON_INSTALL_DIR | Out-Null
+            $installed = Join-Path $env:TACHYON_INSTALL_DIR 'ty.exe'
+            [IO.File]::WriteAllText($installed, 'known-good')
+            $knownGood = (Get-FileHash -Algorithm SHA256 $installed).Hash
+            $publishedSums = Get-Content 'release/SHA256SUMS' -Raw
+            try {
+              $badSums = $publishedSums -replace "(?m)^[0-9a-fA-F]{64}(\s+$([regex]::Escape($env:ASSET)))$", (('0' * 64) + '$1')
+              Set-Content -Path 'release/SHA256SUMS' -Value $badSums -NoNewline
+              & ./release/install.ps1
+              throw 'installer accepted a mismatched checksum'
+            } catch {
+              if ($_.Exception.Message -eq 'installer accepted a mismatched checksum') { throw }
+            } finally {
+              Set-Content -Path 'release/SHA256SUMS' -Value $publishedSums -NoNewline
+            }
+            if ((Get-FileHash -Algorithm SHA256 $installed).Hash -ne $knownGood) { throw 'failed upgrade replaced the installed executable' }
             & ./release/install.ps1
             if ((& "$env:TACHYON_INSTALL_DIR/ty.exe" --version) -ne $env:VERSION) { throw 'installed executable version mismatch' }
           } finally {

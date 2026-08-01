@@ -774,7 +774,9 @@ public final class MainActivity extends Activity {
             boolean allowed =
                 "https".equals(target.getScheme())
                     && declared.getHost() != null
-                    && declared.getHost().equals(target.getHost());
+                    && declared.getHost().equals(target.getHost())
+                    && (declared.getPort() == -1 ? 443 : declared.getPort())
+                        == (target.getPort() == -1 ? 443 : target.getPort());
             return !allowed;
           }
 
@@ -968,6 +970,8 @@ mod tests {
         assert!(source.contains("SYSTEM_UI_FLAG_LIGHT_STATUS_BAR"));
         assert!(source.contains("openRoute(path)"));
         assert!(source.contains("settings.setAllowFileAccess(false)"));
+        assert!(source.contains("declared.getPort() == -1 ? 443 : declared.getPort()"));
+        assert!(source.contains("target.getPort() == -1 ? 443 : target.getPort()"));
         assert!(source.contains("setContentDescription"));
         assert!(source.contains(r#""android".equals(view.optString("target"))"#));
         assert!(!source.contains("addJavascriptInterface"));

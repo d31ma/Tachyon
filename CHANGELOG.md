@@ -8,24 +8,6 @@ independent major versions.
 
 ## [Unreleased]
 
-### Changed
-
-- Cut repository entry points and CI over to the Rust rewrite. Root package
-  commands now invoke the compiled `ty` CLI, and a dedicated CI policy job
-  rejects reintroduction of the removed JavaScript runtime or test entry
-  points.
-- The compatibility differential now fetches the immutable v26.30.04 release
-  executable, verifies its pinned SHA-256 digest, and exposes it as
-  `RELEASED_TY_BIN`.
-
-### Removed
-
-- Removed the in-tree JavaScript compiler, server, browser runtime, native
-  generators, vendored shims, implementation-coupled tests, benchmarks, and
-  obsolete JavaScript TypeScript configurations. The application ambient type
-  contract now lives under `api/types/`, and the retained full-stack migration
-  input is isolated as non-executable Rust test data.
-
 ## [26.31.06] - 2026-08-01
 
 ### Removed
@@ -34,16 +16,24 @@ independent major versions.
   every integration point are gone: the compiler-injected browser client, the
   `fylo` facade in the polyglot companion preludes and template capabilities,
   the `/_fylo` browser routes, the `db/` scaffold, and the installer step that
-  fetched it. CHEX and TTID are unaffected and still installed, so
-  `OPTIONS.schema.json` validation and status selection work as before.
+  fetched it. The installer now installs only the standalone `ty` binary;
+  request identifiers are generated natively. Legacy `OPTIONS.schema.json`
+  request/response validation is not implemented and is reported by
+  `ty migrate check` with an explicit migration action.
   Consequences a project should plan for:
-  - OpenTelemetry spans are appended to `otel-spans.ndjson` under the
-    telemetry root instead of being written to a FYLO collection.
+  - Built-in OpenTelemetry is not part of the Rust implementation; projects
+    that need emitted spans must instrument outside Tachyon or remain on the
+    archived release.
   - Yon realtime keeps its append-only topic logs and integer-position SSE
     cursor; it no longer registers clients into a collection, which nothing
     read back. Its default root is `.yon-realtime` rather than `.fylo-data`.
   - Companion scripts referencing a bare `fylo` no longer get an injected
     import, and `ty migrate check` no longer reports FYLO constructs.
+- Removed the in-tree JavaScript compiler, server, browser runtime, native
+  generators, vendored shims, implementation-coupled tests, benchmarks, and
+  obsolete JavaScript TypeScript configurations. The application ambient type
+  contract now lives under `api/types/`, and the retained full-stack migration
+  input is isolated as non-executable Rust test data.
 
 ### Added
 
@@ -101,6 +91,31 @@ independent major versions.
 
 ### Fixed
 
+- Made release archives deterministic under both GNU tar and BSD tar by
+  normalizing staged file timestamps before archiving.
+- Made Windows upgrades download and verify into a same-directory temporary
+  file before replacing `ty.exe`, so a network or checksum failure preserves
+  the installed binary.
+- Made Unix upgrades stage verified bytes beside the installed binary before
+  atomic replacement, with failed-upgrade preservation exercised in release
+  CI on Unix and Windows.
+- Made the handler supervisor own a POSIX process group or Windows Job Object
+  per invocation, terminate descendants after every outcome, bound pipe
+  settlement by the request deadline, and prove descendant PID absence after
+  success, timeout, and cancellation.
+- Replaced Linux native `file://` WebSurfaces with a private, per-view resource
+  scheme that percent-decodes, canonicalizes, rejects symlinks, and confines
+  navigation and loads to the generated surface and WebBundle roots. Remote
+  WebSurfaces now enforce the declared effective port on every platform.
+- Stopped handler and middleware process diagnostics from crossing the HTTP
+  boundary; public failures carry only a request reference.
+- Removed mutable, unverified transitive CHEX and TTID installer execution;
+  neither external binary is used by the Rust runtime.
+- Removed the last FYLO environment keys, ambient APIs, generated README text,
+  and `db/` files from `ty init`.
+- Added the migrated website acceptance suite to required CI and removed its
+  stale source-build Amplify recipe; deployment consumes a qualified prebuilt
+  `dist/web` archive because the showcase uses five language toolchains.
 - Made the enterprise qualification matrix portable across hosted runners:
   restored the four-target `cargo-fuzz` package with reviewed seed inputs,
   normalized extended Windows paths before invoking MinGW, compared macOS and
@@ -173,6 +188,13 @@ independent major versions.
 
 ### Changed
 
+- Cut repository entry points and CI over to the Rust rewrite. Root package
+  commands now invoke the compiled `ty` CLI, and a dedicated CI policy job
+  rejects reintroduction of the removed JavaScript runtime or test entry
+  points.
+- The compatibility differential now fetches the immutable v26.30.04 release
+  executable, verifies its pinned SHA-256 digest, and exposes it as
+  `RELEASED_TY_BIN`.
 - `NativeBuildOptions` now carries a `NativeTarget`, and native artifacts
   publish under a per-target directory.
 
@@ -216,7 +238,7 @@ independent major versions.
   development server.
 - Added real-binary acceptance tests for initialization, repeatable builds,
   failure recovery, HTTP behavior, security headers, and cross-platform
-  execution, plus a uniform 90% Rust coverage ratchet.
+  execution, plus a uniform 80% whole-workspace Rust coverage ratchet.
 - Established the greenfield Rust rewrite foundation with an exact toolchain,
   workspace-wide safety and lint policies, and executable schema contracts.
 - Added product context, six accepted architecture decisions, an initial

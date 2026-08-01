@@ -546,7 +546,8 @@ private final class WebSurfaceCoordinator: NSObject, WKNavigationDelegate {
         if node.source == "remote_url",
            let declared = URL(string: node.location ?? ""),
            url.scheme == "https",
-           url.host == declared.host {
+           url.host == declared.host,
+           (url.port ?? 443) == (declared.port ?? 443) {
             decisionHandler(.allow)
             return
         }
@@ -826,6 +827,7 @@ mod tests {
         assert!(source.contains("websiteDataStore = tachyonWebDataStore"));
         assert!(source.contains("TachyonAssetSchemeHandler"));
         assert!(source.contains("tachyon-app://bundle/"));
+        assert!(source.contains("(url.port ?? 443) == (declared.port ?? 443)"));
         assert!(source.contains("accessibilityIdentifier"));
         assert!(!source.contains("WKScriptMessageHandler"));
         assert!(source.contains("case \"control.button\""));

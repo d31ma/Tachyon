@@ -162,7 +162,7 @@ jobs:
   macos-native:
     name: Phase 4 macOS native and mobile-web parity
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
 
     steps:
       - name: Check out source
@@ -176,11 +176,71 @@ jobs:
         with:
           bun-version: 1.3.6
 
+      - name: Install exact Dart toolchain
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: 3.6.0
+
+      - name: Install exact .NET toolchain
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 9.0.316
+
+      - name: Install the .NET WebAssembly workload
+        run: dotnet workload install wasm-tools --skip-manifest-update
+
+      - name: Install exact Kotlin WebAssembly toolchain
+        run: |
+          set -euo pipefail
+          compiler="${RUNNER_TEMP}/kotlin-compiler.zip"
+          curl --fail --location --silent --show-error \
+            --output "${compiler}" \
+            https://github.com/JetBrains/kotlin/releases/download/v2.1.10/kotlin-compiler-2.1.10.zip
+          printf '%s  %s\n' \
+            c6e9e2636889828e19c8811d5ab890862538c89dc2a3101956dfee3c2a8ba6b1 \
+            "${compiler}" | shasum -a 256 --check
+          unzip -q "${compiler}" -d "${RUNNER_TEMP}/kotlin"
+          echo "${RUNNER_TEMP}/kotlin/kotlinc/bin" >> "${GITHUB_PATH}"
+          stdlib="${RUNNER_TEMP}/kotlin-stdlib-wasm-js-2.1.10.klib"
+          curl --fail --location --silent --show-error \
+            --output "${stdlib}" \
+            https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-wasm-js/2.1.10/kotlin-stdlib-wasm-js-2.1.10.klib
+          printf '%s  %s\n' \
+            db9ab6772a2d3af9121d570a058cc64cf36893e1c089726b799b4d1252184ca2 \
+            "${stdlib}" | shasum -a 256 --check
+          echo "KOTLIN_WASM_STDLIB=${stdlib}" >> "${GITHUB_ENV}"
+
+      - name: Install exact Swift WebAssembly toolchain
+        run: |
+          set -euo pipefail
+          swift_pkg="${RUNNER_TEMP}/swift-6.3.3-RELEASE-osx.pkg"
+          curl --fail --location --silent --show-error \
+            --output "${swift_pkg}" \
+            https://download.swift.org/swift-6.3.3-release/xcode/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE-osx.pkg
+          pkgutil --check-signature "${swift_pkg}" \
+            | grep -F 'Developer ID Installer: Swift Open Source (V9AUD2URP3)'
+          installer -pkg "${swift_pkg}" -target CurrentUserHomeDirectory
+          xcrun --toolchain swift swiftc --version | grep -F 'Swift version 6.3.3'
+          xcrun --toolchain swift swift sdk install \
+            https://download.swift.org/swift-6.3.3-release/wasm-sdk/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE_wasm.artifactbundle.tar.gz \
+            --checksum cabfa08b73bb8ac783927ecd15fa386e99d0c139c5f232445067bcf58379cae7
+
       - name: Install locked browser dependencies
-        run: bun install --frozen-lockfile && bunx playwright install chromium
+        run: |
+          bun install --frozen-lockfile
+          bun --cwd website install --frozen-lockfile
+          bunx playwright install chromium
 
       - name: Build the Phase 4 CLI
-        run: cargo build --locked --bin ty
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --locked --bin ty
+
+      - name: Verify every website compiler is ready
+        run: ./target/debug/ty doctor website
+
+      - name: Run the migrated website acceptance suite
+        run: bun run test:website
 
       - name: Run native launch, accessibility, lifecycle, and visual parity gate
         run: bun run test:rust-macos

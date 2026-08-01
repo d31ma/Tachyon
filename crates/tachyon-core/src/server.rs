@@ -583,8 +583,15 @@ async fn serve(state: &Dispatch, request: Request<Body>) -> Response<Body> {
     {
         Ok(response) => handler_response(response),
         // A handler failure is an application fault, never a crash of the
-        // server. The diagnostic is returned, not swallowed.
-        Err(failure) => text_response(StatusCode::INTERNAL_SERVER_ERROR, &failure.to_string()),
+        // server. Internal process diagnostics may contain authored stdout or
+        // stderr, so only a correlation identifier crosses the HTTP boundary.
+        Err(failure) => {
+            eprintln!(
+                "{}",
+                invocation_failure_event("handler", &protocol_request.request_id, &failure)
+            );
+            invocation_failure_response("Handler execution", &protocol_request.request_id)
+        }
     }
 }
 
@@ -696,10 +703,16 @@ async fn run_middleware(
                 )
             }))
         }
-        Err(failure) => MiddlewareOutcome::Respond(text_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            &failure.to_string(),
-        )),
+        Err(failure) => {
+            eprintln!(
+                "{}",
+                invocation_failure_event("middleware", &protocol_request.request_id, &failure)
+            );
+            MiddlewareOutcome::Respond(invocation_failure_response(
+                "Middleware execution",
+                &protocol_request.request_id,
+            ))
+        }
     }
 }
 
@@ -1102,6 +1115,34 @@ fn text_response(status: StatusCode, message: &str) -> Response<Body> {
         .unwrap_or_else(|_| Response::new(Body::empty()))
 }
 
+fn invocation_failure_response(kind: &str, request_id: &str) -> Response<Body> {
+    let mut response = text_response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        &format!("{kind} failed. Reference: {request_id}."),
+    );
+    if let Ok(value) = HeaderValue::from_str(request_id) {
+        response
+            .headers_mut()
+            .insert(HeaderName::from_static("x-tachyon-request-id"), value);
+    }
+    response
+}
+
+fn invocation_failure_event(operation: &str, request_id: &str, failure: &Failure) -> String {
+    let diagnostic_codes = failure
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| diagnostic.code.to_string())
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "event": "handler.invocation_failed",
+        "operation": operation,
+        "request_id": request_id,
+        "diagnostic_codes": diagnostic_codes,
+    })
+    .to_string()
+}
+
 fn defensive_headers(application: Router) -> Router {
     application
         .layer(SetResponseHeaderLayer::if_not_present(
@@ -1140,9 +1181,32 @@ fn application(dispatch_state: Dispatch) -> Router {
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{DevServer, DevServerOptions, PreviewServer, PreviewServerOptions};
+    use super::{
+        DevServer, DevServerOptions, PreviewServer, PreviewServerOptions, invocation_failure_event,
+    };
+    use crate::Failure;
+    use crate::failure::diagnostic;
     use std::fs;
     use std::net::{IpAddr, Ipv4Addr, TcpListener as StandardTcpListener};
+
+    #[test]
+    fn invocation_failure_events_are_correlatable_and_redacted() {
+        let event = invocation_failure_event(
+            "handler",
+            "0ABC123DEFG",
+            &Failure::one(diagnostic(
+                2101,
+                "secret-canary from process stderr",
+                Some(String::from("secret-canary recovery detail")),
+                None,
+            )),
+        );
+        assert!(event.contains(r#""event":"handler.invocation_failed""#));
+        assert!(event.contains(r#""operation":"handler""#));
+        assert!(event.contains(r#""request_id":"0ABC123DEFG""#));
+        assert!(event.contains(r#""diagnostic_codes":["TY2101"]"#));
+        assert!(!event.contains("secret-canary"));
+    }
 
     #[tokio::test]
     async fn ephemeral_loopback_binding_reports_the_real_address() {

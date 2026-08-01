@@ -115,8 +115,10 @@ No target may be promoted to `supported` while that gap is open.
 - [x] Every performance budget is met and published.
 - [x] Supply-chain policy, SBOM, and auditable-build jobs exist in CI.
 - [ ] An independent security review is complete. **Open.**
-- [ ] Install, upgrade, rollback, and uninstall exercises are recorded on each
-      supported target. **Open.**
+- [x] Install, upgrade, rollback, and uninstall exercises are recorded for the
+      standalone `ty` artifact. Native-target promotion retains its separate
+      evidence requirements.
 
-The last two are the remaining blockers to `supported`, and to the cutover
-gate in `PROJECT_PLAN.md`.
+The independent review remains a blocker to the cutover gate and to any
+`supported` claim. Native-target lifecycle evidence remains a promotion
+requirement rather than a blocker to publishing the standalone CLI.

@@ -97,36 +97,41 @@ patch.
 ### What is open
 
 `docs/CUTOVER.md` is the authority. Four of six gate conditions are met and two
-are open. The independent security review was explicitly skipped for this
-engineering pass and must remain visible rather than being counted as a pass:
+are open:
 
-1. **Release provenance (condition 4).** The workflow and local reproducible
+1. **Independent security review (condition 5).** A named independent reviewer
+   must complete the review package before the stable tag is created; every
+   critical finding needs an owner and disposition.
+2. **Release provenance (condition 4).** The workflow and local reproducible
    release drill pass, but one real tag-driven workflow must publish an archive
-   and attestation before external verification can be recorded.
-2. **macOS native evidence** is blocked on one thing: macOS Accessibility
-   permission for the process that runs `node scripts/phase4-macos-test.mjs`.
-   Grant it in System Settings and re-run. It is not a code problem.
-3. **Windows accessibility promotion** remains open. Native execution now
-   passes in CI, but the hosted managed UIA client flattens standard child
-   controls to `ControlType.Pane`; semantic roles and `InvokePattern` still
-   need evidence before `native-tested` promotion.
-4. **Build provenance** is wired into both qualification and the stable release
-   workflow but needs one real workflow run to exist.
+   and attestation before external verification can be recorded. The workflow
+   stages and verifies the release privately before public promotion.
+
+Separate target-promotion gaps remain:
+
+- **macOS native evidence** is blocked on macOS Accessibility permission for
+  the process that runs `node scripts/phase4-macos-test.mjs`. Grant it in
+  System Settings and re-run. It is not a code problem.
+- **Windows accessibility promotion** also remains open. Native execution now
+  passes in CI, but the hosted managed UIA client flattens standard child
+  controls to `ControlType.Pane`; semantic roles and `InvokePattern` still
+  need evidence before `native-tested` promotion.
 
 The stable workflow is tag-only and cannot create its own tag. It builds five
 native CLI assets with auditable dependency metadata, publishes a CycloneDX
 SBOM, attests and keyless-signs every distributed input, stages a private
 draft, verifies the assets and installers on their native runners, and only
 then makes the release public. `install.sh` and `install.ps1` now fail closed
-on missing or mismatched checksums and no longer install removed FYLO tooling.
+on missing or mismatched checksums and install only the standalone `ty` binary.
 
 ## Website migration — completed 2026-08-01
 
 `website/` now builds and tests through the Rust implementation. It emits 11
 routes and compiles the five real-language browser companions with their own
-toolchains. The migration check reports **120 supported, 6 changed, 1
-unsupported**. The six changed findings are the five intentional ADR 0011
-polyglot source migrations plus cross-document navigation. The remaining
+toolchains. The migration check reports **128 supported, 1 changed, 1
+unsupported**. The five ADR 0011 companion migrations are supported because
+each legacy companion is paired with a real-compiler sidecar; cross-document
+navigation is the single changed finding. The remaining
 unsupported finding is telemetry, an explicit product boundary in the parity
 ledger.
 
@@ -141,8 +146,9 @@ The migration establishes these authoring rules:
 - The Rust compiler does not implicitly compose ancestor page layouts, so the
   website uses explicit `<atlas-layout>` and `<docs-layout>` components.
 - The five polyglot examples are ordinary Rust, Dart, Kotlin, Swift, and C# in
-  the ADR 0011 ABI shape. They are deliberately migration findings because the
-  legacy subset transpiler cannot consume the same sources.
+  the ADR 0011 ABI shape. Each real-compiler sidecar remains paired with its
+  legacy companion, so all five migrations classify as supported even though
+  neither implementation consumes the other's source shape.
 - Reused incremental routes retain their event descriptors, so a second build
   cannot delete `.tachyon/events.js`.
 
@@ -152,7 +158,7 @@ Evidence run on 2026-08-01:
 ty build website
   Built 11 routes ... compiled=0 reused=10
 bun run test
-  23 pass, 0 fail, 154 expectations
+  24 pass, 0 fail, 160 expectations
 node scripts/wasm/companion-browser-test.mjs
   wasm companion gate passed for rs, dart, kt, swift, cs
 
@@ -186,7 +192,7 @@ TY_BIN=target/debug/ty node scripts/compat/standalone-rust.mjs
 
 RELEASED_TY_BIN=/tmp/.../26.30.04/ty TY_BIN=target/debug/ty \
   node scripts/compat/differential.mjs
-  scaffold: 22 generated files byte-identical
+  scaffold: 15 retained files byte-identical; 4 FYLO-facing files changed and 3 db files removed
   3/3 corpus projects match across implementations
 ```
 
@@ -199,8 +205,9 @@ publishes exactly one level at `dist/web`, `dist/macos`, `dist/ios`, and
 `dist/android`; before that test existed, native targets were accidentally
 published as `dist/macos/macos`.
 
-The released 22-file scaffold is byte-identical, including its root Yon
-handler and public ambient type file. The released bounded page-class workflow
+The scaffold migration is explicit: 15 retained files remain byte-identical,
+four FYLO-facing files change, and three legacy `db/` files are removed. The
+released bounded page-class workflow
 is also preserved: literal page state, class fields, `@onMount`, assignment
 events, and native controller capabilities. Inline state is deliberately
 literal-only; executable initializers fail with `TY1306` and are never emitted
@@ -213,7 +220,7 @@ The migrated website was then rebuilt through the same public commands:
 
 ```text
 bun run bundle                         # Rust ty: 11 routes
-bun run test                           # 23 pass, 154 expectations
+bun run test                           # 24 pass, 160 expectations
 YON_DIST_PATH=<temp> /path/to/26.30.04/ty bundle
                                        # 11 authored route documents
 ty bundle --target macos,ios,android
@@ -280,7 +287,9 @@ differential, and migrated website are the immutable public-behavior oracles.
 ## Suggested next moves
 
 1. Complete the pull-request matrix and obtain review for the cutover commit.
-2. Create the annotated `v26.31.06` tag only after the reviewed commit is on
+2. Complete the independent security review against
+   `docs/SECURITY_REVIEW_PACKAGE.md`; a stable tag is blocked until its signed
+   findings are recorded and no unowned critical finding remains.
+3. Create the annotated `v26.31.06` tag only after the reviewed commit is on
    `main`; the tag workflow will stage, verify, and publish it.
-3. Grant macOS Accessibility permission and rerun the macOS evidence script.
-4. Schedule the independent security review when the deferred work resumes.
+4. Grant macOS Accessibility permission and rerun the macOS evidence script.

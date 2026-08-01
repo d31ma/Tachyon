@@ -3,6 +3,9 @@
 #![allow(clippy::expect_used)]
 
 use std::fs;
+use std::process::Command as StdCommand;
+#[cfg(unix)]
+use std::process::Stdio;
 use std::time::Duration;
 use tachyon_contracts::{
     HandlerBody, HandlerBodyEncoding, HandlerRequest, HandlerResponse, HttpMethod,
@@ -40,6 +43,51 @@ fn body_json(response: &HandlerResponse) -> serde_json::Value {
 
 fn supervisor(options: HandlerSupervisorOptions) -> HandlerSupervisor {
     HandlerSupervisor::new(options).expect("valid supervisor")
+}
+
+#[cfg(unix)]
+fn process_exists(pid: u32) -> bool {
+    StdCommand::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[cfg(windows)]
+fn process_exists(pid: u32) -> bool {
+    StdCommand::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .output()
+        .is_ok_and(|output| String::from_utf8_lossy(&output.stdout).contains(&format!("\"{pid}\"")))
+}
+
+async fn assert_process_gone(pid: u32) {
+    for _attempt in 0..100 {
+        if !process_exists(pid) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("handler descendant {pid} survived process-group cleanup");
+}
+
+fn descendant_request(id: &str, mode: &str, pid_file: &std::path::Path) -> HandlerRequest {
+    let mut request = request(id, HttpMethod::Get, Some(mode));
+    request.headers.insert(
+        String::from("x-pid-file"),
+        vec![pid_file.to_string_lossy().into_owned()],
+    );
+    request
+}
+
+fn descendant_pid(pid_file: &std::path::Path) -> u32 {
+    fs::read_to_string(pid_file)
+        .expect("descendant pid file")
+        .trim()
+        .parse()
+        .expect("descendant pid")
 }
 
 #[tokio::test]
@@ -329,6 +377,110 @@ export class Handler {
         .await
         .expect("fresh process after crash");
     assert_eq!(body_json(&recovered)["mode"], "ok");
+}
+
+#[tokio::test]
+async fn inheriting_descendants_are_bounded_and_reaped_for_every_outcome() {
+    let root = tempfile::tempdir().expect("project");
+    let source = source(
+        &root,
+        "js",
+        r"
+import { spawn } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
+
+export class Handler {
+  static async GET(request) {
+    const descendant = spawn(
+      process.execPath,
+      ['-e', 'setInterval(() => {}, 1000)'],
+      { stdio: 'inherit' },
+    )
+    writeFileSync(request.headers['x-pid-file'][0], String(descendant.pid))
+    if (request.body.data !== 'success') await new Promise(() => {})
+    return { descendant: descendant.pid }
+  }
+}
+",
+    );
+
+    let success_pid_file = root.path().join("success.pid");
+    let success_supervisor = supervisor(HandlerSupervisorOptions {
+        default_timeout: Duration::from_millis(750),
+        cancellation_grace: Duration::from_millis(25),
+        ..HandlerSupervisorOptions::default()
+    });
+    let started = tokio::time::Instant::now();
+    let success = tokio::time::timeout(
+        Duration::from_secs(2),
+        success_supervisor.invoke(
+            &source,
+            &descendant_request("descendant_success", "success", &success_pid_file),
+            &HandlerCancellation::default(),
+        ),
+    )
+    .await
+    .expect("successful invocation stayed bounded")
+    .expect("successful handler response");
+    assert!(started.elapsed() < Duration::from_millis(750));
+    let success_pid = descendant_pid(&success_pid_file);
+    assert_eq!(body_json(&success)["descendant"], success_pid);
+    assert_process_gone(success_pid).await;
+
+    let timeout_pid_file = root.path().join("timeout.pid");
+    let timeout_supervisor = supervisor(HandlerSupervisorOptions {
+        default_timeout: Duration::from_millis(250),
+        cancellation_grace: Duration::from_millis(25),
+        ..HandlerSupervisorOptions::default()
+    });
+    let timed_out = tokio::time::timeout(
+        Duration::from_secs(2),
+        timeout_supervisor.invoke(
+            &source,
+            &descendant_request("descendant_timeout", "hang", &timeout_pid_file),
+            &HandlerCancellation::default(),
+        ),
+    )
+    .await
+    .expect("timed-out invocation stayed bounded")
+    .expect_err("handler deadline");
+    assert!(timed_out.to_string().contains("TY2110"));
+    let timeout_pid = descendant_pid(&timeout_pid_file);
+    assert_process_gone(timeout_pid).await;
+
+    let cancellation_pid_file = root.path().join("cancel.pid");
+    let cancellation = HandlerCancellation::default();
+    let trigger = cancellation.clone();
+    let trigger_pid_file = cancellation_pid_file.clone();
+    tokio::spawn(async move {
+        for _attempt in 0..100 {
+            if trigger_pid_file.is_file() {
+                trigger.cancel();
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        trigger.cancel();
+    });
+    let cancelled = tokio::time::timeout(
+        Duration::from_secs(2),
+        supervisor(HandlerSupervisorOptions {
+            default_timeout: Duration::from_secs(1),
+            cancellation_grace: Duration::from_millis(25),
+            ..HandlerSupervisorOptions::default()
+        })
+        .invoke(
+            &source,
+            &descendant_request("descendant_cancel", "hang", &cancellation_pid_file),
+            &cancellation,
+        ),
+    )
+    .await
+    .expect("cancelled invocation stayed bounded")
+    .expect_err("handler cancellation");
+    assert!(cancelled.to_string().contains("TY2111"));
+    let cancellation_pid = descendant_pid(&cancellation_pid_file);
+    assert_process_gone(cancellation_pid).await;
 }
 
 #[tokio::test]

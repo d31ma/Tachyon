@@ -23,8 +23,9 @@ TY_BIN=target/debug/ty \
 node scripts/compat/differential.mjs
 ```
 
-Result: `3/3 corpus projects match across implementations`; the 22 files
-created by `ty init` are also byte-identical.
+Result: `3/3 corpus projects match across implementations`. For `ty init`, 15
+retained files are byte-identical; four FYLO-facing files intentionally change
+and the three legacy `db/` files are intentionally removed.
 
 | Project | Routes | Result |
 | --- | --- | --- |
@@ -69,13 +70,13 @@ ty migrate check crates/tachyon-cli/tests/fixtures/migration-fullstack
 full-stack project shape: polyglot handlers, services, and workers. It is test
 data for the Rust migration checker, not executable framework code.
 
-Result: **14 supported, 3 changed, 33 unsupported**, exit `TY1702`.
+Result: **18 supported, 6 changed, 20 unsupported**, exit `TY1702`.
 
 | Classification | Examples |
 | --- | --- |
-| `supported` | `client/pages/tac.html`, `server/routes/**/yon.js`, `server/routes/**/yon.py`, colocated styles |
-| `changed` | `tac.js` controller companions, `data-tac-on-*` event hydration |
-| `unsupported` | `yon.rs`, `yon.cpp`, polyglot view companions, `server/services/**` and `server/repositories/**` imports, `server/workers/**`, `.tachyonrc` interpreters |
+| `supported` | Tac views and bindings, JavaScript/Python handlers, middleware, workers, and controller companions |
+| `changed` | Other handler languages without an interpreter registration; cross-document client navigation |
+| `unsupported` | Legacy handler dependency imports, `OPTIONS.schema.json`, and built-in server telemetry |
 
 Every non-supported finding carries a required action. The analysis reads the
 project and never executes it.
@@ -115,6 +116,9 @@ implementations run directly against the Rust executable.
 | Corpus coverage of conditionals, iteration, and islands | These need route context, which the two implementations source differently. Closing this requires a legacy-shaped context source that the Rust implementation can also consume. |
 | Handler behavior compared across implementations | A handler differential invoking the same `yon.js` and `yon.py` through both supervisors and comparing responses. |
 | Diagnostic parity | The legacy implementation raises untyped runtime errors, so only accept/reject agreement is compared today, not messages. |
-| A recorded CI run of the `compatibility` job | The job reporting on a pull request. |
+
+The `compatibility` job passed on pull request run
+[30715759023](https://github.com/d31ma/Tachyon/actions/runs/30715759023),
+including the checksum-pinned released oracle and the standalone Rust workflow.
 
 No row in the ledger is promoted without the evidence its status demands.

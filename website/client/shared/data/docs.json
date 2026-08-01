@@ -54,17 +54,17 @@
   "topics": {
     "introduction": {
       "title": "Introduction",
-      "summary": "Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Tac is the frontend layer and Yon is the backend/runtime layer.",
+      "summary": "Tachyon is a polyglot, file-system-routed full-stack framework whose core CLI is distributed as the standalone ty binary. Tac is the frontend layer and Yon is the backend/runtime layer.",
       "sections": [
         {
           "heading": "Install",
-          "body": "Tachyon ships as the standalone `ty` binary — no package manager or runtime toolchain required. The installer also pulls the `chex` (schema validation) and `ttid` (identifier generation) binaries it drives at runtime. Scaffold an app and start the shape-aware dev server: Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
+          "body": "The core `ty` CLI installs as a standalone binary and does not require a JavaScript package-manager runtime. Selected handler languages, native-language browser companions, and native package targets still require their own runtimes or platform toolchains; ty doctor reports what the current project needs. Scaffold an app and start the shape-aware dev server: Tachyon detects whether your app has a client/, a server/, or both, and serves the right thing on one port.",
           "code": "curl -fsSL https://tachyon.del.ma/install.sh | sh\nty init my-app --name \"My App\"\ncd my-app\nty serve"
         },
         {
           "heading": "Layout",
-          "body": "Pages live in client/pages, components in client/components, and backend routes in server/routes. A companion file sits beside its tac.html template; shared browser assets and data live under client/shared.",
-          "code": "client/\n  pages/tac.html\n  components/hero/tac.html\n  components/hero/tac.swift\n  shared/assets/  shared/data/\nserver/\n  routes/posts/yon.js"
+          "body": "Pages live in client/pages, components in client/components, and backend routes in server/routes. A companion file sits beside its tac.html template; shared browser assets and data live under client/shared. Optional middleware is one middleware.<ext> file at the project root, and .tachyonrc is JSON configuration for interpreters and workers.",
+          "code": "client/\n  pages/tac.html\n  components/hero/tac.html\n  components/hero/tac.swift\n  shared/assets/\n  shared/data/\nserver/\n  routes/posts/yon.js\nmiddleware.js\n.tachyonrc"
         }
       ]
     },
@@ -74,8 +74,8 @@
       "sections": [
         {
           "heading": "Frontend pages",
-          "body": "client/pages/tac.html serves /, client/pages/docs/tac.html serves /docs, and client/pages/docs/_topic/tac.html serves /docs/:topic — the page you are reading uses exactly that dynamic segment. An ancestor page containing a slot element becomes a reusable shell for its descendants.",
-          "code": "client/pages/\n  tac.html          -> /\n  docs/tac.html     -> /docs (shell with <slot />)\n  docs/_topic/\n    tac.html        -> /docs/:topic"
+          "body": "client/pages/tac.html serves /, client/pages/docs/tac.html serves /docs, and client/pages/docs/_topic/tac.html serves /docs/:topic — the page you are reading uses exactly that dynamic segment. Reusable shells are explicit layout components that pages include directly; ancestor pages do not wrap descendants implicitly.",
+          "code": "client/pages/\n  tac.html          -> /\n  docs/tac.html     -> /docs (includes <docs-layout>)\n  docs/_topic/\n    tac.html        -> /docs/:topic (includes <docs-layout>)"
         },
         {
           "heading": "Backend routes",
@@ -84,7 +84,7 @@
         },
         {
           "heading": "Handler protocol",
-          "body": "JavaScript and Python get class-style Handler adapters. Any other executable language can read one bounded JSON request from stdin and write one JSON response to stdout, with interpreters registered in .tachyonrc."
+          "body": "JavaScript and Python get class-style Handler adapters. Any other executable language can read one bounded JSON request from stdin and write one JSON response to stdout, with interpreter commands registered in the JSON .tachyonrc file."
         }
       ]
     },
@@ -99,13 +99,13 @@
         },
         {
           "heading": "Route convention",
-          "body": "Backend routes live at server/routes/<path>/yon.<ext>. A Handler class exposes static methods named after HTTP verbs. Dynamic path segments use _name folders and arrive in request.paths.",
+          "body": "Backend routes live at server/routes/<path>/yon.<ext>. A Handler class exposes static methods named after HTTP verbs. Dynamic path segments use _name folders and arrive in request.parameters.",
           "code": "server/routes/items/yon.ts      -> /items\nserver/routes/items/_id/yon.ts  -> /items/:id\n\nexport class Handler {\n  static GET(request) { return { items: [] } }\n  static POST(request) { return request.body }\n}"
         },
         {
           "heading": "Languages",
-          "body": "JavaScript and Python get class-style Handler adapters. Ruby, Swift, Zig, shell scripts, prebuilt binaries and other languages run through the same JSON stdin/stdout protocol; .tachyonrc registers commands for non-executable sources.",
-          "code": ".tachyonrc\n\n[interpreters]\nrb = [\"ruby\"]"
+          "body": "JavaScript and Python get class-style Handler adapters. Ruby, Swift, Zig, executable scripts, prebuilt binaries and other languages run through the same JSON stdin/stdout protocol; the JSON .tachyonrc file registers commands for non-executable sources.",
+          "code": "{\n  \"interpreters\": {\n    \"rb\": [\"ruby\"]\n  }\n}"
         },
         {
           "heading": "Process lifecycle",
@@ -135,7 +135,7 @@
         {
           "heading": "Polyglot middleware",
           "body": "Middleware uses the same process protocol as routes and may be written in any configured executable language. A 204 continues; another status answers early in before or replaces the response in after.",
-          "code": "middleware/\n  yon.rb\nserver/\n  routes/\n    items/yon.js"
+          "code": "middleware.rb\nserver/\n  routes/\n    items/yon.js"
         },
         {
           "heading": "Middleware phases",
@@ -154,7 +154,7 @@
         },
         {
           "heading": "Telemetry boundary",
-          "body": "The Rust rewrite does not emit OpenTelemetry spans. Instrument at your deployment boundary or keep the legacy server when emitted spans are a migration requirement; ty migrate check reports the difference.",
+          "body": "The Rust rewrite does not emit OpenTelemetry spans. Instrument at your deployment boundary or keep the legacy server when emitted spans are a migration requirement; ty migrate check reports telemetry references as unsupported.",
           "code": "ty migrate check ."
         }
       ]
@@ -190,35 +190,35 @@
     },
     "native-rendering": {
       "title": "Native HTML rendering",
-      "summary": "Non-web Tac bundles keep HTML as the only application-facing view language, render supported semantics with native controls, and isolate only unmapped subtrees in local WebViews.",
+      "summary": "Non-web Tac bundles keep HTML as the only application-facing view language and render mapped semantics with native controls. Apple, Android and Linux can isolate unmapped subtrees locally; Windows currently uses an accessible external-content placeholder.",
       "sections": [
         {
           "heading": "Native by default",
-          "body": "web remains a browser target. macos, windows, linux, ios, and android are always native-first. The compiler emits tachyon.native-ui.json for the initial versioned UI tree and tachyon.native-controller.js for live rendering and events; neither controller nor native nodes depend on a DOM.",
+          "body": "web remains a browser target. The macos, windows, linux, ios, and android outputs are native-first. The compiler emits Native UI v1 documents, and each generated host applies the bounded state, bindings, and actions represented by that contract. The current hosts do not embed QuickJS or JavaScriptCore controllers.",
           "code": "ty bundle --target macos\nty bundle --target android\nty bundle --target windows"
         },
         {
           "heading": "One HTML source",
-          "body": "Application developers still write tac.html. Before native tree creation, Tac lowers loop, logic, switch and case control elements, resolves Tac components, evaluates bindings, and removes nonvisual script, style, template, and noscript elements. Native hosts map the resulting semantic tree to SwiftUI on Apple platforms, Jetpack Compose on Android, WinUI on Windows, and GTK on Linux.",
+          "body": "Application developers still write tac.html. Before native tree creation, Tac lowers loop, logic, switch and case control elements, resolves Tac components, evaluates bindings, and removes nonvisual script, style, template, and noscript elements. Native hosts map the resulting semantic tree to SwiftUI on Apple platforms, android.widget Views and LinearLayout containers on Android, Win32 common controls on Windows, and GTK4 on Linux.",
           "code": "<main>\n  <h1>{title}</h1>\n  <loop :for=\"product of products\">\n    <button on:click=\"select(product.id)\">{product.name}</button>\n  </loop>\n  <logic :if=\"selected\"><p>Selected: {selected}</p></logic>\n</main>"
         },
         {
           "heading": "Native-first tag handling",
-          "body": "Control tags and Tac component tags compile away before native output. Supported semantic HTML maps to native controls. Known standard HTML without a native mapping and unmapped Web Components automatically become isolated WebView boundaries; a genuinely unknown non-HTML tag still fails so typos remain visible. A semantic nativeUIAdapters mapping always wins over fallback.",
+          "body": "Control tags and Tac component tags compile away before native output. Mapped semantic HTML becomes native controls. On macOS, iOS, Android and Linux, known standard HTML without a native mapping and unmapped Web Components become isolated local web surfaces. Windows currently renders an accessible placeholder that opens the content in the default browser because embedded WebView2 remains deferred. A genuinely unknown non-HTML tag still fails so typos remain visible. A semantic nativeUIAdapters mapping always wins over fallback.",
           "code": "// tac.config.js\nexport default {\n  nativeUIAdapters: { 'w-app-bar': 'header' },\n}\n\n// company-chart and canvas need no fallback declaration\nty bundle --target ios"
         },
         {
           "heading": "Live events",
-          "body": "Each native host sends normalized input and event data to the generated controller, including elementId, type, value, checked, and detail. The controller applies the event, rerenders, and returns the complete next tree for the host to reconcile. JavaScriptCore runs the controller on macOS and iOS; Android, Windows, and Linux use embedded QuickJS runtimes."
+          "body": "Generated hosts handle the declarative bindings and increment, toggle, input, and disclosure actions represented in Native UI v1. The current native hosts do not execute a generated JavaScript controller, so JavaScriptCore and QuickJS are not part of this path."
         },
         {
           "heading": "Automatic local boundary",
-          "body": "The compiler keeps supported parents and siblings native while loading the nearest unmapped subtree in an isolated local WebView with bundled CSS and module entrypoints. No app-wide mode or fallback declaration is required. Truly unknown non-HTML tags still fail, and local boundaries do not grant raw nativeCapabilities, devicePermissions, managed content origins, or native host extensions."
+          "body": "The compiler keeps mapped parents and siblings native while selecting the nearest unmapped subtree as a WebSurface. macOS and iOS use WKWebView, Android uses Android WebView, and Linux uses WebKitGTK with generated local resources and no native bridge. Windows keeps the same boundary in Native UI v1 but presents an accessible external-browser placeholder until WebView2 passes its viability gate. No app-wide mode or fallback declaration is required."
         },
         {
-          "heading": "Managed remote content",
-          "body": "Desktop bundles can open authenticated HTTPS sites through contentSurface when their exact origins are declared. The active managed surface is composed into the right 75% of the primary native window, beside trusted Tac controls, so appWindow always-on-top and opacity apply to the complete presentation; click-through and capture protection do too on macOS and Windows. Additional open surfaces remain isolated and the most recently opened surface occupies the composed pane. Each surface uses an isolated WebKit/WebView2/WebKitGTK context, enforces the origin allowlist on every navigation, denies popups, and never receives the application's native bridge. Camera and microphone requests are allowed only when both the device permission and requesting origin are declared.",
-          "code": "{ \"tachyon\": {\n  \"devicePermissions\": [\"microphone\"],\n  \"managedContentOrigins\": [\"https://chatgpt.com\"],\n  \"permissionOrigins\": {\n    \"microphone\": [\"https://chatgpt.com\"]\n  }\n} }\n\nawait contentSurface.open({\n  id: 'assistant',\n  url: 'https://chatgpt.com',\n  persistentSession: false,\n})\nawait appWindow.setAlwaysOnTop(true)\nawait appWindow.setOpacity(0.55)\n\nif (capabilities.supports('window.clickThrough')) {\n  await shortcuts.register({ id: 'cloak.recover', accelerator: 'Primary+Shift+C' })\n  host.on('shortcut.activated', async ({ id }) => {\n    if (id === 'cloak.recover') await appWindow.setClickThrough(false)\n  })\n}"
+          "heading": "Remote WebSurface boundary",
+          "body": "An HTTPS iframe with an accessible name lowers to a remote WebSurface whose bridge is always none. Apple platforms, Android and Linux keep navigation on the declared HTTPS origin; Windows presents the external-content placeholder instead of embedding a browser. The contentSurface, appWindow, shortcuts, screen-capture, camera, microphone, raw-filesystem and shell names in compatibility type surfaces are contracts only in this rewrite and are not implemented device operations.",
+          "code": "<iframe src=\"https://example.com/help\" aria-label=\"Hosted help\"></iframe>\n\n# Inspect the emitted boundary and its bridge: none declaration\nty bundle --target linux --skip-package"
         }
       ]
     },
@@ -234,7 +234,7 @@
         {
           "heading": "Browser lifecycle and storage",
           "body": "hydrate(root, signal) is the explicit browser lifecycle. Use standards such as sessionStorage, localStorage and CustomEvent directly; the AbortSignal gives listeners and asynchronous work a deterministic teardown boundary.",
-          "code": "export default class {\n  hydrate(root, signal) {\n    const saved = localStorage.getItem('count')\n    window.addEventListener('inventory:changed', () => this.refresh(), { signal })\n  }\n}"
+          "code": "export default class {\n  hydrate(root, signal) {\n    const saved = localStorage.getItem('count')\n    window.addEventListener('messages:changed', () => this.refresh(), { signal })\n  }\n}"
         }
       ]
     },
@@ -254,7 +254,7 @@
         },
         {
           "heading": "Contracts stay on the server",
-          "body": "OPTIONS.schema.json remains the Yon route contract for incoming requests and outgoing responses. Browser companions are UI controllers, so JavaScript and TypeScript use normal browser HTTP APIs rather than declaring a second route protocol."
+          "body": "The Rust runtime does not discover legacy OPTIONS.schema.json route contracts. Validate requests and responses in the handler or at the deployment boundary; ty migrate check reports each legacy schema with an explicit action. Browser companions are UI controllers, so JavaScript and TypeScript use normal browser HTTP APIs rather than declaring a second route protocol."
         },
         {
           "heading": "Toolchain boundary",
@@ -269,17 +269,17 @@
       "sections": [
         {
           "heading": "Targets",
-          "body": "The supported bundle targets are web, macos, windows, linux, ios and android. web emits browser assets; every non-web target uses the native renderer by default. The all target expands to every supported target and writes sibling directories under dist/.",
+          "body": "The accepted bundle targets are web, macos, windows, linux, ios and android. web emits browser assets; every non-web target uses the native renderer by default. The all target expands to every available target and writes sibling directories under dist/. Acceptance names CLI availability, not a claim that every target has the same native runtime features or support tier.",
           "code": "ty bundle --target web      # dist/web\nty bundle --target macos    # dist/macos\nty bundle --target windows  # dist/windows\nty bundle --target linux    # dist/linux\nty bundle --target ios      # dist/ios\nty bundle --target android  # dist/android\nty bundle --target all"
         },
         {
           "heading": "One native-first policy",
-          "body": "Every non-web target maps supported Tac HTML to platform controls and automatically isolates the nearest unmapped standard HTML or Web Component subtree in a local WebView. Native siblings remain native. The former render-mode flag and TAC_RENDER_MODE override have been removed.",
-          "code": "ty bundle --target macos    # SwiftUI + inferred local boundaries\nty bundle --target android  # Compose + inferred local boundaries\nty bundle --target windows  # WinUI + inferred local boundaries"
+          "body": "Every non-web target maps known Tac HTML semantics to platform controls and preserves native siblings when an unmapped subtree appears. macOS and iOS use WKWebView for that local boundary, Android uses Android WebView, and Linux uses WebKitGTK. Windows has no embedded WebView and emits an accessible placeholder that opens the content externally. The former render-mode flag and TAC_RENDER_MODE override have been removed.",
+          "code": "ty bundle --target macos    # SwiftUI + inferred WKWebView boundaries\nty bundle --target android  # Android Views + inferred WebView boundaries\nty bundle --target windows  # Win32 controls + external placeholder"
         },
         {
           "heading": "Preview",
-          "body": "Preview accepts exactly one target. If you omit --target, Tachyon previews web. Native previews run prerequisite checks first so missing Xcode or Swift, the Android SDK, Windows build tools, GTK, embedded controller dependencies, or a WebView dependency required by an inferred boundary fail early with an actionable message.",
+          "body": "Preview accepts exactly one target. If you omit --target, Tachyon previews web. Native previews run prerequisite checks first so missing Xcode or Swift, the Android SDK, Windows build tools, GTK, or a local-web-surface dependency used by Apple, Android or Linux fails early with an actionable message.",
           "code": "ty preview --target web\nty preview --target macos\nty preview --target android"
         },
         {
@@ -295,11 +295,11 @@
     },
     "storage": {
       "title": "Storage and data",
-      "summary": "Tac caches reads in the browser and Yon streams live updates over Server-Sent Events.",
+      "summary": "Browser islands use standard storage APIs and Yon streams live updates over Server-Sent Events.",
       "sections": [
         {
           "heading": "Live subscriptions",
-          "body": "subscribe() runs an initial find, listens to the browser-local mirror for same-tab mutations, and follows the server event stream for remote changes — falling back to polling when SSE is unavailable."
+          "body": "Browser islands can combine localStorage or IndexedDB with CustomEvent and BroadcastChannel for local updates. Yon topics use EventSource for server updates and resume from the browser's Last-Event-ID cursor."
         },
         {
           "heading": "Realtime mailboxes",
@@ -314,7 +314,7 @@
         {
           "heading": "Frontend-only prototype",
           "body": "Start with client/ only. Tac renders pages and components, and companions provide the reactive UI controller. When you later add server/routes, the UI contract can stay the same.",
-          "code": "client/\n  pages/tac.html\n  components/panel/users/tac.html\n  components/panel/users/tac.kt\n  shared/data/docs.json\ndb/\n  schemas/users/manifest.json"
+          "code": "client/\n  pages/tac.html\n  components/panel/users/tac.html\n  components/panel/users/tac.kt\n  shared/data/docs.json"
         },
         {
           "heading": "Event-driven islands",
@@ -323,12 +323,12 @@
         },
         {
           "heading": "Polyglot middleware boundary",
-          "body": "When the frontend prototype grows a Yon server, add middleware at server/middleware/yon.<ext>. Class-style middleware works for the supported adapter languages, and the raw JSON shim lets a team keep an existing policy engine in another executable language.",
-          "code": "server/\n  middleware/yon.py\n  routes/users/yon.ts\n\nclass Middleware:\n    @staticmethod\n    def before(input):\n        return { \"action\": \"continue\" }"
+          "body": "When the frontend prototype grows a Yon server, add one middleware.<ext> source at the project root. Class-style middleware works for the available adapter languages, and the raw JSON shim lets a team keep an existing policy engine in another executable language.",
+          "code": "middleware.py\nserver/\n  routes/users/yon.ts\n\nclass Middleware:\n    @staticmethod\n    def before(input):\n        return { \"status\": 204, \"headers\": {} }"
         },
         {
           "heading": "Native target polish",
-          "body": "Author semantic HTML once, then bundle web, desktop and mobile outputs. The native planner lowers supported structure into platform controls and isolates only unmapped subtrees in local WebView boundaries.",
+          "body": "Author semantic HTML once, then bundle web, desktop and mobile outputs. The native planner lowers mapped structure into platform controls. Apple, Android and Linux isolate unmapped subtrees in local web surfaces; Windows uses the external-content placeholder.",
           "code": "<main>\n  <h1>Workspace</h1>\n  <button on:click=\"save()\">Save</button>\n</main>\n\nty bundle --target macos\nty bundle --target android"
         }
       ]
@@ -354,31 +354,31 @@
     },
     "platform-apis": {
       "title": "Platform APIs",
-      "summary": "The web target uses standards-backed helpers, while desktop native-first bundles expose audited platform adapters through the same public Tac facades.",
+      "summary": "Browser islands use standard Web APIs directly. Native targets currently expose rendering, declarative state and isolated WebSurface behavior, but no public device-operation bridge.",
       "sections": [
         {
           "heading": "Current target availability",
-          "body": "Browser output can use storage, fetch, clipboard, file selection, geolocation, notifications, and media when the browser supports them. capabilities.supports reports whether an operation is available, and capabilities.state reports granted, denied, prompt, or unsupported where a permission state exists.",
-          "code": "if (capabilities.supports('media.getUserMedia')) {\n  const stream = await media.getUserMedia({ audio: true })\n}\n\nif (await capabilities.state('geo.current') !== 'denied') {\n  const position = await geolocation.current()\n}"
+          "body": "Browser output can use storage, fetch, clipboard, file selection, geolocation, notifications, camera and microphone through the browser's standard APIs when the user agent and page permissions allow them. Tachyon does not wrap those browser permissions in a separate device bridge.",
+          "code": "const stream = await navigator.mediaDevices.getUserMedia({ audio: true })\n\nnavigator.geolocation.getCurrentPosition((position) => {\n  console.log(position.coords.latitude, position.coords.longitude)\n})"
         },
         {
-          "heading": "Desktop native capability matrix",
-          "body": "macOS, Windows, and Linux implement app information, clipboard, external HTTP(S) URLs, always-on-top state, opacity, global shortcuts, click-through, and declared screen capture. Linux selects its backend at runtime: Wayland uses the XDG GlobalShortcuts and Screenshot portals with explicit user consent, while X11 uses an audited XGrabKey shortcut fallback; GTK applies an empty native input region for click-through. capabilities.state reports prompt or unsupported when a required portal or compositor feature is absent. Capture protection remains macOS/Windows-only because Linux has no enforceable cross-compositor contract. All three desktop hosts compose allowlisted managed content into the primary window's declared 25/75 split, and remote surfaces never receive the bridge. macOS alone currently implements explicitly requested raw filesystem and shell operations. iOS and Android remain fail-closed for privileged native-tree declarations.",
-          "code": "// package.json — declared desktop screen capture\n{ \"tachyon\": {\n  \"devicePermissions\": [\"screenCapture\"]\n} }\n\nif (await capabilities.state('screenCapture.captureWindow') !== 'unsupported') {\n  // Linux returns a portal picker descriptor instead of enumerating Wayland windows.\n  const { windows } = await screenCapture.listWindows()\n  await screenCapture.captureWindow({\n    windowId: windows[0].windowId,\n    destination: 'clipboard',\n  })\n}"
+          "heading": "Current native boundary",
+          "body": "The generated macOS, iOS, Android, Windows and Linux hosts implement Native UI v1 rendering, bounded declarative interactions, lifecycle records, and bridge-free WebSurface handling where the platform host supports embedding. They do not currently implement public contentSurface, appWindow, shortcuts, screenCapture, camera, microphone, raw filesystem or shell operations. Names for those operations may remain in compatibility type declarations, but they are contracts only and must not be presented as usable host features.",
+          "code": "ty bundle --target linux --skip-package\n# inspect dist/linux/native-ui and dist/linux/capability-manifest.json"
         },
         {
-          "heading": "Generated manifest is authoritative",
-          "body": "tachyon.host.json lists only concrete operations for the selected target. The DOM-free native controller receives the same list from its host bridge, so capabilities.supports and capabilities.state cannot claim an adapter that the packaged host omitted. Unsupported device permissions, raw nativeCapabilities, and permission origins outside managedContentOrigins stop the build.",
-          "code": "ty bundle --target macos --skip-package\n# inspect dist/macos/tachyon.host.json\n\nif (await capabilities.state('screenCapture.captureWindow') === 'prompt') {\n  await screenCapture.listWindows()\n}"
+          "heading": "Manifest boundary",
+          "body": "Artifact Manifest v1 records the generated outputs and toolchain evidence, while Capability Manifest v1 is deny-by-default. The legacy-compatible tachyon.host.json may contain a broad hostCapabilities vocabulary; that list is not target-concrete runtime evidence and applications must not treat it as feature detection. A WebSurface's bridge: none field is the enforceable statement for embedded content.",
+          "code": "ty bundle --target macos --skip-package\n# inspect dist/macos/artifact-manifest.json\n# inspect dist/macos/capability-manifest.json\n# inspect dist/macos/native-ui/*.json for bridge: none"
         },
         {
           "heading": "Companion boundary",
-          "body": "JavaScript and TypeScript browser islands can use standards-backed browser APIs directly. Native-language WebAssembly companions expose only the fields and methods they declare in their tac member map; native host capabilities remain in the generated platform controller rather than an implicit language prelude.",
+          "body": "JavaScript and TypeScript browser islands can use standards-backed browser APIs directly. Native-language WebAssembly companions expose only the fields and methods they declare in their tac member map; no implicit browser API or native device-operation bridge is added to that ABI.",
           "code": "// Browser island\nexport default class {\n  async copy() { await navigator.clipboard.writeText('Ready') }\n  hydrate() {}\n}\n\n// Native-language wasm companion: declare fields and methods in tac"
         },
         {
-          "heading": "Events and isolated WebViews",
-          "body": "host.on is the typed event channel for native events such as shortcut.activated. In a DOM-free native controller, companion @onMount methods run after the host bridge is ready, so they can subscribe with host.on, register shortcuts, and call contentSurface.open during startup without constructor delays. Automatic local fallback boundaries and managed remote-content surfaces are deliberately isolated: neither receives the application-wide native bridge. Linux requires xdg-desktop-portal plus a desktop-specific backend for Wayland shortcuts and capture; Debian/Ubuntu builds also require libgtk-3-dev, libjson-glib-dev, and libx11-dev. Validate both Wayland and Xorg sessions by checking capability state, registering and firing a recovery shortcut, toggling click-through, and completing a window-picker capture. Native host extensions, mobile privileged adapters, and biometrics remain unavailable until each target has an audited implementation."
+          "heading": "Isolated web surfaces",
+          "body": "Local fallback and remote WebSurface boundaries never receive a native bridge. macOS and iOS use WKWebView, Android uses Android WebView, and Linux uses WebKitGTK; their navigation policies confine local resources and remote origins. Windows has no embedded WebView and opens placeholder content externally on request. Native device adapters, host extensions and biometrics remain unavailable until a target has an audited implementation and native execution evidence."
         }
       ]
     }

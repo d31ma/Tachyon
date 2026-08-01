@@ -1,9 +1,11 @@
 <nav class="docs-sidebar-nav" aria-label="Docs">
   <a href="/docs/introduction" class="docs-sidebar-home">Documentation home</a>
 
-  <w-field class="docs-search" label="Search docs" hint="Try middleware, companions, routing...">
-    <input class="w-input" type="search" placeholder="Search Tachyon docs" />
-  </w-field>
+  <div class="docs-search">
+    <label for="docs-search-input">Search docs</label>
+    <input id="docs-search-input" class="w-input" type="search" placeholder="Search Tachyon docs" aria-describedby="docs-search-hint" />
+    <span id="docs-search-hint">Try middleware, companions, routing...</span>
+  </div>
 
   <section class="docs-sidebar-section" aria-label="Start">
     <h3 class="docs-sidebar-subhead">Start</h3>
@@ -45,5 +47,5 @@
     </ul>
   </section>
 
-  <p class="docs-no-results" hidden>No docs found. Try a broader term.</p>
+  <p class="docs-no-results" role="status" aria-live="polite" hidden>No docs found. Try a broader term.</p>
 </nav>

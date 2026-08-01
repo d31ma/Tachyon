@@ -3,9 +3,9 @@
 The cutover gate in [`PROJECT_PLAN.md`](PROJECT_PLAN.md) lists six conditions
 that must all hold before the Rust implementation becomes Tachyon's default.
 
-**Four conditions are met and two remain open.** The security review was
-explicitly skipped for the current engineering pass; that is a scheduling
-decision, not evidence. The other open condition requires one real
+**Four conditions are met and two remain open.** The security review is now a
+required pre-tag step and remains open until a named independent reviewer
+records a disposition. The other open condition requires one real
 release-workflow run so the repository produces externally verifiable release
 artifacts and attestations.
 
@@ -21,7 +21,7 @@ here is an assertion by the implementation about itself.
 | 2 | Supported platforms pass their native evidence profiles | **Met**, under the evidence standard amended below | Execution on three platforms, 2026-07-31; macOS and Windows named below |
 | 3 | Install, upgrade, rollback, and uninstall have been exercised | **Met** for the `ty` artifact | Execution, re-verified 2026-07-31 |
 | 4 | Release artifacts are signed, attested, and independently verifiable | **Open** | Repository work complete; awaits one real workflow run |
-| 5 | No unowned critical threat-model finding remains | **Open; review skipped for this pass** | No independent reviewer has reported; the earlier waiver is not a security result |
+| 5 | No unowned critical threat-model finding remains | **Open; required before tagging** | Awaiting a named independent review and disposition of every critical finding |
 | 6 | Stable documentation describes the Rust implementation rather than plans | **Met** | Repository and website documentation rewritten and checked against executable behavior, 2026-08-01 |
 
 ## Evidence Standard — amended 2026-07-31
@@ -59,11 +59,10 @@ events, island expressions, offline service worker, the wasm ABI probe, and the
 five-language wasm companion gate.
 
 `changed` and `unsupported` rows are reported by `ty migrate check` with a
-required action per finding. Against the archived migration fixture: 14 supported, 3
-changed, 33 unsupported. Against this repository's migrated website on
-2026-08-01: 120 supported, 6 changed, 1 unsupported. The changed findings are
-the five intentional ADR 0011 companion migrations and cross-document
-navigation; telemetry is the remaining unsupported product boundary recorded
+required action per finding. Against the archived migration fixture: 18 supported, 6
+changed, 20 unsupported. Against this repository's migrated website on
+2026-08-01: 128 supported, 1 changed, 1 unsupported. Cross-document navigation
+is the changed finding; telemetry is the remaining unsupported product boundary recorded
 in [`PARITY_LEDGER.md`](PARITY_LEDGER.md).
 
 The migrated website's public command was re-run on 2026-08-01 after dynamic
@@ -71,7 +70,7 @@ route and post-bundle compatibility work:
 
 ```text
 bun run test
-  23 pass, 0 fail, 154 expectations
+  24 pass, 0 fail, 160 expectations
 ```
 
 The same Rust release binary emitted its 11 web routes plus Android, iOS, and
@@ -105,10 +104,10 @@ route handoff that the earlier phase fixture did not contain.
 ok   the binary is bit-identical across builds
 ok   every published file matches SHA256SUMS
 ok   a modified artifact fails verification
-ok   installed ty 0.0.0-phase4
+ok   installed ty 26.31.06
 ok   the installed tool built and published a project
 ok   upgraded in place and still builds
-ok   rolled back to ty 0.0.0-phase4 and still builds
+ok   rolled back to ty 26.31.06 and still builds
 ok   uninstall left nothing behind
 PASS: release lifecycle drill
 ```
@@ -147,25 +146,23 @@ attestation, signature, raw executable, and installer on all five release
 runners, and only then makes the release public. This repository work still
 needs one real tag run before the condition is evidence-backed.
 
-## 5. Threat-Model Findings — Open, Deliberately Deferred
+## 5. Threat-Model Findings — Open, Required Before Tagging
 
-The maintainer waived this condition for cutover on 2026-07-31 and asked on
-2026-08-01 to skip the cybersecurity work while the remaining release work is
-completed. Neither decision is a security assessment, so an unqualified
-security claim remains unavailable.
-
-What the waiver accepts: whether an unowned critical finding exists is unknown,
-and an unknown is not a pass. No one outside the implementation has examined
-the trust boundaries.
+An independent automated technical audit on 2026-08-01 found two high-severity
+issues: descendant handler processes could escape lifecycle control, and Linux
+WebSurfaces accepted arbitrary `file://` navigation. Both were remediated and
+the technical re-review found no remaining critical or high blocker. That
+audit is useful pre-review evidence, but it is not the named independent human
+deliverable this gate requires.
 
 What exists instead, from [`PHASE_7_EVIDENCE.md`](PHASE_7_EVIDENCE.md):
 7,197,692 fuzz executions across four trust boundaries under
 `AddressSanitizer` with zero crashes, a clean sanitizer run, and five recovery
-drills. [`SECURITY_REVIEW_PACKAGE.md`](SECURITY_REVIEW_PACKAGE.md) remains the
-reviewer brief, ready for whoever picks it up.
+drills. [`SECURITY_REVIEW_PACKAGE.md`](SECURITY_REVIEW_PACKAGE.md) contains the
+technical audit record and remains the brief for the named human reviewer.
 
-Review before a version carrying the stable Tachyon name reaches users who did
-not choose it.
+Do not create the stable tag until the review is complete and every critical
+finding has an explicit owner and disposition.
 
 ## 6. Stable Documentation — Met
 
@@ -180,9 +177,9 @@ its recorded evidence.
 
 ## What Happens Next
 
-Complete the pull-request matrix, then run the release workflow from the
-reviewed immutable tag and verify its staged assets. The independent review
-remains separately open as requested. The macOS
+Complete the independent security review and pull-request matrix, then run the
+release workflow from the reviewed immutable tag and verify its staged assets.
+The macOS
 Accessibility automation remains a named local evidence gap and must not be
 represented as completed platform promotion work.
 

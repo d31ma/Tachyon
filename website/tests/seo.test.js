@@ -9,8 +9,10 @@ const read = (/** @type {string} */ p) => readFile(new URL(`../${p}`, import.met
 describe('enterprise SEO is baked into the prerendered output', () => {
     test('the homepage head carries description, canonical, OG, Twitter and JSON-LD', async () => {
         const html = await read('dist/web/index.html');
+        expect(html).toContain('<html lang="en">');
+        expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">');
         expect(html).toContain('<meta name="description" content="Tachyon is a polyglot');
-        expect(html).toContain('native SwiftUI, Compose, WinUI and GTK controls');
+        expect(html).toContain('SwiftUI, Android Views, Win32 common controls or GTK4 controls');
         expect(html).toContain('<link rel="canonical" href="https://tachyon.del.ma/">');
         expect(html).toContain('property="og:title"');
         expect(html).toContain('name="twitter:card" content="summary_large_image"');

@@ -23,19 +23,6 @@ YON_HMR_TOKEN=\n\
 YON_HMR_MAX_CLIENTS=20\n\
 YON_ENABLE_HSTS=false\n\
 YON_SKIP_BUNDLE=false\n\
-YON_OTEL_ENABLED=false\n\
-YON_OTEL_ROOT=\n\
-YON_OTEL_SERVICE_NAME=@d31ma/tachyon\n\
-YON_OTEL_SERVICE_VERSION=\n\
-YON_OTEL_CAPTURE_IP=false\n\
-FYLO_ROOT=db\n\
-FYLO_SCHEMA=db/schemas\n\
-FYLO_INDEX_BACKEND=local-fs\n\
-FYLO_ENCRYPTION_KEY=\n\
-FYLO_CIPHER_SALT=\n\
-YON_DATA_BROWSER_ENABLED=false\n\
-YON_DATA_BROWSER_READONLY=true\n\
-YON_DATA_BROWSER_REVEAL=false\n\
 YON_CORS_ORIGIN=\n\
 YON_PAGES_PATH=client/pages\n\
 YON_COMPONENTS_PATH=client/components\n\
@@ -217,8 +204,8 @@ fn scaffold_files(app_name: &str) -> BTreeMap<&'static str, String> {
             format!(
                 "# {app_name}\n\n## Install the CLI\n\n```bash\n\
                  curl -fsSL https://tachyon.del.ma/install.sh | sh\n```\n\n\
-                 This shows a staged Tachyon progress bar while installing the `ty` binary plus\n\
-                 the `fylo`, `chex`, and `ttid` binaries it drives at runtime.\n\n\
+                 This shows a staged Tachyon progress bar while installing the standalone\n\
+                 `ty` binary.\n\n\
                  ## Commands\n\n```bash\nty bundle    # build the client + native artifacts\n\
                  ty preview   # preview the built bundle\nty serve     # run the dev/prod server\n```\n\n\
                  The bundled output is written to `dist/`. `ty serve` detects whether the app has `client/`, `server/`, or both and serves the matching frontend, backend, or full-stack runtime.\n"
@@ -272,14 +259,6 @@ fn scaffold_files(app_name: &str) -> BTreeMap<&'static str, String> {
         ),
         ("server/data/.gitkeep", String::new()),
         ("server/deps/.gitkeep", String::new()),
-        ("db/schemas/.gitkeep", String::new()),
-        ("db/.collections/.gitkeep", String::new()),
-        (
-            "db/README.md",
-            String::from(
-                "# db/\n\nThis folder is the default FYLO root for the application. Tachyon drives the\n`fylo` binary against it (installed alongside `ty`).\n\n## Structure\n\n```\ndb/\n├── schemas/       # Versioned schemas consumed by FYLO strict validation\n└── .collections/  # FYLO document store, managed exclusively by the FYLO binary\n```\n\n## schemas/\n\nPlace versioned JSON schemas here for FYLO strict validation:\n\n```\ndb/schemas/<collection>/\n|-- manifest.json\n|-- history/\n|   `-- v1.json\n`-- rules.json        # optional RLS rules\n```\n\nWhen schemas declare `$encrypted` fields, FYLO will use AES-GCM encryption for\nthose values. The manifest's `current` field selects the head schema version.\n\n## .collections/\n\n**Do not modify the contents of this directory by hand.**\n\nDocument shards, prefix indexes, event journals, locks, and WORM history are\ncreated and managed exclusively by the `fylo` binary. Manual edits to\nthis directory can corrupt storage state and cause data loss.\n\nTo rebuild the index from document files:\n\n```bash\nfylo.admin rebuild <collection> --root db\n```\n\n## Overriding the root\n\nTo use a different FYLO root or schema directory, set:\n\n```env\nFYLO_ROOT=/path/to/custom/root\nFYLO_SCHEMA=/path/to/custom/schemas\nFYLO_INDEX_BACKEND=local-fs\n```\n",
-            ),
-        ),
     ])
 }
 
@@ -340,7 +319,15 @@ mod tests {
         let target = root.path().join("app");
         let result = Scaffold::create(&target, Some("A & <B>")).expect("scaffold");
         let script = fs::read_to_string(target.join("client/pages/tac.js")).expect("script");
+        let environment = fs::read_to_string(target.join(".env.example")).expect("environment");
+        let globals = fs::read_to_string(target.join("tachyon-env.d.ts")).expect("globals");
+        let readme = fs::read_to_string(target.join("README.md")).expect("readme");
         assert!(script.contains("document.title = \"A & <B>\""));
+        assert!(!environment.contains("FYLO_"));
+        assert!(!environment.contains("YON_OTEL_"));
+        assert!(!globals.contains("fylo"));
+        assert!(!readme.contains("`fylo`"));
+        assert!(!target.join("db").exists());
         assert!(target.join("server/routes/yon.js").is_file());
         assert!(target.join("client/components/hero/tac.html").is_file());
         assert_eq!(result.app_name(), "A & <B>");

@@ -15,23 +15,23 @@
 # writes dist/web</code></pre></w-card-text>
     </w-card>
     <w-card variant="outlined" title="macOS" subtitle="desktop platform">
-      <w-card-text><p>SwiftUI controls driven by Tac's DOM-free controller.</p><pre class="code-block"><code>ty bundle --target macos
+      <w-card-text><p>Generated SwiftUI controls with bounded declarative state and actions.</p><pre class="code-block"><code>ty bundle --target macos
 ty preview --target macos</code></pre></w-card-text>
     </w-card>
     <w-card variant="outlined" title="Windows" subtitle="desktop platform">
-      <w-card-text><p>WinUI controls with an embedded QuickJS controller.</p><pre class="code-block"><code>ty bundle --target windows
+      <w-card-text><p>Win32 common controls; unmapped content uses an accessible external-browser placeholder while embedded WebView2 remains deferred.</p><pre class="code-block"><code>ty bundle --target windows
 ty preview --target windows</code></pre></w-card-text>
     </w-card>
     <w-card variant="outlined" title="Linux" subtitle="desktop platform">
-      <w-card-text><p>GTK controls with an embedded QuickJS controller.</p><pre class="code-block"><code>ty bundle --target linux
+      <w-card-text><p>GTK4 controls with isolated local WebKitGTK surfaces for unmapped subtrees.</p><pre class="code-block"><code>ty bundle --target linux
 ty preview --target linux</code></pre></w-card-text>
     </w-card>
     <w-card variant="outlined" title="iOS" subtitle="mobile platform">
-      <w-card-text><p>Xcode-ready SwiftUI with local fallback for unsupported subtrees.</p><pre class="code-block"><code>ty bundle --target ios
+      <w-card-text><p>Xcode-ready, UIKit-backed SwiftUI with isolated WKWebView fallback for unmapped subtrees.</p><pre class="code-block"><code>ty bundle --target ios
 ty preview --target ios</code></pre></w-card-text>
     </w-card>
     <w-card variant="outlined" title="Android" subtitle="mobile platform">
-      <w-card-text><p>Jetpack Compose project with an embedded controller.</p><pre class="code-block"><code>ty bundle --target android
+      <w-card-text><p>Platform <code>android.widget</code> Views and LinearLayout containers with isolated Android WebView fallback.</p><pre class="code-block"><code>ty bundle --target android
 ty preview --target android</code></pre></w-card-text>
     </w-card>
   </div>
@@ -41,8 +41,9 @@ ty preview --target android</code></pre></w-card-text>
       <h3>Build all platforms</h3>
       <p>
         Use <code>all</code> for release validation, then preview one target at a time.
-        Non-web bundles always render native controls first and automatically
-        isolate unsupported subtrees in local WebView boundaries.
+        Non-web bundles render mapped semantics as native controls first. Apple,
+        Android and Linux isolate unmapped subtrees locally; Windows emits an
+        accessible placeholder that opens the content in the default browser.
       </p>
     </div>
     <pre class="code-block"><code>ty bundle --target all

@@ -3,9 +3,8 @@
 Living Tachyon showcase and release-acceptance project for the Rust `ty`
 binary. This app is
 **frontend-only**: there is no `server/` and no `db/`. Tac companions run beside
-their templates, and the browser provides local
-data through document collections mirrored into the origin-private file system
-(OPFS).
+their templates, and the browser provides local data through standard browser
+storage APIs.
 
 The interface is built with DUVAY Light-DOM web components. Its versioned CSS,
 component bundle, behaviors script, and license are vendored under
@@ -20,7 +19,7 @@ without a CDN inside a `default-src 'self'` content-security policy.
   sections live at `/atlas/overview`, `/atlas/compose`, `/atlas/react`,
   `/atlas/connect`, `/atlas/store`, `/atlas/observe`, and `/atlas/extend`.
   Together they cover native inputs, a reactive canvas studio, Wikimedia SSE
-  streaming, tab-to-tab realtime with OPFS-replayed history, portable polyglot
+  streaming, tab-to-tab realtime with locally replayed history, portable polyglot
   companions, fetch cache policies, and client telemetry.
 - `/docs` — a wrapper page (`<slot />`) hosting dynamic `_topic` routes fed
   from `client/shared/data/docs.json`.
@@ -73,6 +72,25 @@ The helper invokes `ty bundle .`, asserts `dist/web/`, and then verifies all 11
 static and dynamic routes, runtime assets, mobile shell behavior, and generated
 SEO files.
 
+## Deployment
+
+The website is deployed from a qualified prebuilt web bundle, not rebuilt by
+AWS Amplify. Its real Rust, Dart, Kotlin, Swift, and C# companions require the
+same pinned toolchains exercised by CI, which the generic Amplify source image
+does not provide.
+
+After the website acceptance suite passes with the release candidate binary,
+archive the *contents* of `dist/web` so `index.html` is at the archive root:
+
+```sh
+cd dist/web
+zip -q -r ../../../tachyon-site.zip .
+```
+
+Upload that zip through Amplify's manual-deployment API for the `TACHYON` app.
+Do not archive the `web` directory itself or the deployment will have no root
+`index.html`.
+
 ## PWA
 
 The site is installable: `client/shared/assets/manifest.webmanifest` is
@@ -80,13 +98,13 @@ auto-linked into every shell (with its `theme_color` meta), icons live beside
 it (`icon.svg`, `icon-192.png`, `icon-512.png`, `favicon.svg`), and Tachyon's
 built-in service worker caches assets for offline use on non-loopback hosts.
 Being frontend-only, the installed app keeps working offline — companions and
-the OPFS database need no network.
+browser-local storage need no application server.
 
 ## Notes
 
 - Page roots hold no reactive state: live state belongs to explicitly hydrated
   islands, so each prerendered document remains useful without JavaScript.
-- Everything the site stores — theme, drafts, visit counters, inventory
-  documents, chat history, telemetry spans — lives in the visitor's browser
+- Everything the site stores — theme, drafts, visit counters, messages, chat
+  history, and client telemetry — lives in the visitor's browser
   (localStorage, sessionStorage, and IndexedDB).
 - Temporary bundle locks and generated target artifacts are ignored.

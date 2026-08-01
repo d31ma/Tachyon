@@ -270,8 +270,8 @@ different output by design. Observable behavior is the contract.
 Status: implementation complete on 2026-07-26. Release-candidate packaging,
 fail-closed installers, signing, attestation, native post-publication
 verification, and draft-to-public promotion were completed on 2026-08-01.
-The independent-review gate remains open and was explicitly skipped for the
-current engineering pass. The normative behavior is in
+The independent-review gate remains open and is required before the stable tag
+is created. The normative behavior is in
 [`PHASE_7_SPEC.md`](PHASE_7_SPEC.md), and the validation record is in
 [`PHASE_7_EVIDENCE.md`](PHASE_7_EVIDENCE.md).
 
@@ -299,7 +299,7 @@ promotion.
 
 The independent review is a human deliverable and remains an explicit unknown,
 not a technical pass. It does not block the remaining CI and packaging work,
-but it cannot be represented as passed.
+but it cannot be represented as passed and blocks creation of a stable tag.
 
 ## Cutover Gate
 

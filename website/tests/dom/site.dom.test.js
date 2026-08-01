@@ -80,8 +80,8 @@ describe('homepage DOM', () => {
         expect(titles).toContain('Native HTML rendering')
         expect(titles).toContain('Island hydration')
         expect(home.document.querySelector('.targets')?.textContent).toContain('real native controls')
-        expect(home.document.querySelector('.features-grid')?.textContent).toContain('unsupported subtrees in local WebView boundaries')
-        expect(home.document.querySelector('.targets')?.textContent).toContain('local WebView boundaries')
+        expect(home.document.querySelector('.features-grid')?.textContent).toContain('Windows currently shows an accessible placeholder')
+        expect(home.document.querySelector('.targets')?.textContent).toContain('accessible placeholder that opens the content')
         expect(home.document.querySelector('.target-terminal pre code')?.textContent).not.toContain('--render-mode')
     })
 
@@ -181,5 +181,16 @@ describe('docs DOM', () => {
         expect(docs.document.querySelector('.docs-main')).toBeTruthy()
         expect(docs.document.querySelector('.docs-page')).toBeTruthy()
         expect(docs.document.querySelector('site-footer')).toBeFalsy()
+    })
+
+    test('labels search and announces an empty result', () => {
+        const label = docs.document.querySelector('label[for="docs-search-input"]')
+        const input = docs.document.querySelector('#docs-search-input')
+        const empty = docs.document.querySelector('.docs-no-results')
+
+        expect(label?.textContent?.trim()).toBe('Search docs')
+        expect(input?.getAttribute('aria-describedby')).toBe('docs-search-hint')
+        expect(empty?.getAttribute('role')).toBe('status')
+        expect(empty?.getAttribute('aria-live')).toBe('polite')
     })
 })

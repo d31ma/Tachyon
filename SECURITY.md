@@ -22,9 +22,11 @@ claims a supported Rust release.
 
 ## Supported Versions
 
-The Rust rewrite currently has no supported or preview release. Phase 0 is a
-repository foundation only. Supported released versions of the existing
-implementation are listed in the public release notes.
+The Rust implementation is Tachyon's sole in-tree implementation. Security
+fixes apply to the latest immutable release unless its release notes state a
+narrower affected range. Platform maturity remains governed by
+`docs/SUPPORT_TIERS.md`; publishing a stable CLI release does not promote a
+native target to `supported`.
 
 ## Security Update Policy
 

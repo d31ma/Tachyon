@@ -1,10 +1,11 @@
 # Tachyon Support
 
-## Current Rewrite Status
+## Current Implementation Status
 
-The Rust rewrite is in Phase 0 and is not an application framework release.
-There is no compatibility, uptime, security-support, or production-use promise
-for Phase 0 artifacts.
+The Rust implementation is Tachyon's sole in-tree implementation. Public
+artifacts are qualified and distributed by the tag-gated stable release
+workflow; target maturity is stated only with the vocabulary and evidence in
+`docs/SUPPORT_TIERS.md`. No target is currently promoted to `supported`.
 
 Use:
 

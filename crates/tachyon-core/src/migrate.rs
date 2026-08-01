@@ -412,6 +412,22 @@ fn classify_other_language_handler(
     }
 }
 
+fn classify_route_schema(relative: &str) -> MigrationFinding {
+    MigrationFinding {
+        source: String::from(relative),
+        feature: String::from("server.route_schema"),
+        status: MigrationStatus::Unsupported,
+        detail: String::from(
+            "The Rust runtime does not discover or enforce legacy OPTIONS.schema.json \
+             request and response schemas.",
+        ),
+        action: Some(String::from(
+            "Validate the request and response in the handler or at the deployment \
+             boundary, or keep the legacy server for this route contract.",
+        )),
+    }
+}
+
 /// Classifies one file by its conventional name.
 fn classify_name(
     relative: &str,
@@ -499,6 +515,7 @@ fn classify_name(
              other status answers the request.",
             None,
         ),
+        "OPTIONS.schema.json" => Some(classify_route_schema(relative)),
         "tachyon.json" => finding(
             "config.application",
             MigrationStatus::Supported,
@@ -1009,6 +1026,28 @@ mod tests {
             );
             assert!(finding.action.is_some(), "{companion} carries no action");
         }
+    }
+
+    #[test]
+    fn legacy_route_schemas_are_reported_as_unsupported() {
+        let root = tempfile::tempdir().expect("project");
+        write(
+            &root.path().join("server/routes/users/OPTIONS.schema.json"),
+            "{}",
+        );
+        let report = MigrationAnalysis::check(root.path()).expect("report");
+        let finding = report
+            .findings
+            .iter()
+            .find(|finding| finding.feature == "server.route_schema")
+            .expect("route schema finding");
+        assert_eq!(finding.status, MigrationStatus::Unsupported);
+        assert!(
+            finding
+                .action
+                .as_ref()
+                .is_some_and(|action| action.contains("Validate"))
+        );
     }
 
     #[test]

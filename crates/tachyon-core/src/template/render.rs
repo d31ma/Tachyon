@@ -80,7 +80,9 @@ impl<'a> ViewRenderer<'a> {
         };
         if !program.is_document {
             renderer.push_generated(
-                "<!doctype html><html><head><meta charset=\"utf-8\"></head><body>",
+                "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+                 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+                 </head><body>",
             )?;
         } else if program.has_doctype {
             renderer.push_generated("<!doctype html>")?;
@@ -737,6 +739,16 @@ mod tests {
             .unwrap_or_else(|_| unreachable!());
         assert!(rendered.html.contains("data-id=\"&quot; bad\""));
         assert!(rendered.html.contains("<b>Products</b>&lt;unsafe&gt;"));
+        assert!(
+            rendered
+                .html
+                .starts_with("<!doctype html><html lang=\"en\">")
+        );
+        assert!(
+            rendered.html.contains(
+                "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+            )
+        );
         assert!(!rendered.html.contains("<loop"));
         assert_eq!(rendered.source_map.sources.len(), 2);
     }

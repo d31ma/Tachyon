@@ -315,13 +315,21 @@ fn stable_release_is_tag_gated_and_fail_closed() -> Result<(), Box<dyn std::erro
     assert!(workflow.contains("cosign verify-blob"));
     assert!(workflow.contains("sha256sum --check --strict SHA256SUMS"));
     assert!(workflow.contains("gh release edit \"${TAG}\" --draft=false --latest"));
+    assert!(workflow.contains("failed upgrade replaced the installed executable"));
 
     assert!(unix_installer.contains("No checksum published for ${asset}. Aborting."));
-    assert!(!unix_installer.contains("SHA256SUMS\" -o \"$tmp/SHA256SUMS\" || true"));
+    assert!(unix_installer.contains("mktemp \"${dest}/.ty.download.XXXXXX\""));
+    assert!(unix_installer.contains("chmod 0755 \"$tmp\""));
+    assert!(unix_installer.contains("mv \"$tmp\" \"$dest/ty\""));
+    assert!(!unix_installer.contains("mktemp -d"));
     assert!(windows_installer.contains("No checksum published for $asset. Aborting."));
     assert!(!windows_installer.contains("Could not verify checksum"));
+    assert!(windows_installer.contains("[IO.File]::Replace($download, $exe, $null)"));
+    assert!(!windows_installer.contains("-OutFile $exe"));
     assert!(!unix_installer.contains("d31ma/Fylo"));
     assert!(!windows_installer.contains("d31ma/Fylo"));
+    assert!(!unix_installer.contains("releases/latest/download/install.sh"));
+    assert!(!windows_installer.contains("releases/latest/download/install.ps1"));
     Ok(())
 }
 

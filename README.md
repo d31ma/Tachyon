@@ -454,9 +454,10 @@ Start with:
 - [docs/RELEASE_ENGINEERING.md](docs/RELEASE_ENGINEERING.md) for release and
   rollback policy.
 
-The Rust implementation is greenfield. The remaining JavaScript tree is a
-behavioral oracle and migration corpus; new Rust code does not import or copy
-its private internals.
+The Rust implementation is greenfield and is the only in-tree implementation.
+The checksum-pinned v26.30.04 executable is the behavioral oracle; the retained
+full-stack migration fixture is non-executable test data. Rust code does not
+import or copy either implementation's private internals.
 
 ## License
 
