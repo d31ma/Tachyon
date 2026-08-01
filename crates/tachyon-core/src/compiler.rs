@@ -1658,11 +1658,26 @@ pub(crate) fn resolve_output_path(root: &Path, path: &Path) -> Result<PathBuf, F
 
     let mut current = PathBuf::new();
     for component in normalized.components() {
-        match component {
-            Component::Prefix(prefix) => current.push(prefix.as_os_str()),
-            Component::RootDir => current.push(component.as_os_str()),
-            Component::Normal(segment) => current.push(segment),
+        let inspect = match component {
+            Component::Prefix(prefix) => {
+                current.push(prefix.as_os_str());
+                false
+            }
+            Component::RootDir => {
+                current.push(component.as_os_str());
+                false
+            }
+            Component::Normal(segment) => {
+                current.push(segment);
+                true
+            }
             Component::CurDir | Component::ParentDir => return Err(invalid_output(path)),
+        };
+        // Windows verbatim prefixes such as `\\?\C:` are not themselves
+        // filesystem objects and reject metadata queries. Inspect only the
+        // cumulative paths that end in a real name component.
+        if !inspect {
+            continue;
         }
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_symlink() => {

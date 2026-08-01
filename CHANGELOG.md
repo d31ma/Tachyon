@@ -74,6 +74,9 @@ independent major versions.
 - Added four fuzz targets covering every trust boundary, run under
   `AddressSanitizer`, plus sanitizer, soak, recovery-drill, performance-budget,
   SBOM, and auditable-build gates.
+- Added a weekly long-form fuzz campaign that restores the previous corpus,
+  runs all four boundaries for two hours in total by default, publishes the
+  evolved inputs for audit, and carries them into the next campaign.
 - Added reproducible release artifacts with per-file checksums and a lifecycle
   drill covering verification, tamper detection, install, upgrade, rollback,
   and uninstall.
@@ -87,6 +90,14 @@ independent major versions.
   license-pipe termination explicitly, rebuilt the standard library for Linux
   sanitizer runs, and retained a release artifact for provenance attestation.
 
+- The template parser panicked on malformed markup. `<slot>` holds no
+  children, but token-error recovery could leave one open on the parser stack,
+  and appending the next child then reached an `unreachable!()` — so a
+  hand-edited or generated `tac.html` could abort the compiler instead of
+  reporting a diagnostic. A leaf now refuses the child with `TY1301` and the
+  impossible state is gone rather than merely unreachable. Found by the
+  `template_frontend` fuzz target in CI; the crashing input is a regression
+  test and a permanent corpus seed.
 - A native build rejected the compiler's own output. Only scripts under
   `/.tachyon/` were stripped before native planning, so a route's own
   `/client.js` survived and the view contract refused it with `TY1306` — which

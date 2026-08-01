@@ -109,6 +109,7 @@ fn every_phase7_fuzz_boundary_has_a_target_seed_and_ci_campaign()
     let manifest = fs::read_to_string(root.join("fuzz/Cargo.toml"))?;
     let lockfile = fs::read_to_string(root.join("fuzz/Cargo.lock"))?;
     let workflow = fs::read_to_string(root.join(".github/workflows/rust-ci.yml"))?;
+    let scheduled = fs::read_to_string(root.join(".github/workflows/fuzz-scheduled.yml"))?;
 
     assert!(manifest.contains("libfuzzer-sys = \"=0.4.10\""));
     assert!(lockfile.contains("name = \"libfuzzer-sys\""));
@@ -132,6 +133,10 @@ fn every_phase7_fuzz_boundary_has_a_target_seed_and_ci_campaign()
             .contains("for target in html_frontend template_frontend handler_frame native_planner")
     );
     assert!(workflow.contains("-max_total_time=${FUZZ_SECONDS}"));
+    assert!(scheduled.contains("Long-form persistent-corpus fuzzing"));
+    assert!(scheduled.contains("actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25"));
+    assert!(scheduled.contains("actions/cache/save@caa296126883cff596d87d8935842f9db880ef25"));
+    assert!(scheduled.contains("fuzz-corpus-${{ runner.os }}-${{ github.run_id }}"));
     Ok(())
 }
 

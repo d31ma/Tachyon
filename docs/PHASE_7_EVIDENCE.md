@@ -35,6 +35,21 @@ never changes what the planner accepts.
 CI runs each target for 300 seconds per pull request and publishes any
 crashing input as an artifact.
 
+The first such CI campaign found a real defect that the shorter local runs
+above had missed. `template_frontend` reached a 78-byte input in which
+malformed token recovery left `<slot>` open on the parser stack; appending the
+next child then hit an `unreachable!()` in `OpenNode::children_mut` and
+panicked. `<slot>` is a leaf, so the parser now refuses the child with
+diagnostic 1301 instead of reparenting or aborting, and the impossible-state
+panic is gone rather than merely unreachable. The exact crashing bytes are a
+unit regression in `crates/tachyon-core/src/template/frontend.rs`, and
+`fuzz/corpus/template_frontend/seed-open-slot` keeps the shape in the
+permanent corpus. Minimization cannot reduce the artifact any further because
+it no longer crashes. After the fix the artifact replays cleanly and a
+120-second `template_frontend` campaign completed 1,932,958 executions with no
+crash, alongside 60-second campaigns on the other three targets
+(1,948,319, 5,257,667, and 307,471 executions, all clean).
+
 ## 2. Sanitizers
 
 ```bash
@@ -120,7 +135,7 @@ substitute for one tag-driven workflow publishing attested archives.
 | Independent security review | Explicitly skipped for the current engineering pass on 2026-08-01. The unknown risk remains documented rather than represented as a pass. | A named independent reviewer signing off against `THREAT_MODEL.md` and this evidence. |
 | Recorded CI runs of `fuzz`, `sanitizers`, `soak`, and `provenance` | The jobs are defined but have not reported. | A pull request run. |
 | `LeakSanitizer` and `ThreadSanitizer` results | Unsupported on the local platform. | The `sanitizers` job on Linux. |
-| Longer fuzz campaigns and a persistent corpus | 45-second local runs and 300-second CI runs find shallow bugs only. | A scheduled long-running campaign with a corpus carried between runs. |
+| First recorded long-form persistent-corpus campaign | `fuzz-scheduled.yml` now runs every target for 30 minutes each by default, restores and saves an evolving corpus, and publishes the corpus and any crash for audit; no scheduled run has reported yet. | The first successful scheduled run, followed by continued weekly execution. |
 
 No target is promoted to `supported` in this document. Tag-driven release
 provenance and the deliberately deferred review remain open until their real

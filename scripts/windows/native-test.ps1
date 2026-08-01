@@ -67,21 +67,31 @@ Start-Sleep -Seconds 5
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 
-function Find-Descendant([string] $name) {
+function Find-Descendant(
+    [System.Windows.Automation.AutomationElement] $ancestor,
+    [string] $name,
+    $controlType = $null
+) {
     $condition = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::NameProperty, $name)
-    return $root.FindFirst(
+    $matches = $ancestor.FindAll(
         [System.Windows.Automation.TreeScope]::Descendants, $condition)
+    foreach ($match in $matches) {
+        if ($null -eq $controlType -or $match.Current.ControlType -eq $controlType) {
+            return $match
+        }
+    }
+    return $null
 }
 
 try {
     Write-Host '==> asserting the native window and controls'
-    $window = Find-Descendant 'Phase Five'
+    $window = Find-Descendant $root 'Phase Five'
     if ($null -eq $window) { throw 'the generated window never appeared to UI Automation' }
 
     # Win32 exposes a control's window text as its accessible name, so the
     # button is located by its visible caption. See PHASE_5_SPEC.md section 6.
-    $button = Find-Descendant 'Add one'
+    $button = Find-Descendant $window 'Add one' ([System.Windows.Automation.ControlType]::Button)
     if ($null -eq $button) { throw 'the native button is not exposed to UI Automation' }
     $controlType = $button.Current.ControlType.ProgrammaticName
     if ($controlType -ne 'ControlType.Button') {
@@ -89,7 +99,7 @@ try {
     }
 
     foreach ($name in @('Phase Five', 'Count', 'Sales chart')) {
-        if ($null -eq (Find-Descendant $name)) {
+        if ($null -eq (Find-Descendant $window $name)) {
             throw "accessible name '$name' never reached UI Automation"
         }
     }
@@ -100,7 +110,7 @@ try {
         [System.Windows.Automation.InvokePattern]::Pattern)
     $invoke.Invoke()
     Start-Sleep -Seconds 2
-    if ($null -eq (Find-Descendant '1')) {
+    if ($null -eq (Find-Descendant $window '1')) {
         throw 'invoking the native button never updated the bound output'
     }
     Write-Host 'OK: invoking the native button incremented the bound state to 1'
