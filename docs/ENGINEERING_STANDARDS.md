@@ -18,7 +18,8 @@ It does not mean maximizing crate count, abstractions, or CI jobs.
 - Do not create empty placeholder directories.
 - Do not create dumping grounds named `utils`, `helpers`, `common`, `shared`,
   `misc`, `base`, or `manager`.
-- Keep package-local tests beside code and system-wide tests under `tests/`.
+- Keep unit tests beside code and integration or system tests under the owning
+  crate's `tests/` directory.
 - Keep legacy compatibility evidence separate from new internal design.
 
 ## Rust Rules

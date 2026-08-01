@@ -33,7 +33,7 @@ implementation structure is greenfield.
 - Versioned canonical schemas with accepted and rejected examples.
 - Cross-platform Rust CI.
 - Release, support, security, governance, and contribution policies.
-- A documented boundary between the legacy oracle and greenfield code.
+- A documented boundary between the archived release oracle and greenfield code.
 
 ### Exit Gate
 
@@ -88,7 +88,7 @@ Status: complete on 2026-07-26. The normative behavior is recorded in
 - [x] Windows compiles locally; the native `windows-latest` CI job is the
       authoritative execution gate.
 - [x] Formatting, check, Clippy, tests, rustdoc, coverage, supply-chain policy,
-      and the legacy compatibility suite pass.
+      and the released-binary compatibility suite pass.
 
 ## Phase 2: Yon Handler Boundary
 
@@ -127,7 +127,7 @@ Status: complete on 2026-07-26. The normative behavior is recorded in
       syntax errors, non-serializable results, and missing runtimes are tested.
 - [x] Formatting, check, Clippy, tests, rustdoc, coverage, dependency policy,
       action pinning, cross-platform buildability, Linux-container execution,
-      and legacy compatibility gates pass.
+      and released-binary compatibility gates pass.
 
 ## Phase 3: Tac and Yon View Semantics
 
@@ -187,8 +187,8 @@ validation record in [`PHASE_4_EVIDENCE.md`](PHASE_4_EVIDENCE.md).
 - [x] Required roles and names match the mobile-web reference; native and web
       screenshots pass the documented coarse visual-layout budget.
 - [x] Formatting, check, Clippy, tests, rustdoc, coverage, dependency policy,
-      action pinning, Linux-container execution, Windows buildability, legacy
-      compatibility, and release-smoke gates pass.
+      action pinning, Linux-container execution, Windows buildability,
+      released-binary compatibility, and release-smoke gates pass.
 
 ## Phase 5: Platform Expansion
 
@@ -238,7 +238,7 @@ Status: complete on 2026-07-26. The normative behavior is recorded in
 [`PHASE_6_EVIDENCE.md`](PHASE_6_EVIDENCE.md), and the resulting statement is
 [`PARITY_LEDGER.md`](PARITY_LEDGER.md).
 
-Run the legacy and Rust implementations over the shared application corpus.
+Run the archived v26.30.04 release and Rust implementation over the shared application corpus.
 Compare route graphs, rendered HTML, HTTP behavior, events, diagnostics, and
 artifacts. Deliver `ty migrate check` and a feature-parity ledger.
 
@@ -255,7 +255,7 @@ artifacts. Deliver `ty migrate check` and a feature-parity ledger.
 - [x] Every corpus project builds under both implementations.
 - [x] Every corpus route renders an identical semantic DOM, or its divergence
       is declared and carries a ledger row.
-- [x] `ty migrate check` classifies the real legacy fixture, attaches an
+- [x] `ty migrate check` classifies the archived migration fixture, attaches an
       action to every non-supported finding, and is byte-deterministic.
 - [x] The ledger distinguishes `identical`, `equivalent`, `changed`,
       `unsupported`, and `rust-only`, and states what it does not claim.

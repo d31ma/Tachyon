@@ -81,14 +81,15 @@ The completion run includes formatting, all-target/all-feature checking,
 strict Clippy, all 112 macOS-host Rust tests, warning-free rustdoc, the uniform
 90% line/function/region coverage ratchet for target-neutral Rust, the Native
 UI planner, and native configuration, dependency/license/source policy,
-legacy Bun typecheck and tests, real Chromium islands, the real macOS parity
+the released-binary compatibility differential, real Chromium islands, the real macOS parity
 gate, a pinned Linux container run, Windows GNU cross-checking, and a release
 binary smoke test reporting `ty 0.0.0-phase4`.
 
 The pinned `rust:1.97.1-bookworm` Linux x86_64 container passed all 109 tests
 applicable to that host; the omitted two are the explicit macOS bundle and
-rollback tests. The legacy compatibility suite passed all 637 tests with zero
-failures.
+rollback tests. The historical JavaScript suite passed all 637 tests at the
+Phase 4 checkpoint; it was removed when Rust became the sole in-tree
+implementation.
 
 The LLVM percentage excludes `native/compiler.rs` and `native/macos.rs`.
 Those external Swift compiler, signing, and process-orchestration paths are

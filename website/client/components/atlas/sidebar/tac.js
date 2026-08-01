@@ -6,6 +6,7 @@ export default class {
     const update = () => {
       const current = location.pathname === '/atlas' ? '/atlas/overview' : location.pathname
       for (const link of root.querySelectorAll('.atlas-sidebar-list a')) {
+        if (!(link instanceof HTMLAnchorElement)) continue
         const active = new URL(link.href, location.href).pathname === current
         link.classList.toggle('active', active)
         if (active) link.setAttribute('aria-current', 'page')

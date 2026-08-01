@@ -23,7 +23,7 @@ fn write(path: &Path, contents: &str) {
     fs::write(path, contents).expect("fixture source");
 }
 
-/// Returns the repository root, which holds the corpus and legacy fixtures.
+/// Returns the repository root, which holds the compatibility corpus.
 fn repository_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -125,12 +125,9 @@ fn the_report_is_deterministic_and_schema_shaped() {
 }
 
 #[test]
-fn the_real_legacy_fixture_is_classified_without_being_executed() {
-    let fixture = repository_root().join("tests/fixtures/fullstack");
-    if !fixture.is_dir() {
-        // The legacy oracle is absent from this checkout; nothing to classify.
-        return;
-    }
+fn the_migration_fixture_is_classified_without_being_executed() {
+    let fixture = repository_root().join("crates/tachyon-cli/tests/fixtures/migration-fullstack");
+    assert!(fixture.is_dir(), "the migration fixture is missing");
     let output = run(ty()
         .arg("migrate")
         .arg("check")
@@ -156,7 +153,7 @@ fn the_real_legacy_fixture_is_classified_without_being_executed() {
     }
     assert!(
         report["unsupported"].as_u64().unwrap_or_default() > 0,
-        "the legacy fixture should not be fully supported yet"
+        "the migration fixture should not be fully supported yet"
     );
 }
 

@@ -13,12 +13,12 @@ Node 24, Playwright Chromium 1217.
 | Suite | Coverage |
 | --- | --- |
 | `migrate` | clean projects, unsupported and changed classification with a required action, view-construct classification from source, exclusion of generated and vendored directories, closed failure on a missing target |
-| `phase6_cli` | `TY1702` on unsupported constructs, `--allow-unsupported`, byte-identical repeated JSON reports, Migration Report v1 shape, classification of the real legacy fixture, and a build plus clean migration check for every corpus project |
+| `phase6_cli` | `TY1702` on unsupported constructs, `--allow-unsupported`, byte-identical repeated JSON reports, Migration Report v1 shape, classification of the archived migration fixture, and a build plus clean migration check for every corpus project |
 
 ## 2. Differential Over the Shared Corpus
 
 ```bash
-LEGACY_TY_BIN=/path/to/26.30.04/ty \
+RELEASED_TY_BIN=/path/to/26.30.04/ty \
 TY_BIN=target/debug/ty \
 node scripts/compat/differential.mjs
 ```
@@ -59,14 +59,15 @@ These were discovered by running both implementations, not assumed.
 | The legacy implementation has no `yon.html` convention. It treats every file under `server/routes/**` as a handler and rejects `yon.html` outright. | Yon views and composed route context are `rust-only`. They have no legacy counterpart to compare against and are proven by the Phase 3 suite instead. |
 | Tac components remain runtime custom elements in the legacy output and are expanded at compile time in the Rust output. | Intentional; declared and recorded. |
 
-## 4. `ty migrate check` Against the Real Legacy Fixture
+## 4. `ty migrate check` Against the Archived Migration Fixture
 
 ```bash
-ty migrate check tests/fixtures/fullstack
+ty migrate check crates/tachyon-cli/tests/fixtures/migration-fullstack
 ```
 
-`tests/fixtures/fullstack` is the legacy implementation's own full-stack
-fixture: polyglot handlers, services, and workers.
+`crates/tachyon-cli/tests/fixtures/migration-fullstack` preserves an archived
+full-stack project shape: polyglot handlers, services, and workers. It is test
+data for the Rust migration checker, not executable framework code.
 
 Result: **14 supported, 3 changed, 33 unsupported**, exit `TY1702`.
 
@@ -83,7 +84,7 @@ project and never executes it.
 
 The `compatibility` job in `.github/workflows/rust-ci.yml` builds the CLI,
 installs Chromium, runs the differential over the corpus, executes
-`scripts/compat/standalone-rust.mjs`, and classifies the legacy fixture on every
+`scripts/compat/standalone-rust.mjs`, and classifies the migration fixture on every
 pull request. The standalone gate verifies the released command surface,
 scaffold, cache lifecycle, web build and server, source-only native bundle,
 literal page-state activation and assignment in real Chromium, and native
@@ -102,13 +103,10 @@ regressed once because the compiler emitted a page-island wrapper but omitted
 the island runtime when no component island existed. A compiler regression
 test now also requires `/.tachyon/islands.js` for that shape.
 
-This gate exists because the old in-tree JavaScript suite imports Fylo files
-that were intentionally removed during the product cutover. Its current
-whole-tree run stops 67 bundle cases at missing source modules and reports five
-load errors, so it cannot distinguish a Rust regression from a broken legacy
-checkout. The archived 26.30.04 executable remains immutable and is used by the
-neutral differential; public workflows that do not need two implementations
-run directly against the Rust executable.
+The in-tree JavaScript runtime and its implementation-coupled suite were
+removed at cutover. The archived 26.30.04 executable remains immutable and is
+used by the neutral differential; public workflows that do not need two
+implementations run directly against the Rust executable.
 
 ## 7. Open Gaps
 

@@ -85,9 +85,10 @@ patch.
   both PASS; iOS was driven by hand on iPhone 17 Pro. The macOS evidence block
   is named below.
 - **Compatibility differential** 3/3 corpus projects
-  (`LEGACY_TY_BIN=/path/to/released/ty TY_BIN=/path/to/rewrite/ty node
+  (`RELEASED_TY_BIN=/path/to/v26.30.04/ty TY_BIN=/path/to/rewrite/ty node
   scripts/compat/differential.mjs`). The environment variables keep the gate
-  tied to immutable binaries even after the in-tree legacy runtime is removed.
+  tied to immutable binaries; no prior framework implementation remains in the
+  tree.
 - **Release lifecycle drill** PASS, including a bit-identical rebuild.
 
 ### What is open
@@ -178,7 +179,7 @@ calls.
 TY_BIN=target/debug/ty node scripts/compat/standalone-rust.mjs
   PASS: released standalone workflow matches Rust ty (macos)
 
-LEGACY_TY_BIN=/tmp/.../26.30.04/ty TY_BIN=target/debug/ty \
+RELEASED_TY_BIN=/tmp/.../26.30.04/ty TY_BIN=target/debug/ty \
   node scripts/compat/differential.mjs
   scaffold: 22 generated files byte-identical
   3/3 corpus projects match across implementations
@@ -226,13 +227,9 @@ WebKit surfaces on this simulator. Automated clicks on those two hosts remain
 blocked by the macOS assistive-access permission named elsewhere in this file,
 so that interaction is not claimed from the screenshots.
 
-The old in-tree JavaScript suite is no longer a usable whole-repository oracle:
-its run produced 372 passes, 67 failures, and 5 load errors because the
-intentionally removed Fylo files are still imported by that legacy source
-tree. Almost every bundle failure stops at the missing
-`src/runtime/fylo-browser-worker.js`; the archived 26.30.04 executable,
-standalone workflow, neutral differential, and migrated website are the
-immutable public-behavior oracles instead.
+The old in-tree JavaScript runtime and its implementation-coupled suite have
+been removed. The archived 26.30.04 executable, standalone workflow, neutral
+differential, and migrated website are the immutable public-behavior oracles.
 
 ## Recently fixed handoff defects
 

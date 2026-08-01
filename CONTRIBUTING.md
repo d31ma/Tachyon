@@ -11,8 +11,9 @@ Read:
 5. `docs/ENGINEERING_STANDARDS.md`;
 6. `docs/THREAT_MODEL.md` for boundary-sensitive work.
 
-The legacy JavaScript implementation is a compatibility oracle. Do not port
-private implementation structure into Rust.
+The Rust rewrite is the only in-tree implementation. Compatibility work uses
+the checksum-verified v26.30.04 release executable and neutral fixtures; do not
+reintroduce or port private JavaScript implementation structure.
 
 ## Toolchain
 
@@ -32,7 +33,7 @@ The Phase 1 contributor path requires Rust only. Phase 2 through Phase 4
 real-process tests also require Node.js and CPython available as `node` and
 `python3` (`python` on Windows). Native CI fixes Node.js 24.18.0 and Python
 3.14.6. The Phase 3 browser gate additionally uses Bun and Playwright Chromium;
-Bun also runs the legacy compatibility suite. Phase 4 native evidence requires
+Bun also drives the released-binary compatibility differential. Phase 4 native evidence requires
 macOS, Xcode/Swift, code signing, a GUI session with Accessibility permission,
 and Playwright Chromium.
 

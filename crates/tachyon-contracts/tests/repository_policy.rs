@@ -103,6 +103,57 @@ fn release_artifact_inputs_are_present_and_nonempty() -> Result<(), Box<dyn std:
 }
 
 #[test]
+fn rewrite_is_the_only_in_tree_framework_implementation() -> Result<(), Box<dyn std::error::Error>>
+{
+    let root = repository_root();
+    for obsolete in [
+        "src",
+        "tests",
+        "bunfig.toml",
+        "tsconfig.src.json",
+        "tsconfig.tests.json",
+        "scripts/typecheck.js",
+        "scripts/windows-native-compile-smoke.js",
+        "scripts/bench",
+    ] {
+        assert!(
+            !root.join(obsolete).exists(),
+            "the removed JavaScript implementation path was reintroduced: {obsolete}"
+        );
+    }
+
+    assert!(root.join("api/types/tachyon-env.d.ts").is_file());
+    assert!(
+        root.join("crates/tachyon-cli/tests/fixtures/migration-fullstack")
+            .is_dir()
+    );
+
+    let package: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(root.join("package.json"))?)?;
+    let scripts = package["scripts"]
+        .as_object()
+        .ok_or("package.json scripts must be an object")?;
+    for command in ["init", "serve", "bundle", "preview", "start"] {
+        assert!(
+            scripts[command]
+                .as_str()
+                .is_some_and(|script| script.starts_with("cargo run --locked --bin ty --")),
+            "package script {command} does not invoke the Rust CLI"
+        );
+    }
+    for script in scripts.values().filter_map(serde_json::Value::as_str) {
+        assert!(!script.contains("src/cli"));
+        assert!(!script.contains("bun test ./tests"));
+    }
+
+    let workflow = fs::read_to_string(root.join(".github/workflows/rust-ci.yml"))?;
+    assert!(workflow.contains("Rewrite-only repository policy"));
+    assert!(workflow.contains("RELEASED_TY_BIN="));
+    assert!(workflow.contains("crates/tachyon-cli/tests/fixtures/migration-fullstack"));
+    Ok(())
+}
+
+#[test]
 fn every_phase7_fuzz_boundary_has_a_target_seed_and_ci_campaign()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = repository_root();

@@ -4,6 +4,10 @@ This directory is the canonical source for Tachyon's versioned machine
 contracts. Code, generated artifacts, documentation, and examples must agree
 with these schemas.
 
+`types/tachyon-env.d.ts` is the standalone ambient TypeScript contract emitted
+by `ty init`. It is owned by the Rust scaffold and has no source dependency on
+an implementation runtime.
+
 Each contract has:
 
 - an immutable major-version directory;

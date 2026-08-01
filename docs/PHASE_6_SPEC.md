@@ -1,17 +1,17 @@
 # Phase 6 Specification: Compatibility and Migration
 
 This document is normative for Phase 6. It defines how the Rust implementation
-is measured against the legacy JavaScript implementation, what a compatibility
-claim requires, and what `ty migrate check` must report.
+is measured against the archived v26.30.04 release, what a compatibility claim
+requires, and what `ty migrate check` must report.
 
 Phase 6 adds no application-facing feature. It adds measurement, and the
 vocabulary that makes a compatibility claim falsifiable.
 
 ## 1. The Oracle
 
-The legacy JavaScript implementation in this branch is the behavioral oracle.
-It is never a source-code template. A compatibility claim is a statement about
-observable behavior, never about internal structure.
+The checksum-verified v26.30.04 executable is the behavioral oracle. It is
+downloaded in CI and never committed into this branch. A compatibility claim
+is a statement about observable behavior, never about internal structure.
 
 ## 2. What Is Compared
 
@@ -115,7 +115,7 @@ Exit behavior:
 - [x] Every corpus route renders an identical semantic DOM, or its divergence
       is declared and carries a ledger row.
 - [x] The route graph matches for every corpus project.
-- [x] `ty migrate check` classifies the real legacy fixture without executing
+- [x] `ty migrate check` classifies the archived migration fixture without executing
       it, and every non-supported finding carries an action.
 - [x] The ledger covers the view, server, build, and native surfaces.
 - [x] The differential runs in CI.

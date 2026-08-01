@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFile } from 'fs/promises';
 
-const read = (p) => readFile(new URL(`../${p}`, import.meta.url), 'utf8');
+const read = (/** @type {string} */ p) => readFile(new URL(`../${p}`, import.meta.url), 'utf8');
 
 describe('enterprise SEO is baked into the prerendered output', () => {
     test('the homepage head carries description, canonical, OG, Twitter and JSON-LD', async () => {
@@ -24,12 +24,12 @@ describe('enterprise SEO is baked into the prerendered output', () => {
             read('dist/web/atlas/index.html'),
             read('dist/web/docs/index.html'),
         ]);
-        const canonical = (h) => (h.match(/rel="canonical" href="([^"]+)"/) || [])[1];
+        const canonical = (/** @type {string} */ h) => (h.match(/rel="canonical" href="([^"]+)"/) || [])[1];
         expect(canonical(home)).toBe('https://tachyon.del.ma/');
         expect(canonical(atlas)).toBe('https://tachyon.del.ma/atlas');
         expect(canonical(docs)).toBe('https://tachyon.del.ma/docs');
         // Descriptions differ per page (no copy-paste boilerplate).
-        const desc = (h) => (h.match(/name="description" content="([^"]+)"/) || [])[1];
+        const desc = (/** @type {string} */ h) => (h.match(/name="description" content="([^"]+)"/) || [])[1];
         expect(new Set([desc(home), desc(atlas), desc(docs)]).size).toBe(3);
     });
 

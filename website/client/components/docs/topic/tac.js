@@ -124,7 +124,7 @@ export default class {
     const list = element('ul', 'topic-toc-list')
     for (const section of this.topic.sections) {
       const item = element('li', 'topic-toc-item')
-      const button = element('button', '', section.heading)
+      const button = /** @type {HTMLButtonElement} */ (element('button', '', section.heading))
       button.type = 'button'
       button.addEventListener('click', () => this.scrollToSection(section.id ?? ''), { signal })
       item.append(button)
@@ -136,7 +136,7 @@ export default class {
 
   /** @param {{ slug: string, title: string }} topic @param {string} relation @param {boolean} next */
   pagerLink(topic, relation, next) {
-    const link = element('a', `topic-pager-link${next ? ' topic-pager-next' : ''}`)
+    const link = /** @type {HTMLAnchorElement} */ (element('a', `topic-pager-link${next ? ' topic-pager-next' : ''}`))
     link.href = `/docs/${topic.slug}`
     link.append(element('span', 'topic-pager-rel', relation), element('span', 'topic-pager-title', topic.title))
     return link

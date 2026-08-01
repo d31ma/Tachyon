@@ -1,0 +1,11 @@
+{
+  "name": "tachyon-fullstack-fixture",
+  "version": "26.23.01",
+  "private": true,
+  "type": "module",
+  "description": "Archived full-stack project shape exercised by the Rust migration checker.",
+  "scripts": {
+    "serve": "ty serve",
+    "bundle": "ty bundle"
+  }
+}

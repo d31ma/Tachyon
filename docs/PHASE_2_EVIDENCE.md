@@ -102,6 +102,6 @@ account's ambient filesystem and network access, and Phase 2 does not enforce
 kernel CPU or memory quotas. That limitation is explicit in
 [`THREAT_MODEL.md`](THREAT_MODEL.md) and [`SUPPORT_TIERS.md`](SUPPORT_TIERS.md).
 
-The legacy implementation remains untouched and passes its type and test
-suites. Phase 2 adds no route-context or view semantics, preserving a clean
-compatibility boundary for Phase 3.
+The archived release remains the compatibility baseline. Phase 2 adds no
+route-context or view semantics, preserving a clean compatibility boundary for
+Phase 3.

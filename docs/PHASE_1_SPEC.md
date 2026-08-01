@@ -77,7 +77,7 @@ v1; the default human format is suitable for a terminal.
 - Missing sources, route collisions, unsafe source shapes, unsupported syntax,
   unsafe bind configuration, and non-empty initialization targets fail safely.
 - The workspace passes formatting, check, Clippy, tests, rustdoc, coverage,
-  dependency policy, and the legacy compatibility suite.
+  dependency policy, and the released-binary compatibility differential.
 - Linux, macOS, and Windows CI build and exercise the same generated project.
 
 ## Out of Scope

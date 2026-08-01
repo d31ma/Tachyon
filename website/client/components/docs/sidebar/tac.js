@@ -10,6 +10,7 @@ export default class {
     const updateActive = () => {
       const current = location.pathname
       for (const link of root.querySelectorAll('.docs-sidebar-list a')) {
+        if (!(link instanceof HTMLAnchorElement)) continue
         const active = new URL(link.href, location.href).pathname === current
         link.classList.toggle('active', active)
         if (active) link.setAttribute('aria-current', 'page')
@@ -20,12 +21,14 @@ export default class {
       const query = input instanceof HTMLInputElement ? input.value.trim().toLowerCase() : ''
       let visible = 0
       for (const item of root.querySelectorAll('[data-topic]')) {
+        if (!(item instanceof HTMLElement)) continue
         const slug = item.getAttribute('data-topic') ?? ''
         const searchable = this.searchIndex.get(slug) ?? item.textContent?.toLowerCase() ?? ''
         item.hidden = Boolean(query) && !searchable.includes(query)
         if (!item.hidden) visible += 1
       }
       for (const section of root.querySelectorAll('.docs-sidebar-section')) {
+        if (!(section instanceof HTMLElement)) continue
         section.hidden = !section.querySelector('[data-topic]:not([hidden])')
       }
       const empty = root.querySelector('.docs-no-results')

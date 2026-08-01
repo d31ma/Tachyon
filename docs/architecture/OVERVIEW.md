@@ -156,12 +156,13 @@ requires HTTPS, stays on its declared host, and never receives a native bridge.
 
 ## Legacy Boundary
 
-The existing `src/` and legacy `tests/` trees describe the released JavaScript
-implementation. `website/` now builds through Rust and acts as a real migration
-and multi-target acceptance project. New Rust crates must not import, shell out
-to, or copy private implementation logic from the legacy tree.
+The JavaScript framework implementation and its implementation-coupled test
+suite are not present in this branch. `website/` builds through Rust and acts
+as a real migration and multi-target acceptance project. The checksum-verified
+v26.30.04 executable is fetched only inside the compatibility job and is never
+part of the shipped runtime.
 
-Legacy fixtures and observable behavior may be promoted into neutral
-compatibility fixtures. Such promotions must identify the behavior being
-preserved and must not embed generated caches, private data, or incidental
-implementation details.
+Observable behavior may be promoted into `corpus/` or the archived migration
+fixture under `crates/tachyon-cli/tests/fixtures/`. Such promotions must
+identify the behavior being preserved and must not embed generated caches,
+private data, or incidental implementation details.

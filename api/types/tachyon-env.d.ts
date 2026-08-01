@@ -30,13 +30,13 @@ declare module '@material/web/progress/circular-progress.js';
 
 declare global {
   var __tc_prerender__: boolean | undefined;
-  const Tac: typeof import("../runtime/tac.js").default;
-  type TacProps = import("../runtime/tac.js").TacProps;
-  const env: typeof import("../runtime/decorators.js").env;
-  const onMount: typeof import("../runtime/decorators.js").onMount;
-  const publish: typeof import("../runtime/decorators.js").publish;
-  const subscribe: typeof import("../runtime/decorators.js").subscribe;
-  type TacPlatformContext = import("../runtime/tac.js").TacPlatformContext;
+  const Tac: any;
+  type TacProps = any;
+  const env: any;
+  const onMount: any;
+  const publish: any;
+  const subscribe: any;
+  type TacPlatformContext = any;
   const platform: TacPlatformContext['platform'];
   const environment: TacPlatformContext['environment'];
   const os: TacPlatformContext['os'];

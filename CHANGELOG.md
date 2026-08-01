@@ -8,6 +8,24 @@ independent major versions.
 
 ## [Unreleased]
 
+### Changed
+
+- Cut repository entry points and CI over to the Rust rewrite. Root package
+  commands now invoke the compiled `ty` CLI, and a dedicated CI policy job
+  rejects reintroduction of the removed JavaScript runtime or test entry
+  points.
+- The compatibility differential now fetches the immutable v26.30.04 release
+  executable, verifies its pinned SHA-256 digest, and exposes it as
+  `RELEASED_TY_BIN`.
+
+### Removed
+
+- Removed the in-tree JavaScript compiler, server, browser runtime, native
+  generators, vendored shims, implementation-coupled tests, benchmarks, and
+  obsolete JavaScript TypeScript configurations. The application ambient type
+  contract now lives under `api/types/`, and the retained full-stack migration
+  input is isolated as non-executable Rust test data.
+
 ## [26.31.06] - 2026-08-01
 
 ### Removed

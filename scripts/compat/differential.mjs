@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Phase 6 compatibility differential.
 //
-// Builds every corpus project with both the legacy JavaScript implementation
-// and the Rust implementation, serves each output, renders every route in a
+// Builds every corpus project with the immutable v26.30.04 release and the
+// Rust implementation, serves each output, renders every route in a
 // real browser, and compares the resulting semantic DOM, route graph, and
 // diagnostics. Byte comparison is meaningless here: the two implementations
 // emit deliberately different artifacts. What must match is what a user or an
@@ -21,10 +21,10 @@ import { fileURLToPath } from 'node:url';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CORPUS = path.join(REPO, 'corpus');
 const TY = process.env.TY_BIN ?? path.join(REPO, process.env.CARGO_TARGET_DIR ?? 'target', 'debug/ty');
-const LEGACY_TY = process.env.LEGACY_TY_BIN;
-if (!LEGACY_TY) {
+const RELEASED_TY = process.env.RELEASED_TY_BIN;
+if (!RELEASED_TY) {
   throw new Error(
-    'LEGACY_TY_BIN must name an immutable released ty executable; the in-tree legacy source is not a compatibility oracle.',
+    'RELEASED_TY_BIN must name the checksum-verified v26.30.04 ty executable.',
   );
 }
 const MIME = {
@@ -206,7 +206,7 @@ async function compareScaffold() {
   const legacyRoot = path.join(workspace, 'legacy');
   const rustRoot = path.join(workspace, 'rust');
   try {
-    const legacy = await run(LEGACY_TY, ['init', legacyRoot, '--name', 'Parity App']);
+    const legacy = await run(RELEASED_TY, ['init', legacyRoot, '--name', 'Parity App']);
     const rust = await run(TY, ['init', rustRoot, '--name', 'Parity App']);
     if (legacy.code !== 0 || rust.code !== 0) {
       return { ok: false, detail: `legacy=${legacy.code} rust=${rust.code}\n${legacy.stderr}\n${rust.stderr}` };
@@ -249,7 +249,7 @@ async function compareProject(name) {
     if (!ok) result.differences.push(`${check}: ${detail}`);
   };
 
-  const legacy = await run(LEGACY_TY, ['bundle'], { cwd: project });
+  const legacy = await run(RELEASED_TY, ['bundle'], { cwd: project });
   record('legacy build', legacy.code === 0, legacy.code === 0 ? 'ok' : legacy.stderr.slice(-400));
 
   const rust = await run(TY, ['build', project, '--out-dir', 'dist-rust']);

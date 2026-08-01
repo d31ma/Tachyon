@@ -82,6 +82,6 @@ route and the canonical manifest succeed. A failed compilation restores or
 retains the previous output. Initialization writes through a temporary sibling
 and never overwrites a non-empty target.
 
-The legacy implementation remains untouched and continues to pass its type and
-test suites. Phase 1 adds no handler or template semantics that could conflict
-with the Phase 2 and Phase 3 compatibility work.
+The archived release remains the compatibility baseline. Phase 1 adds no
+handler or template semantics that could conflict with the Phase 2 and Phase 3
+compatibility work.

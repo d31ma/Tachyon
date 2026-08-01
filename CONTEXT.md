@@ -7,9 +7,10 @@ developers write standards-based HTML for views while Tachyon owns discovery,
 compilation, server lifecycle, handler supervision, web output, and native
 application generation.
 
-The Rust rewrite is a greenfield implementation. The JavaScript implementation
-remaining in this branch is a behavioral oracle and migration corpus, not a
-source-code template for the new core.
+The Rust rewrite is a greenfield implementation and the only framework
+implementation in this branch. Compatibility is measured against the
+checksum-verified v26.30.04 release executable and neutral migration fixtures,
+never against copied private implementation code.
 
 ## Domain Language
 

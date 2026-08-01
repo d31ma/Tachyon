@@ -73,8 +73,8 @@ Codex in-app Chromium browser.
   remains owned by the `windows-latest` CI matrix entry.
 - Formatting, all-target/all-feature checking, strict Clippy, warning-free
   rustdoc, locked dependency/license/source policy, immutable action
-  references, coverage ratchets, and the legacy Bun compatibility suite remain
-  mandatory.
+  references, coverage ratchets, and the released-binary compatibility
+  differential remain mandatory.
 
 LLVM coverage is:
 

@@ -10,8 +10,9 @@ independent of the implementer, signs off.
 The Rust implementation under `crates/`, the generated native hosts under
 `crates/tachyon-core/src/native/`, and the public contracts under `api/`.
 
-The legacy JavaScript implementation in this branch is **not** in scope. It is
-a behavioral oracle that will be removed at cutover.
+The archived JavaScript release is **not** in scope and is not present in this
+branch. CI downloads its checksum-verified v26.30.04 executable only for the
+behavioral compatibility differential.
 
 ## 2. Start Here
 

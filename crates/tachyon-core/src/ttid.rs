@@ -7,10 +7,9 @@
 //! TTID is pure computation, and a request hot path cannot spawn a process
 //! per identifier.
 //!
-//! The encoding matches `src/vendor/ttid/ttid.mjs`, whose JavaScript computes
-//! `(milliseconds * 10_000).toString(36).toUpperCase()`. One unit is therefore
-//! 100 nanoseconds, which this module derives directly from the clock instead
-//! of from a scaled millisecond float.
+//! The encoding matches the published TTID contract used by Tachyon
+//! v26.30.04: base-36 uppercase 100-nanosecond ticks. This module derives the
+//! value directly from the clock instead of from a scaled millisecond float.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};

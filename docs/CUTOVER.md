@@ -59,7 +59,7 @@ events, island expressions, offline service worker, the wasm ABI probe, and the
 five-language wasm companion gate.
 
 `changed` and `unsupported` rows are reported by `ty migrate check` with a
-required action per finding. Against the real legacy fixture: 14 supported, 3
+required action per finding. Against the archived migration fixture: 14 supported, 3
 changed, 33 unsupported. Against this repository's migrated website on
 2026-08-01: 120 supported, 6 changed, 1 unsupported. The changed findings are
 the five intentional ADR 0011 companion migrations and cross-document

@@ -21,6 +21,21 @@ env:
   RUST_TOOLCHAIN: "1.97.1"
 
 jobs:
+  rewrite-policy:
+    name: Rewrite-only repository policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Reject an in-tree legacy runtime or legacy entry point
+        run: cargo test --locked -p tachyon-contracts --test repository_policy
+
   native:
     name: Native Rust gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -113,6 +128,9 @@ jobs:
 
       - name: Install locked browser dependencies
         run: bun install --frozen-lockfile && bunx playwright install --with-deps chromium
+
+      - name: Type-check the migrated website and browser harnesses
+        run: bun run typecheck
 
       - name: Build the Phase 3 CLI
         run: cargo build --locked --bin ty
@@ -285,7 +303,7 @@ jobs:
         run: ./scripts/android/native-test.sh
 
   compatibility:
-    name: Phase 6 legacy compatibility differential
+    name: Phase 6 released-binary compatibility differential
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -319,7 +337,7 @@ jobs:
             "${RUNNER_TEMP}/tachyon-compat/ty-linux-x64" \
             | sha256sum --check --strict
           chmod 0755 "${RUNNER_TEMP}/tachyon-compat/ty-linux-x64"
-          echo "LEGACY_TY_BIN=${RUNNER_TEMP}/tachyon-compat/ty-linux-x64" >> "${GITHUB_ENV}"
+          echo "RELEASED_TY_BIN=${RUNNER_TEMP}/tachyon-compat/ty-linux-x64" >> "${GITHUB_ENV}"
 
       - name: Compare both implementations over the shared corpus
         run: bun run test:compat
@@ -327,8 +345,11 @@ jobs:
       - name: Run the released standalone workflow against Rust
         run: bun run test:rust-standalone
 
-      - name: Classify the legacy fixture
-        run: ./target/debug/ty migrate check tests/fixtures/fullstack --allow-unsupported
+      - name: Classify the archived migration fixture
+        run: >-
+          ./target/debug/ty migrate check
+          crates/tachyon-cli/tests/fixtures/migration-fullstack
+          --allow-unsupported
 
   fuzz:
     name: Phase 7 fuzzing
