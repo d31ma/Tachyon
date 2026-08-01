@@ -308,9 +308,16 @@ jobs:
             exit "${status}"
           }
           trap show_emulator_failure EXIT
-          timeout 180 "${ANDROID_HOME}/platform-tools/adb" wait-for-device
-          timeout 600 bash -c \
-            'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = "1" ]; do sleep 5; done'
+          adb="${ANDROID_HOME}/platform-tools/adb"
+          timeout 180 "${adb}" wait-for-device
+          boot_deadline=$((SECONDS + 600))
+          until [ "$("${adb}" shell getprop sys.boot_completed | tr -d "\r")" = "1" ]; do
+            if [ "${SECONDS}" -ge "${boot_deadline}" ]; then
+              echo 'Android did not report sys.boot_completed=1 within 600 seconds' >&2
+              exit 124
+            fi
+            sleep 5
+          done
           trap - EXIT
 
       - name: Assemble, launch, and drive the generated application
