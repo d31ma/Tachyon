@@ -228,7 +228,7 @@ jobs:
       - name: Install locked browser dependencies
         run: |
           bun install --frozen-lockfile
-          bun --cwd website install --frozen-lockfile
+          bun install --cwd website --frozen-lockfile
           bunx playwright install chromium
 
       - name: Build the Phase 4 CLI
