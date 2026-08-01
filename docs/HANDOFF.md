@@ -42,7 +42,7 @@ cache and makes git operations take minutes.
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"          # a Homebrew rustc 1.95 shadows rustup 1.97.1
 export PATH="$HOME/dev/TACHYON/node_modules/.bin:$PATH"  # tsc 7.0.2; the one on PATH is 5.1.3
-export PATH="$HOME/.dotnet:$PATH"             # user-local .NET 9 with wasm-tools; the system one has no workload
+export PATH="$HOME/.dotnet:$PATH"             # user-local .NET SDK with the net9 browser-wasm workload
 export KOTLIN_WASM_STDLIB="$HOME/.local/share/tachyon/kotlin-stdlib-wasm-js-2.1.10.klib"
 export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
@@ -56,7 +56,7 @@ Toolchains installed on this machine, all verified working:
 | Dart | nothing extra | 3.6.0 |
 | Kotlin | `kotlin-stdlib-wasm-js.klib`, which `kotlinc` does not ship | `KOTLIN_WASM_STDLIB` above |
 | Swift | a swift.org toolchain **and** the wasm SDK; Xcode's `swiftc` cannot cross-compile | Swift 6.3.3 installed user-locally through Swiftly and exposed through `~/Library/Developer/Toolchains/swift-6.3.3-RELEASE.xctoolchain`, plus `~/.swiftpm/swift-sdks` |
-| C# | `wasm-tools` workload | `~/.dotnet` (system .NET needs root, so it is unpatched) |
+| C# | `wasm-tools` on .NET 9, or `wasm-tools-net9` on .NET 10+ | `~/.dotnet` (system .NET needs root, so it is unpatched) |
 
 `ty doctor <project>` reports all five and probes capability, not just
 `--version`. Trust it over your assumptions: four of these looked ready when

@@ -243,7 +243,8 @@ fn wasm_toolchain(extension: &str) -> Option<Toolchain> {
         "cs" => (
             "dotnet",
             "--version",
-            "Install the .NET SDK, then: dotnet workload install wasm-tools",
+            "Install the .NET SDK, then install wasm-tools with SDK 9 or \
+             wasm-tools-net9 with SDK 10 or newer.",
         ),
         _ => return None,
     };
@@ -318,11 +319,13 @@ fn wasm_gap(extension: &str) -> Option<String> {
             }),
             "without a Kotlin/Wasm standard library in KOTLIN_WASM_STDLIB",
         ),
-        "cs" => (
-            output("dotnet", &["workload", "list"])
-                .is_some_and(|installed| installed.contains("wasm-tools")),
-            "without the wasm-tools workload",
-        ),
+        "cs" => {
+            let version = output("dotnet", &["--version"]);
+            let workload = dotnet_wasm_workload(version.as_deref());
+            let ready = output("dotnet", &["workload", "list"])
+                .is_some_and(|installed| workload_is_listed(&installed, workload));
+            return (!ready).then(|| format!("without the {workload} workload"));
+        }
         "dart" => (
             output("dart", &["compile", "wasm", "--help"]).is_some(),
             "without the wasm compiler",
@@ -330,6 +333,28 @@ fn wasm_gap(extension: &str) -> Option<String> {
         _ => return None,
     };
     (!ready).then(|| String::from(gap))
+}
+
+/// Returns the workload that can build Tachyon's fixed `net9.0` browser-wasm
+/// project under the selected SDK. .NET 10 split older target packs into
+/// versioned workload IDs, while .NET 9 uses the unversioned name.
+fn dotnet_wasm_workload(version: Option<&str>) -> &'static str {
+    let major = version
+        .and_then(|value| value.trim().split('.').next())
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(9);
+    if major >= 10 {
+        "wasm-tools-net9"
+    } else {
+        "wasm-tools"
+    }
+}
+
+fn workload_is_listed(installed: &str, required: &str) -> bool {
+    installed
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .any(|workload| workload == required)
 }
 
 /// Asks one compiler to build an empty source file for its wasm target.
@@ -432,8 +457,22 @@ fn output(program: &str, arguments: &[&str]) -> Option<String> {
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{ToolchainState, check};
+    use super::{ToolchainState, check, dotnet_wasm_workload, workload_is_listed};
     use std::fs;
+
+    #[test]
+    fn dotnet_requires_the_workload_for_the_fixed_net9_target() {
+        assert_eq!(dotnet_wasm_workload(Some("9.0.316")), "wasm-tools");
+        assert_eq!(dotnet_wasm_workload(Some("10.0.302")), "wasm-tools-net9");
+        assert!(workload_is_listed(
+            "Installed Workload Id\nwasm-tools-net9  9.0.18/10.0.100",
+            "wasm-tools-net9"
+        ));
+        assert!(!workload_is_listed(
+            "Installed Workload Id\nwasm-tools  10.0.10/10.0.100",
+            "wasm-tools-net9"
+        ));
+    }
 
     #[test]
     fn a_project_is_told_only_about_what_it_uses() {
