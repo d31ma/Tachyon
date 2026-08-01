@@ -16,8 +16,9 @@ recorded result: iOS on iPhone 17 Pro / iOS 26.5 (launched as pid 13540, count
 `0 → 2`, 12 bound input events, isolated `WebSurface`, and a lifecycle log
 ending in `controller.suspended`), Android on the `tachyon-gate` emulator, and
 Linux in the pinned container. macOS is blocked on granting Accessibility
-permission to the process that runs the probe. Windows still has no execution
-evidence. The gate status this feeds is in [`CUTOVER.md`](CUTOVER.md).
+permission to the process that runs the probe. Windows native execution was
+subsequently recorded on 2026-08-01 as described in §4. The gate status this
+feeds is in [`CUTOVER.md`](CUTOVER.md).
 
 ## 1. Automated Gate
 
@@ -105,7 +106,7 @@ away:
 Tier: **container-tested**. Per `SUPPORT_TIERS.md` a container does not
 substitute for host-native evidence, so this is not `native-tested`.
 
-## 4. Windows — buildable
+## 4. Windows — native execution recorded, promotion blocked
 
 ```bash
 ty build <project> --target windows
@@ -118,18 +119,17 @@ file dist/windows/PhaseFive/bin/PhaseFive.exe
 | The artifact is a real Windows binary | `PE32+ executable (GUI) x86-64, for MS Windows` |
 | The manifest is accurate | `target` = `{os: windows, architecture: x86_64, abi: win32}`; toolchain recorded as `mingw-w64-gcc (GCC) 16.1.0` |
 | Packaging is complete | `bin/PhaseFive.exe`, `bin/PhaseFive.exe.manifest`, and the full `resources/` tree were published |
+| The generated host executes on Windows | The `windows-native` job in [run 30714886154](https://github.com/d31ma/Tachyon/actions/runs/30714886154) built, launched, inspected, drove, and closed the generated application on `windows-latest` |
+| UI Automation reaches the generated HWNDs | UIA returned `Phase Five`, `Add one`, live output `0`, and `Sales chart`; the button's backing HWND class was `Button` |
+| Native interaction and state work | A native `BM_CLICK` moved the bound output from `0` to `1` and recorded `state.increment` |
+| Lifecycle is recorded | The log contained `controller.created`, `controller.active`, and `controller.destroyed` |
 
-Tier: **buildable**, and nothing more. Per spec §7 and the delivery principle
-that cross-compilation proves buildability only, execution, interaction, and
-accessibility evidence must come from the `windows-latest` CI job. No such run
-is recorded yet; see §6.
-
-Execution is gated by the `windows-native` CI job, which runs
-`scripts/windows/native-test.ps1` on `windows-latest`: it launches the
-generated executable, locates the window and controls through UI Automation,
-invokes the native button through `InvokePattern`, and asserts both the bound
-output and the lifecycle log. That job has not yet reported a run; until it
-does, the tier stays `buildable`.
+This is real native execution evidence, not a `native-tested` promotion. The
+hosted runner's managed UI Automation client reports every standard child HWND
+as `ControlType.Pane`, so the run cannot prove UIA roles or `InvokePattern`
+activation. The gate therefore proves the UIA names, real native HWND class,
+native Win32 interaction, state binding, and lifecycle as separate facts. The
+accessibility-role gap remains explicit in §7.
 
 ## 5. Android — emulator-tested
 
@@ -173,7 +173,7 @@ debug key.
 | --- | --- | --- |
 | `native` | Linux, macOS, Windows | format, check, Clippy, tests, rustdoc on the exact toolchain |
 | `linux-native` | Linux container | GTK4 compilation, headless launch, AT-SPI names, roles, and activation |
-| `windows-native` | `windows-latest` | Win32 compilation, launch, UI Automation names, `InvokePattern` activation, lifecycle |
+| `windows-native` | `windows-latest` | Win32 compilation, launch, UI Automation names, native HWND classes, `BM_CLICK` activation, bound state, lifecycle |
 | `android-native` | Linux + emulator | APK assembly, install, launch, `uiautomator` names, native tap, lifecycle |
 | `macos-native` | `macos-latest` | Phase 4 macOS launch, accessibility, lifecycle, and visual parity |
 
@@ -181,10 +181,10 @@ debug key.
 
 | Gap | What closes it |
 | --- | --- |
-| A recorded `windows-native` run | The job defined in `.github/workflows/rust-ci.yml` reporting on a pull request |
 | iOS in CI | A `macos-latest` job booting a simulator and running the iOS gate |
 | iOS and Android on physical hardware | Device provisioning, distribution signing, and a release keystore |
 | Linux on a host rather than a container | A native Linux runner executing `scripts/linux/native-test.sh` |
+| Windows UI Automation roles and accessibility activation | A client or generated provider that reports the standard controls with their semantic UIA roles and exposes `InvokePattern`; the current hosted client flattens them to panes |
 | Windows accessible names distinct from visible text | A UI Automation provider for the generated controls, per spec §6 |
 | Embedded `WebSurface` on Windows | The `WebView2` viability gate, per spec §6 |
 | Any platform at `supported` | Install, upgrade, rollback, and uninstall exercises plus a published support window, per `SUPPORT_TIERS.md` |

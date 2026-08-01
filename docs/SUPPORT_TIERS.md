@@ -26,7 +26,7 @@ Evidence and reproduction commands are in `docs/PHASE_5_EVIDENCE.md`.
 | iOS `SwiftUI` | simulator-tested | signed simulator `.app` launched on iPhone 17 Pro / iOS 26.5; native button, text field, disclosure, isolated `WebSurface`, and lifecycle observed |
 | Android views | simulator-tested (emulator) | debug APK launched on a headless `pixel_6` / Android 16 emulator; `uiautomator` confirmed native `Button` and `EditText`, declared content descriptions, native tap increment, and lifecycle |
 | Linux GTK4 | container-tested | pinned Debian trixie container compiled the host with warnings denied, launched it headlessly, and read seven declared names, native roles, and an `Atspi.Action` activation back over AT-SPI |
-| Windows Win32 | buildable | `PE32+` GUI binary cross-compiled with warnings denied; execution is gated by the `windows-native` CI job, which has not yet reported |
+| Windows Win32 | buildable with native execution evidence | `windows-latest` compiled, launched, inspected, drove, and closed the generated `PE32+` app; UIA names, a backing `Button` HWND, bound state, and lifecycle passed, while semantic UIA roles remain an explicit promotion gap |
 
 No Phase 5 target is `supported` in the vocabulary above, and the vocabulary
 has not moved: simulator and emulator evidence still does not establish
@@ -43,8 +43,9 @@ what it does not establish.
 Re-verified 2026-07-31 by execution: iOS on iPhone 17 Pro / iOS 26.5, Android
 on the `tachyon-gate` emulator (API 36), and Linux in the pinned
 `debian:trixie-slim` image. macOS is blocked on granting Accessibility
-permission to the process that runs the probe; Windows execution remains
-gated by the `windows-native` CI job, which has still not reported.
+permission to the process that runs the probe. Windows execution was recorded
+by the `windows-native` job in [run 30714886154](https://github.com/d31ma/Tachyon/actions/runs/30714886154);
+the target is not promoted because semantic UIA roles remain unproven.
 
 The migrated 11-route website was additionally rebuilt and launched on
 2026-08-01. The iOS simulator and macOS application rendered the complete

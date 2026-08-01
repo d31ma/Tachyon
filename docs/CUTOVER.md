@@ -88,7 +88,7 @@ Executed 2026-07-31 on this machine:
 | Android | `./scripts/android/native-test.sh` on the `tachyon-gate` emulator (API 36, `google_apis`, arm64) | `PASS: Android native gate`. 5 accessible names on native widgets, `Increase count` as `Button` and `Your name` as `EditText`; accessibility-driven activation moved the bound output to `1`; lifecycle log complete. |
 | Linux | `./scripts/linux/native-test.sh` inside the pinned `debian:trixie-slim` image | `PASS: Linux native gate`. The generated GTK4 host compiled under `-Werror`, launched under `Xvfb` and `dbus-run-session`, and 7 declared accessible names reached AT-SPI with correct platform roles; AT-SPI activation incremented the bound state. |
 | macOS | `node scripts/phase4-macos-test.mjs` | **Blocked, not failed.** The probe cannot read the window until macOS Accessibility permission is granted to the process that runs it: `phase4 accessibility probe: macOS Accessibility permission is not enabled for this process`. Grant it in System Settings → Privacy & Security → Accessibility and re-run. |
-| Windows | `scripts/windows/native-test.ps1` | **Open.** Requires a Windows machine with MSVC and WebView2; the compile smoke refuses to run anywhere else by its first assertion. This is the one platform no local run can close. |
+| Windows | `scripts/windows/native-test.ps1` in [CI run 30714886154](https://github.com/d31ma/Tachyon/actions/runs/30714886154) | `PASS: Windows native gate`. The generated `PE32+` app compiled, launched, exposed its visible names through UI Automation and a real `Button` HWND, processed `BM_CLICK`, changed bound state `0 → 1`, recorded lifecycle, and closed. The managed UIA client's pane-only roles remain a named promotion gap. |
 
 Additional migrated-website execution on 2026-08-01 built all 11 routes into
 iOS, Android, and macOS artifacts. iOS and macOS launched and rendered the
@@ -180,9 +180,9 @@ its recorded evidence.
 
 ## What Happens Next
 
-Run the pull-request matrix, including Windows execution, then run the release
-workflow from the reviewed immutable tag and verify its staged assets. The
-independent review remains separately open as requested. The macOS
+Complete the pull-request matrix, then run the release workflow from the
+reviewed immutable tag and verify its staged assets. The independent review
+remains separately open as requested. The macOS
 Accessibility automation remains a named local evidence gap and must not be
 represented as completed platform promotion work.
 

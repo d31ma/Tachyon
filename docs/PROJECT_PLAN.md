@@ -228,8 +228,9 @@ upgrade, and rollback evidence exists.
       in `PHASE_5_SPEC.md` and reflected in `SUPPORT_TIERS.md`.
 - [x] Formatting, check, Clippy, tests, and rustdoc pass.
 
-Windows execution evidence is owned by the `windows-native` CI job. Until it
-reports, Windows stays `buildable`.
+Windows execution evidence is owned by the `windows-native` CI job. A native
+run was recorded on 2026-08-01; Windows remains below `native-tested` until
+semantic UI Automation roles and accessibility activation are evidenced.
 
 ## Phase 6: Compatibility and Migration
 

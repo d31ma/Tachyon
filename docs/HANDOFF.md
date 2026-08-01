@@ -84,6 +84,9 @@ patch.
   execution. `scripts/android/native-test.sh` and `scripts/linux/native-test.sh`
   both PASS; iOS was driven by hand on iPhone 17 Pro. The macOS evidence block
   is named below.
+- **Windows native execution** in CI run 30714886154. The generated Win32 app
+  compiled, launched, exposed its UIA names and backing `Button` HWND, accepted
+  `BM_CLICK`, changed bound state `0 → 1`, recorded lifecycle, and closed.
 - **Compatibility differential** 3/3 corpus projects
   (`RELEASED_TY_BIN=/path/to/v26.30.04/ty TY_BIN=/path/to/rewrite/ty node
   scripts/compat/differential.mjs`). The environment variables keep the gate
@@ -103,8 +106,10 @@ engineering pass and must remain visible rather than being counted as a pass:
 2. **macOS native evidence** is blocked on one thing: macOS Accessibility
    permission for the process that runs `node scripts/phase4-macos-test.mjs`.
    Grant it in System Settings and re-run. It is not a code problem.
-3. **Windows** has no execution evidence and cannot get any on this machine —
-   `scripts/windows/native-test.ps1` needs Windows with MSVC and WebView2.
+3. **Windows accessibility promotion** remains open. Native execution now
+   passes in CI, but the hosted managed UIA client flattens standard child
+   controls to `ControlType.Pane`; semantic roles and `InvokePattern` still
+   need evidence before `native-tested` promotion.
 4. **Build provenance** is wired into both qualification and the stable release
    workflow but needs one real workflow run to exist.
 
