@@ -15,11 +15,13 @@ $bundleId = 'dev.tachyon.phase-five'
 if (Test-Path $fixture) { Remove-Item -Recurse -Force $fixture }
 New-Item -ItemType Directory -Force -Path (Join-Path $fixture 'client\pages') | Out-Null
 
-@'
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$config = @'
 {"application":{"name":"Phase Five","id":"dev.tachyon.phase-five","version":"0.1.0","entry_route":"/"}}
-'@ | Set-Content -Encoding utf8 (Join-Path $fixture 'tachyon.json')
+'@
+[System.IO.File]::WriteAllText((Join-Path $fixture 'tachyon.json'), $config, $utf8NoBom)
 
-@'
+$view = @'
 <main aria-label="Phase Five demo">
   <h1>Phase Five</h1>
   <p>Cross-platform native adapters.</p>
@@ -29,7 +31,8 @@ New-Item -ItemType Directory -Force -Path (Join-Path $fixture 'client\pages') | 
   <details aria-label="More detail"><summary>More detail</summary><p>Disclosure content.</p></details>
   <x-chart aria-label="Sales chart"><p>Chart fallback</p></x-chart>
 </main>
-'@ | Set-Content -Encoding utf8 (Join-Path $fixture 'client\pages\tac.html')
+'@
+[System.IO.File]::WriteAllText((Join-Path $fixture 'client\pages\tac.html'), $view, $utf8NoBom)
 
 Write-Host '==> building ty'
 cargo build --locked --bin ty
