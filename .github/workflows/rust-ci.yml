@@ -233,6 +233,11 @@ jobs:
     name: Phase 5 Android native gate
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # Both avdmanager and emulator must resolve the same explicit user and
+      # AVD directories instead of deriving independently from runner HOME.
+      ANDROID_USER_HOME: /tmp/tachyon-android
+      ANDROID_AVD_HOME: /tmp/tachyon-android/avd
 
     steps:
       - name: Check out source
@@ -275,8 +280,14 @@ jobs:
         run: |
           set -euo pipefail
           avdmanager="${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager"
+          mkdir -p "${ANDROID_AVD_HOME}"
           echo no | "${avdmanager}" create avd -n tachyon-gate \
-            -k "system-images;android-35;google_apis;x86_64" --device pixel_6 --force
+            -k "system-images;android-35;google_apis;x86_64" \
+            -p "${ANDROID_AVD_HOME}/tachyon-gate.avd" \
+            --device pixel_6 --force
+          test -f "${ANDROID_AVD_HOME}/tachyon-gate.ini"
+          test -d "${ANDROID_AVD_HOME}/tachyon-gate.avd"
+          "${avdmanager}" list avd
           emulator_log=/tmp/emulator.log
           # Headless emulators select SwiftShader automatically; the former
           # swiftshader_indirect mode is deprecated in current SDK releases.
