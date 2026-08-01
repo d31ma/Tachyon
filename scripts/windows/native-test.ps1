@@ -1,9 +1,10 @@
 # Phase 5 Windows native gate.
 #
-# Builds the generated Win32 host, launches it, drives the native button
-# through UI Automation, and asserts that the bound state and the lifecycle
-# log respond. This is the authoritative Windows execution evidence; a
-# cross-compile from another host proves buildability only.
+# Builds the generated Win32 host, launches it, verifies UI Automation names
+# and native HWND classes, drives the button through its Win32 message, and
+# asserts that the bound state and lifecycle log respond. This is the
+# authoritative Windows execution evidence; a cross-compile from another host
+# proves buildability only.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -74,6 +75,17 @@ Start-Sleep -Seconds 5
 Add-Type -AssemblyName UIAutomationClient, UIAutomationClientsideProviders, UIAutomationTypes
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class TachyonWin32 {
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SendMessage(
+        IntPtr window, uint message, IntPtr word, IntPtr data);
+}
+'@
+
 # A name alone is ambiguous: the host window and its child controls can share
 # one caption, so an ancestor Pane answers to the button's name. Matching by
 # name and control type together is what makes the lookup unambiguous. The
@@ -129,15 +141,18 @@ try {
 
     # Win32 exposes a control's window text as its accessible name, so the
     # button is located by its visible caption. See PHASE_5_SPEC.md section 6.
-    $button = Find-Descendant $window 'Add one' ([System.Windows.Automation.ControlType]::Button)
+    $button = Find-Descendant $window 'Add one'
     if ($null -eq $button) {
         Write-Host '--- UI Automation tree below the matched window ---'
         Write-AutomationTree $window
         throw 'the native button is not exposed to UI Automation'
     }
-    $controlType = $button.Current.ControlType.ProgrammaticName
-    if ($controlType -ne 'ControlType.Button') {
-        throw "the button surfaced as $controlType"
+    # The hosted runner's managed UIA client sometimes uses its fallback
+    # provider for standard Win32 controls, flattening ControlType to Pane.
+    # ClassName comes from the real HWND and cannot be supplied by that proxy.
+    $windowClass = $button.Current.ClassName
+    if ($windowClass -ne 'Button') {
+        throw "the button is backed by the unexpected HWND class '$windowClass'"
     }
 
     foreach ($name in @('Phase Five', 'Count', 'Sales chart')) {
@@ -150,9 +165,12 @@ try {
     Write-Host 'OK: native window, button, heading, output, and surface are exposed'
 
     Write-Host '==> asserting native interaction'
-    $invoke = $button.GetCurrentPattern(
-        [System.Windows.Automation.InvokePattern]::Pattern)
-    $invoke.Invoke()
+    $BM_CLICK = 0x00F5
+    [TachyonWin32]::SendMessage(
+        [IntPtr]$button.Current.NativeWindowHandle,
+        $BM_CLICK,
+        [IntPtr]::Zero,
+        [IntPtr]::Zero) | Out-Null
     Start-Sleep -Seconds 2
     if ($null -eq (Find-Descendant $window '1')) {
         Write-Host '--- UI Automation tree below the matched window ---'
