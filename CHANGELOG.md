@@ -90,15 +90,21 @@ independent major versions.
   license-pipe termination explicitly, rebuilt the standard library for Linux
   sanitizer runs, and retained a release artifact for provenance attestation.
 
-- Every control in a generated Windows application reached assistive
-  technology as an unnamed pane. The side-by-side manifest was published to the
-  bundle root as `application.manifest`, but Windows consults only
-  `<executable>.manifest` beside the executable, so the process ran without the
-  Common-Controls v6 activation context and each standard control fell back to
-  the generic window provider. A button reported itself as a pane and could not
-  be invoked through UI Automation. The manifest is now published where Windows
-  reads it, which is what the accessibility claims in the Phase 5 spec depend
-  on.
+- A generated Windows application published its side-by-side manifest to the
+  bundle root as `application.manifest`, where Windows never reads it. Only
+  `<executable>.manifest` beside the executable is consulted, so the process
+  ran without the Common-Controls v6 activation context it declares. The
+  manifest is now published as `bin/<executable>.exe.manifest`. This does not
+  by itself resolve the open Windows accessibility finding recorded in
+  `docs/PHASE_7_EVIDENCE.md`: every control still reaches UI Automation as a
+  generic pane rather than as a button, output, or heading.
+- The development and preview servers could exit the instant they announced
+  readiness. A failure to register the Ctrl-C handler resolved the shutdown
+  future immediately, so the server completed its graceful shutdown before
+  serving anything and every subsequent connection was refused with no
+  diagnostic. The `ty build --watch` loop ended the same way. A process that
+  cannot observe an interrupt now keeps serving and is stopped by its
+  supervisor instead.
 - A project whose `client` or `server` path was a regular file reported the
   wrong diagnostic on Windows. Unix reports `NotADirectory` when a parent
   component is a file, while Windows reports `NotFound` — the same code that

@@ -101,7 +101,14 @@ function Write-AutomationTree(
 ) {
     if ($null -eq $element -or $depth -gt 4) { return }
     $pad = ' ' * ($depth * 2)
-    Write-Host "$pad$($element.Current.ControlType.ProgrammaticName) '$($element.Current.Name)'"
+    # The window class is the datum that separates the two explanations for a
+    # control reported as a pane: a host that never created a standard control,
+    # or standard controls that the automation proxies did not annotate.
+    $line = "$pad$($element.Current.ControlType.ProgrammaticName)" `
+        + " '$($element.Current.Name)'" `
+        + " class='$($element.Current.ClassName)'" `
+        + " hwnd=$($element.Current.NativeWindowHandle)"
+    Write-Host $line
     $children = $element.FindAll(
         [System.Windows.Automation.TreeScope]::Children,
         [System.Windows.Automation.Condition]::TrueCondition)

@@ -565,6 +565,19 @@ enum InitialBuild {
     Skip,
 }
 
+/// Resolves when the operator interrupts this process.
+///
+/// Registering the handler can fail, and that failure must never resolve as an
+/// interrupt: a server would then shut down the instant it announced
+/// readiness, refusing every connection with no diagnostic. A process that
+/// cannot observe Ctrl-C keeps serving and is stopped by its supervisor
+/// instead.
+async fn interrupt() {
+    if tokio::signal::ctrl_c().await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
 async fn execute_serve(
     project: &Path,
     host: IpAddr,
@@ -594,7 +607,7 @@ async fn execute_serve(
     let _flush_result = std::io::stdout().flush();
     server
         .run_until(async {
-            let _signal_result = tokio::signal::ctrl_c().await;
+            interrupt().await;
         })
         .await
 }
@@ -635,7 +648,7 @@ async fn execute_preview(
     let _flush_result = std::io::stdout().flush();
     server
         .run_until(async {
-            let _signal_result = tokio::signal::ctrl_c().await;
+            interrupt().await;
         })
         .await
 }
@@ -665,7 +678,7 @@ async fn execute_bundle(
     let mut fingerprint = source_fingerprint(project);
     loop {
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => return Ok(()),
+            () = interrupt() => return Ok(()),
             () = tokio::time::sleep(Duration::from_millis(400)) => {
                 let next = source_fingerprint(project);
                 if next == fingerprint {
