@@ -117,7 +117,7 @@ file dist/windows/PhaseFive/bin/PhaseFive.exe
 | The generated host cross-compiles | `x86_64-w64-mingw32-gcc (GCC) 16.1.0` with `-Wall -Wextra -Werror -municode -mwindows` |
 | The artifact is a real Windows binary | `PE32+ executable (GUI) x86-64, for MS Windows` |
 | The manifest is accurate | `target` = `{os: windows, architecture: x86_64, abi: win32}`; toolchain recorded as `mingw-w64-gcc (GCC) 16.1.0` |
-| Packaging is complete | `bin/PhaseFive.exe`, `application.manifest`, and the full `resources/` tree were published |
+| Packaging is complete | `bin/PhaseFive.exe`, `bin/PhaseFive.exe.manifest`, and the full `resources/` tree were published |
 
 Tier: **buildable**, and nothing more. Per spec §7 and the delivery principle
 that cross-compilation proves buildability only, execution, interaction, and

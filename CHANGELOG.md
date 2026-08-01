@@ -90,6 +90,15 @@ independent major versions.
   license-pipe termination explicitly, rebuilt the standard library for Linux
   sanitizer runs, and retained a release artifact for provenance attestation.
 
+- Every control in a generated Windows application reached assistive
+  technology as an unnamed pane. The side-by-side manifest was published to the
+  bundle root as `application.manifest`, but Windows consults only
+  `<executable>.manifest` beside the executable, so the process ran without the
+  Common-Controls v6 activation context and each standard control fell back to
+  the generic window provider. A button reported itself as a pane and could not
+  be invoked through UI Automation. The manifest is now published where Windows
+  reads it, which is what the accessibility claims in the Phase 5 spec depend
+  on.
 - A project whose `client` or `server` path was a regular file reported the
   wrong diagnostic on Windows. Unix reports `NotADirectory` when a parent
   component is a file, while Windows reports `NotFound` — the same code that

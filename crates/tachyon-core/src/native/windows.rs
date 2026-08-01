@@ -47,8 +47,16 @@ impl WindowsHostGenerator {
             })?;
         let source_path = stage.join("project").join("tachyon_host.c");
         write_host_source(&source_path, &c_source(application, entry)?)?;
+        // Windows reads a side-by-side manifest only as `<executable>.manifest`
+        // beside the executable itself. A copy at the bundle root is never
+        // consulted, so the process would run without the Common-Controls v6
+        // activation context and every standard control would fall back to the
+        // generic window provider — reaching assistive technology as a plain
+        // pane rather than as a button, output, or heading.
         write(
-            &bundle.join("application.manifest"),
+            &bundle
+                .join("bin")
+                .join(format!("{}.exe.manifest", application.executable_name)),
             application_manifest(application).as_bytes(),
         )?;
         if !package {

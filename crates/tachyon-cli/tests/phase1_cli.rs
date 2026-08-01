@@ -177,23 +177,35 @@ fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 
+/// Sends one request over its own connection and returns the whole response.
+///
+/// A peer that closes a socket still holding unread input resets it rather
+/// than finishing it, and a reset discards whatever this side had already
+/// buffered — so the response is lost outright rather than truncated. That is
+/// a transport event rather than an answer, so an idempotent request is sent
+/// again. Half-closing the write side instead would reach the server as a
+/// client disconnect and cancel the request before it is answered. A server
+/// that has genuinely died still fails loudly, because the retry cannot
+/// connect.
 fn request(socket: &str, request: &[u8]) -> String {
-    let mut connection = TcpStream::connect(socket).expect("server should accept connections");
-    connection
-        .write_all(request)
-        .expect("request should be sent");
-    let mut response = Vec::new();
-    // With `Connection: close` the response ends when the connection does. A
-    // peer that closes a socket still holding unread input resets it instead
-    // of finishing cleanly, so a reset after a response arrived is the end of
-    // that response, not a failure to read it.
-    match connection.read_to_end(&mut response) {
-        Ok(_) => {}
-        Err(error)
-            if error.kind() == std::io::ErrorKind::ConnectionReset && !response.is_empty() => {}
-        Err(error) => panic!("response should be read: {error:?}"),
+    for remaining in (0..3).rev() {
+        let mut connection = TcpStream::connect(socket).expect("server should accept connections");
+        connection
+            .write_all(request)
+            .expect("request should be sent");
+        let mut response = Vec::new();
+        match connection.read_to_end(&mut response) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {
+                if response.is_empty() && remaining > 0 {
+                    continue;
+                }
+            }
+            Err(error) => panic!("response should be read: {error:?}"),
+        }
+        return String::from_utf8(response).expect("response should be UTF-8");
     }
-    String::from_utf8(response).expect("response should be UTF-8")
+    unreachable!("the final attempt returns or panics")
 }
 
 #[test]

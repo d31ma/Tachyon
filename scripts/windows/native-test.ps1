@@ -45,7 +45,7 @@ if ($LASTEXITCODE -ne 0) { throw 'ty build --target windows failed' }
 Write-Host '==> asserting published layout'
 foreach ($relative in @(
     'PhaseFive\bin\PhaseFive.exe',
-    'PhaseFive\application.manifest',
+    'PhaseFive\bin\PhaseFive.exe.manifest',
     'PhaseFive\resources\NativeIndex.json',
     'PhaseFive\resources\NativeUI\root.json',
     'artifact-manifest.json',
