@@ -80,6 +80,13 @@ independent major versions.
 
 ### Fixed
 
+- Made the enterprise qualification matrix portable across hosted runners:
+  restored the four-target `cargo-fuzz` package with reviewed seed inputs,
+  normalized extended Windows paths before invoking MinGW, compared macOS and
+  web screenshots at the host's actual usable viewport, handled Android SDK
+  license-pipe termination explicitly, rebuilt the standard library for Linux
+  sanitizer runs, and retained a release artifact for provenance attestation.
+
 - A native build rejected the compiler's own output. Only scripts under
   `/.tachyon/` were stripped before native planning, so a route's own
   `/client.js` survived and the view contract refused it with `TY1306` — which

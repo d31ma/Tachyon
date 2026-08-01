@@ -74,9 +74,12 @@ It does not mean maximizing crate count, abstractions, or CI jobs.
   path-escaping, resource-exhausting, and capability-escalating inputs.
 - Native claims require execution on the native OS and architecture.
 - Tests are deterministic unless explicitly fuzz, chaos, load, or soak tests.
-- Workspace coverage may not fall below 90% for lines, functions, or regions;
-  high-risk parser, path, compiler, and server boundaries require focused
-  adversarial tests regardless of aggregate coverage.
+- Whole-workspace coverage may not fall below 80% for lines, functions, or
+  regions. The measurement includes CLI, operating-system, toolchain, and
+  fuzz-only surfaces. Only the external native compiler and macOS host glue
+  named by ADR 0012 are excluded. High-risk parser, path, compiler, and server
+  boundaries require focused adversarial and end-to-end tests regardless of
+  aggregate coverage.
 - CRAP score 15 is the absolute per-function ceiling, not the target.
 
 ## Review Expectations

@@ -1,0 +1,1 @@
+<main><h1>{{ title }}</h1><p data-id="{{ product.id }}">{{ product.name }}</p></main>

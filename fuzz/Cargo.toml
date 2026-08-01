@@ -1,0 +1,44 @@
+[package]
+name = "tachyon-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "=0.4.10"
+tachyon-contracts = { path = "../crates/tachyon-contracts" }
+tachyon-core = { path = "../crates/tachyon-core", features = ["fuzzing"] }
+
+[[bin]]
+name = "html_frontend"
+path = "fuzz_targets/html_frontend.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "template_frontend"
+path = "fuzz_targets/template_frontend.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "handler_frame"
+path = "fuzz_targets/handler_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "native_planner"
+path = "fuzz_targets/native_planner.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

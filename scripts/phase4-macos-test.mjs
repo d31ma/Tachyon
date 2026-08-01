@@ -232,7 +232,17 @@ try {
     '-e',
     'end tell',
   ]).trim()
-  assert.match(bounds, /^\d+,\d+,420,780$/)
+  const boundsMatch = bounds.match(
+    /^(-?\d+),(-?\d+),(\d+),(\d+)$/,
+  )
+  assert.ok(boundsMatch, `unexpected native window bounds: ${bounds}`)
+  const nativeWidth = Number(boundsMatch[3])
+  const nativeHeight = Number(boundsMatch[4])
+  assert.equal(nativeWidth, 420)
+  assert.ok(
+    nativeHeight >= 600 && nativeHeight <= 780,
+    `native window height ${nativeHeight} is outside the usable parity range`,
+  )
   run('/usr/sbin/screencapture', [
     '-x',
     `-R${bounds}`,
@@ -268,7 +278,9 @@ try {
   const url = `http://127.0.0.1:${address.port}/`
 
   browser = await chromium.launch({ headless: true })
-  const page = await browser.newPage({ viewport: { width: 420, height: 780 } })
+  const page = await browser.newPage({
+    viewport: { width: nativeWidth, height: nativeHeight },
+  })
   await page.goto(url, { waitUntil: 'load' })
   await page.waitForFunction(
     () => document.documentElement.dataset.tachyonController === 'active',

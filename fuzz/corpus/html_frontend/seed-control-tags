@@ -1,0 +1,1 @@
+<main><if condition="products.length"><for each="product in products"><p>{{ product.name }}</p></for><else><p>Empty</p></else></if></main>

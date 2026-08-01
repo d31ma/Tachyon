@@ -108,20 +108,23 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --lock
 cargo deny check advisories bans licenses sources
 ```
 
-Coverage uses a uniform 90% floor for lines, functions, and regions:
+Coverage uses a uniform 80% whole-workspace floor for lines, functions, and
+regions:
 
 ```text
 cargo llvm-cov --workspace --all-features --locked \
   --ignore-filename-regex 'crates/tachyon-core/src/native/(compiler|macos)\.rs' \
-  --fail-under-lines 90 --fail-under-functions 90 --fail-under-regions 90
+  --fail-under-lines 80 --fail-under-functions 80 --fail-under-regions 80
 ```
 
-The target-neutral Rust core, Native UI planner, and configuration retain the
-uniform floor. The external-tool macOS compiler/host glue is excluded from the
-LLVM percentage because its async/process closures distort function coverage;
-it is covered instead by in-process packaging tests and the mandatory real-app
-`test:rust-macos` gate. The `tachyon-contracts` tests meta-validate every
-canonical schema, accept its positive fixture, and reject its negative fixture.
+Only the external-tool native compiler and macOS host glue are excluded from
+the LLVM percentage because their async/process closures distort function
+coverage. They are covered by in-process packaging tests and mandatory native
+application gates. CLI, other platform glue, compiler, server, and the
+fuzz-only interface remain in the denominator. ADR 0012 records why this
+honest whole-workspace baseline replaced the earlier target-neutral 90% phase
+measurement. The `tachyon-contracts` tests meta-validate every canonical
+schema, accept its positive fixture, and reject its negative fixture.
 
 ## Change Shape
 

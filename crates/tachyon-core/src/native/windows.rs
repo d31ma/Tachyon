@@ -89,12 +89,8 @@ async fn compile_c(source: &Path, executable: &Path) -> Result<String, Failure> 
         &run_tool(compiler, &["--version"]).await?,
         "mingw-w64 unknown",
     );
-    let source = source
-        .to_str()
-        .ok_or_else(|| native_tool_failure(1605, "Host source path is not valid Unicode."))?;
-    let executable = executable
-        .to_str()
-        .ok_or_else(|| native_tool_failure(1605, "Application path is not valid Unicode."))?;
+    let source = compiler_path(source, "Host source")?;
+    let executable = compiler_path(executable, "Application")?;
     run_tool(
         compiler,
         &[
@@ -105,9 +101,9 @@ async fn compile_c(source: &Path, executable: &Path) -> Result<String, Failure> 
             "-Werror",
             "-municode",
             "-mwindows",
-            source,
+            &source,
             "-o",
-            executable,
+            &executable,
             "-lcomctl32",
             "-lshell32",
             "-luser32",
@@ -116,6 +112,23 @@ async fn compile_c(source: &Path, executable: &Path) -> Result<String, Failure> 
     )
     .await?;
     Ok(version)
+}
+
+/// MinGW interprets backslashes in extended Windows paths as escapes. GCC
+/// accepts forward slashes on Windows, which also keeps Unix cross-builds
+/// unchanged.
+fn compiler_path(path: &Path, label: &str) -> Result<String, Failure> {
+    let value = path
+        .to_str()
+        .ok_or_else(|| native_tool_failure(1605, &format!("{label} path is not valid Unicode.")))?;
+    if let Some(value) = value.strip_prefix(r"\\?\UNC\") {
+        Ok(format!("//{}", value.replace('\\', "/")))
+    } else {
+        Ok(value
+            .strip_prefix(r"\\?\")
+            .unwrap_or(value)
+            .replace('\\', "/"))
+    }
 }
 
 fn application_manifest(application: &NativeApplication) -> String {
@@ -665,7 +678,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{application_manifest, c_source, lower, windows_compiler};
+    use super::{application_manifest, c_source, compiler_path, lower, windows_compiler};
     use crate::native::config::NativeApplication;
     use crate::native::planner::NativePlanner;
     use tachyon_contracts::NativeTarget;
@@ -732,5 +745,12 @@ mod tests {
     fn compiler_selection_follows_the_build_machine() {
         let compiler = windows_compiler();
         assert!(compiler == "gcc" || compiler == "x86_64-w64-mingw32-gcc");
+    }
+
+    #[test]
+    fn mingw_paths_use_forward_slashes_on_every_build_machine() {
+        let path = compiler_path(std::path::Path::new(r"\\?\D:\work\tachyon_host.c"), "Host")
+            .expect("path");
+        assert_eq!(path, "D:/work/tachyon_host.c");
     }
 }

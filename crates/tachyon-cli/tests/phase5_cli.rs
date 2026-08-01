@@ -23,6 +23,7 @@ fn write(path: &Path, contents: &str) {
     fs::write(path, contents).expect("fixture source");
 }
 
+#[cfg(target_os = "macos")]
 fn assert_contract(name: &str, instance: &serde_json::Value) {
     let contract = tachyon_contracts::find(name).expect("registered contract");
     let schema = tachyon_contracts::parse_schema(contract).expect("canonical schema");
@@ -58,6 +59,7 @@ fn write_phase5_project(project: &Path, name: &str, id: &str) {
 }
 
 /// Asserts the platform-neutral staging every Phase 5 target must publish.
+#[cfg(target_os = "macos")]
 fn assert_common_staging(root: &Path, target: &str) {
     assert!(root.join("capability-manifest.json").is_file());
     assert!(root.join("artifact-manifest.json").is_file());

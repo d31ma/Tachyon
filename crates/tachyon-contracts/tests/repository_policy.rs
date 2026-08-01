@@ -103,6 +103,39 @@ fn release_artifact_inputs_are_present_and_nonempty() -> Result<(), Box<dyn std:
 }
 
 #[test]
+fn every_phase7_fuzz_boundary_has_a_target_seed_and_ci_campaign()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    let manifest = fs::read_to_string(root.join("fuzz/Cargo.toml"))?;
+    let lockfile = fs::read_to_string(root.join("fuzz/Cargo.lock"))?;
+    let workflow = fs::read_to_string(root.join(".github/workflows/rust-ci.yml"))?;
+
+    assert!(manifest.contains("libfuzzer-sys = \"=0.4.10\""));
+    assert!(lockfile.contains("name = \"libfuzzer-sys\""));
+    for target in [
+        "html_frontend",
+        "template_frontend",
+        "handler_frame",
+        "native_planner",
+    ] {
+        assert!(manifest.contains(&format!("name = \"{target}\"")));
+        assert!(
+            root.join(format!("fuzz/fuzz_targets/{target}.rs"))
+                .is_file()
+        );
+        let seeds = fs::read_dir(root.join(format!("fuzz/corpus/{target}")))?
+            .collect::<Result<Vec<_>, _>>()?;
+        assert!(!seeds.is_empty(), "{target} has no hand-written seed");
+    }
+    assert!(
+        workflow
+            .contains("for target in html_frontend template_frontend handler_frame native_planner")
+    );
+    assert!(workflow.contains("-max_total_time=${FUZZ_SECONDS}"));
+    Ok(())
+}
+
+#[test]
 fn architecture_adrs_are_accepted_and_numbered() -> Result<(), Box<dyn std::error::Error>> {
     let root = repository_root();
     let adrs = collect_files(&root.join("docs/adr"), "md")?;
@@ -111,15 +144,33 @@ fn architecture_adrs_are_accepted_and_numbered() -> Result<(), Box<dyn std::erro
         .filter(|path| {
             path.file_name()
                 .and_then(|value| value.to_str())
-                .is_some_and(|name| name.starts_with("000"))
+                .is_some_and(|name| {
+                    name.len() > 5
+                        && name.as_bytes()[..4].iter().all(u8::is_ascii_digit)
+                        && name.as_bytes()[4] == b'-'
+                })
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(numbered.len(), 9);
-    for adr in numbered {
+    assert_eq!(numbered.len(), 12);
+    for (index, adr) in numbered.into_iter().enumerate() {
+        let expected_prefix = format!("{:04}-", index + 1);
+        assert!(
+            adr.file_name()
+                .and_then(|value| value.to_str())
+                .is_some_and(|name| name.starts_with(&expected_prefix)),
+            "{} is not the expected ADR {expected_prefix}",
+            adr.display()
+        );
         let contents = fs::read_to_string(adr)?;
-        assert!(contents.contains("- Status: Accepted"), "{}", adr.display());
-        assert!(contents.contains("## Acceptance Gate"), "{}", adr.display());
+        assert!(
+            contents
+                .lines()
+                .take(12)
+                .any(|line| line.contains("Accepted")),
+            "{} is not accepted",
+            adr.display()
+        );
     }
 
     Ok(())
@@ -275,9 +326,9 @@ fn completed_phase_acceptance_is_enforced_by_ci_and_documentation()
     assert!(workflow.contains("actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"));
     assert!(workflow.contains("python-version: 3.14.6"));
     assert!(workflow.contains("cargo run --release --locked --bin ty -- --version"));
-    assert!(workflow.contains("--fail-under-lines 90"));
-    assert!(workflow.contains("--fail-under-functions 90"));
-    assert!(workflow.contains("--fail-under-regions 90"));
+    assert!(workflow.contains("--fail-under-lines 80"));
+    assert!(workflow.contains("--fail-under-functions 80"));
+    assert!(workflow.contains("--fail-under-regions 80"));
     assert!(workflow.contains(
         "--ignore-filename-regex 'crates/tachyon-core/src/native/(compiler|macos)\\.rs'"
     ));

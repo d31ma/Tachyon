@@ -21,6 +21,10 @@ src/shared/manifests/route-manifest.json
 
 package-lock.json
 
+# cargo-fuzz writes content-addressed corpus entries beside the reviewed seeds.
+fuzz/corpus/*/*
+!fuzz/corpus/*/seed-*
+
 # Graphify
 .graphify*
 graphify-out/
