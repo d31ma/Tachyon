@@ -480,9 +480,14 @@ fn development_server_builds_and_serves_with_defensive_headers() {
     let output = child.stdout.take().expect("server stdout should be piped");
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
+        let mut output = BufReader::new(output);
         let mut line = String::new();
-        let result = BufReader::new(output).read_line(&mut line).map(|_| line);
+        let result = output.read_line(&mut line).map(|_| line);
         let _ = sender.send(result);
+        // Keep the pipe open for the server's later status lines. Dropping the
+        // reader after readiness races the next `println!` and can terminate
+        // the child on a broken pipe before its listener is polled.
+        let _ = std::io::copy(&mut output, &mut std::io::sink());
     });
     let ready = receiver
         .recv_timeout(Duration::from_secs(10))

@@ -64,7 +64,11 @@ if (Test-Path $log) { Remove-Item -Force $log }
 $process = Start-Process -FilePath (Join-Path $app 'bin\PhaseFive.exe') -PassThru
 Start-Sleep -Seconds 5
 
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+# Standard Win32 HWNDs expose their semantic UIA types through Microsoft's
+# client-side proxy providers. PowerShell 7 does not load that provider
+# assembly merely because UIAutomationClient is referenced, leaving genuine
+# Button/Edit/Static windows on the fallback provider as generic panes.
+Add-Type -AssemblyName UIAutomationClient, UIAutomationClientsideProviders, UIAutomationTypes
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 
 # A name alone is ambiguous: the host window and its child controls can share

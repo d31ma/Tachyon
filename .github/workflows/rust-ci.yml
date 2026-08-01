@@ -256,12 +256,30 @@ jobs:
           avdmanager="${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager"
           echo no | "${avdmanager}" create avd -n tachyon-gate \
             -k "system-images;android-35;google_apis;x86_64" --device pixel_6 --force
+          emulator_log=/tmp/emulator.log
+          # Headless emulators select SwiftShader automatically; the former
+          # swiftshader_indirect mode is deprecated in current SDK releases.
           nohup "${ANDROID_HOME}/emulator/emulator" -avd tachyon-gate \
-            -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect \
-            > /tmp/emulator.log 2>&1 &
-          "${ANDROID_HOME}/platform-tools/adb" wait-for-device
+            -no-window -no-audio -no-snapshot -no-boot-anim \
+            > "${emulator_log}" 2>&1 &
+          emulator_pid=$!
+          show_emulator_failure() {
+            status=$?
+            if [ "${status}" -ne 0 ]; then
+              echo '--- emulator process ---'
+              ps -p "${emulator_pid}" -f || true
+              echo '--- adb devices ---'
+              "${ANDROID_HOME}/platform-tools/adb" devices -l || true
+              echo '--- emulator log ---'
+              tail -200 "${emulator_log}" || true
+            fi
+            exit "${status}"
+          }
+          trap show_emulator_failure EXIT
+          timeout 180 "${ANDROID_HOME}/platform-tools/adb" wait-for-device
           timeout 600 bash -c \
             'until [ "$(adb shell getprop sys.boot_completed | tr -d "\r")" = "1" ]; do sleep 5; done'
+          trap - EXIT
 
       - name: Assemble, launch, and drive the generated application
         run: ./scripts/android/native-test.sh
