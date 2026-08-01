@@ -68,10 +68,9 @@ if (Test-Path $log) { Remove-Item -Force $log }
 $process = Start-Process -FilePath (Join-Path $app 'bin\PhaseFive.exe') -PassThru
 Start-Sleep -Seconds 5
 
-# Standard Win32 HWNDs expose their semantic UIA types through Microsoft's
-# client-side proxy providers. Use Windows PowerShell for this gate because its
-# .NET Framework UI Automation client automatically loads those proxies;
-# PowerShell 7 falls through to generic panes on the hosted runner.
+# Inspect the Win32 HWNDs through UI Automation. The hosted runner's managed
+# client may flatten standard controls to panes, so the gate combines the UIA
+# name and native HWND class instead of trusting ControlType alone.
 Add-Type -AssemblyName UIAutomationClient, UIAutomationClientsideProviders, UIAutomationTypes
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 
@@ -86,12 +85,11 @@ public static class TachyonWin32 {
 }
 '@
 
-# A name alone is ambiguous: the host window and its child controls can share
-# one caption, so an ancestor Pane answers to the button's name. Matching by
-# name and control type together is what makes the lookup unambiguous. The
-# search still starts at the ancestor it is given and widens to the desktop,
-# because the element that answers to the window's name is not guaranteed to
-# be the top-level window that owns the controls.
+# A name alone can be ambiguous because the host window and a child control may
+# share one caption. The optional type filter remains useful on clients whose
+# standard proxy providers expose semantic ControlTypes. Search the supplied
+# ancestor first and then the desktop because the element answering to the
+# window's name is not guaranteed to own the child controls.
 function Find-Descendant(
     [System.Windows.Automation.AutomationElement] $ancestor,
     [string] $name,
@@ -155,7 +153,10 @@ try {
         throw "the button is backed by the unexpected HWND class '$windowClass'"
     }
 
-    foreach ($name in @('Phase Five', 'Count', 'Sales chart')) {
+    # PHASE_5_SPEC.md section 6 records the Windows reduction: window text is
+    # the accessible name. The bound output therefore exposes its live text
+    # (`0`, then `1`) rather than the differing aria-label `Count`.
+    foreach ($name in @('Phase Five', '0', 'Sales chart')) {
         if ($null -eq (Find-Descendant $window $name)) {
             Write-Host '--- UI Automation tree below the matched window ---'
             Write-AutomationTree $window
