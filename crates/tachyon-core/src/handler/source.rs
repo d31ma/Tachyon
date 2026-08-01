@@ -364,7 +364,13 @@ mod tests {
     fn unsafe_unsupported_and_malformed_sources_fail_closed() {
         let root = tempfile::tempdir().expect("project");
         write(root.path(), "server/routes/yon.rb", b"class Handler; end");
-        write(root.path(), "server/routes/nul/yon.py", b"class\0 Handler");
+        // `nul` is a reserved device name on Windows, so the directory
+        // holding the NUL-byte source cannot be named after it.
+        write(
+            root.path(),
+            "server/routes/nulbyte/yon.py",
+            b"class\0 Handler",
+        );
         write(root.path(), "server/routes/bytes/yon.js", &[0xff, 0xfe]);
         write(
             root.path(),
@@ -376,7 +382,7 @@ mod tests {
             ("client/pages/yon.py", "TY2002"),
             ("server/routes/yon.rb", "TY2003"),
             ("server/routes/missing/yon.py", "TY2001"),
-            ("server/routes/nul/yon.py", "TY2004"),
+            ("server/routes/nulbyte/yon.py", "TY2004"),
             ("server/routes/bytes/yon.js", "TY2004"),
             ("server/routes/large/yon.py", "TY2004"),
         ] {

@@ -375,6 +375,21 @@ fn canonical_project_root(root: &Path) -> Result<PathBuf, Failure> {
     Ok(canonical)
 }
 
+/// Returns the first ancestor of `relative_root` that exists but is not a
+/// directory, which is what makes the source root unreachable.
+fn non_directory_ancestor(project_root: &Path, relative_root: &Path) -> Option<PathBuf> {
+    let mut current = PathBuf::new();
+    for component in relative_root.components() {
+        current.push(component);
+        match fs::symlink_metadata(project_root.join(&current)) {
+            Ok(metadata) if !metadata.is_dir() => return Some(current),
+            Ok(_) => {}
+            Err(_) => return None,
+        }
+    }
+    None
+}
+
 fn discover_views(
     project_root: &Path,
     relative_root: &Path,
@@ -384,7 +399,26 @@ fn discover_views(
     let source_root = project_root.join(relative_root);
     let metadata = match fs::symlink_metadata(&source_root) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // Unix reports `NotADirectory` when a parent component is a regular
+            // file, but Windows reports `NotFound` — the same code that means a
+            // genuinely absent source root. Without this check a project whose
+            // `client` is a file would be reported as merely having no views on
+            // one platform and as a broken layout on the other.
+            if let Some(blocking) = non_directory_ancestor(project_root, relative_root) {
+                found.diagnostics.push(diagnostic(
+                    1001,
+                    format!(
+                        "Source root '{}' is blocked by '{}', which is not a directory.",
+                        portable(relative_root),
+                        portable(&blocking)
+                    ),
+                    None,
+                    None,
+                ));
+            }
+            return;
+        }
         Err(error) => {
             found.diagnostics.push(diagnostic(
                 1001,
@@ -777,6 +811,7 @@ mod tests {
 
     use super::{ProjectDiscovery, ViewKind};
     use std::fs;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn routes_are_sorted_and_manifested() {
@@ -857,6 +892,25 @@ mod tests {
                 .expect_err("source root")
                 .to_string()
                 .contains("TY1001")
+        );
+    }
+
+    /// Unix and Windows disagree on the error kind for a source root whose
+    /// parent is a regular file, so the blocked ancestor is detected by shape
+    /// rather than by `io::ErrorKind`. Only Windows reaches this through
+    /// `discover`, so the helper is asserted directly on every platform.
+    #[test]
+    fn a_source_root_blocked_by_a_file_is_found_on_every_platform() {
+        let root = tempfile::tempdir().expect("workspace");
+        assert_eq!(
+            super::non_directory_ancestor(root.path(), Path::new("client/pages")),
+            None
+        );
+
+        fs::write(root.path().join("client"), "not a directory").expect("blocking file");
+        assert_eq!(
+            super::non_directory_ancestor(root.path(), Path::new("client/pages")),
+            Some(PathBuf::from("client"))
         );
     }
 

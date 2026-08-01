@@ -182,11 +182,18 @@ fn request(socket: &str, request: &[u8]) -> String {
     connection
         .write_all(request)
         .expect("request should be sent");
-    let mut response = String::new();
-    connection
-        .read_to_string(&mut response)
-        .expect("response should be read");
-    response
+    let mut response = Vec::new();
+    // With `Connection: close` the response ends when the connection does. A
+    // peer that closes a socket still holding unread input resets it instead
+    // of finishing cleanly, so a reset after a response arrived is the end of
+    // that response, not a failure to read it.
+    match connection.read_to_end(&mut response) {
+        Ok(_) => {}
+        Err(error)
+            if error.kind() == std::io::ErrorKind::ConnectionReset && !response.is_empty() => {}
+        Err(error) => panic!("response should be read: {error:?}"),
+    }
+    String::from_utf8(response).expect("response should be UTF-8")
 }
 
 #[test]

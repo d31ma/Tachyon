@@ -67,6 +67,12 @@ Start-Sleep -Seconds 5
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 
+# A name alone is ambiguous: the host window and its child controls can share
+# one caption, so an ancestor Pane answers to the button's name. Matching by
+# name and control type together is what makes the lookup unambiguous. The
+# search still starts at the ancestor it is given and widens to the desktop,
+# because the element that answers to the window's name is not guaranteed to
+# be the top-level window that owns the controls.
 function Find-Descendant(
     [System.Windows.Automation.AutomationElement] $ancestor,
     [string] $name,
@@ -74,14 +80,32 @@ function Find-Descendant(
 ) {
     $condition = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::NameProperty, $name)
-    $matches = $ancestor.FindAll(
-        [System.Windows.Automation.TreeScope]::Descendants, $condition)
-    foreach ($match in $matches) {
-        if ($null -eq $controlType -or $match.Current.ControlType -eq $controlType) {
-            return $match
+    foreach ($scope in @($ancestor, $root)) {
+        if ($null -eq $scope) { continue }
+        $found = $scope.FindAll(
+            [System.Windows.Automation.TreeScope]::Descendants, $condition)
+        foreach ($match in $found) {
+            if ($null -eq $controlType -or $match.Current.ControlType -eq $controlType) {
+                return $match
+            }
         }
     }
     return $null
+}
+
+# Printed only when an assertion fails, so a CI failure reports the tree that
+# was actually exposed instead of only the name that was missing.
+function Write-AutomationTree(
+    [System.Windows.Automation.AutomationElement] $element,
+    [int] $depth = 0
+) {
+    if ($null -eq $element -or $depth -gt 4) { return }
+    $pad = ' ' * ($depth * 2)
+    Write-Host "$pad$($element.Current.ControlType.ProgrammaticName) '$($element.Current.Name)'"
+    $children = $element.FindAll(
+        [System.Windows.Automation.TreeScope]::Children,
+        [System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($child in $children) { Write-AutomationTree $child ($depth + 1) }
 }
 
 try {
@@ -92,7 +116,11 @@ try {
     # Win32 exposes a control's window text as its accessible name, so the
     # button is located by its visible caption. See PHASE_5_SPEC.md section 6.
     $button = Find-Descendant $window 'Add one' ([System.Windows.Automation.ControlType]::Button)
-    if ($null -eq $button) { throw 'the native button is not exposed to UI Automation' }
+    if ($null -eq $button) {
+        Write-Host '--- UI Automation tree below the matched window ---'
+        Write-AutomationTree $window
+        throw 'the native button is not exposed to UI Automation'
+    }
     $controlType = $button.Current.ControlType.ProgrammaticName
     if ($controlType -ne 'ControlType.Button') {
         throw "the button surfaced as $controlType"
@@ -100,6 +128,8 @@ try {
 
     foreach ($name in @('Phase Five', 'Count', 'Sales chart')) {
         if ($null -eq (Find-Descendant $window $name)) {
+            Write-Host '--- UI Automation tree below the matched window ---'
+            Write-AutomationTree $window
             throw "accessible name '$name' never reached UI Automation"
         }
     }
@@ -111,6 +141,8 @@ try {
     $invoke.Invoke()
     Start-Sleep -Seconds 2
     if ($null -eq (Find-Descendant $window '1')) {
+        Write-Host '--- UI Automation tree below the matched window ---'
+        Write-AutomationTree $window
         throw 'invoking the native button never updated the bound output'
     }
     Write-Host 'OK: invoking the native button incremented the bound state to 1'

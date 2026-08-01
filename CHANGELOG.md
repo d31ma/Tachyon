@@ -90,6 +90,13 @@ independent major versions.
   license-pipe termination explicitly, rebuilt the standard library for Linux
   sanitizer runs, and retained a release artifact for provenance attestation.
 
+- A project whose `client` or `server` path was a regular file reported the
+  wrong diagnostic on Windows. Unix reports `NotADirectory` when a parent
+  component is a file, while Windows reports `NotFound` — the same code that
+  means the source root is simply absent — so a broken project layout was
+  reported as having no views (`TY1002`) instead of as an unusable source root
+  (`TY1001`). The blocked ancestor is now detected by inspecting the path
+  shape rather than by trusting a platform-specific error kind.
 - The template parser panicked on malformed markup. `<slot>` holds no
   children, but token-error recovery could leave one open on the parser stack,
   and appending the next child then reached an `unreachable!()` — so a
