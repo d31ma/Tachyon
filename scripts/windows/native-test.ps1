@@ -69,11 +69,8 @@ Start-Sleep -Seconds 5
 # table merely because UIAutomationClient is referenced, leaving genuine
 # Button/Edit/Static windows on the fallback provider as generic panes.
 Add-Type -AssemblyName UIAutomationClient, UIAutomationClientsideProviders, UIAutomationTypes
-$providerTable = [UIAutomationClientsideProviders.UIAutomationClientSideProviders]::ClientSideProviderDescriptionTable
-if ($null -eq $providerTable -or $providerTable.Count -eq 0) {
-    throw 'the standard Win32 UI Automation provider table is empty'
-}
-[System.Windows.Automation.ClientSettings]::RegisterClientSideProviders($providerTable)
+$providerAssembly = [UIAutomationClientsideProviders.UIAutomationClientSideProviders].Assembly.GetName()
+[System.Windows.Automation.ClientSettings]::RegisterClientSideProviderAssembly($providerAssembly)
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 
 # A name alone is ambiguous: the host window and its child controls can share

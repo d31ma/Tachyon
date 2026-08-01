@@ -223,7 +223,10 @@ jobs:
         run: gcc --version
 
       - name: Build, launch, and drive the generated application
-        shell: pwsh
+        # The UIAutomationClient managed proxies are a .NET Framework surface.
+        # Windows PowerShell loads them reliably; PowerShell 7 falls through to
+        # generic Pane elements even when the provider assembly is present.
+        shell: powershell
         run: ./scripts/windows/native-test.ps1
 
   android-native:
