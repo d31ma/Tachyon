@@ -2,12 +2,33 @@
 @import "../assets/duvay/duvay.min.css";
 
 :root {
-  --tachyon-from: #0ea5e9;
-  --tachyon-to: #14b8a6;
+  --tachyon-from: #036f9f;
+  --tachyon-to: #087e73;
   --tachyon-gradient: linear-gradient(120deg, var(--tachyon-from), var(--tachyon-to));
+  --w-text-very-subtle: #5f6b70;
   /* Keep supporting labels legible across the site. DuVay's default xs token
      is 11px, below this product's 12px minimum. */
   --w-font-xs: 0.75rem;
+}
+
+[w-theme="dark"] {
+  --tachyon-from: #0ea5e9;
+  --tachyon-to: #14b8a6;
+  --w-text-very-subtle: #ffffffa3;
+}
+
+[w-theme="high-contrast"] {
+  --tachyon-from: #003a4f;
+  --tachyon-to: #244d44;
+  --w-text-very-subtle: #3e4a50;
+}
+
+@media (prefers-color-scheme: dark) {
+  [w-theme="auto"] {
+    --tachyon-from: #0ea5e9;
+    --tachyon-to: #14b8a6;
+    --w-text-very-subtle: #ffffffa3;
+  }
 }
 
 body {
@@ -92,7 +113,7 @@ w-app-bar {
 /* ---- responsive navigation --------------------------------------------
    Navigation is viewport-driven, not device-driven. At desktop widths the app
    bar shows the full inline nav; below desktop it collapses to a right-aligned
-   dropdown menu, matching the FYLO site pattern. There is no bottom bar: as a
+   dropdown menu. There is no bottom bar: as a
    fixed element at the viewport edge it overlapped the OS gesture area on
    phones and intercepted taps. */
 

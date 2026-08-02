@@ -1,0 +1,8 @@
+{
+  "application": {
+    "name": "TachyonPhaseFour",
+    "id": "dev.tachyon.phase-four-evidence",
+    "version": "0.0.1",
+    "entry_route": "/"
+  }
+}

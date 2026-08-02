@@ -16,9 +16,6 @@
     "allowImportingTsExtensions": true,
     "maxNodeModuleJsDepth": 0,
     "skipLibCheck": true,
-    "noUncheckedSideEffectImports": false,
-    "paths": {
-      "@/*": ["./tests/fixtures/fullstack/server/*"]
-    }
+    "noUncheckedSideEffectImports": false
   }
 }

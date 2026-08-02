@@ -1,0 +1,45 @@
+{
+  "contract_version": 1,
+  "source": "client/pages/products/yon.html",
+  "root": {
+    "kind": "element",
+    "tag": "main",
+    "attributes": {
+      "aria-label": "Products"
+    },
+    "children": [
+      {
+        "kind": "element",
+        "tag": "h1",
+        "attributes": {},
+        "children": [
+          {
+            "kind": "text",
+            "value": "{{ title }}"
+          }
+        ]
+      },
+      {
+        "kind": "iteration",
+        "binding": "product",
+        "iterable": "products",
+        "body": [
+          {
+            "kind": "component",
+            "name": "product-card",
+            "properties": {
+              "product": "product"
+            },
+            "children": []
+          }
+        ],
+        "empty": [
+          {
+            "kind": "text",
+            "value": "No products"
+          }
+        ]
+      }
+    ]
+  }
+}

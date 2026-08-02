@@ -1,0 +1,15 @@
+{
+  "contract_version": 2,
+  "output": "/absolute/index.html",
+  "sources": ["../outside.html"],
+  "mappings": [
+    {
+      "generated_start": -1,
+      "generated_end": 0,
+      "source": "../outside.html",
+      "source_start": 0,
+      "source_end": 1,
+      "unknown": true
+    }
+  ]
+}

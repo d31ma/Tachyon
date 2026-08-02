@@ -1,13 +1,5 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": [
-    "src/**/*.d.ts",
-    "src/**/*.js",
-    "tests/**/*.js",
-    "website/**/*.d.ts",
-    "website/**/*.js",
-    "website/**/*.ts",
-    "scripts/**/*.js"
-  ],
+  "include": ["api/types/**/*.d.ts", "website/**/*.d.ts", "website/**/*.js", "website/**/*.ts"],
   "exclude": ["node_modules", "node_modules*", "dist", "bin", "**/*.as.ts", "website/dist", "website/dist-debug", "website/node_modules", "website/node_modules*", "website/client/shared/assets/duvay/**/*.js"]
 }

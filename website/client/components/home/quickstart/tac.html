@@ -2,28 +2,29 @@
   <h2>One convention, every layer</h2>
   <p class="quickstart-sub">Templates, polyglot companions and backend routes all follow the same file-beside-file shape.</p>
 
-  <div class="w-row ga-1 quickstart-tabs" role="tablist" aria-label="Code samples">
-    <loop :for="tab of tabs">
-      <w-btn size="sm" :variant="active === tab.id ? 'filled' : 'text'" on:click="select(tab.id)">{tab.label}</w-btn>
-    </loop>
-  </div>
-
-  <switch :value="active">
-    <case :when="'template'">
-      <pre class="code-block"><code>{samples.template}</code></pre>
+  <div class="quickstart-samples">
+    <details open>
+      <summary>Tac template</summary>
+      <pre class="code-block"><code data-sample="template" data-fallback="&lt;section class=&quot;hero&quot;&gt;&#10;  &lt;h1&gt;{headline}&lt;/h1&gt;&#10;  &lt;button on:click=&quot;refresh()&quot;&gt;Refresh&lt;/button&gt;&#10;&lt;/section&gt;&#10;&#10;&lt;loop :for=&quot;post of posts&quot;&gt;&#10;  &lt;product-card :product=&quot;post&quot; hydrate=&quot;visible&quot; /&gt;&#10;&lt;/loop&gt;"></code></pre>
       <p class="quickstart-note">client/pages/tac.html — interpolation, events, control flow and island hydration in plain HTML.</p>
-    </case>
-    <case :when="'companion'">
-      <pre class="code-block"><code>{samples.companion}</code></pre>
-      <p class="quickstart-note">client/pages/tac.js — a plain class; assignments rerender, prefixes persist.</p>
-    </case>
-    <case :when="'route'">
-      <pre class="code-block"><code>{samples.route}</code></pre>
+    </details>
+
+    <details>
+      <summary>Companion</summary>
+      <pre class="code-block"><code data-sample="companion" data-fallback="export default class {&#10;  headline = &quot;Tac + Yon&quot;&#10;  visits = 0&#10;&#10;  hydrate(root, signal) {&#10;    this.visits = Number(sessionStorage.getItem(&quot;visits&quot;) ?? 0) + 1&#10;    sessionStorage.setItem(&quot;visits&quot;, String(this.visits))&#10;  }&#10;}"></code></pre>
+      <p class="quickstart-note">client/components/hero/tac.js — a plain class with an explicit browser hydration hook.</p>
+    </details>
+
+    <details>
+      <summary>Yon route</summary>
+      <pre class="code-block"><code data-sample="yon" data-fallback="// server/routes/posts/yon.js  -&gt;  /posts&#10;export class Handler {&#10;  static GET() {&#10;    return { posts: [] }&#10;  }&#10;&#10;  static async POST(request) {&#10;    return { created: request.body }&#10;  }&#10;}"></code></pre>
       <p class="quickstart-note">server/routes/posts/yon.js — verbs are static methods; return plain data.</p>
-    </case>
-    <case default>
-      <pre class="code-block"><code>{samples.polyglot}</code></pre>
+    </details>
+
+    <details>
+      <summary>Polyglot companion</summary>
+      <pre class="code-block"><code data-sample="polyglot" data-fallback="// client/components/counter/tachyon-wasm.swift&#10;var count: Int = 0&#10;&#10;func increment() {&#10;  count += 1&#10;}&#10;&#10;let tac: [String: TacMember] = [&#10;  &quot;count&quot;: .field({ count }, { count = $0 }),&#10;  &quot;increment&quot;: .method(increment),&#10;]"></code></pre>
       <p class="quickstart-note">client/components/counter/tac.swift — a portable reactive controller beside its template.</p>
-    </case>
-  </switch>
+    </details>
+  </div>
 </section>

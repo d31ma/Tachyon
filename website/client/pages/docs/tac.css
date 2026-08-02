@@ -1,3 +1,5 @@
+@import url('/shared/styles/site.css');
+
 .docs-shell {
   display: grid;
   grid-template-columns: 15rem minmax(0, 1fr);

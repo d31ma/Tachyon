@@ -1,0 +1,21 @@
+{
+  "contract_version": 1,
+  "routes": [
+    {
+      "route": "products",
+      "kind": "page",
+      "methods": [],
+      "view": "/absolute/yon.html",
+      "handlers": [],
+      "context": {
+        "collision_policy": "last_wins",
+        "static_exports": [
+          "title",
+          "title"
+        ],
+        "response_exports": []
+      },
+      "parameters": []
+    }
+  ]
+}

@@ -62,6 +62,14 @@ export default class {
   /** @type {string} */
   lastValue = 'Choose any control to observe its value.'
 
+  /** @returns {void} */
+  hydrate() {}
+
+  /** @returns {string} */
+  fileStatus() {
+    return this.$fileName ? `${this.$fileName} — ${this.$fileSize}` : 'Drop a file here or browse'
+  }
+
   /**
    * @param {string} control
    * @param {unknown} value

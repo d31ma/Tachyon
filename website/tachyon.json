@@ -1,0 +1,8 @@
+{
+  "application": {
+    "name": "Tachyon",
+    "id": "ma.del.tachyon.website",
+    "version": "26.31.06",
+    "entry_route": "/"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tachyon.del.ma/schema/capability-manifest/v1",
+  "title": "Tachyon Capability Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "application_id",
+    "default_policy",
+    "remote_content_bridge",
+    "capabilities"
+  ],
+  "properties": {
+    "contract_version": { "const": 1 },
+    "application_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+([.-][a-z0-9]+)+$",
+      "maxLength": 255
+    },
+    "default_policy": { "const": "deny" },
+    "remote_content_bridge": { "const": false },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "scope", "reason", "targets"],
+        "properties": {
+          "name": {
+            "enum": [
+              "clipboard_read",
+              "clipboard_write",
+              "filesystem_read",
+              "filesystem_write",
+              "network",
+              "notifications",
+              "open_external",
+              "secure_storage"
+            ]
+          },
+          "scope": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "targets": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": ["web", "linux", "macos", "windows", "android", "ios"]
+            }
+          }
+        }
+      }
+    }
+  }
+}

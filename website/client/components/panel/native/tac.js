@@ -13,6 +13,14 @@ export default class {
   lastPaintIso = new Date().toISOString()
   /** @type {string} */
   lastPaintLabel = 'Painted just now'
+  /** @type {HTMLElement | null} */
+  root = null
+
+  /** @param {HTMLElement} root @returns {void} */
+  hydrate(root) {
+    this.root = root
+    this.paintCanvas()
+  }
 
   /** @param {string} value @returns {void} */
   setIntensity(value) {
@@ -39,8 +47,16 @@ export default class {
 
   /** @returns {void} */
   paintCanvas() {
-    const canvas = document.querySelector('#browser-studio canvas')
+    const canvas = this.root?.querySelector('canvas')
     if (!(canvas instanceof HTMLCanvasElement)) return
+    const range = this.root?.querySelector('input[type="range"]')
+    const progress = this.root?.querySelector('progress')
+    const meter = this.root?.querySelector('meter')
+    const time = this.root?.querySelector('time')
+    if (range instanceof HTMLInputElement) range.value = String(this.intensity)
+    if (progress instanceof HTMLProgressElement) progress.value = this.intensity
+    if (meter instanceof HTMLMeterElement) meter.value = this.intensity
+    if (time instanceof HTMLTimeElement) time.dateTime = this.lastPaintIso
     const context = canvas.getContext('2d')
     if (!context) return
 
@@ -74,10 +90,5 @@ export default class {
     context.fillStyle = 'rgba(255,255,255,0.65)'
     context.font = '14px ui-monospace, monospace'
     context.fillText(`ENERGY ${this.intensity}%`, 28, height - 28)
-  }
-
-  @onMount
-  prepareCanvas() {
-    this.paintCanvas()
   }
 }

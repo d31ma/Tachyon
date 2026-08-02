@@ -6,37 +6,76 @@
       <p>
         Yon is Tachyon's server runtime. Drop <code>yon.&lt;ext&gt;</code>
         files under <code>server/routes</code>, export a <code>Handler</code>
-        class, and Tachyon wires HTTP methods, validation, OpenAPI, middleware,
-        FYLO and telemetry around each request.
+        class or executable protocol adapter, and Tachyon wires HTTP methods,
+        bounded process supervision, middleware and request identifiers around each request.
       </p>
     </div>
-    <pre class="code-block"><code>{serveCommand}</code></pre>
+    <pre class="code-block"><code>ty init api --name "My API"
+cd api
+mkdir -p server/routes/health
+ty serve</code></pre>
   </div>
 
   <div class="yon-grid">
-    <loop :for="capability of capabilities">
-      <w-card class="yon-card" variant="outlined" :title="capability.title" :subtitle="capability.subtitle">
-        <w-card-text>
-          <p>{capability.body}</p>
-          <logic :if="capability.code">
-            <pre class="code-block"><code>{capability.code}</code></pre>
-          </logic>
-        </w-card-text>
-      </w-card>
-    </loop>
+    <w-card class="yon-card" variant="outlined" title="Shape-aware serving" subtitle="client, server, or full stack">
+      <w-card-text>
+        <p>ty serve detects whether the app has client/, server/, or both, then serves the right runtime on one port.</p>
+        <pre class="code-block"><code>ty serve
+YON_PORT=8000 ty serve
+NODE_ENV=production ty serve</code></pre>
+      </w-card-text>
+    </w-card>
+    <w-card class="yon-card" variant="outlined" title="Route handlers" subtitle="FastAPI-style returns">
+      <w-card-text>
+        <p>Handlers return protocol responses. Yon binds route parameters, supervises the process, preserves headers and bodies, and reports bounded failures consistently.</p>
+        <pre class="code-block"><code>export class Handler &#123;
+  static GET() &#123; return &#123; ok: true &#125; &#125;
+  static POST(request) &#123; return request.body &#125;
+&#125;</code></pre>
+      </w-card-text>
+    </w-card>
+    <w-card class="yon-card" variant="outlined" title="Handler protocol" subtitle="one JSON request and response">
+      <w-card-text>
+        <p>Any executable language can read one bounded JSON request from stdin and write one JSON response to stdout; .tachyonrc registers interpreters.</p>
+        <pre class="code-block"><code>server/routes/items/
+  yon.rb
+.tachyonrc</code></pre>
+      </w-card-text>
+    </w-card>
+    <w-card class="yon-card" variant="outlined" title="Durable realtime" subtitle="append-only SSE topics">
+      <w-card-text>
+        <p>Handlers append NDJSON records to bounded topic logs; browsers subscribe with EventSource and resume from the last event position.</p>
+        <pre class="code-block"><code>new EventSource('/.tachyon/topics/releases')</code></pre>
+      </w-card-text>
+    </w-card>
+    <w-card class="yon-card" variant="outlined" title="Polyglot middleware" subtitle="before and after phases">
+      <w-card-text>
+        <p>Root middleware uses the same supervised protocol as handlers. Return 204 to continue, answer early from before, or merge response headers in after.</p>
+        <pre class="code-block"><code>middleware.rb
+.tachyonrc</code></pre>
+      </w-card-text>
+    </w-card>
+    <w-card class="yon-card" variant="outlined" title="Operations" subtitle="security and deterministic limits">
+      <w-card-text>
+        <p>Yon serves loopback by default with security headers, rejects path traversal, bounds bodies and handler time, and emits stable diagnostics when a process fails.</p>
+        <pre class="code-block"><code>ty serve
+ty doctor
+ty migrate check</code></pre>
+      </w-card-text>
+    </w-card>
   </div>
 
   <div class="yon-languages">
     <h3>Built-in ergonomic adapters</h3>
     <p>
       Yon can run any executable handler that speaks its JSON stdin/stdout
-      protocol, but these languages get the <code>class Handler</code>
-      convenience path out of the box.
+      protocol. JavaScript and Python also get the <code>class Handler</code>
+      convenience path; every other language keeps its ordinary executable semantics.
     </p>
     <div class="language-row">
-      <loop :for="language of languages">
-        <w-chip size="small">{language}</w-chip>
-      </loop>
+      <w-chip size="small">JavaScript</w-chip>
+      <w-chip size="small">Python</w-chip>
+      <w-chip size="small">Any executable protocol adapter</w-chip>
     </div>
   </div>
 </section>

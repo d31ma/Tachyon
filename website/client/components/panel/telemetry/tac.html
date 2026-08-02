@@ -1,5 +1,5 @@
 <w-card variant="outlined" class="panel-card panel-wide">
-  <w-card-item title="Telemetry without a collector" subtitle="Companion fetches are timed in the page, persisted as spans into a FYLO collection, and summarized from the OPFS mirror.">
+  <w-card-item title="Telemetry without a collector" subtitle="Companion fetches are timed in the page, persisted as spans in local storage, and summarized without a collector.">
   </w-card-item>
   <w-card-text>
     <div class="w-row ga-2 tel-status">
@@ -10,30 +10,10 @@
     </div>
 
     <div class="w-row ga-2 tel-actions">
-      <w-btn size="sm" variant="outlined" on:click="runBenchmark()" :disabled="running">Benchmark companion fetches</w-btn>
+      <w-btn size="sm" variant="outlined" on:click="runBenchmark()">Benchmark companion fetches</w-btn>
       <w-btn size="sm" variant="text" on:click="clearSpans()">Clear spans</w-btn>
     </div>
 
-    <logic :if="spans.length > 0">
-      <w-table density="compact" class="tel-table">
-        <table>
-          <thead>
-            <tr><th>Span</th><th>Duration</th><th>Started</th></tr>
-          </thead>
-          <tbody>
-            <loop :for="span of recent">
-              <tr>
-                <td><code>{span.name}</code></td>
-                <td>{span.durationMs.toFixed(1)} ms</td>
-                <td>{span.startedAt}</td>
-              </tr>
-            </loop>
-          </tbody>
-        </table>
-      </w-table>
-    </logic>
-    <logic :if="spans.length === 0 && !loading">
-      <p class="tel-empty">No spans yet — run the benchmark to time local-first companion fetches and persist the results.</p>
-    </logic>
+    <pre class="tel-output" aria-live="polite">{recentSummary()}</pre>
   </w-card-text>
 </w-card>

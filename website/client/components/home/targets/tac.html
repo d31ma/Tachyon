@@ -10,14 +10,30 @@
   </div>
 
   <div class="target-grid">
-    <loop :for="target of targets">
-      <w-card variant="outlined" :title="target.name" :subtitle="target.platform">
-        <w-card-text>
-          <p>{target.description}</p>
-          <pre class="code-block"><code>{target.command}</code></pre>
-        </w-card-text>
-      </w-card>
-    </loop>
+    <w-card variant="outlined" title="Web" subtitle="web platform">
+      <w-card-text><p>Static-ready browser output with PWA assets.</p><pre class="code-block"><code>ty bundle --target web
+# writes dist/web</code></pre></w-card-text>
+    </w-card>
+    <w-card variant="outlined" title="macOS" subtitle="desktop platform">
+      <w-card-text><p>Generated SwiftUI controls with bounded declarative state and actions.</p><pre class="code-block"><code>ty bundle --target macos
+ty preview --target macos</code></pre></w-card-text>
+    </w-card>
+    <w-card variant="outlined" title="Windows" subtitle="desktop platform">
+      <w-card-text><p>Win32 common controls; unmapped content uses an accessible external-browser placeholder while embedded WebView2 remains deferred.</p><pre class="code-block"><code>ty bundle --target windows
+ty preview --target windows</code></pre></w-card-text>
+    </w-card>
+    <w-card variant="outlined" title="Linux" subtitle="desktop platform">
+      <w-card-text><p>GTK4 controls with isolated local WebKitGTK surfaces for unmapped subtrees.</p><pre class="code-block"><code>ty bundle --target linux
+ty preview --target linux</code></pre></w-card-text>
+    </w-card>
+    <w-card variant="outlined" title="iOS" subtitle="mobile platform">
+      <w-card-text><p>Xcode-ready, UIKit-backed SwiftUI with isolated WKWebView fallback for unmapped subtrees.</p><pre class="code-block"><code>ty bundle --target ios
+ty preview --target ios</code></pre></w-card-text>
+    </w-card>
+    <w-card variant="outlined" title="Android" subtitle="mobile platform">
+      <w-card-text><p>Platform <code>android.widget</code> Views and LinearLayout containers with isolated Android WebView fallback.</p><pre class="code-block"><code>ty bundle --target android
+ty preview --target android</code></pre></w-card-text>
+    </w-card>
   </div>
 
   <div class="target-terminal">
@@ -25,17 +41,21 @@
       <h3>Build all platforms</h3>
       <p>
         Use <code>all</code> for release validation, then preview one target at a time.
-        Non-web bundles always render native controls first and automatically
-        isolate unsupported subtrees in local WebView boundaries.
+        Non-web bundles render mapped semantics as native controls first. Apple,
+        Android and Linux isolate unmapped subtrees locally; Windows emits an
+        accessible placeholder that opens the content in the default browser.
       </p>
     </div>
-    <pre class="code-block"><code>{allTargetsCommand}</code></pre>
+    <pre class="code-block"><code>ty bundle --target all
+ty bundle --target android
+ty preview --target web
+ty preview --target macos</code></pre>
   </div>
 
   <div class="target-globals" aria-label="Platform globals">
-    <w-chip size="small" color="primary">platform: {platform}</w-chip>
-    <w-chip size="small">os: {os}</w-chip>
-    <w-chip size="small">environment: {environment}</w-chip>
-    <w-chip size="small">target: {target}</w-chip>
+    <w-chip size="small" color="primary">platform: web</w-chip>
+    <w-chip size="small">os: web</w-chip>
+    <w-chip size="small">environment: web</w-chip>
+    <w-chip size="small">target: web</w-chip>
   </div>
 </section>

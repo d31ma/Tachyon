@@ -1,0 +1,24 @@
+{
+  "contract_version": 1,
+  "output": "products/index.html",
+  "sources": [
+    "client/components/product/card/tac.html",
+    "server/routes/products/yon.html"
+  ],
+  "mappings": [
+    {
+      "generated_start": 120,
+      "generated_end": 143,
+      "source": "server/routes/products/yon.html",
+      "source_start": 8,
+      "source_end": 25
+    },
+    {
+      "generated_start": 143,
+      "generated_end": 170,
+      "source": "client/components/product/card/tac.html",
+      "source_start": 0,
+      "source_end": 27
+    }
+  ]
+}

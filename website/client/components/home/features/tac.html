@@ -6,12 +6,45 @@
   </div>
 
   <div class="features-grid">
-    <loop :for="feature of features">
-      <w-card class="feature-card" variant="outlined" hover :href="feature.href" :title="feature.title" :subtitle="feature.tag">
-        <w-card-text>
-          <p>{feature.body}</p>
-        </w-card-text>
-      </w-card>
-    </loop>
+    <w-card class="feature-card" variant="outlined" hover href="/docs/routing" title="File-system routing" subtitle="Tac + Yon">
+      <w-card-text>
+        <p>Pages under client/pages and handlers under server/routes become routes automatically. Dynamic segments use _slug directories — this docs section is one.</p>
+      </w-card-text>
+    </w-card>
+    <w-card class="feature-card" variant="outlined" hover href="/atlas" title="Polyglot backends" subtitle="Tac + Yon">
+      <w-card-text>
+        <p>Yon keeps backend routes file-routed and language-flexible, while this site dogfoods a frontend-only shape with Tac companions running directly beside their templates.</p>
+      </w-card-text>
+    </w-card>
+    <w-card class="feature-card" variant="outlined" hover href="/docs/companions" title="Reactive companions" subtitle="Tac">
+      <w-card-text>
+        <p>Plain classes beside each template. Island event handlers update companion fields and refresh the bounded text expressions the compiler deferred.</p>
+      </w-card-text>
+    </w-card>
+    <w-card class="feature-card" variant="outlined" hover href="/docs/polyglot" title="Polyglot companions" subtitle="Tac">
+      <w-card-text>
+        <p>Use JavaScript, TypeScript, Dart, Rust, Kotlin, Swift or C# beside a Tac template. Native-language compilers target one explicit fields-and-methods WebAssembly ABI.</p>
+      </w-card-text>
+    </w-card>
+    <w-card class="feature-card" variant="outlined" hover href="/docs/native-rendering" title="Native HTML rendering" subtitle="Tac Native">
+      <w-card-text>
+        <p>Keep authoring strict HTML. Non-web bundles lower mapped nodes into SwiftUI, Android Views, Win32 common controls or GTK4 controls. Apple, Android and Linux can isolate unmapped subtrees in local web surfaces; Windows currently shows an accessible placeholder that opens the content externally.</p>
+      </w-card-text>
+    </w-card>
+    <w-card class="feature-card" variant="outlined" hover href="/docs/templates" title="Island hydration" subtitle="Tac Web">
+      <w-card-text>
+        <p>Server-render every component, then activate it on load, idle, visibility or interaction — or keep it permanently static — with one literal hydrate policy.</p>
+      </w-card-text>
+    </w-card>
+    <w-card class="feature-card" variant="outlined" hover href="/docs/storage" title="Local-first data" subtitle="Cache">
+      <w-card-text>
+        <p>Files under client/shared publish at stable /shared paths, while browser islands use standard fetch, storage and service-worker APIs directly.</p>
+      </w-card-text>
+    </w-card>
+    <w-card class="feature-card" variant="outlined" hover href="/atlas" title="Observable by default" subtitle="Ops">
+      <w-card-text>
+        <p>Stable diagnostics, route manifests, source maps and bounded execution make build and runtime behavior inspectable without hidden code generation.</p>
+      </w-card-text>
+    </w-card>
   </div>
 </section>

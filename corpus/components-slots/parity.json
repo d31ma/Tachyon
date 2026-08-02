@@ -1,0 +1,10 @@
+{
+  "expected_divergences": [
+    {
+      "check": "semantic dom /",
+      "detail": "<main>[1]: <product-card> vs <article>",
+      "reason": "The legacy implementation keeps a Tac component as a runtime custom element. The Rust implementation expands components at compile time, so the component template's own root element reaches the document instead. Slotted content and accessible semantics are identical.",
+      "direction": "intentional"
+    }
+  ]
+}

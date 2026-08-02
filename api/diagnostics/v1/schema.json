@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tachyon.del.ma/schema/diagnostics/v1",
+  "title": "Tachyon Diagnostics v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "diagnostics"],
+  "properties": {
+    "contract_version": { "const": 1 },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity", "message", "spans"],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^TY[0-9]{4}$"
+          },
+          "severity": {
+            "enum": ["error", "warning", "information"]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "help": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["file", "start", "end"],
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "pattern": "^[^/\\\\][^\\\\]*$",
+                  "maxLength": 512
+                },
+                "start": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "end": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

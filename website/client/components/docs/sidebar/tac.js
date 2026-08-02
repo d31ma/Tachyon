@@ -1,99 +1,54 @@
 // @ts-check
 
-/**
- * @typedef {{ heading?: string, body?: string, code?: string }} TopicSection
- * @typedef {{ slug: string, title: string, summary: string, sections: TopicSection[] }} TopicLink
- * @typedef {{ title: string, summary: string, topics: TopicLink[] }} TopicGroup
- * @typedef {{
- *   order?: string[],
- *   groups?: { title: string, summary?: string, topics: string[] }[],
- *   topics: Record<string, { title?: string, summary?: string, sections?: TopicSection[] }>
- * }} DocsPayload
- */
-
 export default class {
-  /** @type {TopicGroup[]} */
-  groups = []
-  /** @type {string} */
-  activeSlug = ''
-  /** @type {string} */
-  query = ''
+  /** @type {Map<string, string>} */
+  searchIndex = new Map()
 
-  constructor() {
-    if (typeof location !== 'undefined') {
-      this.activeSlug = this.slugFrom(location.pathname)
-    }
-  }
-
-  /** @returns {TopicGroup[]} */
-  get visibleGroups() {
-    const query = this.query.trim().toLowerCase()
-    if (!query) return this.groups
-
-    return this.groups
-      .map((group) => ({
-        ...group,
-        topics: group.topics.filter((topic) => this.matches(topic, query)),
-      }))
-      .filter((group) => group.topics.length > 0)
-  }
-
-  /** @param {string} pathname @returns {string} */
-  slugFrom(pathname) {
-    const [, , slug] = pathname.split('/')
-    return slug ?? ''
-  }
-
-  /** @param {TopicLink} topic @param {string} query @returns {boolean} */
-  matches(topic, query) {
-    const searchable = [
-      topic.title,
-      topic.summary,
-      ...topic.sections.flatMap((section) => [section.heading, section.body, section.code]),
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-    return searchable.includes(query)
-  }
-
-  @onMount
-  trackNavigation() {
-    // SPA navigations swap the slot content but keep this wrapper-page
-    // component alive, so follow the runtime's navigation events to keep
-    // the active topic highlighted.
-    window.addEventListener('tachyon:navigate', (event) => {
-      const detail = /** @type {CustomEvent<{ pathname?: string }>} */ (event).detail
-      this.activeSlug = this.slugFrom(detail?.pathname ?? location.pathname)
-    })
-  }
-
-  @onMount
-  async loadTopics() {
-    try {
-      const response = await fetch('/shared/data/docs.json', { cache: 'reload' })
-      /** @type {DocsPayload} */
-      const payload = await response.json()
-      const order = payload.order ?? Object.keys(payload.topics)
-      const topicFor = (/** @type {string} */ slug) => {
-        const topic = payload.topics[slug] ?? {}
-        return {
-          slug,
-          title: topic.title ?? slug,
-          summary: topic.summary ?? '',
-          sections: topic.sections ?? [],
-        }
+  /** @param {HTMLElement} root @param {AbortSignal} signal */
+  async hydrate(root, signal) {
+    const input = root.querySelector('input[type="search"]')
+    const updateActive = () => {
+      const current = location.pathname
+      for (const link of root.querySelectorAll('.docs-sidebar-list a')) {
+        if (!(link instanceof HTMLAnchorElement)) continue
+        const active = new URL(link.href, location.href).pathname === current
+        link.classList.toggle('active', active)
+        if (active) link.setAttribute('aria-current', 'page')
+        else link.removeAttribute('aria-current')
       }
-      const sourceGroups = payload.groups?.length
-        ? payload.groups
-        : [{ title: 'Documentation', summary: 'Guides and reference.', topics: order }]
-      this.groups = sourceGroups.map((group) => ({
-        title: group.title,
-        summary: group.summary ?? '',
-        topics: group.topics.map(topicFor).filter((topic) => Boolean(topic.title)),
-      }))
-    } catch {
-      this.groups = []
+    }
+    const filter = () => {
+      const query = input instanceof HTMLInputElement ? input.value.trim().toLowerCase() : ''
+      let visible = 0
+      for (const item of root.querySelectorAll('[data-topic]')) {
+        if (!(item instanceof HTMLElement)) continue
+        const slug = item.getAttribute('data-topic') ?? ''
+        const searchable = this.searchIndex.get(slug) ?? item.textContent?.toLowerCase() ?? ''
+        item.hidden = Boolean(query) && !searchable.includes(query)
+        if (!item.hidden) visible += 1
+      }
+      for (const section of root.querySelectorAll('.docs-sidebar-section')) {
+        if (!(section instanceof HTMLElement)) continue
+        section.hidden = !section.querySelector('[data-topic]:not([hidden])')
+      }
+      const empty = root.querySelector('.docs-no-results')
+      if (empty instanceof HTMLElement) empty.hidden = visible !== 0
+    }
+
+    input?.addEventListener('input', filter, { signal })
+    window.addEventListener('tachyon:navigate', updateActive, { signal })
+    window.addEventListener('popstate', updateActive, { signal })
+    updateActive()
+
+    try {
+      const response = await fetch('/shared/data/docs.json', { cache: 'reload', signal })
+      const payload = await response.json()
+      for (const [slug, topic] of Object.entries(payload.topics ?? {})) {
+        this.searchIndex.set(slug, JSON.stringify(topic).toLowerCase())
+      }
+      filter()
+    } catch (error) {
+      if (!signal.aborted) console.warn('Unable to load the documentation search index.', error)
     }
   }
 }

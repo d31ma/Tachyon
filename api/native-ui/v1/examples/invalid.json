@@ -1,0 +1,11 @@
+{
+  "contract_version": 1,
+  "target": "android",
+  "root": {
+    "kind": "web_surface",
+    "source": "remote_url",
+    "location": "https://untrusted.example.test",
+    "bridge": "local_capabilities",
+    "reason": "Unsafe remote bridge"
+  }
+}

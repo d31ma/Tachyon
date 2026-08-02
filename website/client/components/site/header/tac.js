@@ -1,33 +1,24 @@
 // @ts-check
 
-export default class extends Tac {
-  /** @type {string} */
-  @publish('release')
-  release = 'Tac + Yon'
+// Keep this relative in authored source so the v26.30.04 bundler can resolve
+// it. The Rust compiler rewrites this exact client/shared path to the stable
+// `/shared/` output URL when it emits the island module.
+import '../../../shared/scripts/imports.js'
 
-  @onMount
-  stampPlatform() {
-    // Dogfood the platform-aware Tac globals: the shell adapts per
-    // platform (desktop / mobile / web) through CSS hooks on <body>, with
-    // the concrete environment/os (windows/macos/linux/android/ios/web)
-    // alongside. Theme cycling is DuVay's own [w-theme-toggle] behavior, so
-    // the header never rerenders and its light-DOM components stay upgraded.
-    document.body.dataset.platform = this.tac.platform.platform
-    document.body.dataset.os = this.tac.platform.os
-    this.closeMobileMenuAfterNavigation()
-  }
+export default class {
+  /** @param {HTMLElement} root @param {AbortSignal} signal */
+  hydrate(root, signal) {
+    document.body.dataset.platform = 'web'
+    document.body.dataset.os = 'web'
 
-  closeMobileMenuAfterNavigation() {
-    const menu = document.getElementById('mobile-menu')
-    const trigger = document.querySelector('[aria-controls="mobile-menu"]')
-    if (!menu || !trigger) return
-    if (!trigger.hasAttribute('aria-expanded')) trigger.setAttribute('aria-expanded', 'false')
-
+    const menu = root.querySelector('#mobile-menu')
+    const trigger = root.querySelector('[aria-controls="mobile-menu"]')
+    if (!(menu instanceof HTMLElement) || !(trigger instanceof HTMLElement)) return
+    trigger.setAttribute('aria-expanded', String(menu.classList.contains('open')))
     menu.addEventListener('click', (event) => {
-      if (!(event.target instanceof Element)) return
-      if (!event.target.closest('[href]')) return
+      if (!(event.target instanceof Element) || !event.target.closest('[href]')) return
       menu.classList.remove('open')
       trigger.setAttribute('aria-expanded', 'false')
-    })
+    }, { signal })
   }
 }

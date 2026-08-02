@@ -3,9 +3,9 @@
   </w-card-item>
   <w-card-text>
     <div class="w-row ga-2 diag-status">
-      <w-chip size="small">{loadingState()}</w-chip>
-      <w-chip size="small" color="success">{companionStatus}</w-chip>
-      <w-chip size="small">native language shims</w-chip>
+      <w-chip size="small">live</w-chip>
+      <w-chip size="small" color="success">companion ABI ready</w-chip>
+      <w-chip size="small">real language toolchains</w-chip>
     </div>
 
     <w-table density="compact" class="diag-table">
@@ -14,13 +14,10 @@
           <tr><th>Surface</th><th>Returns</th><th>Runtime behavior</th></tr>
         </thead>
         <tbody>
-          <loop :for="run of verbRuns">
-            <tr>
-              <td><code>{run.verb}</code></td>
-              <td><code>{run.returns}</code></td>
-              <td class="diag-summary">{run.summary}</td>
-            </tr>
-          </loop>
+          <tr><td><code>fields</code></td><td><code>reactive state</code></td><td class="diag-summary">writes schedule a component refresh</td></tr>
+          <tr><td><code>methods</code></td><td><code>template action</code></td><td class="diag-summary">available without event wiring</td></tr>
+          <tr><td><code>tac</code></td><td><code>member declaration</code></td><td class="diag-summary">the companion chooses exactly what the island can reach</td></tr>
+          <tr><td><code>WebAssembly</code></td><td><code>compiler output</code></td><td class="diag-summary">real Rust, Dart, Kotlin, Swift and C# semantics</td></tr>
         </tbody>
       </table>
     </w-table>

@@ -1,0 +1,37 @@
+//! Tachyon's project, compiler, handler, scaffold, and development-server core.
+
+pub mod cache;
+mod compiler;
+pub mod doctor;
+mod failure;
+#[cfg(feature = "fuzzing")]
+pub mod fuzzing;
+mod handler;
+mod html;
+mod migrate;
+mod native;
+mod project;
+mod routing;
+mod scaffold;
+mod server;
+mod template;
+mod ttid;
+mod wasm;
+
+pub use compiler::{BuildOptions, BuildResult, WebCompiler};
+pub use failure::Failure;
+pub use handler::{
+    EnvironmentPolicy, HandlerCancellation, HandlerLanguage, HandlerRuntimePrograms, HandlerSource,
+    HandlerSupervisor, HandlerSupervisorOptions, Interpreters, Workers,
+};
+pub use html::{HtmlDocument, HtmlFrontend};
+pub use migrate::{MigrationAnalysis, MigrationFinding, MigrationReport, MigrationStatus};
+pub use native::{NativeBuildOptions, NativeBuildResult, NativeCompiler, native_target_directory};
+pub use project::{
+    CompanionKind, CompanionSource, HandlerNode, Project, ProjectDiscovery, RouteGraph, RouteNode,
+    ViewKind,
+};
+pub use routing::{RouteMatch, match_route};
+pub use scaffold::{Scaffold, ScaffoldResult};
+pub use server::{DevServer, DevServerOptions, PreviewServer, PreviewServerOptions};
+pub use ttid::{created_at_milliseconds as ttid_created_at, generate as generate_ttid};

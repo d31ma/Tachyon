@@ -4,7 +4,12 @@ export default class {
     $clicks = 0
     /** @type {string} */
     label = 'Interactions'
-    /** @type {string | undefined} */
-    @subscribe
-    release
+    /** @param {{ clicks?: number, label?: string }} props */
+    constructor(props = {}) {
+        this.$clicks = Number(props.clicks ?? 0)
+        this.label = String(props.label ?? 'Interactions')
+    }
+
+    /** @returns {void} */
+    hydrate() {}
 }

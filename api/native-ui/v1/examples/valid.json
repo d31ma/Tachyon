@@ -1,0 +1,31 @@
+{
+  "contract_version": 1,
+  "target": "macos",
+  "root": {
+    "kind": "native_element",
+    "id": "n_root",
+    "adapter": "layout.column",
+    "properties": {
+      "spacing": 12
+    },
+    "events": {},
+    "accessibility": {
+      "role": "main",
+      "label": "Products"
+    },
+    "children": [
+      {
+        "kind": "text",
+        "value": "Products"
+      },
+      {
+        "kind": "web_surface",
+        "id": "n_chart",
+        "source": "local_bundle",
+        "location": "fallback/product-chart/index.html",
+        "bridge": "local_capabilities",
+        "reason": "The chart component has no native adapter."
+      }
+    ]
+  }
+}

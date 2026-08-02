@@ -1,0 +1,83 @@
+name: Scheduled Fuzzing
+
+on:
+  schedule:
+    - cron: "17 4 * * 0"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds to run each fuzz target
+        required: false
+        default: "1800"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-fuzz-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    name: Long-form persistent-corpus fuzzing
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install the pinned nightly toolchain
+        run: rustup toolchain install nightly-2026-07-20 --profile minimal --component rust-src
+
+      - name: Install pinned cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.1 --locked
+
+      - name: Restore the most recent persistent corpus
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ runner.os }}-
+
+      - name: Run every trust boundary under AddressSanitizer
+        env:
+          FUZZ_SECONDS: ${{ inputs.seconds || '1800' }}
+        run: |
+          set -euo pipefail
+          case "${FUZZ_SECONDS}" in
+            ''|*[!0-9]*) echo "seconds must be an integer" >&2; exit 2 ;;
+          esac
+          if [ "${FUZZ_SECONDS}" -lt 60 ] || [ "${FUZZ_SECONDS}" -gt 7200 ]; then
+            echo "seconds must be between 60 and 7200" >&2
+            exit 2
+          fi
+          for target in html_frontend template_frontend handler_frame native_planner; do
+            echo "==> ${target} (${FUZZ_SECONDS}s)"
+            cargo +nightly-2026-07-20 fuzz run "${target}" -- \
+              -max_total_time="${FUZZ_SECONDS}" -rss_limit_mb=2048 -timeout=10
+          done
+
+      - name: Publish any crashing input
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-crashes-${{ github.run_id }}
+          path: fuzz/artifacts
+          retention-days: 90
+
+      - name: Publish the evolved corpus
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-corpus-${{ github.run_id }}
+          path: fuzz/corpus
+          retention-days: 30
+
+      - name: Carry the evolved corpus into the next campaign
+        if: always() && !cancelled()
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ runner.os }}-${{ github.run_id }}

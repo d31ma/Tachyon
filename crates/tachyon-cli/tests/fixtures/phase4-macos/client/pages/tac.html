@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Tachyon Phase Four</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+        background: #f5f8f6;
+        color: #17211c;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      w-app-bar {
+        display: flex;
+        padding: 18px 24px;
+        background: #dcefe4;
+        font-weight: 700;
+      }
+      main {
+        display: grid;
+        gap: 16px;
+        max-width: 720px;
+        padding: 24px;
+      }
+      button, input {
+        min-height: 44px;
+        padding: 10px 14px;
+        font: inherit;
+      }
+      button {
+        width: fit-content;
+        border: 0;
+        border-radius: 10px;
+        background: #176b45;
+        color: white;
+      }
+      output { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+      fancy-chart {
+        display: block;
+        min-height: 120px;
+        padding: 18px;
+        border: 1px solid #93b7a1;
+        border-radius: 12px;
+        background: #eef7f1;
+      }
+      footer { color: #53635a; }
+    </style>
+  </head>
+  <body>
+    <w-app-bar role="banner" aria-label="Primary navigation">Tachyon Native</w-app-bar>
+    <main aria-label="Phase Four evidence">
+      <h1>Native rendering</h1>
+      <p>Supported siblings stay in SwiftUI around one isolated web subtree.</p>
+      <button
+        aria-label="Increase count"
+        data-tachyon-action="increment:count"
+      >Increase count</button>
+      <output
+        aria-label="Current count"
+        data-tachyon-bind="count"
+        data-tachyon-state="0"
+      >0</output>
+      <input
+        aria-label="Customer name"
+        data-tachyon-bind="customer"
+        data-tachyon-state=""
+        placeholder="Customer name"
+      >
+      <details aria-label="Implementation details">
+        <summary>Implementation details</summary>
+        <p>Disclosure content is native.</p>
+      </details>
+      <fancy-chart aria-label="Sales chart">
+        <strong>WebSurface chart</strong>
+        <p>Only this unsupported custom-element subtree uses WebKit.</p>
+      </fancy-chart>
+      <footer>Native footer after the WebSurface.</footer>
+    </main>
+  </body>
+</html>

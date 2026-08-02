@@ -1,58 +1,13 @@
 <w-card variant="outlined" class="panel-card portable-bridge">
-  <w-card-item title="Rust companion: capability detection" subtitle="This web-target demo uses the same transport-free companion spelling as every language and fails closed for unavailable device operations.">
+  <w-card-item title="Rust companion" subtitle="A no_std Rust module implements the same explicit browser companion ABI as the managed-language cards.">
   </w-card-item>
   <w-card-text>
     <div class="w-row ga-2 portable-status">
-      <w-chip size="small" color="primary">{web_status}</w-chip>
-      <w-chip size="small">storage: {stored_value}</w-chip>
+      <w-chip size="small" color="primary">tac.rs</w-chip>
+      <w-chip size="small">{label}</w-chip>
     </div>
-
-    <div class="portable-actions">
-      <w-btn size="sm" variant="outlined" on:click="inspect_web()">Refresh Web APIs</w-btn>
-      <w-btn size="sm" variant="filled" on:click="inspect_device()">Read device info</w-btn>
-      <w-btn size="sm" variant="outlined" on:click="inspect_filesystem()">Inspect native files</w-btn>
-      <w-btn size="sm" variant="filled" on:click="test_mobile()">Probe share + haptics</w-btn>
-      <w-btn size="sm" variant="outlined" on:click="inspect_permissions()">Inspect permission model</w-btn>
-      <w-btn size="sm" variant="outlined" on:click="copy_report()">Copy bridge report</w-btn>
-    </div>
-
-    <div class="portable-grid">
-      <div>
-        <strong>Web API shim</strong>
-        <p><code>local_storage().set_item(...)</code> and <code>fylo().collection(...)</code> use browser APIs and the OPFS-backed FYLO engine without a target permission.</p>
-      </div>
-      <div>
-        <strong>Device API shim</strong>
-        <p><code>app().info()</code> looks like a native SDK call but remains explicit and policy-gated: <span>{device_status}</span></p>
-      </div>
-      <div>
-        <strong>Native adapter readiness</strong>
-        <p><code>share().text(...)</code> and <code>haptics().impact()</code> stay behind feature checks. Native-first hosts report them unavailable until concrete adapters land: <span>{mobile_status}</span></p>
-      </div>
-      <div>
-        <strong>Raw filesystem bridge</strong>
-        <p><code>file_system().read_dir(...)</code> requires an explicit native capability and fails closed everywhere else: <span>{file_status}</span></p>
-      </div>
-      <div>
-        <strong>Clipboard bridge</strong>
-        <p><code>clipboard().write_text(...)</code> is gated by the same capability catalog as every host API: <span>{clipboard_status}</span></p>
-      </div>
-      <div>
-        <strong>Permission state</strong>
-        <p><code>capabilities().state("geo.current")</code> distinguishes an unsupported environment from <em>prompt</em>, <em>denied</em> and <em>granted</em>: <span>{permission_status}</span></p>
-      </div>
-      <div>
-        <strong>Secure storage and user presence</strong>
-        <p><code>secrets()</code> and <code>auth().verify_user(...)</code> are offered only by hosts with a real secure store and local-auth contract: <span>{security_status}</span></p>
-      </div>
-      <div class="portable-permission-config">
-        <strong>Fail-closed native declaration</strong>
-        <pre><code>&#123; "tachyon": &#123;
-  "devicePermissions": ["camera", "microphone", "location", "notifications"],
-  "nativeCapabilities": ["fs.readText", "fs.readDir"]
-&#125; &#125;</code></pre>
-        <p>Native-first bundles currently reject these compatibility-only declarations. This makes missing camera or filesystem adapters a build error instead of an unserviceable runtime promise.</p>
-      </div>
-    </div>
+    <p>Writable field: <strong>{count}</strong> · method result: <strong>{doubled()}</strong></p>
+    <w-btn size="sm" variant="outlined" on:click="count += 1">Increment Rust</w-btn>
+    <p>The source exports <code>memory</code>, <code>tac_alloc</code>, and <code>tac_invoke</code> directly. The island host still sees an ordinary companion instance.</p>
   </w-card-text>
 </w-card>

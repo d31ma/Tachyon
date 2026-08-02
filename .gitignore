@@ -2,13 +2,13 @@ node_modules
 node_modules*/
 examples/node_modules*/
 .env
-.fylo-data/
 .tachyon/
 dist
 dist-staging-*/
 dist-bin/
 dist-web/
 build
+target/
 coverage
 test-results
 .DS_Store
@@ -17,29 +17,19 @@ __pycache__/
 *conflicted copy*/
 .claude/
 .gemini/
-src/shared/manifests/route-manifest.json
-
-# FYLO runtime output in the full-stack test fixture — schemas are the
-# committed source; collections and version history are regenerated per run.
-tests/fixtures/fullstack/db/.collections/
-tests/fixtures/fullstack/db/.fylo-vcs/
-tests/fixtures/fullstack/db/.fylo-catalog/
 package-lock.json
+
+# cargo-fuzz writes content-addressed corpus entries beside the reviewed seeds.
+fuzz/corpus/*/*
+!fuzz/corpus/*/seed-*
 
 # Graphify
 .graphify*
 graphify-out/
 CLAUDE.md
-AGENTS.md
 .github/copilot-instructions.md
 
-# Persistent prerender cache output (opt-in TAC_PRERENDER_CACHE)
-.tac-cache/
-
-# Untrack markdown except README
-*.md
-!README.md
-# Tracked planning docs (explicit exceptions to the *.md ignore above)
-!scripts/bench/PRERENDER-CACHE.md
 .codex
 .vscode
+node_modules/
+package-lock.json

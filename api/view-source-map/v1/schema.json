@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tachyon.del.ma/schema/view-source-map/v1",
+  "title": "Tachyon View Source Map v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "output", "sources", "mappings"],
+  "properties": {
+    "contract_version": { "const": 1 },
+    "output": {
+      "type": "string",
+      "pattern": "^[^/\\\\][^\\\\]*\\.html$",
+      "maxLength": 512
+    },
+    "sources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[^/\\\\][^\\\\]*$",
+        "maxLength": 512
+      }
+    },
+    "mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "generated_start",
+          "generated_end",
+          "source",
+          "source_start",
+          "source_end"
+        ],
+        "properties": {
+          "generated_start": { "type": "integer", "minimum": 0 },
+          "generated_end": { "type": "integer", "minimum": 0 },
+          "source": {
+            "type": "string",
+            "pattern": "^[^/\\\\][^\\\\]*$",
+            "maxLength": 512
+          },
+          "source_start": { "type": "integer", "minimum": 0 },
+          "source_end": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  }
+}

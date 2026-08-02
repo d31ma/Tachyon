@@ -1,0 +1,10 @@
+{
+  "contract_version": 1,
+  "source": "/absolute/page.html",
+  "root": {
+    "kind": "unknown",
+    "tag": "DIV",
+    "attributes": {},
+    "children": []
+  }
+}

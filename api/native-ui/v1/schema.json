@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tachyon.del.ma/schema/native-ui/v1",
+  "title": "Tachyon Native UI v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "target", "root"],
+  "properties": {
+    "contract_version": { "const": 1 },
+    "target": {
+      "enum": ["linux", "macos", "windows", "android", "ios"]
+    },
+    "root": { "$ref": "#/$defs/node" }
+  },
+  "$defs": {
+    "node": {
+      "oneOf": [
+        { "$ref": "#/$defs/native_element" },
+        { "$ref": "#/$defs/text" },
+        { "$ref": "#/$defs/web_surface" }
+      ]
+    },
+    "native_element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "adapter", "properties", "events", "children"],
+      "properties": {
+        "kind": { "const": "native_element" },
+        "id": {
+          "type": "string",
+          "pattern": "^n_[a-z0-9_]{1,126}$"
+        },
+        "adapter": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.-]{0,127}$"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "number", "boolean", "null"]
+          }
+        },
+        "events": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+          }
+        },
+        "accessibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "role": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          }
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/node" }
+        }
+      }
+    },
+    "text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": { "const": "text" },
+        "value": {
+          "type": "string",
+          "maxLength": 1048576
+        }
+      }
+    },
+    "web_surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "source", "location", "bridge", "reason"],
+      "properties": {
+        "kind": { "const": "web_surface" },
+        "id": {
+          "type": "string",
+          "pattern": "^n_[a-z0-9_]{1,126}$"
+        },
+        "source": {
+          "enum": ["local_bundle", "remote_url"]
+        },
+        "location": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "bridge": {
+          "enum": ["none", "local_capabilities"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "accessibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "role": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": { "const": "remote_url" }
+            },
+            "required": ["source"]
+          },
+          "then": {
+            "properties": {
+              "bridge": { "const": "none" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -3,19 +3,20 @@ import { mkdir, rm, stat } from 'node:fs/promises'
 
 const PROJECT_ROOT = import.meta.dir.replace(/[/\\]tests[/\\]helpers$/, '')
 const LOCK_DIR = `${PROJECT_ROOT}/.test-bundle-lock`
+const WEB_DIST = `${PROJECT_ROOT}/dist/web`
 const REQUIRED_OUTPUTS = [
-    `${PROJECT_ROOT}/dist/web/index.html`,
-    `${PROJECT_ROOT}/dist/web/atlas/index.html`,
-    `${PROJECT_ROOT}/dist/web/atlas/overview/index.html`,
-    `${PROJECT_ROOT}/dist/web/atlas/connect/index.html`,
-    `${PROJECT_ROOT}/dist/web/docs/index.html`,
-    `${PROJECT_ROOT}/dist/web/components/panel/polyglot/tac.js`,
-    `${PROJECT_ROOT}/dist/web/components/panel/portablebridge/tac.js`,
-    `${PROJECT_ROOT}/dist/web/components/language/javascript/tac.js`,
-    `${PROJECT_ROOT}/dist/web/components/language/dart/tac.js`,
-    `${PROJECT_ROOT}/dist/web/components/language/kotlin/tac.js`,
-    `${PROJECT_ROOT}/dist/web/components/language/swift/tac.js`,
-    `${PROJECT_ROOT}/dist/web/components/language/csharp/tac.js`,
+    `${WEB_DIST}/index.html`,
+    `${WEB_DIST}/atlas/index.html`,
+    `${WEB_DIST}/atlas/overview/index.html`,
+    `${WEB_DIST}/atlas/connect/index.html`,
+    `${WEB_DIST}/docs/index.html`,
+    `${WEB_DIST}/.tachyon/islands.js`,
+    `${WEB_DIST}/.tachyon/components/language-javascript.js`,
+    `${WEB_DIST}/.tachyon/components/language-dart.mjs`,
+    `${WEB_DIST}/.tachyon/components/language-kotlin.mjs`,
+    `${WEB_DIST}/.tachyon/components/language-swift.wasm`,
+    `${WEB_DIST}/.tachyon/components/language-csharp.mjs`,
+    `${WEB_DIST}/.tachyon/components/panel-portablebridge.wasm`,
 ]
 
 /** @type {Promise<void> | null} */
@@ -36,36 +37,44 @@ async function outputsReady() {
     return checks.every(Boolean)
 }
 
-async function waitForUnlock(timeoutMs = 90_000) {
+async function waitForUnlock(timeoutMs = 120_000) {
     const startedAt = Date.now()
     while (Date.now() - startedAt < timeoutMs) {
         if (!(await fileExists(LOCK_DIR)) && (await outputsReady())) return
         await Bun.sleep(250)
     }
-    throw new Error('Timed out waiting for bundle lock to clear')
+    throw new Error('Timed out waiting for the Rust website build lock to clear')
 }
 
 async function runBundle() {
-    const proc = Bun.spawn(['bun', 'run', 'bundle'], {
+    const configured = process.env.TACHYON_BIN
+    const releaseBinary = `${PROJECT_ROOT}/../target/release/ty`
+    const debugBinary = `${PROJECT_ROOT}/../target/debug/ty`
+    const command = configured
+        ? [configured, 'bundle', '.']
+        : await fileExists(releaseBinary)
+            ? [releaseBinary, 'bundle', '.']
+            : await fileExists(debugBinary)
+                ? [debugBinary, 'bundle', '.']
+                : ['cargo', '+1.97.1', 'run', '--release', '--locked', '--manifest-path', '../Cargo.toml', '--', 'bundle', '.']
+    const proc = Bun.spawn(command, {
         cwd: PROJECT_ROOT,
         stdout: 'pipe',
         stderr: 'pipe',
+        env: process.env,
     })
-
     const [stdout, stderr, exitCode] = await Promise.all([
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
         proc.exited,
     ])
-
     if (exitCode !== 0) {
-        throw new Error(`bundle failed with exit code ${exitCode}\n${stdout}\n${stderr}`.trim())
+        throw new Error(`Rust website build failed with exit code ${exitCode}\n${stdout}\n${stderr}`.trim())
     }
 }
 
 export async function ensureBundle() {
     if (bundlePromise) return bundlePromise
-
     bundlePromise = (async () => {
         try {
             await mkdir(LOCK_DIR)
@@ -80,6 +89,5 @@ export async function ensureBundle() {
             await rm(LOCK_DIR, { recursive: true, force: true })
         }
     })()
-
     return bundlePromise
 }
