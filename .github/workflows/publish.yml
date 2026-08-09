@@ -419,16 +419,21 @@ jobs:
             $installed = Join-Path $env:TACHYON_INSTALL_DIR 'ty.exe'
             [IO.File]::WriteAllText($installed, 'known-good')
             $knownGood = (Get-FileHash -Algorithm SHA256 $installed).Hash
-            $publishedSums = Get-Content 'release/SHA256SUMS' -Raw
+            $sumsPath = (Resolve-Path 'release/SHA256SUMS').Path
+            $validSumsPath = Join-Path $env:RUNNER_TEMP 'SHA256SUMS.valid'
+            $badSumsPath = Join-Path $env:RUNNER_TEMP 'SHA256SUMS.bad'
+            [IO.File]::Copy($sumsPath, $validSumsPath, $true)
+            $publishedSums = [IO.File]::ReadAllText($sumsPath)
             try {
               $badSums = $publishedSums -replace "(?m)^[0-9a-fA-F]{64}(\s+$([regex]::Escape($env:ASSET)))$", (('0' * 64) + '$1')
-              Set-Content -Path 'release/SHA256SUMS' -Value $badSums -NoNewline
+              [IO.File]::WriteAllText($badSumsPath, $badSums)
+              [IO.File]::Replace($badSumsPath, $sumsPath, $null)
               & ./release/install.ps1
               throw 'installer accepted a mismatched checksum'
             } catch {
               if ($_.Exception.Message -eq 'installer accepted a mismatched checksum') { throw }
             } finally {
-              Set-Content -Path 'release/SHA256SUMS' -Value $publishedSums -NoNewline
+              [IO.File]::Replace($validSumsPath, $sumsPath, $null)
             }
             if ((Get-FileHash -Algorithm SHA256 $installed).Hash -ne $knownGood) { throw 'failed upgrade replaced the installed executable' }
             & ./release/install.ps1
