@@ -337,6 +337,7 @@ fn stable_release_is_tag_gated_and_fail_closed() -> Result<(), Box<dyn std::erro
     assert!(unix_installer.contains("mv \"$tmp\" \"$dest/ty\""));
     assert!(!unix_installer.contains("mktemp -d"));
     assert!(windows_installer.contains("No checksum published for $asset. Aborting."));
+    assert!(windows_installer.contains("[Text.Encoding]::UTF8.GetString($sumsContent)"));
     assert!(!windows_installer.contains("Could not verify checksum"));
     assert!(windows_installer.contains("[IO.File]::Replace($download, $exe, $null)"));
     assert!(!windows_installer.contains("-OutFile $exe"));
