@@ -404,9 +404,7 @@ jobs:
           if ((& "release/$env:ASSET" --version) -ne $env:VERSION) { throw 'raw executable version mismatch' }
           New-Item -ItemType Directory -Force -Path 'release-bad' | Out-Null
           Copy-Item "release/$env:ASSET" "release-bad/$env:ASSET"
-          $publishedSums = [IO.File]::ReadAllText((Resolve-Path 'release/SHA256SUMS').Path)
-          $badSums = $publishedSums -replace "(?m)^[0-9a-fA-F]{64}([ \t]+$([regex]::Escape($env:ASSET))\r?)$", (('0' * 64) + '$1')
-          if ($badSums -eq $publishedSums) { throw 'failed to corrupt the Windows checksum fixture' }
+          $badSums = ('0' * 64) + "  $env:ASSET`n"
           [IO.File]::WriteAllText((Join-Path $PWD 'release-bad/SHA256SUMS'), $badSums)
           $server = Start-Process python -ArgumentList '-m','http.server','38191','--bind','127.0.0.1','--directory','.' -PassThru
           try {
