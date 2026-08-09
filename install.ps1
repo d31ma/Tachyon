@@ -41,7 +41,12 @@ try {
     # Verification is fail-closed: an unavailable checksum, a missing asset
     # entry, or a digest mismatch leaves any installed binary untouched.
     Write-TachyonStep 'Verifying release checksum'
-    $sums = (Invoke-WebRequest -Uri "$base/SHA256SUMS" -UseBasicParsing).Content
+    $sumsContent = (Invoke-WebRequest -Uri "$base/SHA256SUMS" -UseBasicParsing).Content
+    $sums = if ($sumsContent -is [byte[]]) {
+        [Text.Encoding]::UTF8.GetString($sumsContent)
+    } else {
+        [string]$sumsContent
+    }
     $line = ($sums -split "`n") | Where-Object { $_.Trim() -match "^[0-9a-fA-F]{64}\s+$([regex]::Escape($asset))$" } | Select-Object -First 1
     if (-not $line) {
         throw "No checksum published for $asset. Aborting."

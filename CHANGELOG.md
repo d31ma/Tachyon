@@ -8,6 +8,15 @@ independent major versions.
 
 ## [Unreleased]
 
+## [26.32.07] - 2026-08-09
+
+### Fixed
+
+- Decode byte-array checksum responses as UTF-8 in the Windows installer so
+  extensionless `SHA256SUMS` responses remain fail-closed and usable.
+- Harden staged-release recovery by verifying an intentionally corrupted copy
+  of the Windows executable while preserving the canonical checksum manifest.
+
 ## [26.31.06] - 2026-08-01
 
 ### Removed
@@ -958,7 +967,8 @@ should expect to touch imports, bin names, and any code that assumed the old
 
 See the Git history and GitHub release notes for pre-2.0 changes.
 
-[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.31.06...HEAD
+[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.32.07...HEAD
+[26.32.07]: https://github.com/d31ma/Tachyon/compare/v26.31.06...v26.32.07
 [26.31.06]: https://github.com/d31ma/Tachyon/compare/v26.30.04...v26.31.06
 [26.30.04]: https://github.com/d31ma/Tachyon/compare/v26.30.03...v26.30.04
 [26.22.03]: https://github.com/d31ma/Tachyon/compare/v26.21.7...v26.22.03

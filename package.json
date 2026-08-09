@@ -1,6 +1,6 @@
 {
   "name": "@d31ma/tachyon",
-  "version": "26.31.06",
+  "version": "26.32.07",
   "description": "A Rust-native, polyglot, file-system-routed full-stack framework",
   "author": "Chidelma",
   "license": "MIT",

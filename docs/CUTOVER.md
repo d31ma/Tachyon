@@ -104,10 +104,10 @@ route handoff that the earlier phase fixture did not contain.
 ok   the binary is bit-identical across builds
 ok   every published file matches SHA256SUMS
 ok   a modified artifact fails verification
-ok   installed ty 26.31.06
+ok   installed ty 26.32.07
 ok   the installed tool built and published a project
 ok   upgraded in place and still builds
-ok   rolled back to ty 26.31.06 and still builds
+ok   rolled back to ty 26.32.07 and still builds
 ok   uninstall left nothing behind
 PASS: release lifecycle drill
 ```
