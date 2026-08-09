@@ -91,6 +91,9 @@ independent major versions.
 
 ### Fixed
 
+- Kept the website's mobile navigation, brand link, language controls, and
+  footer links at the 44-pixel touch-target minimum, removed a nested
+  interactive chip from the home link, and respected the bottom safe area.
 - Made release archives deterministic under both GNU tar and BSD tar by
   normalizing staged file timestamps before archiving.
 - Made Windows upgrades download and verify into a same-directory temporary

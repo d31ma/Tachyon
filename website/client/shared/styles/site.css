@@ -124,9 +124,14 @@ w-app-bar {
   }
 
   /* Comfortable tap targets — keyed to viewport width, not device type. */
-  .w-btn,
-  button {
-    min-height: 44px;
+  .w-btn.w-btn,
+  button.w-chip {
+    min-width: var(--w-touch-min);
+    min-height: var(--w-touch-min);
+  }
+
+  a[aria-label="Tachyon home"] {
+    min-height: var(--w-touch-min);
   }
 }
 

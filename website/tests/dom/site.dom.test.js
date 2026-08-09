@@ -64,6 +64,23 @@ describe('homepage DOM', () => {
         expect(home.document.querySelector('w-bottom-navigation')).toBeFalsy()
         expect(home.document.querySelector('w-footer')).toBeTruthy()
         expect(home.document.querySelector('img.brand-mark[src="/shared/assets/logo.svg"]')).toBeTruthy()
+        expect(home.document.querySelector('a[aria-label="Tachyon home"] .brand-tag')?.textContent).toBe('Tac + Yon')
+        expect(home.document.querySelector('a[aria-label="Tachyon home"] w-chip')).toBeFalsy()
+    })
+
+    test('keeps mobile controls and footer links at the product touch-target minimum', async () => {
+        const site = await read('client/shared/styles/site.css')
+        const header = await read('client/components/site/header/tac.css')
+        const footer = await read('client/components/site/footer/tac.css')
+
+        expect(site).toContain('.w-btn.w-btn,\n  button.w-chip {')
+        expect(site).toContain('min-width: var(--w-touch-min);')
+        expect(site).toContain('min-height: var(--w-touch-min);')
+        expect(site).toContain('a[aria-label="Tachyon home"] {')
+        expect(header).toContain('.site-header-row > a[aria-label="Tachyon home"]')
+        expect(footer).toContain('.footer-links a {\n  display: inline-flex;')
+        expect(footer).toContain('min-width: var(--w-touch-min);')
+        expect(footer).toContain('env(safe-area-inset-bottom)')
     })
 
     test('renders the hero and feature cards', () => {
