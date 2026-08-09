@@ -307,14 +307,22 @@ fn stable_release_is_tag_gated_and_fail_closed() -> Result<(), Box<dyn std::erro
     let windows_installer = fs::read_to_string(root.join("install.ps1"))?;
 
     assert!(workflow.contains("tags:"));
+    assert!(workflow.contains("workflow_dispatch:"));
     assert!(!workflow.contains("branches: [main]"));
+    assert!(workflow.contains("RELEASE_TAG: ${{ inputs.tag || github.ref_name }}"));
     assert!(workflow.contains("git cat-file -t"));
     assert!(workflow.contains("uses: ./.github/workflows/rust-ci.yml"));
     assert!(workflow.contains("--verify-tag --draft"));
     assert!(workflow.contains("gh attestation verify"));
     assert!(workflow.contains("cosign verify-blob"));
     assert!(workflow.contains("sha256sum --check --strict SHA256SUMS"));
-    assert!(workflow.contains("gh release edit \"${TAG}\" --draft=false --latest"));
+    assert!(
+        workflow.contains("gh release download \"${TAG}\" --repo \"${REPOSITORY}\" --dir release")
+    );
+    assert!(
+        workflow
+            .contains("gh release edit \"${TAG}\" --repo \"${REPOSITORY}\" --draft=false --latest")
+    );
     assert!(workflow.contains("failed upgrade replaced the installed executable"));
 
     assert!(unix_installer.contains("No checksum published for ${asset}. Aborting."));
