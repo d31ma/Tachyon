@@ -100,4 +100,4 @@ passing report was 91.44% lines, 90.96% functions, and 91.38% regions.
 These results qualify a Phase 4 development milestone only. Production
 signing/notarization, installers, upgrades, rollback across releases,
 entitlements, sandbox review, remote-origin live adversarial testing, fuzzing,
-soak testing, and independent security assessment remain promotion gates.
+soak testing, and automated security qualification remain promotion gates.

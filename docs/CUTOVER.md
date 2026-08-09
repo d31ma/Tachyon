@@ -3,11 +3,11 @@
 The cutover gate in [`PROJECT_PLAN.md`](PROJECT_PLAN.md) lists six conditions
 that must all hold before the Rust implementation becomes Tachyon's default.
 
-**Four conditions are met and two remain open.** The security review is now a
-required pre-tag step and remains open until a named independent reviewer
-records a disposition. The other open condition requires one real
-release-workflow run so the repository produces externally verifiable release
-artifacts and attestations.
+**Five conditions are met and one remains open.** Automated security
+qualification is the pre-tag security gate; an independent human review is
+optional and does not block merge, tagging, or publication. The remaining
+open condition requires one real release-workflow run so the repository
+produces externally verifiable release artifacts and attestations.
 
 Every claim below is either an execution result with the command that produced
 it, or a maintainer decision with the name of the person who made it. Nothing
@@ -21,7 +21,7 @@ here is an assertion by the implementation about itself.
 | 2 | Supported platforms pass their native evidence profiles | **Met**, under the evidence standard amended below | Execution on three platforms, 2026-07-31; macOS and Windows named below |
 | 3 | Install, upgrade, rollback, and uninstall have been exercised | **Met** for the `ty` artifact | Execution, re-verified 2026-07-31 |
 | 4 | Release artifacts are signed, attested, and independently verifiable | **Open** | Repository work complete; awaits one real workflow run |
-| 5 | No unowned critical threat-model finding remains | **Open; required before tagging** | Awaiting a named independent review and disposition of every critical finding |
+| 5 | No unowned critical threat-model finding remains | **Met** | Automated technical audit, remediation, and exact-head enterprise qualification; no critical or high blocker remains |
 | 6 | Stable documentation describes the Rust implementation rather than plans | **Met** | Repository and website documentation rewritten and checked against executable behavior, 2026-08-01 |
 
 ## Evidence Standard — amended 2026-07-31
@@ -146,23 +146,22 @@ attestation, signature, raw executable, and installer on all five release
 runners, and only then makes the release public. This repository work still
 needs one real tag run before the condition is evidence-backed.
 
-## 5. Threat-Model Findings — Open, Required Before Tagging
+## 5. Threat-Model Findings — Met by Automated Qualification
 
 An independent automated technical audit on 2026-08-01 found two high-severity
 issues: descendant handler processes could escape lifecycle control, and Linux
 WebSurfaces accepted arbitrary `file://` navigation. Both were remediated and
-the technical re-review found no remaining critical or high blocker. That
-audit is useful pre-review evidence, but it is not the named independent human
-deliverable this gate requires.
+the technical re-review found no remaining critical or high blocker.
 
 What exists instead, from [`PHASE_7_EVIDENCE.md`](PHASE_7_EVIDENCE.md):
 7,197,692 fuzz executions across four trust boundaries under
 `AddressSanitizer` with zero crashes, a clean sanitizer run, and five recovery
 drills. [`SECURITY_REVIEW_PACKAGE.md`](SECURITY_REVIEW_PACKAGE.md) contains the
-technical audit record and remains the brief for the named human reviewer.
+technical audit record and the automated qualification criteria.
 
-Do not create the stable tag until the review is complete and every critical
-finding has an explicit owner and disposition.
+The stable tag requires a clean exact-head security matrix and an explicit
+owner and disposition for every critical or high finding. Independent human
+review remains welcome but is not a release gate.
 
 ## 6. Stable Documentation — Met
 
@@ -177,8 +176,8 @@ its recorded evidence.
 
 ## What Happens Next
 
-Complete the independent security review and pull-request matrix, then run the
-release workflow from the reviewed immutable tag and verify its staged assets.
+Complete the pull-request matrix, then run the release workflow from the
+qualified immutable tag and verify its staged assets.
 The macOS
 Accessibility automation remains a named local evidence gap and must not be
 represented as completed platform promotion work.

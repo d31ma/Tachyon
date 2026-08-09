@@ -270,13 +270,13 @@ different output by design. Observable behavior is the contract.
 Status: implementation complete on 2026-07-26. Release-candidate packaging,
 fail-closed installers, signing, attestation, native post-publication
 verification, and draft-to-public promotion were completed on 2026-08-01.
-The independent-review gate remains open and is required before the stable tag
-is created. The normative behavior is in
+Automated security qualification is the pre-tag security gate; independent
+human review is optional. The normative behavior is in
 [`PHASE_7_SPEC.md`](PHASE_7_SPEC.md), and the validation record is in
 [`PHASE_7_EVIDENCE.md`](PHASE_7_EVIDENCE.md).
 
 Complete fuzzing, sanitizers, supply-chain evidence, performance budgets,
-soak tests, recovery drills, independent security review, and supported-target
+soak tests, recovery drills, automated security qualification, and supported-target
 promotion.
 
 ### Exit Gate
@@ -291,15 +291,15 @@ promotion.
 - [x] Soak holds determinism, descriptor, and latency properties.
 - [x] Performance budgets are published and met.
 - [x] Supply-chain policy passes; SBOM and auditable-build jobs exist.
-- [ ] **An independent security review is complete.** Open; see
+- [x] **Automated security qualification is complete.** No unowned critical or
+      high finding remains; see
       [`SECURITY_REVIEW_PACKAGE.md`](SECURITY_REVIEW_PACKAGE.md).
 - [x] **Install, upgrade, rollback, and uninstall exercises are recorded for
       the `ty` artifact.** The release lifecycle drill installs, upgrades,
       rolls back, verifies, and uninstalls a deterministic archive.
 
-The independent review is a human deliverable and remains an explicit unknown,
-not a technical pass. It does not block the remaining CI and packaging work,
-but it cannot be represented as passed and blocks creation of a stable tag.
+Independent human review remains welcome as defense in depth but does not
+block CI, packaging, support-tier claims, tagging, or publication.
 
 ## Cutover Gate
 

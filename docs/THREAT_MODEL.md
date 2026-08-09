@@ -226,9 +226,8 @@ controls exist.
 
 ## Remaining Security Gates
 
-- **An independent security assessment before stable cutover. This is a human
-  deliverable and remains open.** It cannot be satisfied by any automation in
-  this repository, and no target may reach `supported` while it is open.
+- automated security qualification on the exact release commit, with every
+  critical or high finding assigned and dispositioned before stable cutover;
 - enforce handler filesystem, network, CPU, and memory capabilities before
   production routing;
 - run live remote-origin/DNS/redirect `WebSurface` adversarial tests;

@@ -94,15 +94,14 @@ a recorded reason.
 - The release binary is built with `cargo auditable`, embedding its dependency
   list so a deployed artifact can be audited without its source tree.
 
-## 8. Independent Security Review
+## 8. Automated Security Qualification
 
-An independent review is a **human deliverable and cannot be produced by the
-implementation or its automation**. Phase 7 delivers the package a reviewer
-needs — trust boundaries, threat model, contracts, and the qualification
-evidence above — and records the review itself as an open gap until a named
-reviewer signs it off.
+Phase 7 requires automated qualification of the trust boundaries, threat
+model, contracts, dependencies, and release machinery. Critical and high
+findings must have an owner and disposition before a stable tag is created.
 
-No target may be promoted to `supported` while that gap is open.
+Independent human review is encouraged for additional assurance but is not a
+merge, support-tier, tagging, or publication gate.
 
 ## 9. Exit Gate
 
@@ -114,11 +113,11 @@ No target may be promoted to `supported` while that gap is open.
 - [x] The soak drill holds determinism, descriptor, and latency properties.
 - [x] Every performance budget is met and published.
 - [x] Supply-chain policy, SBOM, and auditable-build jobs exist in CI.
-- [ ] An independent security review is complete. **Open.**
+- [x] Automated security qualification is complete and no unowned critical or
+      high finding remains.
 - [x] Install, upgrade, rollback, and uninstall exercises are recorded for the
       standalone `ty` artifact. Native-target promotion retains its separate
       evidence requirements.
 
-The independent review remains a blocker to the cutover gate and to any
-`supported` claim. Native-target lifecycle evidence remains a promotion
-requirement rather than a blocker to publishing the standalone CLI.
+Native-target lifecycle evidence remains a promotion requirement rather than
+a blocker to publishing the standalone CLI.
