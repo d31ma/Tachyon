@@ -404,8 +404,8 @@ jobs:
           if ((& "release/$env:ASSET" --version) -ne $env:VERSION) { throw 'raw executable version mismatch' }
           New-Item -ItemType Directory -Force -Path 'release-bad' | Out-Null
           Copy-Item "release/$env:ASSET" "release-bad/$env:ASSET"
-          $badSums = [string]::new('0', 64) + "  $env:ASSET`n"
-          [IO.File]::WriteAllText((Join-Path $PWD 'release-bad/SHA256SUMS'), $badSums)
+          Copy-Item 'release/SHA256SUMS' 'release-bad/SHA256SUMS'
+          [IO.File]::AppendAllText((Join-Path $PWD "release-bad/$env:ASSET"), 'corrupt')
           $server = Start-Process python -ArgumentList '-m','http.server','38191','--bind','127.0.0.1','--directory','.' -PassThru
           try {
             foreach ($attempt in 1..5) {
