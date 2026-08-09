@@ -319,6 +319,7 @@ fn stable_release_is_tag_gated_and_fail_closed() -> Result<(), Box<dyn std::erro
     assert!(workflow.contains("cosign verify-blob"));
     assert!(workflow.contains("sha256sum --check --strict SHA256SUMS"));
     assert!(workflow.contains("release-bad"));
+    assert!(workflow.contains("$badSums = ('0' * 64) + \"  $env:ASSET`n\""));
     assert!(workflow.contains("Checksum mismatch for $env:ASSET. Aborting."));
     assert!(
         workflow.contains("gh release download \"${TAG}\" --repo \"${REPOSITORY}\" --dir release")
