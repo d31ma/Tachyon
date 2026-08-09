@@ -318,6 +318,7 @@ fn stable_release_is_tag_gated_and_fail_closed() -> Result<(), Box<dyn std::erro
     assert!(workflow.contains("gh attestation verify"));
     assert!(workflow.contains("cosign verify-blob"));
     assert!(workflow.contains("sha256sum --check --strict SHA256SUMS"));
+    assert_eq!(workflow.matches("[IO.File]::Replace").count(), 2);
     assert!(
         workflow.contains("gh release download \"${TAG}\" --repo \"${REPOSITORY}\" --dir release")
     );
