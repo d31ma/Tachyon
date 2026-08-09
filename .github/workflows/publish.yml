@@ -402,39 +402,38 @@ jobs:
           ASSET: ${{ matrix.asset }}
         run: |
           if ((& "release/$env:ASSET" --version) -ne $env:VERSION) { throw 'raw executable version mismatch' }
-          $server = Start-Process python -ArgumentList '-m','http.server','38191','--bind','127.0.0.1','--directory','release' -PassThru
+          New-Item -ItemType Directory -Force -Path 'release-bad' | Out-Null
+          Copy-Item "release/$env:ASSET" "release-bad/$env:ASSET"
+          $publishedSums = [IO.File]::ReadAllText((Resolve-Path 'release/SHA256SUMS').Path)
+          $badSums = $publishedSums -replace "(?m)^[0-9a-fA-F]{64}([ \t]+$([regex]::Escape($env:ASSET))\r?)$", (('0' * 64) + '$1')
+          if ($badSums -eq $publishedSums) { throw 'failed to corrupt the Windows checksum fixture' }
+          [IO.File]::WriteAllText((Join-Path $PWD 'release-bad/SHA256SUMS'), $badSums)
+          $server = Start-Process python -ArgumentList '-m','http.server','38191','--bind','127.0.0.1','--directory','.' -PassThru
           try {
             foreach ($attempt in 1..5) {
               try {
-                Invoke-WebRequest -Uri 'http://127.0.0.1:38191/SHA256SUMS' -UseBasicParsing | Out-Null
+                Invoke-WebRequest -Uri 'http://127.0.0.1:38191/release/SHA256SUMS' -UseBasicParsing | Out-Null
                 break
               } catch {
                 if ($attempt -eq 5) { throw }
                 Start-Sleep -Seconds 1
               }
             }
-            $env:TACHYON_BASE_URL = 'http://127.0.0.1:38191'
             $env:TACHYON_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'tachyon-bin'
             New-Item -ItemType Directory -Force -Path $env:TACHYON_INSTALL_DIR | Out-Null
             $installed = Join-Path $env:TACHYON_INSTALL_DIR 'ty.exe'
             [IO.File]::WriteAllText($installed, 'known-good')
             $knownGood = (Get-FileHash -Algorithm SHA256 $installed).Hash
-            $sumsPath = (Resolve-Path 'release/SHA256SUMS').Path
-            $validSumsPath = Join-Path $env:RUNNER_TEMP 'SHA256SUMS.valid'
-            $badSumsPath = Join-Path $env:RUNNER_TEMP 'SHA256SUMS.bad'
-            $publishedSums = [IO.File]::ReadAllText($sumsPath)
+            $env:TACHYON_BASE_URL = 'http://127.0.0.1:38191/release-bad'
             try {
-              $badSums = $publishedSums -replace "(?m)^[0-9a-fA-F]{64}(\s+$([regex]::Escape($env:ASSET)))$", (('0' * 64) + '$1')
-              [IO.File]::WriteAllText($badSumsPath, $badSums)
-              [IO.File]::Replace($badSumsPath, $sumsPath, $validSumsPath)
               & ./release/install.ps1
               throw 'installer accepted a mismatched checksum'
             } catch {
               if ($_.Exception.Message -eq 'installer accepted a mismatched checksum') { throw }
-            } finally {
-              [IO.File]::Replace($validSumsPath, $sumsPath, $badSumsPath)
+              if ($_.Exception.Message -ne "Checksum mismatch for $env:ASSET. Aborting.") { throw }
             }
             if ((Get-FileHash -Algorithm SHA256 $installed).Hash -ne $knownGood) { throw 'failed upgrade replaced the installed executable' }
+            $env:TACHYON_BASE_URL = 'http://127.0.0.1:38191/release'
             & ./release/install.ps1
             if ((& "$env:TACHYON_INSTALL_DIR/ty.exe" --version) -ne $env:VERSION) { throw 'installed executable version mismatch' }
           } finally {
