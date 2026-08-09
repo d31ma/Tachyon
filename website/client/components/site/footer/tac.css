@@ -15,9 +15,19 @@
 }
 
 .footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-width: var(--w-touch-min);
+  min-height: var(--w-touch-min);
   color: var(--w-text-subtle);
   text-decoration: none;
   font-size: var(--w-font-sm);
+}
+
+@supports (padding: env(safe-area-inset-bottom)) {
+  .footer-inner {
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+  }
 }
 
 .footer-links a:hover {
