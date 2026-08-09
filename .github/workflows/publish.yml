@@ -4,16 +4,23 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing immutable tag whose draft release should be verified and published
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: stable-release-${{ github.ref }}
+  group: stable-release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
   RUST_TOOLCHAIN: "1.97.1"
 
 jobs:
@@ -21,31 +28,45 @@ jobs:
     name: Validate immutable release identity
     runs-on: ubuntu-24.04
     outputs:
+      tag: ${{ steps.identity.outputs.tag }}
       version: ${{ steps.identity.outputs.version }}
     steps:
       - name: Check out the tagged commit
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Validate tag, versions, changelog, and commit
         id: identity
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           version="$(tr -d '[:space:]' < VERSION)"
-          test "${GITHUB_REF_NAME}" = "v${version}"
-          test "$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")" = tag
-          test "$(git rev-list -n 1 "${GITHUB_REF_NAME}")" = "${GITHUB_SHA}"
+          test "${RELEASE_TAG}" = "v${version}"
+          test "$(git cat-file -t "refs/tags/${RELEASE_TAG}")" = tag
+          test "$(git rev-list -n 1 "${RELEASE_TAG}")" = "$(git rev-parse HEAD)"
+          if test "${GITHUB_EVENT_NAME}" = push; then
+            test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          else
+            git fetch --no-tags origin "${GITHUB_REPOSITORY_DEFAULT_BRANCH}"
+            git merge-base --is-ancestor HEAD FETCH_HEAD
+            test "$(gh release view "${RELEASE_TAG}" --repo "${REPOSITORY}" --json isDraft --jq .isDraft)" = true
+          fi
           test "$(node -p "require('./package.json').version")" = "${version}"
           test "$(node -p "require('./website/package.json').version")" = "${version}"
           test "$(node -p "require('./website/tachyon.json').application.version")" = "${version}"
           grep -Eq "^## \[${version}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md
           git diff --exit-code
+          echo "tag=${RELEASE_TAG}" >> "${GITHUB_OUTPUT}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
   qualification:
     name: Complete enterprise qualification
+    if: github.event_name == 'push'
     uses: ./.github/workflows/rust-ci.yml
     permissions:
       contents: read
@@ -54,6 +75,7 @@ jobs:
 
   build:
     name: Native release artifact (${{ matrix.asset }})
+    if: github.event_name == 'push'
     needs: [validate, qualification]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
@@ -133,6 +155,7 @@ jobs:
 
   sbom:
     name: Release CycloneDX SBOM
+    if: github.event_name == 'push'
     needs: [validate, qualification]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -172,6 +195,7 @@ jobs:
 
   stage-release:
     name: Sign and stage immutable draft release
+    if: github.event_name == 'push'
     needs: [validate, build, sbom]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -220,7 +244,7 @@ jobs:
       - name: Create a non-public draft from the existing tag
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.validate.outputs.tag }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
@@ -236,6 +260,10 @@ jobs:
   verify-release:
     name: Verify staged release (${{ matrix.os }})
     needs: [validate, stage-release]
+    if: >-
+      always() &&
+      needs.validate.result == 'success' &&
+      (needs.stage-release.result == 'success' || github.event_name == 'workflow_dispatch')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     permissions:
@@ -275,11 +303,12 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ needs.validate.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir release
-          gh release download "${TAG}" --dir release
+          gh release download "${TAG}" --repo "${REPOSITORY}" --dir release
 
       - name: Verify checksums, attestations, and signatures
         shell: bash
@@ -407,7 +436,7 @@ jobs:
 
   publish:
     name: Publish verified stable release
-    needs: [verify-release]
+    needs: [validate, verify-release]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -416,5 +445,6 @@ jobs:
       - name: Make the fully verified release public
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: gh release edit "${TAG}" --draft=false --latest
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: gh release edit "${TAG}" --repo "${REPOSITORY}" --draft=false --latest
