@@ -27,6 +27,8 @@ jobs:
   validate:
     name: Validate immutable release identity
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.identity.outputs.tag }}
       version: ${{ steps.identity.outputs.version }}
@@ -268,7 +270,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     permissions:
-      contents: read
+      contents: write
     strategy:
       fail-fast: false
       matrix:
