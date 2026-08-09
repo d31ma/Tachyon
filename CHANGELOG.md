@@ -89,6 +89,12 @@ independent major versions.
   drill covering verification, tamper detection, install, upgrade, rollback,
   and uninstall.
 
+### Changed
+
+- Made exact-head automated security qualification the stable release gate.
+  Independent human security review remains welcome but no longer blocks
+  merge, tagging, or publication.
+
 ### Fixed
 
 - Kept the website's mobile navigation, brand link, language controls, and

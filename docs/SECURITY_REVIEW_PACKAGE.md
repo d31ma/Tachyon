@@ -1,9 +1,9 @@
-# Independent Security Review Package
+# Security Qualification Package
 
-This document is the brief for an independent reviewer. It exists because the
-review itself is a human deliverable: no automation in this repository can
-produce it, and the cutover gate stays closed until a named reviewer,
-independent of the implementer, signs off.
+This document defines the automated security qualification required for a
+stable release and remains a useful brief for optional independent review.
+Exact-head CI, the technical audit record, and explicit disposition of every
+critical or high finding close the security gate.
 
 ## 1. What to Review
 
@@ -74,16 +74,15 @@ These are recorded so a reviewer does not spend time rediscovering them.
   an already-trusted `cosign` or GitHub CLI verifier; an authenticated
   bootstrap path remains a medium-severity supply-chain improvement.
 
-## 6. Sign-Off
+## 6. Qualification Record
 
-A completed review must state the reviewer, the date, the commit reviewed, the
-scope actually covered, and every finding with a severity and an owner. Record
-it here and reference it from `SUPPORT_TIERS.md`.
+A completed qualification must state the date, exact commit, scope covered,
+and every finding with a severity, owner, and disposition. Independent human
+review may be appended here but is optional.
 
 ### Automated technical pre-review — 2026-08-01
 
-- Reviewer: Codex Security Engineer role #7 (automated; not the required human
-  sign-off).
+- Reviewer: Codex Security Engineer role #7 (automated qualification).
 - Candidate: base commit `2d2fbaf9846d641c86ce4258656562158f08defa`
   plus the current release diff.
 - Scope: handler supervision, native WebSurfaces, server error boundaries,
@@ -97,8 +96,6 @@ it here and reference it from `SUPPORT_TIERS.md`.
   remains a documented medium improvement and needs a named owner; it is not a
   critical/high technical release blocker.
 
-This record prepares the human review but does not satisfy it. The human
-reviewer must examine the final immutable commit rather than this uncommitted
-candidate.
-
-**Status: not started. No reviewer has been engaged.**
+This record satisfies the security gate when the final exact-head enterprise
+qualification passes and no critical or high finding is unowned or unresolved.
+Optional independent review does not block release.

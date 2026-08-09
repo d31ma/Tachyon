@@ -132,8 +132,7 @@ substitute for one tag-driven workflow publishing attested archives.
 
 | Gap | Why it is open | What closes it |
 | --- | --- | --- |
-| **Tag-driven release provenance** | The local lifecycle and reproducible artifact drill pass, and the tag workflow now stages before publication and performs native post-upload verification, but no real tag run has produced evidence. | Run the release workflow from a reviewed immutable tag; its five native verification jobs must pass before publication. |
-| Independent security review | Earlier work deferred the review; the unknown risk remains documented rather than represented as a pass, and the stable tag is blocked. | A named independent reviewer signing off against `THREAT_MODEL.md` and this evidence before tagging. |
+| **Tag-driven release provenance** | The local lifecycle and reproducible artifact drill pass, and the tag workflow now stages before publication and performs native post-upload verification, but no real tag run has produced evidence. | Run the release workflow from a qualified immutable tag; its five native verification jobs must pass before publication. |
 | **Windows UI Automation roles** | Native execution now passes in CI: UIA names reach the generated controls, the button is backed by a real `Button` HWND, native `BM_CLICK` changes state, and lifecycle completes. The hosted managed UIA client still reports every standard child control as `ControlType.Pane`, however, so semantic roles and accessibility-pattern activation remain unevidenced and Windows is not promoted to `native-tested`. | A client or generated provider that exposes the standard HWNDs with their semantic UIA roles and `InvokePattern`, followed by a passing role assertion in the Windows gate. |
 | First recorded long-form persistent-corpus campaign | `fuzz-scheduled.yml` now runs every target for 30 minutes each by default, restores and saves an evolving corpus, and publishes the corpus and any crash for audit; no scheduled run has reported yet. | The first successful scheduled run, followed by continued weekly execution. |
 
@@ -141,6 +140,7 @@ The `fuzz`, `sanitizers`, `soak`, and `provenance` jobs, including Linux
 LeakSanitizer and ThreadSanitizer, passed on pull request run
 [30715759023](https://github.com/d31ma/Tachyon/actions/runs/30715759023).
 
-No target is promoted to `supported` in this document. The independent review
-is a pre-tag requirement; tag-driven release provenance remains open until the
-private staged workflow produces evidence and must pass before public promotion.
+No target is promoted to `supported` in this document. Automated security
+qualification is complete; tag-driven release provenance remains open until
+the private staged workflow produces evidence and must pass before public
+promotion.

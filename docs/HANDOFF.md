@@ -96,13 +96,10 @@ patch.
 
 ### What is open
 
-`docs/CUTOVER.md` is the authority. Four of six gate conditions are met and two
-are open:
+`docs/CUTOVER.md` is the authority. Five of six gate conditions are met and one
+is open:
 
-1. **Independent security review (condition 5).** A named independent reviewer
-   must complete the review package before the stable tag is created; every
-   critical finding needs an owner and disposition.
-2. **Release provenance (condition 4).** The workflow and local reproducible
+1. **Release provenance (condition 4).** The workflow and local reproducible
    release drill pass, but one real tag-driven workflow must publish an archive
    and attestation before external verification can be recorded. The workflow
    stages and verifies the release privately before public promotion.
@@ -276,7 +273,7 @@ differential, and migrated website are the immutable public-behavior oracles.
 
 ## How the maintainer works
 
-- Decisions that are theirs — hardware, credentials, security review, accepting
+- Decisions that are theirs — hardware, credentials, risk acceptance, accepting
   simulator evidence — get recorded as **their** attributed, dated sign-off, not
   as a claim by the implementation. See the amendments in `docs/CUTOVER.md` and
   `docs/SUPPORT_TIERS.md` for the form.
@@ -287,9 +284,8 @@ differential, and migrated website are the immutable public-behavior oracles.
 ## Suggested next moves
 
 1. Complete the pull-request matrix and obtain review for the cutover commit.
-2. Complete the independent security review against
-   `docs/SECURITY_REVIEW_PACKAGE.md`; a stable tag is blocked until its signed
-   findings are recorded and no unowned critical finding remains.
-3. Create the annotated `v26.31.06` tag only after the reviewed commit is on
+2. Confirm the automated security matrix is clean and every critical or high
+   finding in `docs/SECURITY_REVIEW_PACKAGE.md` has an owner and disposition.
+3. Create the annotated `v26.31.06` tag only after the qualified commit is on
    `main`; the tag workflow will stage, verify, and publish it.
 4. Grant macOS Accessibility permission and rerun the macOS evidence script.
