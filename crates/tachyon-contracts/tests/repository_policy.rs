@@ -310,6 +310,7 @@ fn stable_release_is_tag_gated_and_fail_closed() -> Result<(), Box<dyn std::erro
     assert!(workflow.contains("workflow_dispatch:"));
     assert!(!workflow.contains("branches: [main]"));
     assert!(workflow.contains("RELEASE_TAG: ${{ inputs.tag || github.ref_name }}"));
+    assert!(workflow.contains("DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}"));
     assert!(workflow.contains("git cat-file -t"));
     assert!(workflow.contains("uses: ./.github/workflows/rust-ci.yml"));
     assert!(workflow.contains("--verify-tag --draft"));

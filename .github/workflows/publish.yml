@@ -41,6 +41,7 @@ jobs:
         id: identity
         shell: bash
         env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
@@ -52,7 +53,7 @@ jobs:
           if test "${GITHUB_EVENT_NAME}" = push; then
             test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           else
-            git fetch --no-tags origin "${GITHUB_REPOSITORY_DEFAULT_BRANCH}"
+            git fetch --no-tags origin "${DEFAULT_BRANCH}"
             git merge-base --is-ancestor HEAD FETCH_HEAD
             test "$(gh release view "${RELEASE_TAG}" --repo "${REPOSITORY}" --json isDraft --jq .isDraft)" = true
           fi
