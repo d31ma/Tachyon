@@ -286,6 +286,6 @@ differential, and migrated website are the immutable public-behavior oracles.
 1. Complete the pull-request matrix and obtain review for the cutover commit.
 2. Confirm the automated security matrix is clean and every critical or high
    finding in `docs/SECURITY_REVIEW_PACKAGE.md` has an owner and disposition.
-3. Create the annotated `v26.32.07` tag only after the qualified commit is on
+3. Create the annotated `v26.33.01` tag only after the qualified commit is on
    `main`; the tag workflow will stage, verify, and publish it.
 4. Grant macOS Accessibility permission and rerun the macOS evidence script.

@@ -339,7 +339,7 @@ fn stable_release_is_tag_gated_and_fail_closed() -> Result<(), Box<dyn std::erro
     assert!(windows_installer.contains("No checksum published for $asset. Aborting."));
     assert!(windows_installer.contains("[Text.Encoding]::UTF8.GetString($sumsContent)"));
     assert!(!windows_installer.contains("Could not verify checksum"));
-    assert!(windows_installer.contains("[IO.File]::Replace($download, $exe, $null)"));
+    assert!(windows_installer.contains("[IO.File]::Replace($download, $exe, $backup)"));
     assert!(!windows_installer.contains("-OutFile $exe"));
     assert!(!unix_installer.contains("d31ma/Fylo"));
     assert!(!windows_installer.contains("d31ma/Fylo"));
@@ -418,7 +418,7 @@ fn completed_phase_acceptance_is_enforced_by_ci_and_documentation()
     assert!(plan.contains("## Phase 3: Tac and Yon View Semantics"));
     assert!(plan.contains("## Phase 4: Native Vertical Slice"));
     assert!(plan.matches("Status: complete on 2026-07-26").count() >= 4);
-    assert_eq!(version.trim(), "26.32.07");
+    assert_eq!(version.trim(), "26.33.01");
     assert_eq!(version.trim(), tachyon_contracts::PRODUCT_VERSION);
     Ok(())
 }

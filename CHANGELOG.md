@@ -8,14 +8,22 @@ independent major versions.
 
 ## [Unreleased]
 
-## [26.32.07] - 2026-08-09
+## [26.33.01] - 2026-08-10
 
 ### Fixed
 
 - Decode byte-array checksum responses as UTF-8 in the Windows installer so
   extensionless `SHA256SUMS` responses remain fail-closed and usable.
+- Use a real temporary backup path for atomic Windows upgrades so `.NET`
+  `File.Replace` preserves the installed executable without rejecting a null
+  backup path.
 - Harden staged-release recovery by verifying an intentionally corrupted copy
   of the Windows executable while preserving the canonical checksum manifest.
+
+## [26.32.07] - 2026-08-09 (unpublished)
+
+This immutable release candidate remained private after staged Windows
+installer verification exposed an atomic replacement defect.
 
 ## [26.31.06] - 2026-08-01
 
@@ -967,7 +975,8 @@ should expect to touch imports, bin names, and any code that assumed the old
 
 See the Git history and GitHub release notes for pre-2.0 changes.
 
-[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.32.07...HEAD
+[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.33.01...HEAD
+[26.33.01]: https://github.com/d31ma/Tachyon/compare/v26.31.06...v26.33.01
 [26.32.07]: https://github.com/d31ma/Tachyon/compare/v26.31.06...v26.32.07
 [26.31.06]: https://github.com/d31ma/Tachyon/compare/v26.30.04...v26.31.06
 [26.30.04]: https://github.com/d31ma/Tachyon/compare/v26.30.03...v26.30.04
