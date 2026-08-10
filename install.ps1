@@ -32,6 +32,7 @@ $dest = if ($env:TACHYON_INSTALL_DIR) { $env:TACHYON_INSTALL_DIR } else { Join-P
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 $exe = Join-Path $dest 'ty.exe'
 $download = Join-Path $dest ("ty-{0}.download" -f [Guid]::NewGuid().ToString('N'))
+$backup = Join-Path $dest ("ty-{0}.backup" -f [Guid]::NewGuid().ToString('N'))
 Write-TachyonStep "Selected install directory: $dest"
 
 try {
@@ -59,12 +60,14 @@ try {
 
     Write-TachyonStep 'Installing ty'
     if (Test-Path $exe) {
-        [IO.File]::Replace($download, $exe, $null)
+        [IO.File]::Replace($download, $exe, $backup)
+        Remove-Item $backup -Force
     } else {
         Move-Item -Path $download -Destination $exe
     }
 } finally {
     Remove-Item $download -Force -ErrorAction SilentlyContinue
+    Remove-Item $backup -Force -ErrorAction SilentlyContinue
 }
 
 # Add install dir to the user PATH if it isn't already there.
