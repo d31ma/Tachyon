@@ -441,6 +441,10 @@ jobs:
   publish:
     name: Publish verified stable release
     needs: [validate, verify-release]
+    if: >-
+      always() &&
+      needs.validate.result == 'success' &&
+      needs.verify-release.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

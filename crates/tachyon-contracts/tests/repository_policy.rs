@@ -331,6 +331,7 @@ fn stable_release_is_tag_gated_and_fail_closed() -> Result<(), Box<dyn std::erro
     );
     assert!(workflow.contains("failed upgrade replaced the installed executable"));
     assert!(!workflow.contains("environment: packages-prod"));
+    assert!(workflow.contains("needs.verify-release.result == 'success'"));
 
     assert!(unix_installer.contains("No checksum published for ${asset}. Aborting."));
     assert!(unix_installer.contains("mktemp \"${dest}/.ty.download.XXXXXX\""));
