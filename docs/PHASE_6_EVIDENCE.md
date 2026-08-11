@@ -44,12 +44,13 @@ and the Tac client runtime.
 
 `corpus/components-slots/parity.json` declares exactly one:
 
-> `semantic dom /`: `<main>[1]: <product-card> vs <article>`
+> `semantic dom /`: `<main>[1]: <product-card> vs <tachyon-component>`
 
-The legacy implementation keeps a Tac component as a runtime custom element.
-The Rust implementation expands component render plans in the browser, so the
-component template's own root element reaches the document. Slotted content, accessible
-names, and roles are identical. An undeclared divergence fails the gate.
+Both implementations keep a semantically neutral runtime component boundary.
+The legacy implementation uses the authored custom-element name, while the
+client-only Rust renderer uses its framework-owned `tachyon-component`
+boundary. Slotted content, accessible names, and roles are identical. An
+undeclared divergence fails the gate.
 
 ## 3. Behavioral Differences Found by This Work
 
@@ -59,7 +60,7 @@ These were discovered by running both implementations, not assumed.
 | --- | --- |
 | The legacy HTML parser rejects standard void elements — `<img>`, `<hr>`, `<br>`, and `<input>` all fail with "No end tag." — and requires the self-closing form. The Rust parser accepts both. | The Rust implementation is a strict superset. Corpus fixtures use the self-closing form so the shared surface stays comparable. |
 | The legacy implementation has no `yon.html` convention. It treats every file under `server/routes/**` as a handler and rejects `yon.html` outright. | The Rust rewrite also rejects `yon.html`; ADR 0016 defines Yon as REST-only. |
-| Tac components remain runtime custom elements in the legacy output and render their compiled template plans as ordinary DOM roots in the Rust client. | Intentional; declared and recorded. |
+| Tac components use their authored custom-element boundary in the legacy output and the framework-owned `tachyon-component` runtime boundary in the Rust client. | Intentional; declared and recorded. |
 
 ## 4. `ty migrate check` Against the Archived Migration Fixture
 

@@ -189,7 +189,7 @@ TAC_BIN=target/debug/ty node scripts/compat/standalone-rust.mjs
 
 TAC_LEGACY_BIN=/tmp/.../26.30.04/ty TAC_BIN=target/debug/ty \
   node scripts/compat/differential.mjs
-  scaffold: 19 generated files match after the declared FYLO removal
+  scaffold: 18 generated files match after declared legacy scaffold removals
   3/3 corpus projects match across implementations
 ```
 
@@ -202,10 +202,12 @@ publishes exactly one level at `dist/web`, `dist/macos`, `dist/ios`, and
 `dist/android`; before that test existed, native targets were accidentally
 published as `dist/macos/macos`.
 
-The 19 retained scaffold files remain byte-identical, including the root Yon
-handler and public ambient type file. The declared difference removes the
-obsolete database layout, its environment entries, and the installer sentence
-that named FYLO. The released bounded page-class workflow is still preserved:
+The 18 parity-covered scaffold files remain byte-identical, including the root
+Yon handler. The declared differences remove the obsolete database layout and
+environment entries, normalize the standalone-only installer sentence, and
+exclude the replacement standalone ambient type contract from byte parity; its
+generation remains covered by Rust scaffold tests. The released bounded
+page-class workflow is still preserved:
 literal page state, class fields, `@onMount`, assignment events, and native
 controller capabilities. Inline state is deliberately literal-only;
 executable initializers fail with `TY1306` and are never emitted as authored

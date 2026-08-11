@@ -266,6 +266,7 @@ mod tests {
     use super::{YonIsolationPolicy, configuration_failure};
     use std::collections::BTreeMap;
     use std::ffi::OsString;
+    #[cfg(unix)]
     use std::fs;
     #[cfg(unix)]
     use std::time::Duration;

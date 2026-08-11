@@ -203,7 +203,14 @@ async function treeOf(root, current = root, output = {}) {
 
 function withoutRemovedLegacyScaffold(tree) {
   const normalized = { ...tree };
-  for (const file of ['db/README.md', 'db/schemas/.gitkeep', 'db/.collections/.gitkeep']) {
+  for (const file of [
+    'db/README.md',
+    'db/schemas/.gitkeep',
+    'db/.collections/.gitkeep',
+    // The rewrite owns a standalone, legacy-import-free ambient type contract;
+    // its source is covered by the Rust scaffold tests, not byte parity.
+    'tachyon-env.d.ts',
+  ]) {
     delete normalized[file];
   }
   const retainedEnvironment = new Set(['YON_PORT', 'YON_HOST', 'YON_HOSTNAME', 'YON_SKIP_BUNDLE']);
@@ -215,8 +222,13 @@ function withoutRemovedLegacyScaffold(tree) {
     }).join('\n');
     normalized[file] = Buffer.from(retained).toString('base64');
   }
+  // The standalone-only installer contract intentionally supersedes the
+  // archived oracle's bundled helper-binary wording.
   const readme = Buffer.from(normalized['README.md'], 'base64').toString('utf8')
-    .replace('the `fylo`, `chex`, and `ttid` binaries', 'the `chex` and `ttid` binaries');
+    .replace(
+      /This shows a staged Tachyon progress bar while installing the `ty` binary plus\s+the `fylo`, `chex`, and `ttid` binaries it drives at runtime\./,
+      'This shows a staged Tachyon progress bar while installing only the standalone `ty` binary.',
+    );
   normalized['README.md'] = Buffer.from(readme).toString('base64');
   return normalized;
 }
@@ -233,6 +245,7 @@ async function compareScaffold() {
     }
     const legacyTree = withoutRemovedLegacyScaffold(await treeOf(legacyRoot));
     const rustTree = await treeOf(rustRoot);
+    delete rustTree['tachyon-env.d.ts'];
     if (JSON.stringify(legacyTree) === JSON.stringify(rustTree)) {
       return { ok: true, detail: `${Object.keys(rustTree).length} generated files match after declared legacy scaffold removals` };
     }
