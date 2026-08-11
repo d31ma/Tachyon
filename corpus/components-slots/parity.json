@@ -2,8 +2,8 @@
   "expected_divergences": [
     {
       "check": "semantic dom /",
-      "detail": "<main>[1]: <product-card> vs <article>",
-      "reason": "The legacy implementation keeps a Tac component as a runtime custom element. The Rust implementation expands components at compile time, so the component template's own root element reaches the document instead. Slotted content and accessible semantics are identical.",
+      "detail": "<main>[1]: <product-card> vs <tachyon-component>",
+      "reason": "Both implementations retain a semantically neutral runtime component boundary, but the legacy implementation uses the authored custom-element name while the client-only Rust renderer uses the framework-owned tachyon-component boundary. Slotted content and accessible semantics are identical.",
       "direction": "intentional"
     }
   ]

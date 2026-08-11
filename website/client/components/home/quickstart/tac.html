@@ -6,13 +6,13 @@
     <details open>
       <summary>Tac template</summary>
       <pre class="code-block"><code data-sample="template" data-fallback="&lt;section class=&quot;hero&quot;&gt;&#10;  &lt;h1&gt;{headline}&lt;/h1&gt;&#10;  &lt;button on:click=&quot;refresh()&quot;&gt;Refresh&lt;/button&gt;&#10;&lt;/section&gt;&#10;&#10;&lt;loop :for=&quot;post of posts&quot;&gt;&#10;  &lt;product-card :product=&quot;post&quot; hydrate=&quot;visible&quot; /&gt;&#10;&lt;/loop&gt;"></code></pre>
-      <p class="quickstart-note">client/pages/tac.html — interpolation, events, control flow and island hydration in plain HTML.</p>
+      <p class="quickstart-note">client/pages/tac.html — interpolation, events, control flow and client-owned rendering in plain HTML.</p>
     </details>
 
     <details>
       <summary>Companion</summary>
       <pre class="code-block"><code data-sample="companion" data-fallback="export default class {&#10;  headline = &quot;Tac + Yon&quot;&#10;  visits = 0&#10;&#10;  hydrate(root, signal) {&#10;    this.visits = Number(sessionStorage.getItem(&quot;visits&quot;) ?? 0) + 1&#10;    sessionStorage.setItem(&quot;visits&quot;, String(this.visits))&#10;  }&#10;}"></code></pre>
-      <p class="quickstart-note">client/components/hero/tac.js — a plain class with an explicit browser hydration hook.</p>
+      <p class="quickstart-note">client/components/hero/tac.js — a plain class with an explicit browser mount hook.</p>
     </details>
 
     <details>

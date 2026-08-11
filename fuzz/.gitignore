@@ -1,0 +1,6 @@
+# libFuzzer working state. Only hand-written seeds are tracked.
+target
+artifacts
+coverage
+corpus/*/*
+!corpus/*/seed-*

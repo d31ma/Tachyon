@@ -22,20 +22,7 @@
 }
 
 .docs-search {
-  display: grid;
-  gap: var(--w-space-1);
   margin: 0 0 var(--w-space-4);
-}
-
-.docs-search label {
-  color: var(--w-text);
-  font-size: var(--w-font-sm);
-  font-weight: var(--w-font-weight-semibold);
-}
-
-.docs-search span {
-  color: var(--w-text-very-subtle);
-  font-size: var(--w-font-xs);
 }
 
 .docs-search input {

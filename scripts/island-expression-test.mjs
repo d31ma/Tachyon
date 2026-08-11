@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Island-local client evaluation gate (ADR 0010).
+// Tac client expression and structural rerender gate (ADR 0015).
 //
-// An expression an island defers must actually resolve against the companion
-// instance in a real browser. A marker that ships but never fills is the exact
-// defect this guards, so nothing here is asserted from the generated HTML.
+// Expressions and structural tags must resolve against the companion instance
+// in a real browser. A render plan that ships but never creates the expected DOM
+// is the exact defect this guards, so nothing is asserted from generated HTML.
 
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
@@ -15,7 +15,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const TY = process.env.TY_BIN ?? path.join(REPO, 'target/release/ty');
+const TY = process.env.TAC_BIN ?? path.join(REPO, 'target/release/ty');
 const PROJECT = path.join(tmpdir(), 'ty-island-expression-gate');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 
@@ -26,7 +26,7 @@ const write = (relative, contents) => {
 };
 
 rmSync(PROJECT, { recursive: true, force: true });
-write('client/pages/tac.html', '<main aria-label="Island"><panel-status hydrate="load" /></main>\n');
+write('client/pages/tac.html', '<main aria-label="Client view"><panel-status hydrate="load" /></main>\n');
 write('client/components/panel/status/tac.html', `<section>
   <p id="method">{loadingState()}</p>
   <p id="field">{label}</p>
@@ -36,6 +36,10 @@ write('client/components/panel/status/tac.html', `<section>
   <p id="chained">{report.rows.length}</p>
   <p id="awaited">{await note()}</p>
   <p id="live">{count}</p>
+  <if :when="count > 0">
+    <ul id="rows"><for :each="row in report.rows"><li>{row}</li></for></ul>
+  </if>
+  <else><p id="empty">empty</p></else>
   <button id="bump" on:click="count += 1">bump</button>
   <button id="reset" on:click="reset()">reset</button>
   <input id="typed" on:input="label = $event.target.value">
@@ -84,7 +88,7 @@ page.on('pageerror', (error) => errors.push(String(error)));
 
 try {
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
-  await page.waitForFunction(() => !document.querySelector('tachyon-expr'), null, { timeout: 5000 });
+  await page.waitForFunction(() => document.documentElement.dataset.tachyonRendered === 'client', null, { timeout: 5000 });
 
   expect(await page.textContent('#method'), 'live', 'method call on the companion');
   expect(await page.textContent('#field'), 'ready', 'companion field');
@@ -93,9 +97,10 @@ try {
   expect(await page.textContent('#nested'), 'Report', 'nested property');
   expect(await page.textContent('#chained'), '3', 'property of a nested array');
   expect(await page.textContent('#awaited'), 'awaited', 'awaited companion method');
+  expect((await page.locator('#rows li').allTextContents()).join(','), '1,2,3', 'client loop renders');
 
-  // An assigning binding writes to the instance, and the island re-resolves
-  // its own expressions, so the rendered value follows.
+  // An assigning binding writes to the instance, and the client renderer
+  // rebuilds all affected structure and expressions.
   expect(await page.textContent('#live'), '6', 'initial value');
   await page.click('#bump');
   await page.waitForFunction(() => document.querySelector('#live').textContent === '7');
@@ -109,19 +114,21 @@ try {
   await page.waitForTimeout(100);
   expect(await page.textContent('#live'), '0', 'companion method updates the view');
   expect(await page.textContent('#maths'), '1', 'every expression refreshes, not just one');
+  expect(await page.locator('#rows').count(), 0, 'client conditional removes its branch');
+  expect(await page.textContent('#empty'), 'empty', 'client else branch renders');
 
   // A plain assignment from $event.
   await page.fill('#typed', 'typed value');
   await page.waitForTimeout(150);
   expect(await page.textContent('#typedOut'), 'typed value', 'assignment from $event');
 
-  // The island must be marked active, not silently failed.
+  // The browser-mounted component must be active, not silently failed.
   expect(
-    await page.getAttribute('tachyon-island', 'data-tachyon-active'),
+    await page.getAttribute('tachyon-component', 'data-tachyon-active'),
     'true',
-    'island activated',
+    'component mounted',
   );
-  expect(await page.getAttribute('tachyon-island', 'data-tachyon-island-error'), null, 'no island error');
+  expect(await page.getAttribute('tachyon-component', 'data-tachyon-mount-error'), null, 'no mount error');
   expect(errors.length, 0, `no console errors${errors.length ? `: ${errors[0]}` : ''}`);
 }
 finally {
@@ -129,4 +136,4 @@ finally {
   server.close();
 }
 
-if (!process.exitCode) console.log('\nisland expression gate passed');
+if (!process.exitCode) console.log('\nTac client expression gate passed');

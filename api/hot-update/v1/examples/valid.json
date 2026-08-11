@@ -1,0 +1,9 @@
+{
+  "contract_version": 1,
+  "sequence": 7,
+  "kind": "island",
+  "build_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "paths": ["client/components/product/card/tac.js"],
+  "boundaries": ["product-card"],
+  "diagnostics": null
+}

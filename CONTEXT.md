@@ -7,26 +7,24 @@ developers write standards-based HTML for views while Tachyon owns discovery,
 compilation, server lifecycle, handler supervision, web output, and native
 application generation.
 
-The Rust rewrite is a greenfield implementation and the only framework
-implementation in this branch. Compatibility is measured against the
-checksum-verified v26.30.04 release executable and neutral migration fixtures,
-never against copied private implementation code.
+The Rust rewrite is a greenfield implementation. The in-tree JavaScript
+framework was removed after cutover. Compatibility is measured against the
+immutable v26.30.04 release binary and neutral fixtures in `corpus/`, never by
+importing private legacy implementation code.
 
 ## Domain Language
 
 - **Tac** is the client-side view and interaction layer. A `tac.html` document
   may have colocated `tac.*` controller and style companions.
-- **Yon** is the server-side route and handler layer. A `yon.html` document may
-  have one or more colocated `yon.*` handlers.
-- **View source** is either `tac.html` or `yon.html`. Both contain HTML and use
-  the same structural control tags.
+- **Yon** is the server-side REST endpoint and handler layer. A `yon.*` source
+  exports or implements HTTP method handlers.
+- **View source** is `tac.html`. It contains HTML and may use structural
+  control tags interpreted in the client.
 - **Route graph** is the deterministic, immutable result of file-system
   discovery before a build or server generation starts.
-- **Route context** is the set of values available to one `yon.html` render.
-  Static handler fields and the selected method's returned object contribute
-  values.
 - **Control tag** is `if`, `else`, `for`, or `loop`. It is compiler syntax,
-  never an HTML element sent to a browser or native renderer.
+  interpreted by the Tac browser renderer, never an unknown HTML element sent
+  to a browser or native renderer.
 - **Tac component** is a framework component resolved through the project
   component graph.
 - **Web component** is a standards-based custom element. It may render on the
@@ -46,27 +44,31 @@ never against copied private implementation code.
 ## Relationships
 
 1. Project discovery produces a route graph.
-2. An HTML frontend parses `tac.html` and `yon.html` into source-aware syntax.
+2. The HTML frontend parses `tac.html` into source-aware syntax.
 3. Validation resolves control tags, bindings, and components.
 4. Lowering emits deterministic View IR.
 5. Web code generation consumes View IR and emits web artifacts.
 6. Native planning consumes View IR and chooses a native adapter or a
    WebSurface boundary for each subtree.
-7. The server invokes Yon handlers through a versioned, supervised process
-   protocol and merges their permitted contributions into route context.
+7. The server invokes Yon handlers through a versioned protocol and an
+   environment-selected supervised isolation backend, then passes their
+   validated HTTP responses through unchanged.
 8. Packaging records inputs, toolchains, contract versions, outputs, and
    digests in an artifact manifest.
 
 ## Non-Negotiable Invariants
 
 - HTML is the only view language exposed to application developers.
+- Tac is exclusively client-rendered; no Tac expression, branch, loop, or
+  component subtree is rendered on the server.
+- Yon is REST-only: it never renders a template or executes during a build.
+- HTML returned by Yon requires an explicit `Content-Type: text/html` response
+  and is transported without interpolation or framework markup injection.
 - Control tags never reach a browser or native renderer as unknown elements.
 - Source discovery, route ordering, diagnostics, IR, and artifacts are
   deterministic for identical inputs.
-- A route may compose multiple same-level `yon.*` handlers.
-- Static fields and method-returned objects contribute to route context.
-- Duplicate route-context keys fail compilation. There is no implicit
-  last-writer-wins behavior.
+- A route may contain multiple same-level `yon.*` handlers in deterministic
+  source order.
 - Unsupported native content falls back at the smallest safe subtree.
 - Supported siblings remain native when one subtree falls back.
 - Remote web content never receives a native capability bridge.
@@ -90,13 +92,12 @@ never against copied private implementation code.
 
 Engineering phases 0–7 are implemented. The current Rust data path:
 
-1. discovers static and dynamic `tac.html` and `yon.html` routes;
+1. discovers static and dynamic `tac.html` routes and `yon.*` REST handlers;
 2. parses bounded HTML, expressions, control tags, components, slots, events,
-   styles, and explicit island hydration;
-3. supervises JavaScript, Python, and registered executable Yon handlers and
-   collision-checks their static fields and selected method results into route
-   context;
-4. emits deterministic prerendered web routes, View IR, source maps, island
+   styles, and browser component mount schedules;
+3. supervises JavaScript, Python, and registered executable Yon handlers only
+   when an HTTP request or explicit handler invocation reaches them;
+4. emits deterministic Tac client render plans, View IR, source maps, client
    modules, shared assets, a service worker, and Route Manifest v1;
 5. dispatches exact and dynamic HTTP routes, before/after middleware, workers,
    and durable SSE topic logs from a loopback-safe development server;
@@ -107,6 +108,11 @@ Engineering phases 0–7 are implemented. The current Rust data path:
 8. verifies compatibility, recovery, performance, supply-chain, and release
    lifecycle behavior through executable gates.
 
+The development server additionally publishes Hot Update Protocol v1. Tac's
+production client renderer owns initial and reactive structure. Development
+updates must target that render-plan boundary or reload safely; they may not
+reintroduce SSR-island ownership. See ADR 0015.
+
 The implementation is not yet a supported release. Buildable,
 simulator-tested, native-tested, preview, and supported remain distinct
 evidence levels in `docs/SUPPORT_TIERS.md`.
@@ -116,7 +122,9 @@ evidence levels in `docs/SUPPORT_TIERS.md`.
 These are not hidden gaps in a completed compatibility claim. Each remains a
 named product or viability decision:
 
-- OS-level filesystem, network, memory, and CPU isolation for handler children;
+- a first-party, production-qualified Firecracker control program and host
+  profile; the environment-selected transport boundary is implemented, but it
+  does not by itself prove OS-level isolation;
 - a stable third-party compiler or native-adapter plugin ABI;
 - production signing identities and store-specific publication policy;
 - whether out-of-scope legacy OpenAPI and telemetry products return in a
@@ -127,7 +135,8 @@ when its compatibility or security consequences become concrete.
 
 ## Current Non-Goals
 
-- reproducing the legacy client renderer or its in-place component registry;
+- reproducing the legacy unbounded client renderer or its mutable global
+  component registry;
 - implicit imports from application dependency graphs inside handler adapters;
 - pooling or reusing handler processes;
 - giving remote or local WebSurfaces a native capability bridge;

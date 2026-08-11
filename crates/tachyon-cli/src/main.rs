@@ -478,7 +478,7 @@ async fn execute_native_bundle_command(command: &Command) -> Result<(), Failure>
     let target = require_one_native_target(&targets, "native-bundle")?;
     let output = out_dir
         .clone()
-        .or_else(|| environment_path("YON_DIST_PATH"))
+        .or_else(|| environment_path("TAC_DIST_PATH"))
         .unwrap_or_else(|| PathBuf::from("dist"));
     execute_build_with_package(project, &output, *no_incremental, target, false).await
 }
@@ -501,7 +501,7 @@ async fn execute_dev_command(command: &Command) -> Result<(), Failure> {
     let port = resolve_port(*port, &["YON_PORT", "PORT"], 8080)?;
     let output = out_dir
         .clone()
-        .or_else(|| environment_path("YON_DIST_PATH"))
+        .or_else(|| environment_path("TAC_DIST_PATH"))
         .unwrap_or_else(|| PathBuf::from("dist/web"));
     let production = std::env::var("NODE_ENV").is_ok_and(|value| value == "production");
     execute_serve(
@@ -565,19 +565,6 @@ enum InitialBuild {
     Skip,
 }
 
-/// Resolves when the operator interrupts this process.
-///
-/// Registering the handler can fail, and that failure must never resolve as an
-/// interrupt: a server would then shut down the instant it announced
-/// readiness, refusing every connection with no diagnostic. A process that
-/// cannot observe Ctrl-C keeps serving and is stopped by its supervisor
-/// instead.
-async fn interrupt() {
-    if tokio::signal::ctrl_c().await.is_err() {
-        std::future::pending::<()>().await;
-    }
-}
-
 async fn execute_serve(
     project: &Path,
     host: IpAddr,
@@ -602,12 +589,12 @@ async fn execute_serve(
     .await?;
     println!("Tachyon server ready at http://{}/", server.address());
     if !no_watch {
-        println!("Watching sources; open pages reload after a rebuild.");
+        println!("Watching sources; open pages receive semantic hot updates.");
     }
     let _flush_result = std::io::stdout().flush();
     server
         .run_until(async {
-            interrupt().await;
+            let _signal_result = tokio::signal::ctrl_c().await;
         })
         .await
 }
@@ -648,7 +635,7 @@ async fn execute_preview(
     let _flush_result = std::io::stdout().flush();
     server
         .run_until(async {
-            interrupt().await;
+            let _signal_result = tokio::signal::ctrl_c().await;
         })
         .await
 }
@@ -678,7 +665,7 @@ async fn execute_bundle(
     let mut fingerprint = source_fingerprint(project);
     loop {
         tokio::select! {
-            () = interrupt() => return Ok(()),
+            _ = tokio::signal::ctrl_c() => return Ok(()),
             () = tokio::time::sleep(Duration::from_millis(400)) => {
                 let next = source_fingerprint(project);
                 if next == fingerprint {
@@ -728,7 +715,7 @@ fn bundle_output(explicit: Option<&Path>, targets: &[BuildTarget]) -> PathBuf {
     if let Some(output) = explicit {
         return output.to_path_buf();
     }
-    if let Some(output) = environment_path("YON_DIST_PATH") {
+    if let Some(output) = environment_path("TAC_DIST_PATH") {
         return output;
     }
     if targets == [BuildTarget::Web] {
@@ -1185,12 +1172,11 @@ async fn execute_handler(command: &HandlerCommand) -> Result<(), Failure> {
             if let Some(python_runtime) = python_runtime {
                 runtimes.python.clone_from(python_runtime);
             }
-            let supervisor = HandlerSupervisor::new(HandlerSupervisorOptions {
-                default_timeout: Duration::from_millis(*timeout_ms),
-                runtimes,
-                environment,
-                ..HandlerSupervisorOptions::default()
-            })?;
+            let mut options = HandlerSupervisorOptions::from_environment()?;
+            options.default_timeout = Duration::from_millis(*timeout_ms);
+            options.runtimes = runtimes;
+            options.environment = environment;
+            let supervisor = HandlerSupervisor::new(options)?;
             let mut request =
                 HandlerRequest::route(request_id.clone(), route.clone(), HttpMethod::from(*method));
             request.deadline_ms = Some(*timeout_ms);

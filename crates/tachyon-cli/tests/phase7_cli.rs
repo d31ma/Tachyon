@@ -244,7 +244,7 @@ fn a_read_only_output_directory_fails_closed() {
 fn sustained_rebuilds_do_not_leak_descriptors_or_slow_down() {
     // Soak: repeated builds in one long-lived working tree must stay stable in
     // both resource use and latency.
-    let iterations: usize = std::env::var("TACHYON_SOAK_ITERATIONS")
+    let iterations: usize = std::env::var("TAC_SOAK_ITERATIONS")
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(24);

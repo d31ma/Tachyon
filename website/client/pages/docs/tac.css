@@ -33,11 +33,13 @@
 
 @media (max-width: 1024px) {
   .docs-shell {
-    display: block;
+    display: flex;
+    flex-direction: column;
     padding-inline: clamp(1rem, 4vw, 1.5rem);
   }
 
   .docs-sidebar {
+    order: 2;
     position: static;
     height: auto;
     max-height: none;
@@ -45,6 +47,7 @@
   }
 
   .docs-main {
+    order: 1;
     padding: var(--w-space-4) 0 var(--w-space-10);
   }
 }

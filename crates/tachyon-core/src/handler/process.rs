@@ -2,7 +2,8 @@ use super::frame::{
     FRAME_PREFIX_BYTES, MAX_FRAME_BYTES, cancel_frame, protocol_failure, request_frame,
     response_frame,
 };
-use super::{HandlerLanguage, HandlerSource};
+use super::isolation::apply_backend_environment;
+use super::{HandlerLanguage, HandlerSource, YonIsolationPolicy};
 use crate::Failure;
 use crate::failure::diagnostic;
 use command_group::{AsyncCommandGroup, AsyncGroupChild};
@@ -105,7 +106,7 @@ impl EnvironmentPolicy {
                 command.env(name, value);
             }
         }
-        command.env("TACHYON_HANDLER_PROTOCOL", "1");
+        command.env("YON_HANDLER_PROTOCOL", "1");
     }
 }
 
@@ -143,6 +144,8 @@ pub struct HandlerSupervisorOptions {
     pub runtimes: HandlerRuntimePrograms,
     /// Child environment allowlist.
     pub environment: EnvironmentPolicy,
+    /// Deployment-owned handler isolation backend.
+    pub isolation: YonIsolationPolicy,
 }
 
 impl Default for HandlerSupervisorOptions {
@@ -154,7 +157,24 @@ impl Default for HandlerSupervisorOptions {
             max_concurrency: DEFAULT_MAX_CONCURRENCY,
             runtimes: HandlerRuntimePrograms::default(),
             environment: EnvironmentPolicy::default(),
+            isolation: YonIsolationPolicy::default(),
         }
+    }
+}
+
+impl HandlerSupervisorOptions {
+    /// Creates the default resource policy and reads deployment isolation from
+    /// the process environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TY2010` when the environment isolation policy is invalid or
+    /// incomplete.
+    pub fn from_environment() -> Result<Self, Failure> {
+        Ok(Self {
+            isolation: YonIsolationPolicy::from_environment()?,
+            ..Self::default()
+        })
     }
 }
 
@@ -166,6 +186,16 @@ pub struct HandlerSupervisor {
 }
 
 impl HandlerSupervisor {
+    /// Creates a supervisor using the environment-selected isolation backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns stable diagnostics for invalid isolation configuration or
+    /// invalid resource bounds.
+    pub fn from_environment() -> Result<Self, Failure> {
+        Self::new(HandlerSupervisorOptions::from_environment()?)
+    }
+
     /// Creates a validated process supervisor.
     ///
     /// # Errors
@@ -205,7 +235,9 @@ impl HandlerSupervisor {
         request: &HandlerRequest,
         cancellation: &HandlerCancellation,
     ) -> Result<HandlerResponse, Failure> {
-        let frame = encode_request(source.language(), request)?;
+        let direct_protocol = source.language() == HandlerLanguage::Direct
+            && self.options.isolation.uses_direct_handler_protocol();
+        let frame = encode_request(direct_protocol, request)?;
         if cancellation.is_cancelled() {
             return Err(cancelled());
         }
@@ -230,7 +262,14 @@ impl HandlerSupervisor {
             () = sleep_until(deadline) => return Err(timed_out()),
         };
         let result = self
-            .run_process(source, request, &frame, deadline, cancellation)
+            .run_process(
+                source,
+                request,
+                &frame,
+                direct_protocol,
+                deadline,
+                cancellation,
+            )
             .await;
         drop(permit);
         result
@@ -241,12 +280,14 @@ impl HandlerSupervisor {
         source: &HandlerSource,
         request: &HandlerRequest,
         request_bytes: &[u8],
+        direct_protocol: bool,
         deadline: Instant,
         cancellation: &HandlerCancellation,
     ) -> Result<HandlerResponse, Failure> {
         let adapter = materialize_adapter(source.language())?;
         let mut command = self.command(source, &adapter);
         self.options.environment.apply(&mut command);
+        apply_backend_environment(&self.options.isolation, &mut command);
         let mut child = spawn_process(&mut command)?;
         let (mut stdin, stdout, stderr) = match take_process_pipes(&mut child) {
             Ok(pipes) => pipes,
@@ -272,7 +313,7 @@ impl HandlerSupervisor {
         // A direct handler reads until end of file, so its input must be
         // closed now. The framed adapters keep it open to receive a
         // cancellation frame.
-        let mut stdin = if source.language() == HandlerLanguage::Direct {
+        let mut stdin = if direct_protocol {
             drop(stdin);
             None
         } else {
@@ -331,7 +372,7 @@ impl HandlerSupervisor {
                 terminate(&mut child).await;
                 let (stdout, stderr) = settle_tasks(stdout_task, stderr_task, deadline).await?;
                 validate_process_output(status, &stdout, &stderr)?;
-                if source.language() == HandlerLanguage::Direct {
+                if direct_protocol {
                     direct_response(&stdout.bytes, &request.request_id)
                 } else {
                     response_frame(&stdout.bytes, &request.request_id)
@@ -341,6 +382,23 @@ impl HandlerSupervisor {
     }
 
     fn command(&self, source: &HandlerSource, adapter: &AdapterFiles) -> Command {
+        if let Some(policy) = self.options.isolation.firecracker() {
+            let mut command = Command::new(policy.driver());
+            policy.append_arguments(&mut command);
+            command
+                .arg("--project-root")
+                .arg(source.project_root())
+                .arg("--source")
+                .arg(source.relative_path())
+                .arg("--adapter")
+                .arg(source.language().adapter())
+                .current_dir(source.project_root())
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true);
+            return command;
+        }
         // A direct handler is run by its registered interpreter, or executed
         // itself. No adapter file exists for it, in any language.
         if source.language() == HandlerLanguage::Direct {
@@ -453,8 +511,8 @@ fn direct_response(bytes: &[u8], request_id: &str) -> Result<HandlerResponse, Fa
 /// A direct handler receives plain JSON terminated by end of file. There is no
 /// framing for it to implement, which is what lets any language serve a route
 /// without an adapter.
-fn encode_request(language: HandlerLanguage, request: &HandlerRequest) -> Result<Vec<u8>, Failure> {
-    if language == HandlerLanguage::Direct {
+fn encode_request(direct_protocol: bool, request: &HandlerRequest) -> Result<Vec<u8>, Failure> {
+    if direct_protocol {
         return serde_json::to_vec(request).map_err(|error| {
             protocol_failure(2004, &format!("Cannot encode the request: {error}"))
         });

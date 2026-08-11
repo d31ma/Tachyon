@@ -13,7 +13,7 @@ TOOLCHAIN="$(grep -oE '"[0-9]+\.[0-9]+\.[0-9]+"' "${REPO_ROOT}/rust-toolchain.to
 # A fixed timestamp keeps the archive reproducible.
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 
-TARGET="${TACHYON_RELEASE_TARGET:-}"
+TARGET="${TAC_RELEASE_TARGET:-}"
 if [[ "${TARGET}" == *apple-darwin ]]; then OS=macos
 elif [[ "${TARGET}" == *linux* ]]; then OS=linux
 elif [[ "${TARGET}" == *windows* ]]; then OS=windows
@@ -32,7 +32,7 @@ echo "==> building ty ${VERSION} for ${ARCH}-${OS}"
 cd "${REPO_ROOT}"
 BUILD_ARGS=(build --release --locked --bin ty)
 if [[ -n "${TARGET}" ]]; then BUILD_ARGS+=(--target "${TARGET}"); fi
-if [[ "${TACHYON_AUDITABLE:-0}" == "1" ]]; then
+if [[ "${TAC_AUDITABLE:-0}" == "1" ]]; then
   cargo auditable "${BUILD_ARGS[@]}"
 else
   cargo "${BUILD_ARGS[@]}"

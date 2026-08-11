@@ -299,10 +299,10 @@ impl ProjectSignals {
             project.push(note(
                 "client.navigation",
                 MigrationStatus::Changed,
-                "Navigation is a real cross-document navigation with view transitions \
-                 and prefetching, not a client-side render, so client state does not \
-                 survive it.",
-                "Hold state that must outlive a navigation in an island, in storage, \
+                "Tac renders each page in the client, while route navigation remains a \
+                 real cross-document navigation with view transitions and prefetching, \
+                 so in-memory state does not survive it.",
+                "Hold state that must outlive a navigation in storage, a shared worker, \
                  or on the server.",
             ));
         }
@@ -342,7 +342,7 @@ fn classify_file(
             migration_failure(&format!("Cannot read {what} '{relative}': {error}"))
         })
     };
-    if matches!(name, "tac.html" | "yon.html") {
+    if name == "tac.html" {
         let source = read("view")?;
         signals.observe(&source);
         classify_view(relative, &source, findings);
@@ -418,12 +418,10 @@ fn classify_route_schema(relative: &str) -> MigrationFinding {
         feature: String::from("server.route_schema"),
         status: MigrationStatus::Unsupported,
         detail: String::from(
-            "The Rust runtime does not discover or enforce legacy OPTIONS.schema.json \
-             request and response schemas.",
+            "The Rust runtime does not discover or enforce legacy OPTIONS.schema.json request and response schemas.",
         ),
         action: Some(String::from(
-            "Validate the request and response in the handler or at the deployment \
-             boundary, or keep the legacy server for this route contract.",
+            "Validate the request and response in the handler or at the deployment boundary, or keep the legacy server for this route contract.",
         )),
     }
 }
@@ -452,9 +450,11 @@ fn classify_name(
         ),
         "yon.html" => finding(
             "view.yon",
-            MigrationStatus::Supported,
-            "Yon view sources are discovered and compiled.",
-            None,
+            MigrationStatus::Unsupported,
+            "Yon is REST-only and does not compile HTML templates.",
+            Some(
+                "Move application views to client/pages/**/tac.html, or return an explicit text/html response from a yon.* handler.",
+            ),
         ),
         "yon.js" | "yon.py" => finding(
             "handler.supervised",
@@ -604,7 +604,7 @@ fn classify_view(relative: &str, source: &str, findings: &mut Vec<MigrationFindi
         push(
             "view.control_tags",
             MigrationStatus::Supported,
-            "Control tags are resolved at compile time.",
+            "Control tags are validated by the compiler and rendered by the owning Tac client or Yon server runtime.",
             None,
         );
     }
@@ -620,17 +620,18 @@ fn classify_view(relative: &str, source: &str, findings: &mut Vec<MigrationFindi
         push(
             "view.legacy_events",
             MigrationStatus::Changed,
-            "data-tac-on-* event hydration is replaced by islands and the \
-             declarative state contract.",
-            Some("Convert the subtree to an island or a declarative action."),
+            "Generated data-tac-on-* markers are replaced by on:<event> bindings in the Tac client render plan.",
+            Some("Author an on:<event> binding and let the Tac renderer own dispatch."),
         );
     }
     if source.contains("tachyon-island") || source.contains("data-tachyon-island") {
         push(
             "view.islands",
-            MigrationStatus::Supported,
-            "Islands are server-rendered and activated by policy.",
-            None,
+            MigrationStatus::Changed,
+            "Tac has no SSR islands; components are created and mounted entirely in the browser.",
+            Some(
+                "Use a registered Tac component tag; hydrate= is accepted only as a mount schedule.",
+            ),
         );
     }
     if source.contains("<script") {
@@ -638,7 +639,9 @@ fn classify_view(relative: &str, source: &str, findings: &mut Vec<MigrationFindi
             "view.inline_script",
             MigrationStatus::Unsupported,
             "Inline scripts are not emitted into generated output.",
-            Some("Move the behavior into an island module."),
+            Some(
+                "Move behavior into a Tac companion module; keep only bounded literal page-state declarations inline.",
+            ),
         );
     }
     if source.contains("<iframe") {
@@ -724,7 +727,7 @@ fn view_sources(root: &Path) -> Vec<std::path::PathBuf> {
                 if !IGNORED_DIRECTORIES.contains(&name.as_str()) && !name.starts_with('.') {
                     pending.push(entry.path());
                 }
-            } else if matches!(name.as_str(), "tac.html" | "yon.html") {
+            } else if name == "tac.html" {
                 sources.push(entry.path());
             }
         }

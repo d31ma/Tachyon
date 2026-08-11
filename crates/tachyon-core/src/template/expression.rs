@@ -15,8 +15,6 @@ pub(crate) type Scope = BTreeMap<String, Value>;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Expression {
     source: String,
-    source_path: String,
-    source_start: usize,
     node: Expr,
 }
 
@@ -48,24 +46,12 @@ impl Expression {
         }
         Ok(Self {
             source: String::from(source),
-            source_path: String::from(source_path),
-            source_start,
             node,
         })
     }
 
     pub(crate) fn source(&self) -> &str {
         &self.source
-    }
-
-    pub(crate) fn evaluate(&self, scope: &Scope) -> Result<Value, Failure> {
-        evaluate(
-            &self.node,
-            scope,
-            &self.source_path,
-            self.source_start,
-            self.source.len(),
-        )
     }
 }
 
@@ -167,8 +153,6 @@ impl Expression {
     pub(crate) fn equals(&self, other: &Self) -> Self {
         Self {
             source: format!("{} == {}", self.source, other.source),
-            source_path: self.source_path.clone(),
-            source_start: self.source_start,
             node: Expr::Compare {
                 left: Box::new(self.node.clone()),
                 operator: CompareOperator::Equal,
@@ -795,309 +779,12 @@ impl Parser<'_> {
     }
 }
 
-fn evaluate(
-    expression: &Expr,
-    scope: &Scope,
-    source_path: &str,
-    source_start: usize,
-    source_len: usize,
-) -> Result<Value, Failure> {
-    let missing = || {
-        expression_failure(
-            source_path,
-            source_start,
-            source_start.saturating_add(source_len),
-            "Template expression references a missing or incompatible value.",
-        )
-    };
-    match expression {
-        Expr::Literal(value) => Ok(value.clone()),
-        Expr::Call { callee, arguments } => evaluate_safe_call(
-            callee,
-            arguments,
-            scope,
-            source_path,
-            source_start,
-            source_len,
-        )
-        .unwrap_or_else(|| {
-            Err(island_expression_failure(
-                source_path,
-                source_start,
-                source_len,
-                "A call needs a companion instance, which exists only inside an island.",
-            ))
-        }),
-        Expr::Await(_) => Err(island_expression_failure(
-            source_path,
-            source_start,
-            source_len,
-            "An awaited value needs async evaluation, which happens only inside an island.",
-        )),
-        Expr::Conditional { .. } | Expr::Arithmetic { .. } => {
-            evaluate_composite(expression, scope, source_path, source_start, source_len)
-        }
-        Expr::Identifier(identifier) => scope.get(identifier).cloned().ok_or_else(missing),
-        Expr::Access(_, _) => {
-            evaluate_access(expression, scope, source_path, source_start, source_len)
-        }
-        Expr::Not(inner) => Ok(Value::Bool(!truthy(&evaluate(
-            inner,
-            scope,
-            source_path,
-            source_start,
-            source_len,
-        )?))),
-        Expr::Logical {
-            left,
-            operator: LogicalOperator::And,
-            right,
-        } => {
-            let left = evaluate(left, scope, source_path, source_start, source_len)?;
-            if !truthy(&left) {
-                return Ok(Value::Bool(false));
-            }
-            Ok(Value::Bool(truthy(&evaluate(
-                right,
-                scope,
-                source_path,
-                source_start,
-                source_len,
-            )?)))
-        }
-        Expr::Logical {
-            left,
-            operator: LogicalOperator::Or,
-            right,
-        } => {
-            let left = evaluate(left, scope, source_path, source_start, source_len)?;
-            if truthy(&left) {
-                return Ok(Value::Bool(true));
-            }
-            Ok(Value::Bool(truthy(&evaluate(
-                right,
-                scope,
-                source_path,
-                source_start,
-                source_len,
-            )?)))
-        }
-        Expr::Compare {
-            left,
-            operator,
-            right,
-        } => {
-            let left = evaluate(left, scope, source_path, source_start, source_len)?;
-            let right = evaluate(right, scope, source_path, source_start, source_len)?;
-            compare(&left, *operator, &right)
-                .map(Value::Bool)
-                .ok_or_else(missing)
-        }
-    }
-}
-
-fn evaluate_safe_call(
-    callee: &Expr,
-    arguments: &[Expr],
-    scope: &Scope,
-    source_path: &str,
-    source_start: usize,
-    source_len: usize,
-) -> Option<Result<Value, Failure>> {
-    let Expr::Access(parent, Access::Property(method)) = callee else {
-        return None;
-    };
-    if method != "join" || arguments.len() > 1 {
-        return None;
-    }
-    let missing = || {
-        expression_failure(
-            source_path,
-            source_start,
-            source_start.saturating_add(source_len),
-            "Template expression references a missing or incompatible value.",
-        )
-    };
-    let result = (|| {
-        let Value::Array(items) = evaluate(parent, scope, source_path, source_start, source_len)?
-        else {
-            return Err(missing());
-        };
-        let separator = if let Some(argument) = arguments.first() {
-            evaluate(argument, scope, source_path, source_start, source_len)?
-                .as_str()
-                .map(String::from)
-                .ok_or_else(missing)?
-        } else {
-            String::from(",")
-        };
-        let mut parts = Vec::with_capacity(items.len());
-        for item in items {
-            match item {
-                Value::Null => parts.push(String::new()),
-                Value::Bool(value) => parts.push(value.to_string()),
-                Value::Number(value) => parts.push(value.to_string()),
-                Value::String(value) => parts.push(value),
-                Value::Array(_) | Value::Object(_) => return Err(missing()),
-            }
-        }
-        Ok(Value::String(parts.join(&separator)))
-    })();
-    Some(result)
-}
-
-fn evaluate_access(
-    expression: &Expr,
-    scope: &Scope,
-    source_path: &str,
-    source_start: usize,
-    source_len: usize,
-) -> Result<Value, Failure> {
-    let Expr::Access(parent, access) = expression else {
-        unreachable!();
-    };
-    let value = evaluate(parent, scope, source_path, source_start, source_len)?;
-    let found = match access {
-        Access::Property(property) => value.as_object().and_then(|object| object.get(property)),
-        Access::Index(index) => value.as_array().and_then(|array| array.get(*index)),
-    };
-    found.cloned().ok_or_else(|| {
-        island_expression_failure(
-            source_path,
-            source_start,
-            source_len,
-            "Template expression references a missing or incompatible value.",
-        )
-    })
-}
-
-fn island_expression_failure(
-    source_path: &str,
-    source_start: usize,
-    source_len: usize,
-    message: &str,
-) -> Failure {
-    expression_failure(
-        source_path,
-        source_start,
-        source_start.saturating_add(source_len),
-        message,
-    )
-}
-
-pub(crate) fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
-    }
-}
-
-fn compare(left: &Value, operator: CompareOperator, right: &Value) -> Option<bool> {
-    match operator {
-        CompareOperator::Equal => Some(left == right),
-        CompareOperator::NotEqual => Some(left != right),
-        CompareOperator::Less
-        | CompareOperator::LessEqual
-        | CompareOperator::Greater
-        | CompareOperator::GreaterEqual => {
-            let ordering = match (left, right) {
-                (Value::Number(left), Value::Number(right)) => {
-                    left.as_f64()?.partial_cmp(&right.as_f64()?)?
-                }
-                (Value::String(left), Value::String(right)) => left.cmp(right),
-                _ => return None,
-            };
-            Some(match operator {
-                CompareOperator::Less => ordering.is_lt(),
-                CompareOperator::LessEqual => ordering.is_le(),
-                CompareOperator::Greater => ordering.is_gt(),
-                CompareOperator::GreaterEqual => ordering.is_ge(),
-                CompareOperator::Equal | CompareOperator::NotEqual => false,
-            })
-        }
-    }
-}
-
 fn identifier_start(byte: u8) -> bool {
     byte.is_ascii_alphabetic() || matches!(byte, b'_' | b'$')
 }
 
 fn identifier_continue(byte: u8) -> bool {
     identifier_start(byte) || byte.is_ascii_digit()
-}
-
-/// Evaluates the two composite node kinds, kept out of `evaluate` so neither
-/// function grows past the project's length limit.
-fn evaluate_composite(
-    expression: &Expr,
-    scope: &Scope,
-    source_path: &str,
-    source_start: usize,
-    source_len: usize,
-) -> Result<Value, Failure> {
-    match expression {
-        Expr::Conditional {
-            condition,
-            when_true,
-            when_false,
-        } => {
-            let condition = evaluate(condition, scope, source_path, source_start, source_len)?;
-            let taken = if truthy(&condition) {
-                when_true
-            } else {
-                when_false
-            };
-            evaluate(taken, scope, source_path, source_start, source_len)
-        }
-        Expr::Arithmetic {
-            left,
-            operator,
-            right,
-        } => {
-            let left = evaluate(left, scope, source_path, source_start, source_len)?;
-            let right = evaluate(right, scope, source_path, source_start, source_len)?;
-            arithmetic(&left, *operator, &right).ok_or_else(|| {
-                expression_failure(
-                    source_path,
-                    source_start,
-                    source_start.saturating_add(source_len),
-                    "Template expression references a missing or incompatible value.",
-                )
-            })
-        }
-        _ => unreachable!("caller matched a composite"),
-    }
-}
-
-/// Applies one arithmetic operator, concatenating when `+` sees a string.
-///
-/// A template uses `+` mostly to build a path or a label, so a string on
-/// either side concatenates. Anything else needs two numbers, and division by
-/// zero is a missing value rather than an infinity.
-fn arithmetic(left: &Value, operator: ArithmeticOperator, right: &Value) -> Option<Value> {
-    if operator == ArithmeticOperator::Add && (left.is_string() || right.is_string()) {
-        let render = |value: &Value| match value {
-            Value::String(text) => text.clone(),
-            Value::Null => String::new(),
-            other => other.to_string(),
-        };
-        return Some(Value::String(format!("{}{}", render(left), render(right))));
-    }
-    let left = left.as_f64()?;
-    let right = right.as_f64()?;
-    let result = match operator {
-        ArithmeticOperator::Add => left + right,
-        ArithmeticOperator::Subtract => left - right,
-        ArithmeticOperator::Multiply => left * right,
-        ArithmeticOperator::Divide => left / right,
-    };
-    if !result.is_finite() {
-        return None;
-    }
-    serde_json::Number::from_f64(result).map(Value::Number)
 }
 
 fn expression_failure(source_path: &str, start: usize, end: usize, message: &str) -> Failure {
@@ -1115,95 +802,29 @@ fn expression_failure(source_path: &str, start: usize, end: usize, message: &str
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{Expression, Scope, truthy};
-    use serde_json::{Value, json};
-
-    fn expression(source: &str) -> Expression {
-        Expression::parse(source, "server/routes/yon.html", 10).unwrap_or_else(|_| unreachable!())
-    }
+    use super::Expression;
 
     #[test]
-    fn conditional_and_arithmetic_expressions_evaluate() {
-        let scope = Scope::from([
-            (String::from("slug"), Value::String(String::from("store"))),
-            (String::from("active"), Value::String(String::from("store"))),
-            (String::from("count"), Value::from(7)),
-        ]);
-        let evaluate = |source: &str| {
-            Expression::parse(source, "client/pages/tac.html", 0)
-                .expect(source)
-                .evaluate(&scope)
-                .expect(source)
-        };
-
-        // A ternary is how every template language picks a value inline.
-        assert_eq!(
-            evaluate("slug === active ? 'on' : 'off'"),
-            Value::from("on")
-        );
-        assert_eq!(
-            evaluate("slug === 'other' ? 'on' : 'off'"),
-            Value::from("off")
-        );
-        // A null alternative drops the attribute rather than printing "null".
-        assert_eq!(evaluate("slug === 'other' ? 'page' : null"), Value::Null);
-
-        // `+` concatenates when either side is a string, which is what a
-        // template uses it for, and adds otherwise.
-        assert_eq!(evaluate("'/atlas/' + slug"), Value::from("/atlas/store"));
-        assert_eq!(evaluate("count + 1"), Value::from(8.0));
-        assert_eq!(evaluate("count * 2 - 4"), Value::from(10.0));
-        // Multiplication binds tighter than addition.
-        assert_eq!(evaluate("1 + count * 2"), Value::from(15.0));
-
-        // Division by zero is a missing value, not an infinity.
-        assert!(
-            Expression::parse("count / 0", "client/pages/tac.html", 0)
-                .expect("parse")
-                .evaluate(&scope)
-                .is_err()
-        );
-        // A ternary without its alternative is refused.
-        assert!(Expression::parse("slug ? 'on'", "client/pages/tac.html", 0).is_err());
-    }
-
-    #[test]
-    fn paths_literals_boolean_logic_and_comparisons_evaluate() {
-        let mut scope = Scope::new();
-        scope.insert(
-            String::from("product"),
-            json!({"name": "Tachyon", "prices": [3, 7]}),
-        );
-        scope.insert(String::from("active"), json!(true));
-        for (source, expected) in [
-            ("product.name", json!("Tachyon")),
-            ("product.prices[1]", json!(7)),
-            ("active && product.prices[0] < 4", json!(true)),
-            ("!false && ('a' === \"a\")", json!(true)),
-            ("null != product.name || false", json!(true)),
-            ("3.5e1 >= 35", json!(true)),
-            ("7 > 3 && 3 <= 3", json!(true)),
-            ("'b' > 'a' && 'a' <= 'a'", json!(true)),
-            ("false && missing", json!(false)),
-            ("true || missing", json!(true)),
-            ("\"line\\nquote\\\"slash\\\\\" !== ''", json!(true)),
+    fn valid_expressions_serialize_to_client_ast() {
+        for source in [
+            "product.name",
+            "product.prices[1]",
+            "active && product.prices[0] < 4",
+            "slug === active ? 'on' : 'off'",
+            "'/atlas/' + slug",
+            "await note()",
         ] {
-            assert_eq!(
-                expression(source)
-                    .evaluate(&scope)
-                    .unwrap_or_else(|_| unreachable!()),
-                expected
-            );
+            let expression = Expression::parse(source, "client/pages/tac.html", 0).expect(source);
+            let plan = expression.to_client_json();
+            assert!(plan.starts_with('{'), "{source}: {plan}");
+            assert!(!plan.contains(source), "authored source leaked: {source}");
         }
     }
 
     #[test]
-    fn unsupported_missing_malformed_and_excessive_expressions_fail() {
-        let scope = Scope::new();
+    fn unsupported_malformed_and_excessive_expressions_fail() {
         for source in [
             "",
-            "missing",
-            "call()",
             "value = 1",
             "object.__proto__",
             "items[-1]",
@@ -1217,19 +838,10 @@ mod tests {
             &"(".repeat(34),
             &"x".repeat(1_025),
         ] {
-            let result = Expression::parse(source, "client/pages/tac.html", 0)
-                .and_then(|parsed| parsed.evaluate(&scope));
-            assert!(result.is_err(), "{source}");
-        }
-    }
-
-    #[test]
-    fn json_truthiness_is_explicit() {
-        for value in [json!(null), json!(false), json!(0), json!("")] {
-            assert!(!truthy(&value));
-        }
-        for value in [json!(true), json!(1), json!("x"), json!([]), json!({})] {
-            assert!(truthy(&value));
+            assert!(
+                Expression::parse(source, "client/pages/tac.html", 0).is_err(),
+                "{source}"
+            );
         }
     }
 }

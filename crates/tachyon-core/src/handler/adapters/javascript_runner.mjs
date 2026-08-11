@@ -87,6 +87,36 @@ function failure(requestId, code, message, status = 500) {
   })
 }
 
+function responseDescriptor(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
+  if (!Object.hasOwn(value, 'headers')) return null
+  const allowed = new Set(['status', 'headers', 'body'])
+  if (Object.keys(value).some((name) => !allowed.has(name))) return null
+  const status = value.status ?? 200
+  if (!Number.isInteger(status) || status < 100 || status > 599) {
+    throw new TypeError('Handler response status must be an integer from 100 through 599.')
+  }
+  if (value.headers === null || typeof value.headers !== 'object' || Array.isArray(value.headers)) {
+    throw new TypeError('Handler response headers must be an object.')
+  }
+  const headers = {}
+  for (const [name, raw] of Object.entries(value.headers)) {
+    const values = Array.isArray(raw) ? raw : [raw]
+    if (!values.length || values.some((item) => typeof item !== 'string')) {
+      throw new TypeError(`Handler response header '${name}' must contain strings.`)
+    }
+    headers[name.toLowerCase()] = values
+  }
+  let body
+  if (Object.hasOwn(value, 'body') && value.body !== undefined) {
+    const data = typeof value.body === 'string'
+      ? value.body
+      : JSON.stringify(value.body)
+    body = { encoding: 'utf8', data }
+  }
+  return { status, headers, body }
+}
+
 async function invoke(request) {
   try {
     const sourceText = await readFile(pathToFileURL(source), 'utf8')
@@ -95,54 +125,6 @@ async function invoke(request) {
     const Handler = module.Handler ?? module.default
     if (typeof Handler !== 'function') {
       failure(request.request_id, 'TY2201', 'Module must export a Handler class.')
-      return
-    }
-    if (request.operation === 'view.context') {
-      const staticValues = {}
-      for (const [name, descriptor] of Object.entries(
-        Object.getOwnPropertyDescriptors(Handler),
-      )) {
-        if (['length', 'name', 'prototype'].includes(name)) continue
-        if (!Object.hasOwn(descriptor, 'value')) continue
-        if (!descriptor.enumerable) continue
-        if (typeof descriptor.value === 'function') continue
-        staticValues[name] = descriptor.value
-      }
-      const method = Handler.GET
-      let responseValues = {}
-      if (method !== undefined) {
-        if (typeof method !== 'function') {
-          failure(request.request_id, 'TY1501', 'Handler.GET must be a static function.')
-          return
-        }
-        const result = await method.call(Handler, request)
-        if (
-          result === null
-          || typeof result !== 'object'
-          || Array.isArray(result)
-          || Object.getPrototypeOf(result) !== Object.prototype
-        ) {
-          failure(request.request_id, 'TY1501', 'Handler.GET must return a plain object for view context.')
-          return
-        }
-        responseValues = result
-      }
-      writeFrame({
-        protocol_version: 1,
-        kind: 'response',
-        request_id: request.request_id,
-        status: 200,
-        headers: {
-          'content-type': ['application/json; charset=utf-8'],
-        },
-        body: {
-          encoding: 'utf8',
-          data: JSON.stringify({
-            static_values: staticValues,
-            response_values: responseValues,
-          }),
-        },
-      })
       return
     }
     const method = Handler[request.method]
@@ -156,6 +138,18 @@ async function invoke(request) {
       return
     }
     const result = await method.call(Handler, request)
+    const explicit = responseDescriptor(result)
+    if (explicit) {
+      writeFrame({
+        protocol_version: 1,
+        kind: 'response',
+        request_id: request.request_id,
+        status: explicit.status,
+        headers: explicit.headers,
+        body: explicit.body,
+      })
+      return
+    }
     let data
     try {
       data = JSON.stringify(result === undefined ? null : result)

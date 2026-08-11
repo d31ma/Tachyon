@@ -17,8 +17,9 @@ is a statement about observable behavior, never about internal structure.
 
 Artifacts are **not** compared. The two implementations deliberately emit
 different output: the legacy build produces a single-page shell with a client
-router, a service worker, and per-page chunks; the Rust build produces
-prerendered static HTML per route. Comparing bytes would measure nothing.
+router, a service worker, and per-page chunks; the Rust build produces a
+per-route bootstrap, a compiled render plan, and the Tac client runtime.
+Comparing bytes would measure nothing.
 
 What is compared is what a user or an assistive technology can observe:
 
@@ -33,8 +34,8 @@ What is compared is what a user or an assistive technology can observe:
    by the other, or the difference must be recorded in the ledger.
 
 Both implementations are served over HTTP and rendered in the same real
-browser. The legacy output is measured after hydration, because that is when
-its result exists.
+browser. Their output is measured after the respective client runtime owns and
+renders the observable DOM.
 
 ## 3. The Corpus
 

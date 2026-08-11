@@ -1,8 +1,8 @@
 use crate::failure::diagnostic;
 use crate::failure::source_span;
 use crate::template::{
-    ComponentDefinition, ComponentRegistry, SCOPE_ATTRIBUTE, TemplateFrontend, ViewRenderer,
-    compose_route_context,
+    ClientViewRenderer, ComponentDefinition, ComponentRegistry, SCOPE_ATTRIBUTE,
+    TAC_CLIENT_RUNTIME, TemplateFrontend, client_route_context,
 };
 use crate::{CompanionKind, Failure, ProjectDiscovery};
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
-const BUILD_STATE_VERSION: u8 = 2;
+const BUILD_STATE_VERSION: u8 = 4;
 /// Cross-document view transitions, opted into by every generated page.
 ///
 /// This is the platform's own answer to the transition half of a single-page
@@ -31,9 +31,9 @@ const MAX_SHARED_ASSETS: usize = 4_096;
 const MAX_SHARED_ASSET_TOTAL_BYTES: u64 = 64 * 1_048_576;
 const MAX_BUILD_CONFIG_BYTES: u64 = 1_048_576;
 const POST_BUNDLE_RUNNER: &str = r"import { pathToFileURL } from 'node:url'
-const source = process.env.TACHYON_CONFIG
-const root = process.env.TACHYON_STAGE
-const target = process.env.TACHYON_TARGET
+const source = process.env.TAC_CONFIG
+const root = process.env.TAC_STAGE
+const target = process.env.TAC_TARGET
 if (!source || !root || !target) throw new Error('missing Tachyon hook context')
 const loaded = await import(`${pathToFileURL(source).href}?tachyon=${Date.now()}`)
 const hook = loaded.postBundle ?? loaded.default?.postBundle
@@ -41,91 +41,21 @@ if (hook !== undefined && typeof hook !== 'function') throw new Error('postBundl
 if (hook) await hook({ distRoot: root, targets: [target], targetRoots: { [target]: root } })
 ";
 const NAVIGATION_STYLESHEET: &str = "@view-transition { navigation: auto; }\n\
-tachyon-island { display: block; }\n";
+tachyon-component, tachyon-island { display: block; }\n";
 /// Reference to the navigation stylesheet.
-const NAVIGATION_LINK: &str = r#"<link rel="stylesheet" href="/.tachyon/navigation.css">"#;
+const NAVIGATION_LINK: &str =
+    r#"<link rel="stylesheet" href="/.tachyon/navigation.css" data-tachyon-runtime>"#;
 /// Link to the bundled component stylesheet, emitted only when one exists.
-const COMPONENT_STYLE_LINK: &str = r#"<link rel="stylesheet" href="/.tachyon/components.css">"#;
+const COMPONENT_STYLE_LINK: &str =
+    r#"<link rel="stylesheet" href="/.tachyon/components.css" data-tachyon-runtime>"#;
 /// Speculation rules that prefetch same-origin routes before they are needed.
 ///
 /// This is the platform's answer to the instant-navigation half. The payload is
 /// JSON, not executable script, and `\'inline-speculation-rules\'` is the CSP
 /// keyword defined for exactly this case.
-const SPECULATION_RULES: &str = r#"<script type="speculationrules">
+const SPECULATION_RULES: &str = r#"<script type="speculationrules" data-tachyon-runtime>
 {"prefetch":[{"where":{"href_matches":"/*"},"eagerness":"moderate"}]}
 </script>"#;
-/// Delegated event runtime. It never evaluates a binding as JavaScript: the
-/// marker carries a handler name and literal arguments, and the handler must
-/// be an exported function of the route's client module.
-const EVENT_RUNTIME: &str = r"const bounded = (error) => String(error?.message || error || 'Tac handler failed.').slice(0, 512)
-const clientModule = () => {
-  const path = location.pathname.replace(/\/+$/, '')
-  return new URL(`${path}/client.js`, location.origin).href
-}
-let pending
-const load = () => (pending ??= import(clientModule()))
-// The compiler emits a parsed binding, never source to evaluate: {h: handler,
-// a: [{v: literal} | {e: '$event property path'}]}.
-const resolve = (argument, event) => {
-  if (!argument || typeof argument !== 'object') return undefined
-  if ('v' in argument) return argument.v
-  if (!('e' in argument)) return undefined
-  if (argument.e === '') return event
-  let value = event
-  for (const segment of String(argument.e).split('.')) {
-    if (value === null || value === undefined) return undefined
-    value = value[segment]
-  }
-  return value
-}
-const bind = (type) => {
-  const marker = `data-tac-on-${type.replaceAll(':', '__')}`
-  document.addEventListener(type, async (event) => {
-    const target = event.target?.closest?.(`[${marker}]`)
-    if (!target) return
-    let binding
-    try {
-      binding = JSON.parse(target.getAttribute(marker) || 'null')
-    } catch {
-      binding = null
-    }
-    if (!binding) return
-    // A binding inside an island resolves against that island's companion, so
-    // a component owns its own behaviour and its own state.
-    const island = target.closest?.('tachyon-island')?.tachyonIsland ?? null
-    try {
-      const args = (binding.a || []).map((argument) => resolve(argument, event))
-      if (binding.s) {
-        if (!island) throw new TypeError('An assigning binding needs an island companion.')
-        const current = island.instance[binding.s]
-        const value = args[0]
-        island.instance[binding.s] =
-          binding.op === '+=' ? current + value
-          : binding.op === '-=' ? current - value
-          : binding.op === '*=' ? current * value
-          : binding.op === '/=' ? current / value
-          : value
-        await island.refresh()
-        document.documentElement.dataset.tachyonEvents = 'handled'
-        return
-      }
-      const owner = island ? island.instance : await load()
-      const handler = owner[binding.h]
-      if (typeof handler !== 'function') {
-        throw new TypeError(`Tac handler '${binding.h}' is not an exported function.`)
-      }
-      await handler.call(owner, event, ...args)
-      if (island) await island.refresh()
-      document.documentElement.dataset.tachyonEvents = 'handled'
-    } catch (error) {
-      document.documentElement.dataset.tachyonEventError = 'handler_failed'
-      console.error(`[Tachyon event] ${bounded(error)}`)
-    }
-  }, true)
-}
-// The event list is fixed at build time; a module script has no currentScript.
-for (const type of __EVENTS__) bind(type)
-";
 /// Offline cache, served from the root so its scope covers every page.
 ///
 /// A service worker only controls pages at or below its own path, so this
@@ -157,7 +87,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url)
   // Cross-origin requests and the live-reload channel are left alone.
   if (url.origin !== self.location.origin) return
-  if (url.pathname.startsWith('/.tachyon/live-reload')) return
+  if (url.pathname.startsWith('/.tachyon/live-reload') || url.pathname === '/.tachyon/hot') return
   // A navigation stays network-first so a deployment is picked up at once,
   // with the cache as the offline fallback. A versioned static asset cannot
   // change under its own URL, so it is served cache-first.
@@ -207,7 +137,7 @@ if ('serviceWorker' in navigator) {
 
 /// Tag registering the offline cache, injected into every page.
 const SERVICE_WORKER_LINK: &str =
-    r#"<script type="module" src="/.tachyon/register-sw.js"></script>"#;
+    r#"<script type="module" src="/.tachyon/register-sw.js" data-tachyon-runtime></script>"#;
 
 /// Compatibility entrypoint retained for applications and release checks that
 /// address the former SPA runtime directly. Navigation itself is now handled
@@ -215,259 +145,6 @@ const SERVICE_WORKER_LINK: &str =
 const COMPATIBILITY_SPA_RUNTIME: &str = r"window.__tc_rerender ??= async () => {
   window.dispatchEvent(new CustomEvent('tachyon:rerender'))
 }
-";
-
-const ISLAND_RUNTIME: &str = r"// Evaluates the bounded AST the compiler emitted. This interprets a fixed
-// shape; it never parses or evaluates JavaScript. See ADR 0010.
-const evaluateNode = async (node, instance) => {
-  if (!node || typeof node !== 'object') return undefined
-  switch (node.k) {
-    case 'await': return await evaluateNode(node.e, instance)
-    case 'lit': return node.v
-    case 'id': return instance?.[node.n]
-    case 'get': {
-      const target = await evaluateNode(node.o, instance)
-      return target === null || target === undefined ? undefined : target[node.p]
-    }
-    case 'idx': {
-      const target = await evaluateNode(node.o, instance)
-      return Array.isArray(target) ? target[node.i] : undefined
-    }
-    case 'not': return !await evaluateNode(node.e, instance)
-    case 'cmp': {
-      const left = await evaluateNode(node.l, instance)
-      const right = await evaluateNode(node.r, instance)
-      if (node.op === 'eq') return left === right
-      if (node.op === 'ne') return left !== right
-      if (node.op === 'lt') return left < right
-      if (node.op === 'le') return left <= right
-      if (node.op === 'gt') return left > right
-      return left >= right
-    }
-    case 'log': {
-      const left = await evaluateNode(node.l, instance)
-      if (node.op === 'and') return left ? await evaluateNode(node.r, instance) : left
-      return left ? left : await evaluateNode(node.r, instance)
-    }
-    case 'num': {
-      const left = await evaluateNode(node.l, instance)
-      const right = await evaluateNode(node.r, instance)
-      if (node.op === 'add') return left + right
-      if (node.op === 'sub') return left - right
-      if (node.op === 'mul') return left * right
-      return left / right
-    }
-    case 'if':
-      return await evaluateNode(node.c, instance)
-        ? await evaluateNode(node.t, instance)
-        : await evaluateNode(node.f, instance)
-    case 'call': {
-      // A call resolves against the instance that owns the method, so `this`
-      // is the companion for `x()` and the object for `a.b()`.
-      const callee = node.c
-      const owner = callee.k === 'get' || callee.k === 'idx'
-        ? await evaluateNode(callee.o, instance)
-        : instance
-      const target = await evaluateNode(callee, instance)
-      if (typeof target !== 'function') return undefined
-      return target.apply(owner, await Promise.all((node.a || []).map((argument) => evaluateNode(argument, instance))))
-    }
-    default: return undefined
-  }
-}
-
-const display = (value) => {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'object') return ''
-  return String(value)
-}
-
-// Replaces every deferred marker with a text node, and keeps the pair so the
-// island can refresh it. An island's expressions are a small fixed list, so
-// re-running all of them costs less than tracking which one changed.
-const bindDeferred = async (root, instance) => {
-  const bindings = []
-  for (const marker of root.querySelectorAll('tachyon-expr[data-tachyon-expression]')) {
-    let node
-    try {
-      node = JSON.parse(marker.dataset.tachyonExpression)
-    } catch {
-      continue
-    }
-    const text = document.createTextNode(display(await evaluateNode(node, instance)))
-    marker.replaceWith(text)
-    bindings.push({ node, text })
-  }
-  return bindings
-}
-
-const refresh = async (state) => {
-  for (const binding of state.bindings) {
-    binding.text.data = display(await evaluateNode(binding.node, state.instance))
-  }
-}
-
-const boundedError = (error) => String(error?.message || error || 'Island activation failed.').slice(0, 512)
-const assetUrl = (raw, page = false) => {
-  const value = new URL(raw, location.href)
-  const webAsset = value.origin === location.origin && value.pathname.startsWith('/.tachyon/components/')
-  const nativeAsset = value.origin === location.origin
-    && value.pathname.includes('/WebBundle/tachyon-runtime/components/')
-  const pageAsset = page && value.origin === location.origin && value.pathname.endsWith('/client.js')
-  if (!webAsset && !nativeAsset && !pageAsset) {
-    throw new TypeError('Tac island asset URL is not a generated same-origin asset.')
-  }
-  return value.href
-}
-
-// A companion compiled to wasm is presented as an ordinary instance: property
-// reads become get, assignments become set, calls become call. Everything
-// above this — deferred expressions, bindings, assignment, refresh — cannot
-// tell the difference. See ADR 0011.
-// A compiler that targets WASI — Swift's, and every C-family one — emits its
-// imports whether or not a companion performs any I/O, and initialises through
-// _initialize rather than at instantiation. Neither is something a companion
-// author asked for, so the host answers for both: an environment that does
-// nothing, and a call before first use. A module with no imports, like rustc's,
-// ignores all of it.
-const WASI = new Proxy({}, {
-  get: (_, name) => (name === 'proc_exit'
-    ? () => { throw new Error('Tac wasm companion exited.') }
-    : () => 0),
-})
-const bareInvoke = async (url) => {
-  const response = await fetch(url)
-  const { instance } = await WebAssembly.instantiate(await response.arrayBuffer(), { wasi_snapshot_preview1: WASI })
-  const { memory, tac_alloc, tac_invoke, _initialize } = instance.exports
-  if (!memory || typeof tac_alloc !== 'function' || typeof tac_invoke !== 'function') {
-    throw new TypeError('Tac wasm companion must export memory, tac_alloc, and tac_invoke.')
-  }
-  if (typeof _initialize === 'function') _initialize()
-  const encoder = new TextEncoder()
-  const decoder = new TextDecoder()
-  return (request) => {
-    const payload = encoder.encode(JSON.stringify(request))
-    const pointer = tac_alloc(payload.length)
-    new Uint8Array(memory.buffer, pointer, payload.length).set(payload)
-    const packed = BigInt(tac_invoke(pointer, payload.length))
-    const outPointer = Number(packed >> 32n)
-    const outLength = Number(packed & 0xffffffffn)
-    return JSON.parse(decoder.decode(new Uint8Array(memory.buffer, outPointer, outLength)))
-  }
-}
-// A toolchain that emits only WasmGC — Dart, Kotlin — cannot produce a module
-// that instantiates on its own, so it ships one the compiler emits beside it.
-// The protocol is identical; only the way in differs.
-const gluedInvoke = async (url) => {
-  const module = await import(url)
-  if (typeof module.tacInvoke !== 'function') {
-    throw new TypeError('Tac glued companion must export tacInvoke.')
-  }
-  return (request) => JSON.parse(module.tacInvoke(JSON.stringify(request)))
-}
-const wasmInstance = async (url, props) => {
-  const answer = url.endsWith('.mjs') ? await gluedInvoke(url) : await bareInvoke(url)
-  const invoke = (request) => {
-    const response = answer(request)
-    if (response.error) throw new Error(response.error)
-    return response.value
-  }
-  // init declares the members, so the host never guesses whether a name is a
-  // field or a method, and an unknown name is undefined as on a plain object.
-  const members = invoke({ op: 'init', props }) ?? {}
-  const fields = new Set(members.fields || [])
-  const methods = new Set(members.methods || [])
-  return new Proxy({}, {
-    get: (_, name) => {
-      if (typeof name !== 'string') return undefined
-      if (fields.has(name)) return invoke({ op: 'get', name })
-      if (methods.has(name)) return (...args) => invoke({ op: 'call', name, args })
-      return undefined
-    },
-    set: (_, name, value) => {
-      invoke({ op: 'set', name, value })
-      return true
-    },
-  })
-}
-const activate = async (root) => {
-  if (root.dataset.tachyonActive === 'true') return true
-  root.dataset.tachyonActive = 'true'
-  try {
-    const props = JSON.parse(root.dataset.tachyonProps || '{}')
-    let instance
-    if (root.dataset.tachyonWasm) {
-      instance = await wasmInstance(assetUrl(root.dataset.tachyonWasm), props)
-    } else {
-      const module = await import(assetUrl(root.dataset.tachyonModule, root.dataset.tachyonPage === 'true'))
-      const Component = module.default
-      if (typeof Component !== 'function') {
-        throw new TypeError('Tac island must export a default class.')
-      }
-      instance = new Component(props)
-      if (root.dataset.tachyonPage === 'true') Object.assign(instance, props)
-    }
-    const bindings = await bindDeferred(root, instance)
-    // The delegated event runtime finds this to resolve a binding against the
-    // instance that owns it, and to refresh after a handler runs.
-    root.tachyonIsland = { instance, bindings, refresh: null }
-    root.tachyonIsland.refresh = () => refresh(root.tachyonIsland)
-    // A wasm companion supplies values and does not drive the DOM, so hydrate
-    // is optional there.
-    if (typeof instance.hydrate === 'function') {
-      const controller = new AbortController()
-      await instance.hydrate(root, controller.signal)
-    } else if (!root.dataset.tachyonWasm && root.dataset.tachyonPage !== 'true') {
-      throw new TypeError('Tac island must define hydrate(root, signal).')
-    }
-    for (const method of instance.constructor?.__tachyonOnMount || []) {
-      if (typeof instance[method] === 'function') await instance[method]()
-    }
-    await refresh(root.tachyonIsland)
-    root.removeAttribute('data-tachyon-island-error')
-    return true
-  } catch (error) {
-    root.dataset.tachyonActive = 'false'
-    root.dataset.tachyonIslandError = 'activation_failed'
-    console.error(`[Tachyon island] ${boundedError(error)}`)
-    return false
-  }
-}
-const schedule = (root) => {
-  const policy = root.dataset.tachyonHydrate
-  if (policy === 'load') queueMicrotask(() => activate(root))
-  else if (policy === 'idle') (globalThis.requestIdleCallback || ((fn) => setTimeout(fn, 1)))(() => activate(root))
-  else if (policy === 'visible') {
-    if (!globalThis.IntersectionObserver) {
-      queueMicrotask(() => activate(root))
-      return
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        observer.disconnect()
-        void activate(root)
-      }
-    }, { rootMargin: '100px' })
-    observer.observe(root)
-  } else if (policy === 'interaction') {
-    const events = ['pointerdown', 'keydown', 'submit', 'input', 'focusin']
-    const listener = async (event) => {
-      if (event.cancelable) event.preventDefault()
-      event.stopImmediatePropagation()
-      events.forEach((name) => root.removeEventListener(name, listener, true))
-      const target = event.target
-      if (await activate(root)) {
-        target.dispatchEvent(new Event(event.type, { bubbles: true, cancelable: true }))
-      } else {
-        events.forEach((name) => root.addEventListener(name, listener, true))
-      }
-    }
-    events.forEach((name) => root.addEventListener(name, listener, true))
-  }
-}
-document
-  .querySelectorAll('tachyon-island[data-tachyon-module], tachyon-island[data-tachyon-wasm]')
-  .forEach(schedule)
 ";
 
 /// Options for one deterministic web build.
@@ -559,7 +236,7 @@ impl WebCompiler {
         runtime.block_on(Self::build_async(project_root, options))
     }
 
-    /// Builds a Tachyon project with view contexts and island rendering.
+    /// Builds the client-rendered Tac views in a Tachyon project.
     ///
     /// # Errors
     ///
@@ -585,18 +262,14 @@ impl WebCompiler {
             };
 
             let template_source = read_template_source(absolute, source)?;
-            let (template_source, inline_state) = if route.view_kind() == Some(crate::ViewKind::Tac)
-            {
+            let (template_source, inline_state) =
                 match strip_page_state_scripts(&template_source, source) {
                     Ok(value) => value,
                     Err(failure) => {
                         diagnostics.extend_from_slice(failure.diagnostics());
                         (mask_script_blocks(&template_source), String::new())
                     }
-                }
-            } else {
-                (template_source, String::new())
-            };
+                };
             let mut page_scope = parse_page_state(&inline_state);
             let page_module = route.companions().iter().find(|companion| {
                 matches!(
@@ -609,7 +282,6 @@ impl WebCompiler {
             {
                 page_scope.extend(parse_page_class_fields(&source));
             }
-            let page_island = !inline_state.trim().is_empty() && page_module.is_some();
             match TemplateFrontend::compile(&template_source, source, &component_names) {
                 Ok(program) => {
                     programs.insert(
@@ -617,7 +289,7 @@ impl WebCompiler {
                         RouteProgram {
                             program,
                             page_scope,
-                            page_island,
+                            has_page_module: page_module.is_some(),
                             inline_state,
                         },
                     );
@@ -629,7 +301,7 @@ impl WebCompiler {
         if !diagnostics.is_empty() {
             return Err(Failure::new(diagnostics));
         }
-        let has_page_islands = programs.values().any(|route| route.page_island);
+        let has_tac_routes = !programs.is_empty();
 
         let previous = if options.incremental {
             load_build_state(&output_directory)
@@ -638,9 +310,8 @@ impl WebCompiler {
         };
         let mut files = Vec::new();
         let mut next_state = BuildState::default();
-        let mut manifest = project.route_graph().manifest();
+        let manifest = project.route_graph().manifest();
         let mut all_islands = BTreeSet::new();
-        let mut all_events: BTreeSet<String> = BTreeSet::new();
         let mut compiled_routes = 0;
         let mut reused_routes = 0;
 
@@ -688,7 +359,7 @@ impl WebCompiler {
                     &companion.absolute_source_path,
                     bytes,
                 );
-                let bytes = if route_program.page_island
+                let bytes = if !route_program.inline_state.trim().is_empty()
                     && matches!(
                         companion.kind,
                         CompanionKind::ClientModule | CompanionKind::TypeScriptModule
@@ -722,7 +393,6 @@ impl WebCompiler {
                 });
             files.extend(companion_files.iter().cloned());
             let route_state;
-            let declaration;
             if let Some(prior) = prior {
                 for artifact in prior.artifacts.keys() {
                     files.push((
@@ -731,39 +401,30 @@ impl WebCompiler {
                     ));
                 }
                 all_islands.extend(prior.islands.iter().cloned());
-                all_events.extend(prior.events.iter().cloned());
                 route_state = prior.clone();
-                declaration = tachyon_contracts::RouteContext::default();
                 reused_routes += 1;
             } else {
-                let context = compose_route_context(project.root(), route).await?;
-                declaration = context.declaration.clone();
-                let mut render_scope = context.values.clone();
+                let mut render_scope = client_route_context();
                 render_scope.extend(route_program.page_scope.clone());
                 let module_href = format!("/{}", portable_path(&route_directory.join("client.js")));
-                let rendered = if route_program.page_island {
-                    ViewRenderer::new(&components).render_page_island(
-                        program,
-                        route.route(),
-                        &output_portable,
-                        &render_scope,
-                        &module_href,
-                    )?
-                } else {
-                    ViewRenderer::new(&components).render(
-                        program,
-                        route.route(),
-                        &output_portable,
-                        &render_scope,
-                    )?
-                };
+                let rendered = ClientViewRenderer::new(&components).render(
+                    program,
+                    &output_portable,
+                    route_program
+                        .has_page_module
+                        .then_some(module_href.as_str()),
+                    &render_scope,
+                )?;
+                let rendered_html = rendered.html;
+                let source_map = rendered.source_map;
+                let route_islands = rendered.components;
+                let page_bindings = rendered.page_bindings;
                 let ir_path = PathBuf::from(format!(".tachyon/view-ir/{key}.json"));
                 let map_path = PathBuf::from(format!(".tachyon/source-maps/{key}.map.json"));
                 // Collect the delegated event types this route binds. The
                 // marker is emitted literally, so the rendered document is the
                 // authoritative source.
-                let route_events = event_types(&rendered.html);
-                if rendered.page_bindings
+                if page_bindings
                     && !route
                         .companions()
                         .iter()
@@ -781,45 +442,32 @@ impl WebCompiler {
                         None,
                     )));
                 }
-                all_events.extend(route_events.iter().cloned());
-
                 // Every page opts into platform navigation: prefetch for
                 // instant loads, view transitions for smooth ones. Both
                 // degrade silently where unsupported.
-                let mut html = rendered.html;
+                let mut html = rendered_html;
                 html = inject_before(&html, "</head>", NAVIGATION_LINK);
                 if !component_styles.is_empty() {
                     html = inject_before(&html, "</head>", COMPONENT_STYLE_LINK);
                 }
                 html = inject_before(&html, "</head>", SPECULATION_RULES);
                 html = inject_before(&html, "</body>", SERVICE_WORKER_LINK);
-                if !route_events.is_empty() {
-                    html = inject_before(
-                        &html,
-                        "</body>",
-                        r#"<script type="module" src="/.tachyon/events.js"></script>"#,
-                    );
-                }
                 for (companion, (relative, _)) in route.companions().iter().zip(&companion_files) {
                     let href = format!("/{}", portable_path(relative));
                     html = match companion.kind {
                         CompanionKind::Style => inject_before(
                             &html,
                             "</head>",
-                            &format!(r#"<link rel="stylesheet" href="{href}">"#),
+                            &format!(
+                                r#"<link rel="stylesheet" href="{href}" data-tachyon-runtime>"#
+                            ),
                         ),
-                        CompanionKind::ClientModule | CompanionKind::TypeScriptModule => {
-                            inject_before(
-                                &html,
-                                "</body>",
-                                &format!(r#"<script type="module" src="{href}"></script>"#),
-                            )
-                        }
+                        CompanionKind::ClientModule | CompanionKind::TypeScriptModule => html,
                     };
                 }
                 let html_bytes = html.into_bytes();
                 let ir_bytes = pretty_json(&program.view_ir(), "View IR v1")?;
-                let map_bytes = pretty_json(&rendered.source_map, "View Source Map v1")?;
+                let map_bytes = pretty_json(&source_map, "View Source Map v1")?;
                 let artifacts = BTreeMap::from([
                     (output_portable.clone(), sha256_bytes(&html_bytes)),
                     (portable_path(&ir_path), sha256_bytes(&ir_bytes)),
@@ -828,21 +476,13 @@ impl WebCompiler {
                 files.push((output, html_bytes));
                 files.push((ir_path, ir_bytes));
                 files.push((map_path, map_bytes));
-                all_islands.extend(rendered.islands.iter().cloned());
+                all_islands.extend(route_islands.iter().cloned());
                 route_state = RouteBuildState {
                     input_sha,
                     artifacts,
-                    islands: rendered.islands,
-                    events: route_events,
+                    islands: route_islands,
                 };
                 compiled_routes += 1;
-            }
-            if let Some(entry) = manifest
-                .routes
-                .iter_mut()
-                .find(|entry| entry.route == route.route())
-            {
-                entry.context = declaration;
             }
             next_state.routes.insert(key, route_state);
         }
@@ -864,78 +504,64 @@ impl WebCompiler {
             ));
         }
 
-        // A route binding on:<event> needs the delegated runtime, and needs a
-        // client module to hold the handlers it names.
-        if !all_events.is_empty() {
-            let mut types: Vec<&String> = all_events.iter().collect();
-            types.sort();
-            let list = serde_json::to_string(&types).unwrap_or_else(|_| String::from("[]"));
+        if has_tac_routes {
             files.push((
-                PathBuf::from(".tachyon/events.js"),
-                EVENT_RUNTIME.replace("__EVENTS__", &list).into_bytes(),
+                PathBuf::from(".tachyon/tac-client.js"),
+                TAC_CLIENT_RUNTIME.as_bytes().to_vec(),
             ));
         }
 
-        if has_page_islands || !all_islands.is_empty() {
-            files.push((
-                PathBuf::from(".tachyon/islands.js"),
-                ISLAND_RUNTIME.as_bytes().to_vec(),
-            ));
-            for name in &all_islands {
-                let Some(component) = components.get(name) else {
-                    return Err(Failure::one(diagnostic(
-                        1402,
-                        format!("Cached island component '{name}' is no longer registered."),
-                        None,
-                        None,
-                    )));
-                };
-                if let Some(source) = component.wasm_path() {
-                    for (suffix, bytes) in
-                        crate::wasm::compile(project.root(), source, name).await?
-                    {
-                        files.push((
-                            PathBuf::from(format!(".tachyon/components/{name}{suffix}")),
-                            bytes,
-                        ));
-                    }
-                    continue;
+        for name in &all_islands {
+            let Some(component) = components.get(name) else {
+                return Err(Failure::one(diagnostic(
+                    1402,
+                    format!("Cached client component '{name}' is no longer registered."),
+                    None,
+                    None,
+                )));
+            };
+            if let Some(source) = component.wasm_path() {
+                for (suffix, bytes) in crate::wasm::compile(project.root(), source, name).await? {
+                    files.push((
+                        PathBuf::from(format!(".tachyon/components/{name}{suffix}")),
+                        bytes,
+                    ));
                 }
-                let Some(source) = component.script_path() else {
-                    return Err(Failure::one(diagnostic(
-                        1405,
-                        format!("Island component '{name}' has no tac.js companion."),
-                        None,
-                        None,
-                    )));
-                };
-                // A TypeScript component companion goes through the
-                // TypeScript compiler, the same route a page companion takes.
-                let bytes = if source.extension().is_some_and(|value| value == "ts") {
-                    let portable =
-                        portable_path(source.strip_prefix(project.root()).unwrap_or(source));
-                    transpile_typescript(project.root(), source, &portable).await?
-                } else {
-                    output_io(fs::read(source), source)?
-                };
-                let bytes = rewrite_client_shared_imports(project.root(), source, bytes);
-                // Component modules always publish below `.tachyon/components`.
-                // A relative public URL works both at an HTTP origin and when
-                // an isolated native surface loads the bundle through `file:`.
-                let bytes = String::from_utf8(bytes).map_or_else(
-                    std::string::FromUtf8Error::into_bytes,
-                    |module| {
-                        module
-                            .replace("'/shared/", "'../../shared/")
-                            .replace("\"/shared/", "\"../../shared/")
-                            .into_bytes()
-                    },
-                );
-                files.push((
-                    PathBuf::from(format!(".tachyon/components/{name}.js")),
-                    bytes,
-                ));
+                continue;
             }
+            let Some(source) = component.script_path() else {
+                return Err(Failure::one(diagnostic(
+                    1405,
+                    format!("Client component '{name}' has no Tac companion."),
+                    None,
+                    None,
+                )));
+            };
+            // A TypeScript component companion goes through the
+            // TypeScript compiler, the same route a page companion takes.
+            let bytes = if source.extension().is_some_and(|value| value == "ts") {
+                let portable = portable_path(source.strip_prefix(project.root()).unwrap_or(source));
+                transpile_typescript(project.root(), source, &portable).await?
+            } else {
+                output_io(fs::read(source), source)?
+            };
+            let bytes = rewrite_client_shared_imports(project.root(), source, bytes);
+            // Component modules always publish below `.tachyon/components`.
+            // A relative public URL works both at an HTTP origin and when
+            // an isolated native surface loads the bundle through `file:`.
+            let bytes = String::from_utf8(bytes).map_or_else(
+                std::string::FromUtf8Error::into_bytes,
+                |module| {
+                    module
+                        .replace("'/shared/", "'../../shared/")
+                        .replace("\"/shared/", "\"../../shared/")
+                        .into_bytes()
+                },
+            );
+            files.push((
+                PathBuf::from(format!(".tachyon/components/{name}.js")),
+                bytes,
+            ));
         }
         files.push((
             PathBuf::from("route-manifest.json"),
@@ -997,7 +623,7 @@ struct BuildState {
 struct RouteProgram {
     program: crate::template::TemplateProgram,
     page_scope: crate::template::Scope,
-    page_island: bool,
+    has_page_module: bool,
     inline_state: String,
 }
 
@@ -1016,7 +642,6 @@ struct RouteBuildState {
     input_sha: String,
     artifacts: BTreeMap<String, String>,
     islands: BTreeSet<String>,
-    events: BTreeSet<String>,
 }
 
 fn load_build_state(output: &Path) -> Option<BuildState> {
@@ -1196,7 +821,10 @@ fn strip_shared_css_imports(path: &Path, bytes: Vec<u8>) -> Vec<u8> {
         .into_bytes()
 }
 
-fn strip_page_state_scripts(source: &str, source_path: &str) -> Result<(String, String), Failure> {
+pub(crate) fn strip_page_state_scripts(
+    source: &str,
+    source_path: &str,
+) -> Result<(String, String), Failure> {
     let mut template = source.as_bytes().to_vec();
     let mut state = String::new();
     let mut cursor = 0;
@@ -1658,26 +1286,17 @@ pub(crate) fn resolve_output_path(root: &Path, path: &Path) -> Result<PathBuf, F
 
     let mut current = PathBuf::new();
     for component in normalized.components() {
-        let inspect = match component {
+        match component {
+            // A Windows drive/UNC prefix is not itself a filesystem path. It
+            // becomes inspectable only after the following root component is
+            // appended (for example `\\?\C:\`, not `\\?\C:`).
             Component::Prefix(prefix) => {
                 current.push(prefix.as_os_str());
-                false
+                continue;
             }
-            Component::RootDir => {
-                current.push(component.as_os_str());
-                false
-            }
-            Component::Normal(segment) => {
-                current.push(segment);
-                true
-            }
+            Component::RootDir => current.push(component.as_os_str()),
+            Component::Normal(segment) => current.push(segment),
             Component::CurDir | Component::ParentDir => return Err(invalid_output(path)),
-        };
-        // Windows verbatim prefixes such as `\\?\C:` are not themselves
-        // filesystem objects and reject metadata queries. Inspect only the
-        // cumulative paths that end in a real name component.
-        if !inspect {
-            continue;
         }
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -1781,25 +1400,6 @@ pub(crate) fn assert_output_is_safe(root: &Path, relative: &Path) -> Result<(), 
         }
     }
     Ok(())
-}
-
-/// Returns the delegated event types a rendered document binds.
-fn event_types(html: &str) -> BTreeSet<String> {
-    let mut types = BTreeSet::new();
-    let mut rest = html;
-    while let Some(index) = rest.find("data-tac-on-") {
-        rest = &rest[index + "data-tac-on-".len()..];
-        let encoded: String = rest
-            .chars()
-            .take_while(|character| {
-                character.is_ascii_lowercase() || character.is_ascii_digit() || *character == '_'
-            })
-            .collect();
-        if !encoded.is_empty() {
-            types.insert(encoded.replace("__", ":"));
-        }
-    }
-    types
 }
 
 /// Inserts a reference immediately before a closing tag, appending when the
@@ -1984,7 +1584,7 @@ async fn run_post_bundle_hook(
     if !config.is_file() {
         return Ok(());
     }
-    let configured = std::env::var_os("TACHYON_JAVASCRIPT_RUNTIME").map(PathBuf::from);
+    let configured = std::env::var_os("TAC_JAVASCRIPT_RUNTIME").map(PathBuf::from);
     let programs = configured
         .into_iter()
         .chain([PathBuf::from("node"), PathBuf::from("bun")]);
@@ -1993,9 +1593,9 @@ async fn run_post_bundle_hook(
         command
             .args(["--input-type=module", "--eval", POST_BUNDLE_RUNNER])
             .current_dir(project_root)
-            .env("TACHYON_CONFIG", &config)
-            .env("TACHYON_STAGE", stage)
-            .env("TACHYON_TARGET", target)
+            .env("TAC_CONFIG", &config)
+            .env("TAC_STAGE", stage)
+            .env("TAC_TARGET", target)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::inherit())
@@ -2047,7 +1647,7 @@ async fn run_post_bundle_hook(
         1201,
         "tac.config.js needs a JavaScript runtime, but neither node nor bun is available.",
         Some(String::from(
-            "Install Node.js or Bun, or set TACHYON_JAVASCRIPT_RUNTIME.",
+            "Install Node.js or Bun, or set TAC_JAVASCRIPT_RUNTIME.",
         )),
         None,
     )))
@@ -2245,7 +1845,7 @@ mod tests {
     }
 
     #[test]
-    fn inline_page_state_emits_the_page_island_runtime() {
+    fn inline_page_state_emits_only_the_tac_client_runtime() {
         let root = tempfile::tempdir().expect("project");
         let pages = root.path().join("client/pages");
         fs::create_dir_all(&pages).expect("pages");
@@ -2259,12 +1859,51 @@ mod tests {
         let result = WebCompiler::build(root.path(), &BuildOptions::default()).expect("build");
         let document =
             fs::read_to_string(result.output_directory().join("index.html")).expect("document");
-        let runtime = fs::read_to_string(result.output_directory().join(".tachyon/islands.js"))
-            .expect("page island runtime");
+        let runtime = fs::read_to_string(result.output_directory().join(".tachyon/tac-client.js"))
+            .expect("Tac client runtime");
 
-        assert!(document.contains(r#"data-tachyon-page="true""#));
-        assert!(document.contains(r#"src="/.tachyon/islands.js""#));
-        assert!(runtime.contains("const pageAsset = page &&"));
+        assert!(document.contains(r#"src="/.tachyon/tac-client.js""#));
+        assert!(!document.contains("tachyon-island"), "{document}");
+        assert!(!document.contains("<p>0</p>"), "{document}");
+        assert!(
+            !result
+                .output_directory()
+                .join(".tachyon/islands.js")
+                .exists()
+        );
+        assert!(runtime.contains("const renderNodes = async"));
+        assert!(
+            runtime.contains("has: (_, name) => fields.has(name) || methods.has(name)"),
+            "Wasm owners must expose their declared members to expression lookup"
+        );
+        assert!(runtime.contains("globalThis.__tc_rerender = render"));
+    }
+
+    #[test]
+    fn tac_never_server_renders_and_yon_html_is_rejected() {
+        let root = tempfile::tempdir().expect("project");
+        let tac = root.path().join("client/pages/tac.html");
+        let yon = root.path().join("server/routes/server/yon.html");
+        fs::create_dir_all(tac.parent().expect("Tac parent")).expect("Tac directory");
+        fs::write(
+            &tac,
+            "<script>let show = false</script><if :when=\"show\"><p>Tac true</p></if><else><p>Tac false</p></else>",
+        )
+        .expect("Tac view");
+        let result = WebCompiler::build(root.path(), &BuildOptions::default()).expect("build");
+        let tac = fs::read_to_string(result.output_directory().join("index.html")).expect("Tac");
+        let tac_body = tac.split_once("<body>").expect("Tac body").1;
+
+        assert!(tac.contains(r#""branch":"if""#), "{tac}");
+        assert!(tac.contains(r#""branch":"else""#), "{tac}");
+        assert!(!tac_body.contains("Tac true"), "{tac_body}");
+        assert!(!tac_body.contains("Tac false"), "{tac_body}");
+        fs::create_dir_all(yon.parent().expect("Yon parent")).expect("Yon directory");
+        fs::write(&yon, "<main>Yon rendered</main>").expect("Yon view");
+        let failure = WebCompiler::build(root.path(), &BuildOptions::default())
+            .expect_err("yon.html must not compile");
+        assert!(failure.to_string().contains("TY1008"));
+        assert!(failure.to_string().contains("Content-Type: text/html"));
     }
 
     #[test]
@@ -2349,8 +1988,6 @@ mod tests {
         let error = write_stage(&file, &[(PathBuf::from("nested/index.html"), vec![1])])
             .expect_err("stage under file");
         assert!(output_error(&file, &error).to_string().contains("TY1201"));
-        // Creating a directory under a regular file reports `NotADirectory` on
-        // Unix and `AlreadyExists` on Windows. Both name the same broken shape.
         assert!(matches!(
             error.kind(),
             io::ErrorKind::NotADirectory | io::ErrorKind::AlreadyExists
@@ -2403,14 +2040,9 @@ mod tests {
 
         // The document references them.
         let index = fs::read_to_string(dist.join("index.html")).expect("index");
-        assert!(
-            index.contains(r#"<link rel="stylesheet" href="/style.css">"#),
-            "{index}"
-        );
-        assert!(
-            index.contains(r#"<script type="module" src="/client.js"></script>"#),
-            "{index}"
-        );
+        assert!(index.contains(r#"href="/style.css""#), "{index}");
+        assert!(index.contains(r#""module":"/client.js""#), "{index}");
+        assert!(!index.contains(r#"src="/client.js""#), "{index}");
 
         // A reused route must not lose its companions.
         let reused = WebCompiler::build(root.path(), &options).expect("second build");
@@ -2515,7 +2147,8 @@ mod tests {
 
         let index =
             fs::read_to_string(result.output_directory().join("index.html")).expect("index");
-        assert!(index.contains(r#"<script type="module" src="/client.js"></script>"#));
+        assert!(index.contains(r#""module":"/client.js""#));
+        assert!(!index.contains(r#"src="/client.js""#));
     }
 
     #[test]
@@ -2572,13 +2205,14 @@ mod tests {
         assert!(stylesheet.contains("color: rgb(0, 128, 0)"), "{stylesheet}");
 
         let document = fs::read_to_string(dist.join("index.html")).expect("document");
-        // One attribute on the component root, not one per element.
-        assert_eq!(document.matches("data-tac-scope=").count(), 1, "{document}");
+        // Scoping is part of the browser plan, not server-rendered markup.
+        assert!(document.contains(r#""scope":true"#), "{document}");
+        assert!(!document.contains("<article"), "{document}");
         assert!(document.contains(super::COMPONENT_STYLE_LINK), "{document}");
     }
 
     #[test]
-    fn hydrated_component_host_carries_the_style_scope() {
+    fn mounted_component_plan_carries_the_style_scope() {
         let root = tempfile::tempdir().expect("project");
         let write = |relative: &str, contents: &str| {
             let path = root.path().join(relative);
@@ -2605,17 +2239,10 @@ mod tests {
         let result = WebCompiler::build(root.path(), &BuildOptions::default()).expect("build");
         let document =
             fs::read_to_string(result.output_directory().join("index.html")).expect("document");
-        assert!(
-            document.contains(
-                r#"data-tachyon-component="product-card" data-tachyon-hydrate="load" data-tac-scope="product-card""#
-            ),
-            "{document}"
-        );
-        assert_eq!(document.matches("data-tac-scope=").count(), 1, "{document}");
-        assert!(
-            !document.contains(r#"<article class="card" data-tac-scope="#),
-            "{document}"
-        );
+        assert!(document.contains(r#""mount":"load""#), "{document}");
+        assert!(document.contains(r#""scope":true"#), "{document}");
+        assert!(!document.contains("<article"), "{document}");
+        assert!(!document.contains("data-tachyon-hydrate"), "{document}");
     }
 
     #[test]
@@ -2653,37 +2280,18 @@ mod tests {
         let dist = result.output_directory();
         let index = fs::read_to_string(dist.join("index.html")).expect("index");
 
-        // The authored `on:` binding never survives into the document.
+        // The authored `on:` syntax becomes data in the client render plan,
+        // never an executable HTML attribute or server-rendered marker.
         assert!(!index.contains("on:click"), "{index}");
-        assert!(
-            index.contains(
-                r#"data-tac-on-click="{&quot;h&quot;:&quot;increment&quot;,&quot;a&quot;:[]}""#
-            ),
-            "{index}"
-        );
-        assert!(
-            index.contains(
-                r#"data-tac-on-input="{&quot;h&quot;:&quot;rename&quot;,&quot;a&quot;:[]}""#
-            ),
-            "{index}"
-        );
-        assert!(
-            index.contains(r#"<script type="module" src="/.tachyon/events.js"></script>"#),
-            "{index}"
-        );
-
-        // The runtime binds exactly the event types the route uses.
-        let runtime = fs::read_to_string(dist.join(".tachyon/events.js")).expect("runtime");
-        assert!(runtime.contains(r#"["click","input"]"#), "{runtime}");
+        assert!(index.contains(r#""eventType":"click""#), "{index}");
+        assert!(index.contains(r#""eventType":"input""#), "{index}");
+        assert!(!dist.join(".tachyon/events.js").exists());
+        let runtime = fs::read_to_string(dist.join(".tachyon/tac-client.js")).expect("runtime");
+        assert!(runtime.contains("const bindEvent ="), "{runtime}");
 
         let reused = WebCompiler::build(root.path(), &BuildOptions::default()).expect("reuse");
         assert_eq!(reused.reused_routes(), 1);
-        let reused_runtime =
-            fs::read_to_string(dist.join(".tachyon/events.js")).expect("reused runtime");
-        assert!(
-            reused_runtime.contains(r#"["click","input"]"#),
-            "{reused_runtime}"
-        );
+        assert!(dist.join(".tachyon/tac-client.js").is_file());
     }
 
     #[test]
@@ -2720,9 +2328,7 @@ mod tests {
 
     #[test]
     fn generated_pages_opt_into_platform_navigation() {
-        // The client renderer is deliberately not reproduced; these two
-        // platform features deliver instant and smooth navigation instead.
-        // See ADR 0009.
+        // Client rendering and browser-native navigation work together.
         let root = tempfile::tempdir().expect("project");
         let pages = root.path().join("client/pages");
         fs::create_dir_all(pages.join("about")).expect("pages");
@@ -2739,7 +2345,7 @@ mod tests {
             fs::read_to_string(dist.join(".tachyon/navigation.css")).expect("stylesheet");
         assert!(stylesheet.contains("@view-transition"), "{stylesheet}");
         assert!(
-            stylesheet.contains("tachyon-island { display: block; }"),
+            stylesheet.contains("tachyon-component, tachyon-island { display: block; }"),
             "{stylesheet}"
         );
 
@@ -2750,7 +2356,7 @@ mod tests {
                 "{route}: {document}"
             );
             assert!(
-                document.contains(r#"<script type="speculationrules">"#),
+                document.contains(r#"<script type="speculationrules" data-tachyon-runtime>"#),
                 "{route}: {document}"
             );
             // The rules payload is JSON, never executable script.

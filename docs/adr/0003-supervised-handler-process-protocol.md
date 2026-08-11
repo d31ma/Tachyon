@@ -32,9 +32,9 @@ Handler Protocol v1 uses:
 Never invoke a handler through a shell. Pass executable and arguments as
 separate operating-system values. Allowlist inherited environment variables.
 
-A route context may compose multiple same-level `yon.*` handlers. Static class
-fields and the selected method's returned object contribute values. Duplicate
-keys are a deterministic error; file order never silently chooses a winner.
+A route may discover multiple same-level `yon.*` handlers in deterministic
+source order. Each invocation selects one handler and one HTTP method; no
+build-time route context is composed (ADR 0016).
 
 ## Consequences
 

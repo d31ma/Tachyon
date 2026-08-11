@@ -3,11 +3,11 @@
   "routes": [
     {
       "route": "/products",
-      "kind": "page",
+      "kind": "api",
       "methods": [
         "GET"
       ],
-      "view": "client/pages/products/yon.html",
+      "view": null,
       "handlers": [
         {
           "source": "server/routes/products/yon.ts",
@@ -22,12 +22,8 @@
       ],
       "context": {
         "collision_policy": "error",
-        "static_exports": [
-          "title"
-        ],
-        "response_exports": [
-          "products"
-        ]
+        "static_exports": [],
+        "response_exports": []
       },
       "parameters": []
     }

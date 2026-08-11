@@ -1,8 +1,8 @@
 # Tachyon
 
 Tachyon is a polyglot, file-system-routed full-stack framework. Application
-developers author standards-based HTML; Tachyon compiles it into prerendered
-web output or native-first applications for macOS, iOS, Android, Linux, and
+developers author standards-based HTML; Tachyon compiles Tac into client-rendered
+web applications and dispatches Yon REST endpoints, or produces native-first applications for macOS, iOS, Android, Linux, and
 Windows. Unsupported safe native subtrees fall back to isolated local web
 surfaces while supported siblings remain native.
 
@@ -20,13 +20,14 @@ layer. Both use the standalone `ty` executable.
 
 - HTML is the only application-facing view language.
 - Files and directories define routes, components, handlers, and middleware.
-- `yon.html` receives collision-checked context from colocated handler classes.
-- Templates support bounded expressions, conditionals, loops, components,
-  slots, and server-rendered islands.
+- Tac templates support browser-rendered bounded expressions, conditionals,
+  loops, components, and slots. Tac has no SSR mode.
+- Yon handlers return HTTP status, headers, and bodies. Tachyon does not render
+  Yon templates or execute handlers during a build.
 - JavaScript, TypeScript, Rust, Dart, Kotlin, Swift, and C# can implement Tac
   component behavior.
-- JavaScript, TypeScript, Python, and registered executable adapters can
-  implement Yon handlers.
+- JavaScript and Python have built-in Yon adapters. Other languages can use a
+  registered interpreter or executable that implements the direct protocol.
 - One project produces deterministic web and native artifacts.
 - Generated output, child processes, input sizes, build hooks, and native
   fallback boundaries are explicitly bounded.
@@ -45,8 +46,8 @@ cd hello
 ```
 
 Open `http://127.0.0.1:8080/`. The generated project contains an HTML page at
-`client/pages/tac.html`; no JavaScript runtime is required to serve a static
-Tac project.
+`client/pages/tac.html`; the external Tac runtime constructs its DOM in the
+browser from a compiler-produced render plan.
 
 Build and preview production-style static output:
 
@@ -79,7 +80,6 @@ client/
 server/
   routes/
     products/
-      yon.html
       yon.js
       yon.py
   middleware/
@@ -149,19 +149,18 @@ and never reach a browser or native renderer as unknown elements.
 the normative grammar and expression limits are in
 [docs/PHASE_3_SPEC.md](docs/PHASE_3_SPEC.md).
 
-### Components, slots, and islands
+### Components, slots, and browser mounting
 
 A directory under `client/components/` defines a Tac component. Component tags
 are resolved at build time and can receive static or bounded expression props.
 Slots are scoped and cycles fail before publication.
 
-Client-owned behavior lives in an island. Hydration is explicit: `load`,
-`idle`, `visible`, `interaction`, or `never`.
+Tac is entirely client-owned. Component mounting may be scheduled as `load`,
+`idle`, `visible`, `interaction`, or `never`. The legacy `hydrate=` attribute
+is accepted as a mount-scheduling spelling; it does not enable SSR.
 
 ```html
-<tachyon-island component="counter" hydrate="interaction">
-  <button on:click="count += 1">Count: {count}</button>
-</tachyon-island>
+<counter-panel hydrate="interaction"></counter-panel>
 ```
 
 JavaScript and TypeScript companions are ordinary modules. Rust, Dart, Kotlin,
@@ -195,41 +194,39 @@ Arbitrary inline JavaScript, attributed script tags, and executable state
 initializers fail with `TY1306`; they are never evaluated as authored source by
 the compiler.
 
-## Yon routes and HTML context
+## Yon REST endpoints
 
-A `server/routes/**/yon.html` file defines the HTML view for a server route.
-Every colocated `yon.*` handler at the same level can contribute context:
+A `server/routes/**/yon.*` file defines a REST endpoint. Its selected static
+HTTP method receives the request and returns either a JSON-serializable value
+or an explicit response descriptor:
 
 ```javascript
 export class Handler {
-  static title = 'Products'
-
   static async GET() {
+    return { products: await loadProducts() }
+  }
+}
+```
+
+Ordinary values become JSON responses. To return HTML, the handler must provide
+the body and explicitly select `text/html`:
+
+```javascript
+export class Handler {
+  static GET() {
     return {
-      products: await loadProducts(),
+      status: 200,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+      body: '<main><h1>Products</h1></main>',
     }
   }
 }
 ```
 
-```html
-<!doctype html>
-<html lang="en">
-  <head><title>{title}</title></head>
-  <body>
-    <h1>{title}</h1>
-    <for :each="product in products">
-      <article>{product.name}</article>
-    </for>
-  </body>
-</html>
-```
-
-Public static class fields and the selected HTTP method's returned object are
-merged into one route context. Multiple same-level handlers compose in
-deterministic source order. Duplicate keys, unsupported values, oversized
-context, and conflicting declarations fail; there is no implicit
-last-writer-wins behavior. Interpolation is escaped by default.
+The HTML body is transported unchanged. Yon performs no interpolation,
+component expansion, control-tag evaluation, or server-side rendering.
+`yon.html` is rejected with `TY1008` so a project cannot accidentally acquire
+build-time handler execution.
 
 JavaScript and Python have a `Handler` class convenience adapter. Any other
 language can participate through the bounded length-prefixed JSON handler
@@ -259,7 +256,13 @@ The runtime supports:
 - scheduled workers declared in `.tachyonrc`;
 - bounded append-only topic logs exposed as server-sent events;
 - defensive response headers and traversal-resistant static serving;
-- live reload for development pages.
+- semantic CSS and island hot updates with a safe reload fallback for development pages.
+
+Handler and middleware invocation failures return a bounded public message and
+an `x-tachyon-request-id` header. The server writes a redacted structured
+failure event containing the same time-sortable request ID, so operators can
+correlate a client-visible failure without exposing child stderr or internal
+diagnostics over HTTP.
 
 OpenAPI generation and built-in telemetry from the legacy implementation are
 deliberately out of scope. The exact compatibility decision and migration
@@ -285,7 +288,7 @@ WebSurface. Native-capable parents and siblings stay native.
 
 | Target | Host | Output |
 | --- | --- | --- |
-| Web | prerendered HTML, CSS, modules, service worker | `dist/web/` |
+| Web | bootstrap HTML, client render plans, CSS, modules, service worker | `dist/web/` |
 | macOS | SwiftUI/AppKit | `dist/macos/*.app` |
 | iOS | SwiftUI/UIKit | `dist/ios/*.app` |
 | Android | Android platform views | `dist/android/*/*.apk` |
@@ -329,7 +332,7 @@ cross-build is `buildable`, not `native-tested` or `supported`; see
 | Command | Purpose |
 | --- | --- |
 | `ty init [directory] --name <name>` | Create a minimal HTML project in a missing or empty directory |
-| `ty serve [project]` | Build, serve, dispatch handlers, watch, and live-reload |
+| `ty serve [project]` | Build, serve, dispatch handlers, watch, and hot-update |
 | `ty bundle [project] --target <target>` | Build web or native artifacts |
 | `ty native-bundle [project] --target <target>` | Build a selected native host |
 | `ty preview [project] --target <target>` | Serve an existing target's embedded web bundle |
@@ -354,7 +357,7 @@ Useful options:
 `--target` accepts one target, a comma-separated list, or `all`; aliases such
 as `browser`, `darwin`, and `win32` remain accepted. Multi-target output always
 lands exactly at `dist/web`, `dist/macos`, `dist/ios`, `dist/android`,
-`dist/linux`, and `dist/windows`. `YON_DIST_PATH` selects another output root.
+`dist/linux`, and `dist/windows`. `TAC_DIST_PATH` selects another output root.
 Existing automation may also use `TAC_BUNDLE_TARGET`, `TAC_PREVIEW_TARGET`,
 `TAC_TARGET`, `YON_HOST`, `YON_HOSTNAME`, `YON_PORT`, and `YON_SKIP_BUNDLE`.
 `TAC_RENDER_MODE` and `--render-mode` are rejected because native-first
@@ -380,7 +383,7 @@ export default {
 ```
 
 Node.js is used by default with Bun as a fallback. Set
-`TACHYON_JAVASCRIPT_RUNTIME` to select an explicit executable.
+`TAC_JAVASCRIPT_RUNTIME` to select an explicit executable.
 
 ## Determinism and failure behavior
 
@@ -402,10 +405,32 @@ native capabilities, no shell execution, no WebSurface bridge, strict local
 asset schemes, and bounded external input. Threats and residual risks are
 documented in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
-Handler children still run with the developer account's ambient filesystem and
-network access. The supervisor constrains the protocol and lifecycle, not the
-operating system sandbox. Deploy handlers inside the isolation boundary your
-environment requires.
+In the default process mode, handler children still run with the developer
+account's ambient filesystem and network access. The process supervisor
+constrains the protocol and lifecycle, not the operating-system sandbox.
+Deploy handlers inside the isolation boundary your environment requires.
+
+### Environment-selected Yon isolation
+
+Production operators can route every Yon execution path through a qualified
+Firecracker control program without giving the application a project-file
+override:
+
+```sh
+export YON_ISOLATION=firecracker
+export YON_FIRECRACKER_DRIVER=/usr/local/libexec/ty-firecracker
+export YON_FIRECRACKER_POOL=production
+export YON_FIRECRACKER_VCPUS=1
+export YON_FIRECRACKER_MEMORY_MIB=256
+export YON_FIRECRACKER_EGRESS=deny
+ty serve
+```
+
+`process` is the default. Firecracker mode uses the same framed Handler
+Protocol, deadlines, cancellation, bounded diagnostics, and response
+validation. The configured control program and host must be qualified
+separately; setting the environment variable alone does not prove hardware
+isolation. See [ADR 0014](docs/adr/0014-environment-selected-yon-isolation.md).
 
 ## Migration from the released implementation
 
@@ -454,10 +479,10 @@ Start with:
 - [docs/RELEASE_ENGINEERING.md](docs/RELEASE_ENGINEERING.md) for release and
   rollback policy.
 
-The Rust implementation is greenfield and is the only in-tree implementation.
-The checksum-pinned v26.30.04 executable is the behavioral oracle; the retained
-full-stack migration fixture is non-executable test data. Rust code does not
-import or copy either implementation's private internals.
+The Rust implementation is greenfield. The former JavaScript framework and its
+test tree have been removed. Compatibility gates compare Rust with the
+immutable v26.30.04 release binary over neutral fixtures in `corpus/`; no Rust
+crate imports or copies private legacy internals.
 
 ## License
 

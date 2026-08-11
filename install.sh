@@ -6,7 +6,7 @@
 set -eu
 
 REPO="d31ma/Tachyon"
-BASE="${TACHYON_BASE_URL:-https://github.com/${REPO}/releases/latest/download}"
+BASE="${TAC_BASE_URL:-https://github.com/${REPO}/releases/latest/download}"
 TACHYON_STEPS=5
 tachyon_step=0
 
@@ -55,8 +55,8 @@ asset="ty-${os_tag}-${arch_tag}"
 url="${BASE}/${asset}"
 
 # Pick an install dir on PATH we can write to; fall back to ~/.local/bin.
-if [ -n "${TACHYON_INSTALL_DIR:-}" ]; then
-    dest="${TACHYON_INSTALL_DIR}"
+if [ -n "${TAC_INSTALL_DIR:-}" ]; then
+    dest="${TAC_INSTALL_DIR}"
     mkdir -p "$dest"
 elif [ -w /usr/local/bin ]; then
     dest="/usr/local/bin"

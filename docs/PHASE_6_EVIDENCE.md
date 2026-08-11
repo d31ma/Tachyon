@@ -18,8 +18,8 @@ Node 24, Playwright Chromium 1217.
 ## 2. Differential Over the Shared Corpus
 
 ```bash
-RELEASED_TY_BIN=/path/to/26.30.04/ty \
-TY_BIN=target/debug/ty \
+TAC_LEGACY_BIN=/path/to/26.30.04/ty \
+TAC_BIN=target/debug/ty \
 node scripts/compat/differential.mjs
 ```
 
@@ -34,21 +34,23 @@ and the three legacy `db/` files are intentionally removed.
 | `components-slots` | `/` | Both build; both serve 200; one declared divergence (below) |
 
 Each route is served over HTTP and rendered in the same Chromium build. The
-legacy output is measured after hydration, because that is when its rendered
-result exists. Artifacts are never compared: the legacy build emits a
+legacy output is measured after its client runtime renders the DOM. Artifacts
+are never compared: the legacy build emits a
 single-page shell with a client router, a service worker, and per-page chunks,
-while the Rust build emits prerendered static HTML per route.
+while the Rust build emits per-route bootstrap HTML, a compiled render plan,
+and the Tac client runtime.
 
 ### 2.1 Declared Divergence
 
 `corpus/components-slots/parity.json` declares exactly one:
 
-> `semantic dom /`: `<main>[1]: <product-card> vs <article>`
+> `semantic dom /`: `<main>[1]: <product-card> vs <tachyon-component>`
 
-The legacy implementation keeps a Tac component as a runtime custom element.
-The Rust implementation expands components at compile time, so the component
-template's own root element reaches the document. Slotted content, accessible
-names, and roles are identical. An undeclared divergence fails the gate.
+Both implementations keep a semantically neutral runtime component boundary.
+The legacy implementation uses the authored custom-element name, while the
+client-only Rust renderer uses its framework-owned `tachyon-component`
+boundary. Slotted content, accessible names, and roles are identical. An
+undeclared divergence fails the gate.
 
 ## 3. Behavioral Differences Found by This Work
 
@@ -57,8 +59,8 @@ These were discovered by running both implementations, not assumed.
 | Finding | Direction |
 | --- | --- |
 | The legacy HTML parser rejects standard void elements — `<img>`, `<hr>`, `<br>`, and `<input>` all fail with "No end tag." — and requires the self-closing form. The Rust parser accepts both. | The Rust implementation is a strict superset. Corpus fixtures use the self-closing form so the shared surface stays comparable. |
-| The legacy implementation has no `yon.html` convention. It treats every file under `server/routes/**` as a handler and rejects `yon.html` outright. | Yon views and composed route context are `rust-only`. They have no legacy counterpart to compare against and are proven by the Phase 3 suite instead. |
-| Tac components remain runtime custom elements in the legacy output and are expanded at compile time in the Rust output. | Intentional; declared and recorded. |
+| The legacy implementation has no `yon.html` convention. It treats every file under `server/routes/**` as a handler and rejects `yon.html` outright. | The Rust rewrite also rejects `yon.html`; ADR 0016 defines Yon as REST-only. |
+| Tac components use their authored custom-element boundary in the legacy output and the framework-owned `tachyon-component` runtime boundary in the Rust client. | Intentional; declared and recorded. |
 
 ## 4. `ty migrate check` Against the Archived Migration Fixture
 
@@ -94,15 +96,14 @@ controller state/capability behavior against the compiled Rust binary.
 ## 6. Released Standalone Workflow
 
 ```bash
-TY_BIN=target/debug/ty node scripts/compat/standalone-rust.mjs
+TAC_BIN=target/debug/ty node scripts/compat/standalone-rust.mjs
 ```
 
 Result: `PASS: released standalone workflow matches Rust ty (macos)`.
 
-The gate clicks an assigning page binding and waits for `Count: 1`. This
-regressed once because the compiler emitted a page-island wrapper but omitted
-the island runtime when no component island existed. A compiler regression
-test now also requires `/.tachyon/islands.js` for that shape.
+The gate clicks an assigning page binding and waits for `Count: 1`. The current
+regression contract requires every Tac route to emit a schema-versioned render
+plan and `/.tachyon/tac-client.js`, with no server-rendered authored subtree.
 
 The in-tree JavaScript runtime and its implementation-coupled suite were
 removed at cutover. The archived 26.30.04 executable remains immutable and is
@@ -113,7 +114,7 @@ implementations run directly against the Rust executable.
 
 | Gap | What closes it |
 | --- | --- |
-| Corpus coverage of conditionals, iteration, and islands | These need route context, which the two implementations source differently. Closing this requires a legacy-shaped context source that the Rust implementation can also consume. |
+| Corpus coverage of conditionals, iteration, and mounted components | Add neutral fixtures whose inputs come from literal client state accepted by both implementations; Yon route context is not available under ADR 0016. |
 | Handler behavior compared across implementations | A handler differential invoking the same `yon.js` and `yon.py` through both supervisors and comparing responses. |
 | Diagnostic parity | The legacy implementation raises untyped runtime errors, so only accept/reject agreement is compared today, not messages. |
 

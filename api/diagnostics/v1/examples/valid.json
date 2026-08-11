@@ -4,13 +4,13 @@
     {
       "code": "TY0001",
       "severity": "error",
-      "message": "The route context contains two values named title.",
-      "help": "Rename one export or declare an explicit override.",
+      "message": "Yon is REST-only and does not support yon.html.",
+      "help": "Return HTML from a Yon handler with Content-Type: text/html.",
       "spans": [
         {
-          "file": "server/routes/products/yon.ts",
-          "start": 18,
-          "end": 23
+          "file": "server/routes/products/yon.html",
+          "start": 0,
+          "end": 8
         }
       ]
     }

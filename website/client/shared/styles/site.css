@@ -2,33 +2,12 @@
 @import "../assets/duvay/duvay.min.css";
 
 :root {
-  --tachyon-from: #036f9f;
-  --tachyon-to: #087e73;
+  --tachyon-from: #0ea5e9;
+  --tachyon-to: #14b8a6;
   --tachyon-gradient: linear-gradient(120deg, var(--tachyon-from), var(--tachyon-to));
-  --w-text-very-subtle: #5f6b70;
   /* Keep supporting labels legible across the site. DuVay's default xs token
      is 11px, below this product's 12px minimum. */
   --w-font-xs: 0.75rem;
-}
-
-[w-theme="dark"] {
-  --tachyon-from: #0ea5e9;
-  --tachyon-to: #14b8a6;
-  --w-text-very-subtle: #ffffffa3;
-}
-
-[w-theme="high-contrast"] {
-  --tachyon-from: #003a4f;
-  --tachyon-to: #244d44;
-  --w-text-very-subtle: #3e4a50;
-}
-
-@media (prefers-color-scheme: dark) {
-  [w-theme="auto"] {
-    --tachyon-from: #0ea5e9;
-    --tachyon-to: #14b8a6;
-    --w-text-very-subtle: #ffffffa3;
-  }
 }
 
 body {
@@ -39,7 +18,7 @@ body {
 }
 
 /* ---- containers ---------------------------------------------------------
-   w-container's self-applied sizing doesn't survive Tac hydration, so the
+   w-container's self-applied sizing is not sufficient after Tac mounts, so the
    brand layer owns it: centered content column, full-bleed backgrounds. */
 
 w-container {
@@ -124,14 +103,19 @@ w-app-bar {
   }
 
   /* Comfortable tap targets — keyed to viewport width, not device type. */
-  .w-btn.w-btn,
-  button.w-chip {
-    min-width: var(--w-touch-min);
-    min-height: var(--w-touch-min);
+  .w-btn,
+  .w-chip,
+  button {
+    min-width: 44px;
+    min-height: 44px;
   }
 
-  a[aria-label="Tachyon home"] {
-    min-height: var(--w-touch-min);
+  .panel-card :is(.w-card-title, .w-card-subtitle) {
+    min-width: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 }
 

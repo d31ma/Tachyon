@@ -5,7 +5,7 @@
       "route": "products",
       "kind": "page",
       "methods": [],
-      "view": "/absolute/yon.html",
+      "view": "/absolute/tac.html",
       "handlers": [],
       "context": {
         "collision_policy": "last_wins",

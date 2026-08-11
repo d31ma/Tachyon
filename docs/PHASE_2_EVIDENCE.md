@@ -14,10 +14,9 @@ validates the source and request, directly spawns one language-adapter process,
 enforces bounded framed I/O and process lifetime, and returns one typed response
 or stable diagnostic.
 
-Handler-only routes and handlers colocated with a view are represented
-deterministically in Route Manifest v1. Phase 2 does not automatically dispatch
-HTTP traffic to handlers or merge handler values into `yon.html`; those
-semantics remain Phase 3 work.
+Handler-only routes and handlers colocated with a Tac view are represented
+deterministically in Route Manifest v1. Handler values are HTTP responses and
+are never merged into a build-time view context.
 
 ## Toolchain and Platforms
 
@@ -102,6 +101,6 @@ account's ambient filesystem and network access, and Phase 2 does not enforce
 kernel CPU or memory quotas. That limitation is explicit in
 [`THREAT_MODEL.md`](THREAT_MODEL.md) and [`SUPPORT_TIERS.md`](SUPPORT_TIERS.md).
 
-The archived release remains the compatibility baseline. Phase 2 adds no
-route-context or view semantics, preserving a clean compatibility boundary for
-Phase 3.
+The legacy implementation remains untouched and passes its type and test
+suites. Phase 2 adds no route-context or view semantics, preserving a clean
+compatibility boundary for Phase 3.

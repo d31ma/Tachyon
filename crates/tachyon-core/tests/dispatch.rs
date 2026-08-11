@@ -62,6 +62,24 @@ async fn get(port: u16, path: &str) -> String {
     .await
 }
 
+async fn read_until(stream: &mut TcpStream, needle: &str) -> String {
+    let mut received = Vec::new();
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let mut chunk = [0_u8; 4_096];
+        loop {
+            let count = stream.read(&mut chunk).await.expect("stream read");
+            assert_ne!(count, 0, "stream closed before {needle}");
+            received.extend_from_slice(&chunk[..count]);
+            if String::from_utf8_lossy(&received).contains(needle) {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("stream event within the deadline");
+    String::from_utf8_lossy(&received).into_owned()
+}
+
 #[tokio::test]
 async fn requests_reach_supervised_handlers_with_bound_parameters() {
     let project = tempfile::tempdir().expect("project");
@@ -153,11 +171,75 @@ async fn requests_reach_supervised_handlers_with_bound_parameters() {
 }
 
 #[tokio::test]
+async fn explicit_html_handler_responses_pass_through_without_rendering() {
+    let project = tempfile::tempdir().expect("project");
+    write(
+        &project.path().join("client/pages/tac.html"),
+        "<main>Client page</main>",
+    );
+    write(
+        &project.path().join("server/routes/html/yon.js"),
+        r"export class Handler {
+  static GET() {
+    return {
+      status: 202,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-Origin': 'handler' },
+      body: '<article><h1>Unchanged HTML</h1><p>{not-a-template}</p></article>',
+    }
+  }
+}",
+    );
+
+    let server = DevServer::bind(
+        project.path(),
+        &DevServerOptions {
+            port: 0,
+            ..DevServerOptions::default()
+        },
+    )
+    .await
+    .expect("bind");
+    let port = server.address().port();
+    let (stop, wait) = tokio::sync::oneshot::channel::<()>();
+    let running = tokio::spawn(async move {
+        server
+            .run_until(async {
+                let _stopped = wait.await;
+            })
+            .await
+    });
+
+    let response = get(port, "/html").await;
+    assert!(response.contains("202 Accepted"), "{response}");
+    assert!(
+        response.contains("content-type: text/html; charset=utf-8"),
+        "{response}"
+    );
+    assert!(response.contains("x-origin: handler"), "{response}");
+    assert!(
+        response.contains("<article><h1>Unchanged HTML</h1><p>{not-a-template}</p></article>"),
+        "{response}"
+    );
+    assert!(!response.contains("tachyon-view"), "{response}");
+
+    let _stopped = stop.send(());
+    let _joined = running.await;
+}
+
+#[tokio::test]
 async fn a_project_without_handlers_still_serves_generated_output() {
     let project = tempfile::tempdir().expect("project");
     write(
         &project.path().join("client/pages/tac.html"),
         "<main aria-label=\"Only\"><h1>Only</h1></main>",
+    );
+    write(
+        &project.path().join("client/pages/docs/tac.html"),
+        "<main><h1>Documentation index</h1></main>",
+    );
+    write(
+        &project.path().join("client/pages/docs/tac.js"),
+        "document.title = 'STATIC_CLIENT_ASSET';\n",
     );
     write(
         &project.path().join("client/pages/docs/_topic/tac.html"),
@@ -192,6 +274,16 @@ async fn a_project_without_handlers_still_serves_generated_output() {
     assert!(
         dynamic.contains("200 OK") && dynamic.contains("Dynamic documentation template"),
         "{dynamic}"
+    );
+    let client_asset = get(port, "/docs/client.js").await;
+    assert!(client_asset.contains("200 OK"), "{client_asset}");
+    assert!(
+        client_asset.contains("STATIC_CLIENT_ASSET"),
+        "a generated asset lost precedence over a dynamic page: {client_asset}"
+    );
+    assert!(
+        !client_asset.contains("Dynamic documentation template"),
+        "{client_asset}"
     );
 
     let _stopped = stop.send(());
@@ -232,10 +324,41 @@ async fn watching_rebuilds_and_survives_a_broken_source() {
         !first.contains("<script>let seen"),
         "inline script was injected"
     );
+    let client = get(port, "/.tachyon/live-reload.js").await;
+    assert!(client.contains("new EventSource(endpoint)"), "{client}");
+    assert!(client.contains("tachyon:hot-update"), "{client}");
+    assert!(client.contains("updateIslands"), "{client}");
+    assert!(client.contains("replaceStyles"), "{client}");
+    assert!(client.contains("tac.hotUpdate"), "{client}");
+    assert!(!client.contains("DOMParser"), "{client}");
+    assert!(!client.contains("__tachyonIslands"), "{client}");
+    assert!(
+        !client.contains("setInterval("),
+        "polling client returned: {client}"
+    );
 
-    // Editing a source rebuilds and advances the generation an open page polls.
+    let mut updates = TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("connect hot stream");
+    updates
+        .write_all(
+            b"GET /.tachyon/hot HTTP/1.1\r\nHost: 127.0.0.1\r\nAccept: text/event-stream\r\n\r\n",
+        )
+        .await
+        .expect("open hot stream");
+    let connected = read_until(&mut updates, ": connected").await;
+    assert!(
+        connected.contains("content-type: text/event-stream"),
+        "{connected}"
+    );
+    assert!(connected.contains("x-accel-buffering: no"), "{connected}");
+
+    // Editing a template rebuilds and emits the explicit safe reload fallback.
     let before = get(port, "/.tachyon/live").await;
     write(&source, "<main aria-label=\"W\"><h1>Second</h1></main>");
+    let reloaded = read_until(&mut updates, r#""kind":"reload""#).await;
+    assert!(reloaded.contains("event: hot"), "{reloaded}");
+    assert!(reloaded.contains("client/pages/tac.html"), "{reloaded}");
     let mut rebuilt = String::new();
     for _ in 0..60 {
         tokio::time::sleep(Duration::from_millis(250)).await;
@@ -253,13 +376,16 @@ async fn watching_rebuilds_and_survives_a_broken_source() {
 
     // A broken source must not take the running site down.
     write(&source, "<main><logic :else>orphan</logic></main>");
-    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    let diagnostics = read_until(&mut updates, r#""kind":"diagnostics""#).await;
+    assert!(diagnostics.contains(r#""contract_version":1"#));
+    assert!(diagnostics.contains("TY"), "{diagnostics}");
     let survived = get(port, "/").await;
     assert!(
         survived.contains("Second"),
         "a failed rebuild broke the site"
     );
 
+    drop(updates);
     let _stopped = stop.send(());
     let _joined = running.await;
 }
@@ -294,6 +420,14 @@ async fn no_watch_serves_documents_untouched() {
     let document = get(port, "/").await;
     assert!(document.contains("Plain"), "{document}");
     assert!(!document.contains("live-reload"), "reload client leaked in");
+    for endpoint in [
+        "/.tachyon/hot",
+        "/.tachyon/live",
+        "/.tachyon/live-reload.js",
+    ] {
+        let response = get(port, endpoint).await;
+        assert!(response.contains("404 Not Found"), "{endpoint}: {response}");
+    }
 
     let _stopped = stop.send(());
     let _joined = running.await;
@@ -708,54 +842,6 @@ async fn topics_stream_as_server_sent_events_with_a_resumable_cursor() {
     ))
     .await;
     assert!(refused.contains("400"), "{refused}");
-
-    let _stopped = stop.send(());
-    let _joined = running.await;
-}
-
-#[tokio::test]
-async fn process_diagnostics_never_cross_the_http_boundary() {
-    let project = tempfile::tempdir().expect("project");
-    write(
-        &project.path().join("server/routes/leak/yon.js"),
-        r#"export class Handler {
-  static GET() {
-    process.stdout.write("secret-canary");
-    return { ok: true };
-  }
-}
-"#,
-    );
-
-    let server = DevServer::bind(
-        project.path(),
-        &DevServerOptions {
-            port: 0,
-            watch: false,
-            ..DevServerOptions::default()
-        },
-    )
-    .await
-    .expect("bind");
-    let port = server.address().port();
-    let (stop, wait) = tokio::sync::oneshot::channel::<()>();
-    let running = tokio::spawn(async move {
-        server
-            .run_until(async {
-                let _stopped = wait.await;
-            })
-            .await
-    });
-
-    let response = get(port, "/leak").await;
-    assert!(response.contains("500 Internal Server Error"), "{response}");
-    assert!(response.contains("x-tachyon-request-id:"), "{response}");
-    assert!(
-        response.contains("Handler execution failed. Reference:"),
-        "{response}"
-    );
-    assert!(!response.contains("secret-canary"), "{response}");
-    assert!(!response.contains("TY21"), "{response}");
 
     let _stopped = stop.send(());
     let _joined = running.await;

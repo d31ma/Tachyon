@@ -47,20 +47,19 @@ Unknown configuration keys, invalid identifiers, missing entry routes, unsafe
 paths, and unsupported targets fail before publication. A failed build retains
 the previous complete native output.
 
-## Resolved View Boundary
+## Authored View Boundary
 
-Native planning happens after Yon context evaluation, control-flow evaluation,
-loop expansion, Tac component expansion, slot projection, and contextual
-escaping. Consequently:
+Native planning lowers authored Tac declarations and structural instructions;
+it never consumes Yon responses or server-rendered web output. Consequently:
 
-- `logic`, `loop`, `if`, `else`, `for`, and unresolved Tac components never
-  reach a native adapter;
-- each route sees the same values and selected branches as its web reference;
+- Yon handlers and their response bodies never reach a native view adapter;
+- `logic`, `loop`, `if`, `else`, and `for` remain framework instructions rather
+  than unknown native elements;
 - each native node has a deterministic route-local identifier;
 - source and generated artifact budgets from Phase 3 remain in force.
 
-The resolved web bundle is the behavioral comparison oracle and the source for
-local fallback documents. Native planning never evaluates JavaScript.
+The browser-owned Tac result is the behavioral comparison oracle. Native
+planning never executes a Yon handler or evaluates JavaScript.
 
 ## Native Adapter Set
 
@@ -82,7 +81,7 @@ Phase 4 maps the following HTML semantics:
 | `hr` | `content.divider` |
 
 Document metadata does not become UI. Unsupported standard elements,
-unadapted custom elements, and hydrated Tac islands become the smallest local
+unadapted custom elements, and unsupported Tac subtrees become the smallest local
 WebSurface subtree that preserves their content. An HTTPS `iframe` becomes a
 remote WebSurface with no bridge. Other remote schemes fail closed.
 
@@ -168,7 +167,7 @@ document bodies.
 
 Phase 4 is complete only when:
 
-- compiled-binary tests prove evaluated controls, composed Yon context,
+- compiled-binary tests prove client control plans, Yon non-execution,
   expanded components, native adapters, accessibility metadata, declarative
   state, and subtree-local fallback;
 - adversarial tests prove invalid config, state, remote URLs, adapter inputs,
@@ -185,11 +184,12 @@ Phase 4 is complete only when:
 
 Phase 4 does not promote any artifact to preview or supported status.
 
-The screenshot budget normalizes both 420 by 780 captures to 84 by 156
-samples, derives foreground and edge distributions independently of
-light/dark appearance, and requires: nonblank foreground density between 1%
-and 75%, foreground-centroid distance no greater than 0.22, vertical
-foreground earth-mover distance no greater than 0.16, and edge-density ratio
-no greater than 4. This deliberately compares information placement and
-coverage while allowing platform-native fonts, controls, title bars, and
-colors.
+The screenshot budget requires matched 420-point-wide native and web captures
+at the hosted runner's usable height from 600 through 780 points, then
+normalizes both to 84 by 156 samples. It derives foreground and edge
+distributions independently of light/dark appearance and requires: nonblank
+foreground density between 1% and 75%, foreground-centroid distance no greater
+than 0.22, vertical foreground earth-mover distance no greater than 0.16, and
+edge-density ratio no greater than 4. This deliberately compares information
+placement and coverage while allowing platform-native fonts, controls, title
+bars, and colors.

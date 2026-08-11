@@ -3,16 +3,16 @@
 ## Architecture
 
 Phase 4 adds a `native` module to `tachyon-core`; it does not add a crate.
-`NativeCompiler` composes the existing web compiler, then plans native routes
-from the fully rendered documents. This keeps discovery, Yon context,
-component expansion, escaping, diagnostics, and rollback behavior on one
-tested path.
+`NativeCompiler` shares discovery and Tac frontend contracts, then plans native
+routes from authored Tac declarations. Yon handlers and response bodies do not
+enter native planning. This keeps source validation, component lowering,
+diagnostics, and rollback behavior on one tested path.
 
 The new data path is:
 
 ```text
 ProjectDiscovery
-  -> WebCompiler temporary resolved bundle
+  -> Tac frontend + View IR
   -> NativePlanner
   -> Native UI v1 + WebSurface artifacts
   -> MacOsHostGenerator
@@ -21,8 +21,8 @@ ProjectDiscovery
   -> atomic publication
 ```
 
-The temporary web bundle lives under a guarded project-local temporary
-directory and is deleted after planning.
+WebSurface fallback documents are generated only for the smallest unsupported
+Tac subtrees; they are not Yon templates or server-rendered route documents.
 
 ## Interfaces
 

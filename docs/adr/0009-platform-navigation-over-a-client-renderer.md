@@ -1,6 +1,6 @@
 # ADR 0009: Platform Navigation Over a Client Renderer
 
-- Status: Accepted
+- Status: Superseded by ADR 0015
 - Date: 2026-07-27
 
 ## Context

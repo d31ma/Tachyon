@@ -8,7 +8,7 @@ process per invocation, communicates only through Handler Protocol v1, and
 returns a validated response or stable diagnostic.
 
 Phase 2 establishes execution and isolation. It does not inject handler values
-into HTML or merge route context; those semantics belong to Phase 3.
+into HTML or merge route context; Yon is a REST-only boundary under ADR 0016.
 
 ## Public Workflow
 
@@ -58,9 +58,11 @@ class Handler:
 
 The selected uppercase static method receives the validated request envelope as
 a JavaScript object or Python dictionary. Synchronous and asynchronous methods
-are accepted. A successful return value must be JSON-serializable and becomes a
+are accepted. An ordinary return value must be JSON-serializable and becomes a
 UTF-8 JSON response body with status 200 and
-`content-type: application/json; charset=utf-8`.
+`content-type: application/json; charset=utf-8`. A handler may instead return
+an explicit `{status, headers, body}` descriptor. A `text/html` body is
+transported unchanged and is never interpreted as a Tachyon template.
 
 A missing class or method, import failure, thrown exception, or
 non-serializable result becomes a bounded Handler Protocol error response.
@@ -73,8 +75,8 @@ shares protocol stdout.
 - `server/routes/**/yon.py` selects adapter `python.v1`.
 - Both may exist at the same route and are ordered by portable source path.
 - Handler-only routes are API routes.
-- A handler may accompany a Tac or Yon view without claiming a second view.
-- Two view sources still conflict.
+- A handler may share a route with a Tac page; handler dispatch takes
+  precedence for methods it owns.
 - Other `yon.*` companions remain rejected until their adapter phase.
 - Handler files and their ancestors must be regular, non-symlinked,
   project-contained paths.

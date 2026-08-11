@@ -58,7 +58,7 @@ fn released_aliases_environment_and_removed_render_mode_are_compatible() {
             "--package",
             "--skip-package",
         ])
-        .env("YON_DIST_PATH", &output));
+        .env("TAC_DIST_PATH", &output));
     assert!(bundled.status.success(), "{}", stderr(&bundled));
     assert!(output.join("index.html").is_file());
 
@@ -81,7 +81,7 @@ fn target_environment_and_native_command_cardinality_match_the_released_cli() {
         .arg("bundle")
         .arg(&project)
         .env("TAC_BUNDLE_TARGET", "browser,web")
-        .env("YON_DIST_PATH", &output));
+        .env("TAC_DIST_PATH", &output));
     assert!(bundled.status.success(), "{}", stderr(&bundled));
     assert!(output.join("index.html").is_file());
 
@@ -112,7 +112,7 @@ fn multi_target_bundles_publish_each_target_exactly_one_level_below_the_output()
         .arg("bundle")
         .arg(&project)
         .args(["--target", "web,macos,ios,android", "--skip-package"])
-        .env("YON_DIST_PATH", &output));
+        .env("TAC_DIST_PATH", &output));
     assert!(bundled.status.success(), "{}", stderr(&bundled));
     assert!(output.join("web/index.html").is_file());
     for target in ["macos", "ios", "android"] {
@@ -177,35 +177,150 @@ fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 
-/// Sends one request over its own connection and returns the whole response.
-///
-/// A peer that closes a socket still holding unread input resets it rather
-/// than finishing it, and a reset discards whatever this side had already
-/// buffered — so the response is lost outright rather than truncated. That is
-/// a transport event rather than an answer, so an idempotent request is sent
-/// again. Half-closing the write side instead would reach the server as a
-/// client disconnect and cancel the request before it is answered. A server
-/// that has genuinely died still fails loudly, because the retry cannot
-/// connect.
+const MAX_REQUEST_ATTEMPTS: usize = 3;
+
 fn request(socket: &str, request: &[u8]) -> String {
-    for remaining in (0..3).rev() {
+    for attempt in 1..=MAX_REQUEST_ATTEMPTS {
         let mut connection = TcpStream::connect(socket).expect("server should accept connections");
         connection
             .write_all(request)
             .expect("request should be sent");
         let mut response = Vec::new();
         match connection.read_to_end(&mut response) {
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {
-                if response.is_empty() && remaining > 0 {
-                    continue;
-                }
+            Ok(_) => return String::from_utf8(response).expect("response should be UTF-8"),
+            // Linux may report a reset instead of EOF after Hyper has written
+            // and closed a `Connection: close` response. Accept preserved
+            // bytes only when framing proves completeness. If no response
+            // bytes arrived, retry a fresh idempotent request within a small
+            // fixed budget; never discard a partial response.
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ConnectionReset
+                    && reset_response_is_complete(request, &response) =>
+            {
+                return String::from_utf8(response).expect("response should be UTF-8");
             }
-            Err(error) => panic!("response should be read: {error:?}"),
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ConnectionReset
+                    && empty_reset_can_retry(request, &response, attempt) => {}
+            Err(error) => panic!("response should be read: {error}"),
         }
-        return String::from_utf8(response).expect("response should be UTF-8");
     }
-    unreachable!("the final attempt returns or panics")
+    panic!("response retry budget should end in the error branch")
+}
+
+fn retryable_test_request(request: &[u8]) -> bool {
+    request.starts_with(b"GET ") || request.starts_with(b"HEAD ")
+}
+
+fn empty_reset_can_retry(request: &[u8], response: &[u8], attempt: usize) -> bool {
+    response.is_empty() && retryable_test_request(request) && attempt < MAX_REQUEST_ATTEMPTS
+}
+
+fn reset_response_is_complete(request: &[u8], response: &[u8]) -> bool {
+    let Some(header_end) = response.windows(4).position(|bytes| bytes == b"\r\n\r\n") else {
+        return false;
+    };
+    let Ok(headers) = std::str::from_utf8(&response[..header_end]) else {
+        return false;
+    };
+    let body = &response[header_end + 4..];
+    let mut lines = headers.lines();
+    let Some(status_line) = lines.next() else {
+        return false;
+    };
+    let mut status_parts = status_line.split_whitespace();
+    if status_parts.next() != Some("HTTP/1.1") {
+        return false;
+    }
+    let Some(status_value) = status_parts.next() else {
+        return false;
+    };
+    if status_value.len() != 3 || !status_value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let Ok(status) = status_value.parse::<u16>() else {
+        return false;
+    };
+    let mut content_length = None;
+    let mut transfer_encoding = false;
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        if name.eq_ignore_ascii_case("content-length") {
+            if content_length.is_some() {
+                return false;
+            }
+            content_length = value.trim().parse::<usize>().ok();
+            if content_length.is_none() {
+                return false;
+            }
+        } else if name.eq_ignore_ascii_case("transfer-encoding") {
+            transfer_encoding = true;
+        }
+    }
+    if transfer_encoding && content_length.is_some() {
+        return false;
+    }
+    if transfer_encoding {
+        return false;
+    }
+    let request_is_head = request.starts_with(b"HEAD ");
+    let status_is_bodyless = (100..200).contains(&status) || matches!(status, 204 | 304);
+    if request_is_head || status_is_bodyless {
+        return body.is_empty();
+    }
+    content_length.is_some_and(|length| body.len() == length)
+}
+
+#[test]
+fn reset_responses_require_complete_unambiguous_http_framing() {
+    assert!(retryable_test_request(b"GET / HTTP/1.1\r\n\r\n"));
+    assert!(retryable_test_request(b"HEAD / HTTP/1.1\r\n\r\n"));
+    assert!(!retryable_test_request(b"POST / HTTP/1.1\r\n\r\n"));
+    assert!(empty_reset_can_retry(b"GET / HTTP/1.1\r\n\r\n", b"", 1));
+    assert!(!empty_reset_can_retry(
+        b"GET /../Cargo.toml HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n[workspace]",
+        1,
+    ));
+    assert!(!empty_reset_can_retry(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"",
+        MAX_REQUEST_ATTEMPTS,
+    ));
+    assert!(reset_response_is_complete(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+    ));
+    assert!(!reset_response_is_complete(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 404 Not Found\r\nContent-Length: 11\r\n\r\n[work",
+    ));
+    assert!(!reset_response_is_complete(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nok\r\n0\r\n\r\n",
+    ));
+    assert!(!reset_response_is_complete(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"not-http 200 OK\r\nContent-Length: 2\r\n\r\nok",
+    ));
+    assert!(reset_response_is_complete(
+        b"HEAD / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 10\r\n\r\n",
+    ));
+    assert!(!reset_response_is_complete(
+        b"HEAD / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 10\r\n\r\npartial",
+    ));
+    assert!(!reset_response_is_complete(
+        b"HEAD / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 405 Method Not Allowed\r\nTransfer-Encoding: chunked\r\n\r\n",
+    ));
+    assert!(reset_response_is_complete(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 204 No Content\r\n\r\n",
+    ));
 }
 
 #[test]
@@ -361,14 +476,14 @@ fn serve_no_bundle_uses_the_existing_web_bundle_without_recompiling_sources() {
 }
 
 #[test]
-fn static_tac_and_yon_pages_compile_in_canonical_route_order() {
+fn static_tac_pages_compile_in_canonical_route_order() {
     let project = tempfile::tempdir().expect("project should be created");
     write(
         &project.path().join("client/pages/zeta/tac.html"),
         "<main>Zeta</main>",
     );
     write(
-        &project.path().join("server/routes/about/yon.html"),
+        &project.path().join("client/pages/about/tac.html"),
         "<main>About</main>",
     );
 
@@ -412,7 +527,7 @@ fn diagnostics_are_stable_in_human_and_json_formats() {
 }
 
 #[test]
-fn collisions_and_later_phase_companions_fail_without_replacing_output() {
+fn yon_html_and_unsupported_companions_fail_without_replacing_output() {
     let project = tempfile::tempdir().expect("project should be created");
     let tac = project.path().join("client/pages/tac.html");
     write(&tac, "<main>Known good</main>");
@@ -425,9 +540,10 @@ fn collisions_and_later_phase_companions_fail_without_replacing_output() {
         &project.path().join("server/routes/yon.html"),
         "<main>Collision</main>",
     );
-    let collision = run(ty().arg("build").arg(project.path()));
-    assert!(!collision.status.success());
-    assert!(stderr(&collision).contains("TY1003"));
+    let yon_html = run(ty().arg("build").arg(project.path()));
+    assert!(!yon_html.status.success());
+    assert!(stderr(&yon_html).contains("TY1008"));
+    assert!(stderr(&yon_html).contains("Content-Type: text/html"));
     assert_eq!(published, files_below(&project.path().join("dist")));
 
     fs::remove_file(project.path().join("server/routes/yon.html")).expect("fixture removal");
@@ -480,14 +596,9 @@ fn development_server_builds_and_serves_with_defensive_headers() {
     let output = child.stdout.take().expect("server stdout should be piped");
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut output = BufReader::new(output);
         let mut line = String::new();
-        let result = output.read_line(&mut line).map(|_| line);
+        let result = BufReader::new(output).read_line(&mut line).map(|_| line);
         let _ = sender.send(result);
-        // Keep the pipe open for the server's later status lines. Dropping the
-        // reader after readiness races the next `println!` and can terminate
-        // the child on a broken pipe before its listener is polled.
-        let _ = std::io::copy(&mut output, &mut std::io::sink());
     });
     let ready = receiver
         .recv_timeout(Duration::from_secs(10))

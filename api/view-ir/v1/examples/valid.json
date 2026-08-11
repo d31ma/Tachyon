@@ -1,6 +1,6 @@
 {
   "contract_version": 1,
-  "source": "client/pages/products/yon.html",
+  "source": "client/pages/products/tac.html",
   "root": {
     "kind": "element",
     "tag": "main",

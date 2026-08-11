@@ -127,7 +127,10 @@ jobs:
           bun-version: 1.3.6
 
       - name: Install locked browser dependencies
-        run: bun install --frozen-lockfile && bunx playwright install --with-deps chromium
+        run: |
+          bun install --frozen-lockfile
+          bun install --cwd website --frozen-lockfile
+          bunx playwright install --with-deps chromium
 
       - name: Type-check the migrated website and browser harnesses
         run: bun run typecheck
@@ -135,20 +138,23 @@ jobs:
       - name: Build the Phase 3 CLI
         run: cargo build --locked --bin ty
 
-      - name: Run the real-browser island contract
+      - name: Run the real-browser Tac component contract
         run: bun run test:rust-browser
+
+      - name: Run the semantic hot-update contract
+        run: bun run test:rust-hmr
 
       - name: Build the release CLI for the event gate
         run: cargo build --release --locked --bin ty
 
-      - name: Run the real-browser event hydration contract
+      - name: Run the real-browser Tac event contract
         run: bun run test:rust-events
 
       - name: Run the real-browser offline cache contract
         run: bun run test:rust-offline
 
-      - name: Run the real-browser island expression contract
-        run: bun run test:rust-islands
+      - name: Run the real-browser Tac expression contract
+        run: bun run test:rust-client
 
       - name: Probe the wasm companion ABI
         run: |
@@ -208,7 +214,7 @@ jobs:
           printf '%s  %s\n' \
             db9ab6772a2d3af9121d570a058cc64cf36893e1c089726b799b4d1252184ca2 \
             "${stdlib}" | shasum -a 256 --check
-          echo "KOTLIN_WASM_STDLIB=${stdlib}" >> "${GITHUB_ENV}"
+          echo "TAC_KOTLIN_WASM_STDLIB=${stdlib}" >> "${GITHUB_ENV}"
 
       - name: Install exact Swift WebAssembly toolchain
         run: |
@@ -384,7 +390,7 @@ jobs:
         run: ./scripts/android/native-test.sh
 
   compatibility:
-    name: Phase 6 released-binary compatibility differential
+    name: Phase 6 legacy compatibility differential
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -418,7 +424,7 @@ jobs:
             "${RUNNER_TEMP}/tachyon-compat/ty-linux-x64" \
             | sha256sum --check --strict
           chmod 0755 "${RUNNER_TEMP}/tachyon-compat/ty-linux-x64"
-          echo "RELEASED_TY_BIN=${RUNNER_TEMP}/tachyon-compat/ty-linux-x64" >> "${GITHUB_ENV}"
+          echo "TAC_LEGACY_BIN=${RUNNER_TEMP}/tachyon-compat/ty-linux-x64" >> "${GITHUB_ENV}"
 
       - name: Compare both implementations over the shared corpus
         run: bun run test:compat
@@ -518,7 +524,7 @@ jobs:
       - name: Run interruption, corruption, contention, and load drills
         run: cargo test --locked -p tachyon-cli --test phase7_cli -- --test-threads=1
         env:
-          TACHYON_SOAK_ITERATIONS: "200"
+          TAC_SOAK_ITERATIONS: "200"
 
   provenance:
     name: Phase 7 supply-chain evidence

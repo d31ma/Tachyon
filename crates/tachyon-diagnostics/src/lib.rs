@@ -152,6 +152,7 @@ pub struct Diagnostic {
     /// Safe human-readable summary.
     pub message: String,
     /// Optional recovery guidance.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub help: Option<String>,
     /// Relevant source locations.
     pub spans: Vec<SourceSpan>,

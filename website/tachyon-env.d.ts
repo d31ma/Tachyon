@@ -1,7 +1,1 @@
-/// <reference path="../api/types/tachyon-env.d.ts" />
-
-interface HTMLElement {
-  tachyonIsland?: {
-    refresh?: () => void | Promise<void>;
-  };
-}
+/// <reference path="../types/tachyon-env.d.ts" />

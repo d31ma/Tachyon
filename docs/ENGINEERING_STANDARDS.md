@@ -18,8 +18,7 @@ It does not mean maximizing crate count, abstractions, or CI jobs.
 - Do not create empty placeholder directories.
 - Do not create dumping grounds named `utils`, `helpers`, `common`, `shared`,
   `misc`, `base`, or `manager`.
-- Keep unit tests beside code and integration or system tests under the owning
-  crate's `tests/` directory.
+- Keep package-local tests beside code and system-wide tests under `tests/`.
 - Keep legacy compatibility evidence separate from new internal design.
 
 ## Rust Rules
@@ -49,6 +48,9 @@ It does not mean maximizing crate count, abstractions, or CI jobs.
 
 - Crates and modules are named for one responsibility.
 - Domain names come from `CONTEXT.md`.
+- Project-owned environment variables start with `TAC_` for compiler, client,
+  packaging, and repository tooling, or `YON_` for server and handler runtime
+  policy. Do not introduce a `TACHYON_` environment namespace.
 - Avoid `Impl`, `Util`, `Helper`, `Manager`, and `Common`.
 - Machine fields use `snake_case`.
 - Diagnostic codes use `TY` plus four digits.

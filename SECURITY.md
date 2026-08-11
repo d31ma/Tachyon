@@ -22,11 +22,11 @@ claims a supported Rust release.
 
 ## Supported Versions
 
-The Rust implementation is Tachyon's sole in-tree implementation. Security
-fixes apply to the latest immutable release unless its release notes state a
-narrower affected range. Platform maturity remains governed by
-`docs/SUPPORT_TIERS.md`; publishing a stable CLI release does not promote a
-native target to `supported`.
+The Rust rewrite has completed engineering phases 0–7, but version
+`26.33.02` remains a release candidate with no supported or preview tier.
+Supported released versions of the existing implementation are listed in the
+public release notes. See `docs/SUPPORT_TIERS.md` for the evidence required to
+promote a Rust target.
 
 ## Security Update Policy
 

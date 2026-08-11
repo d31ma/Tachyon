@@ -123,67 +123,38 @@ def load_handler():
     return handler
 
 
+def response_descriptor(value):
+    if not isinstance(value, dict) or "headers" not in value:
+        return None
+    if not set(value).issubset({"status", "headers", "body"}):
+        return None
+    status = value.get("status", 200)
+    if isinstance(status, bool) or not isinstance(status, int) or not 100 <= status <= 599:
+        raise TypeError("Handler response status must be an integer from 100 through 599.")
+    raw_headers = value["headers"]
+    if not isinstance(raw_headers, dict):
+        raise TypeError("Handler response headers must be an object.")
+    headers = {}
+    for name, raw in raw_headers.items():
+        if not isinstance(name, str):
+            raise TypeError("Handler response header names must be strings.")
+        values = raw if isinstance(raw, list) else [raw]
+        if not values or any(not isinstance(item, str) for item in values):
+            raise TypeError(f"Handler response header '{name}' must contain strings.")
+        headers[name.lower()] = values
+    body = None
+    if "body" in value:
+        data = (
+            value["body"]
+            if isinstance(value["body"], str)
+            else json.dumps(value["body"], ensure_ascii=False, separators=(",", ":"))
+        )
+        body = {"encoding": "utf8", "data": data}
+    return {"status": status, "headers": headers, "body": body}
+
+
 def invoke(handler, request):
     try:
-        if request.get("operation") == "view.context":
-            static_values = {}
-            for name, value in vars(handler).items():
-                if name.startswith("_") or name == "GET":
-                    continue
-                descriptor = inspect.getattr_static(handler, name)
-                if isinstance(descriptor, (staticmethod, classmethod, property)):
-                    continue
-                if inspect.isroutine(value) or inspect.isclass(value):
-                    continue
-                static_values[name] = value
-            descriptor = inspect.getattr_static(handler, "GET", None)
-            response_values = {}
-            if descriptor is not None:
-                if not isinstance(descriptor, staticmethod):
-                    completed.put(
-                        failure(
-                            request["request_id"],
-                            "TY1501",
-                            "Handler.GET must be a static method.",
-                        )
-                    )
-                    return
-                method = descriptor.__func__
-                with contextlib.redirect_stdout(sys.stderr):
-                    result = method(request)
-                    if inspect.isawaitable(result):
-                        result = asyncio.run(result)
-                if not isinstance(result, dict):
-                    completed.put(
-                        failure(
-                            request["request_id"],
-                            "TY1501",
-                            "Handler.GET must return an object for view context.",
-                        )
-                    )
-                    return
-                response_values = result
-            data = json.dumps(
-                {
-                    "static_values": static_values,
-                    "response_values": response_values,
-                },
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-            completed.put(
-                {
-                    "protocol_version": 1,
-                    "kind": "response",
-                    "request_id": request["request_id"],
-                    "status": 200,
-                    "headers": {
-                        "content-type": ["application/json; charset=utf-8"]
-                    },
-                    "body": {"encoding": "utf8", "data": data},
-                }
-            )
-            return
         descriptor = inspect.getattr_static(handler, request["method"], None)
         if not isinstance(descriptor, staticmethod):
             completed.put(
@@ -200,6 +171,19 @@ def invoke(handler, request):
             result = method(request)
             if inspect.isawaitable(result):
                 result = asyncio.run(result)
+        explicit = response_descriptor(result)
+        if explicit is not None:
+            response = {
+                "protocol_version": 1,
+                "kind": "response",
+                "request_id": request["request_id"],
+                "status": explicit["status"],
+                "headers": explicit["headers"],
+            }
+            if explicit["body"] is not None:
+                response["body"] = explicit["body"]
+            completed.put(response)
+            return
         data = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
         completed.put(
             {

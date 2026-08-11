@@ -1,1 +1,1 @@
-/// <reference path="../../../../../api/types/tachyon-env.d.ts" />
+/// <reference path="../../../../../types/tachyon-env.d.ts" />

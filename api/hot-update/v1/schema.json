@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tachyon.del.ma/schema/hot-update/v1",
+  "title": "Tachyon Hot Update Protocol v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "sequence",
+    "kind",
+    "build_id",
+    "paths",
+    "boundaries",
+    "diagnostics"
+  ],
+  "properties": {
+    "contract_version": { "const": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "kind": {
+      "enum": ["css", "island", "reload", "diagnostics"]
+    },
+    "build_id": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "paths": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512,
+        "pattern": "^[^/\\\\][^\\\\]*$"
+      }
+    },
+    "boundaries": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 127,
+        "pattern": "^[a-z0-9][a-z0-9-]*$"
+      }
+    },
+    "diagnostics": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contract_version", "diagnostics"],
+          "properties": {
+            "contract_version": { "const": 1 },
+            "diagnostics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["code", "severity", "message", "spans"],
+                "properties": {
+                  "code": { "type": "string", "pattern": "^TY[0-9]{4}$" },
+                  "severity": { "enum": ["error", "warning", "information"] },
+                  "message": { "type": "string", "minLength": 1, "maxLength": 2048 },
+                  "help": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                  "spans": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["file", "start", "end"],
+                      "properties": {
+                        "file": { "type": "string", "pattern": "^[^/\\\\][^\\\\]*$", "maxLength": 512 },
+                        "start": { "type": "integer", "minimum": 0 },
+                        "end": { "type": "integer", "minimum": 0 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

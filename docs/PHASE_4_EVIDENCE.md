@@ -38,8 +38,9 @@ SHA-256 digests are recorded under `target/phase4-evidence/`.
 
 ## Real Application Acceptance
 
-The committed `phase4-macos` fixture builds a 420 by 780 native application
-with a native app bar, heading, text, button, output, text field, disclosure,
+The committed `phase4-macos` fixture builds a 420-point-wide native
+application with a hosted-runner-safe height from 600 through 780 points. It
+has a native app bar, heading, text, button, output, text field, disclosure,
 footer, and one isolated custom-element WebSurface.
 
 The gate launches the compiled `.app`, reads its operating-system
@@ -55,9 +56,10 @@ window, and quits normally. Evidence proves:
 - lifecycle order includes `created`, `mounted`, `active`, state transitions,
   and synchronous `destroyed`.
 
-The same resolved bundle runs at 420 by 780 in real Chromium. Its required
-main, heading, button, status, textbox, disclosure, and fallback role/name
-pairs match Native UI v1. The latest local comparison passed with vertical
+The same resolved bundle runs at the captured native window's exact dimensions
+in real Chromium. Its required main, heading, button, status, textbox,
+disclosure, and fallback role/name pairs match Native UI v1. The latest local
+comparison passed with vertical
 transport distance `0.0768` (limit `0.16`), centroid distance `0.0711` (limit
 `0.22`), and edge-density ratio `1.1419` (limit `4.0`).
 

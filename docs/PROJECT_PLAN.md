@@ -66,7 +66,7 @@ Status: complete on 2026-07-26. The normative behavior is recorded in
 
 ### Scope
 
-- Project discovery and deterministic Tac/Yon static route graphs.
+- Project discovery and deterministic Tac view/Yon REST route graphs.
 - Bounded, source-aware HTML tokenization and Phase 1 feature validation.
 - Stable human and Diagnostics v1 failures.
 - Deterministic staged web output and Route Manifest v1.
@@ -78,7 +78,7 @@ Status: complete on 2026-07-26. The normative behavior is recorded in
 - [x] The real `ty` binary initializes, builds, and serves one generated
       project.
 - [x] Repeated builds are byte-identical and emit Route Manifest v1.
-- [x] Static `tac.html` and `yon.html` routes have canonical ordering.
+- [x] Static `tac.html` routes and `yon.*` REST handlers have canonical ordering.
 - [x] Unsupported Phase 2/3 syntax fails with stable diagnostics.
 - [x] Failed builds preserve the last known-good output.
 - [x] HTTP GET, HEAD, 404, traversal resistance, and defensive headers are
@@ -129,7 +129,7 @@ Status: complete on 2026-07-26. The normative behavior is recorded in
       action pinning, cross-platform buildability, Linux-container execution,
       and released-binary compatibility gates pass.
 
-## Phase 3: Tac and Yon View Semantics
+## Phase 3: Tac View Semantics
 
 Status: complete on 2026-07-26. The normative behavior is recorded in
 [`PHASE_3_SPEC.md`](PHASE_3_SPEC.md), and the validation record is in
@@ -140,20 +140,21 @@ Status: complete on 2026-07-26. The normative behavior is recorded in
 - Safe bounded binding expressions and contextual escaping.
 - Canonical and legacy-compatible conditionals and iterations.
 - Recursive Tac components, properties, slots, and cycle detection.
-- Composed JavaScript/Python Yon class fields and `GET()` objects.
-- SSR islands with load, idle, visible, interaction, and never policies.
+- Yon handler discovery without build-time execution or view context.
+- Browser-owned Tac rendering with load, idle, visible, interaction, and never
+  component mount schedules (superseded design recorded by ADR 0015).
 - View IR v1, View Source Map v1, verified incremental builds, and
   multi-source diagnostic recovery.
 
 ### Exit Gate
 
 - [x] Compiled-binary golden tests cover controls, bindings, components, slots,
-      composed route context, islands, source maps, and incremental reuse.
-- [x] Malformed expressions, orphan controls, context collisions, component
+      Tac render plans, source maps, Yon non-execution, and incremental reuse.
+- [x] Malformed expressions, orphan controls, component
       cycles, invalid islands, cache corruption, and failed-build rollback fail
       closed.
-- [x] A real Chromium run proves SSR preservation, automatic activation,
-      failure marking, and interaction replay.
+- [x] Real Chromium proves client initial render, automatic component mounting,
+      rerendering, bounded failure marking, and interaction replay.
 - [x] Phase 1 and Phase 2 compatibility suites remain green.
 - [x] Formatting, check, Clippy, tests, rustdoc, coverage, dependency policy,
       action pinning, Linux-container execution, and Windows buildability pass.
@@ -315,3 +316,35 @@ The Rust implementation becomes Tachyon's default only when:
 - release artifacts are signed, attested, and independently verifiable;
 - no unowned critical threat-model finding remains;
 - stable documentation describes the Rust implementation rather than plans.
+
+## Post-qualification Capability: Semantic Hot Updates
+
+Status: complete on 2026-08-09. The decision and safety boundary are recorded
+in [`adr/0013-semantic-hot-updates.md`](adr/0013-semantic-hot-updates.md) and
+superseded for current renderer ownership by ADR 0015.
+
+Development rebuilds originate from bounded operating-system file events and
+publish Hot Update Protocol v1 over a same-origin event stream. CSS updates
+preserve the document, renderer-owned Tac component boundaries use
+lifecycle-aware state transfer, compiler failures retain the last-good page
+with structured diagnostics, and every ambiguous or structural change reloads
+safely. `scripts/hot-update-browser-test.mjs` is the repeatable browser gate.
+
+## Post-qualification Capability: Yon Isolation Backends
+
+Status: transport boundary complete on 2026-08-09. The decision and security
+limits are recorded in
+[`adr/0014-environment-selected-yon-isolation.md`](adr/0014-environment-selected-yon-isolation.md).
+
+Operators select the default process backend or a Firecracker control driver
+exclusively through the parent environment. HTTP handlers, middleware,
+workers, and explicit invocation use that policy. Builds never execute Yon.
+Both paths retain Handler Protocol v1 framing, process-group cleanup,
+deadlines, cancellation, concurrency, bounded output, and diagnostics while
+the Firecracker path passes bounded pool, CPU, memory, and deny-egress policy
+to the driver.
+
+This is not yet a first-party Firecracker runtime or hardware-isolation support
+claim. A production-qualified control program, jailer/host profile, guest
+image, warm-pool lifecycle, snapshot lineage, and native Linux evidence remain
+future vertical slices.

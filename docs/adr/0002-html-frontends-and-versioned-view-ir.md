@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-07-26
+- Amended by: ADR 0016 removes `yon.html` as a frontend; this decision now
+  applies only to Tac views.
 
 ## Context
 
@@ -14,8 +16,8 @@ control-tag, component, and fallback behavior platform-dependent.
 
 ## Decision
 
-Treat `tac.html` and `yon.html` as two entry contexts for the same HTML
-frontend. Parse without executing application code, preserve source spans,
+Treat `tac.html` as the entry context for the HTML frontend. Parse without
+executing application code, preserve source spans,
 resolve control tags and components, and lower validated source into View IR.
 
 `if`, `else`, `for`, and `loop` are structural compiler syntax. They do not

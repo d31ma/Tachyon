@@ -1,6 +1,9 @@
 use crate::Failure;
 use crate::failure::{diagnostic, source_span};
-use crate::template::{AttributeValue, TemplateFrontend, TemplateNode, TemplateNodeKind, TextPart};
+use crate::template::{
+    AttributeValue, ComponentRegistry, EventArgument, TemplateFrontend, TemplateNode,
+    TemplateNodeKind, TextPart, is_trivia,
+};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -52,6 +55,7 @@ pub(super) struct PlannedNativeRoute {
 pub(super) struct NativePlanner;
 
 impl NativePlanner {
+    #[cfg(any(test, feature = "fuzzing"))]
     pub(super) fn plan(
         target: NativeTarget,
         route: &str,
@@ -59,12 +63,60 @@ impl NativePlanner {
         rendered_html: &str,
         styles: &str,
     ) -> Result<PlannedNativeRoute, Failure> {
+        Self::plan_internal(
+            target,
+            route,
+            source_path,
+            rendered_html,
+            styles,
+            None,
+            BTreeMap::new(),
+        )
+    }
+
+    pub(super) fn plan_with_components_and_state(
+        target: NativeTarget,
+        route: &str,
+        source_path: &str,
+        authored_html: &str,
+        styles: &str,
+        components: &ComponentRegistry,
+        initial_state: BTreeMap<String, String>,
+    ) -> Result<PlannedNativeRoute, Failure> {
+        Self::plan_internal(
+            target,
+            route,
+            source_path,
+            authored_html,
+            styles,
+            Some(components),
+            initial_state,
+        )
+    }
+
+    fn plan_internal(
+        target: NativeTarget,
+        route: &str,
+        source_path: &str,
+        rendered_html: &str,
+        styles: &str,
+        components: Option<&ComponentRegistry>,
+        mut initial_state: BTreeMap<String, String>,
+    ) -> Result<PlannedNativeRoute, Failure> {
         let source = strip_generated_assets(rendered_html);
         let (source, page_state) = lower_page_island(&source);
-        let program = TemplateFrontend::compile(&source, source_path, &BTreeSet::new())?;
-        let root_source = find_body(&program.nodes)
-            .or_else(|| program.nodes.first())
+        initial_state.extend(page_state);
+        let names = components.map_or_else(BTreeSet::new, ComponentRegistry::names);
+        let program = TemplateFrontend::compile(&source, source_path, &names)?;
+        let expanded_nodes = if let Some(components) = components {
+            expand_native_components(&program.nodes, components, None, None)?
+        } else {
+            program.nodes
+        };
+        let root_source = find_body(&expanded_nodes)
+            .or_else(|| expanded_nodes.iter().find(|node| !is_trivia(node)))
             .ok_or_else(|| native_failure(1602, source_path, 0, 0, "Resolved view is empty."))?;
+        validate_initial_state(source_path, &initial_state)?;
         let mut context = PlanningContext {
             target,
             source: &source,
@@ -75,7 +127,7 @@ impl NativePlanner {
             native_nodes: 0,
             web_surfaces: Vec::new(),
             surface_count: 0,
-            initial_state: page_state,
+            initial_state,
             action_references: Vec::new(),
         };
         let root = context.plan_node(root_source, 0)?.ok_or_else(|| {
@@ -98,6 +150,42 @@ impl NativePlanner {
             native_node_count: context.native_nodes,
         })
     }
+}
+
+fn validate_initial_state(
+    source_path: &str,
+    state: &BTreeMap<String, String>,
+) -> Result<(), Failure> {
+    if state.len() > MAX_STATE_ENTRIES {
+        return Err(native_failure(
+            1603,
+            source_path,
+            0,
+            0,
+            "Native state exceeds the limit of 1,024 entries.",
+        ));
+    }
+    for (name, value) in state {
+        if !valid_state_name(name) {
+            return Err(native_failure(
+                1603,
+                source_path,
+                0,
+                0,
+                "Native state binding name is invalid.",
+            ));
+        }
+        if value.len() > MAX_STATE_VALUE_BYTES {
+            return Err(native_failure(
+                1603,
+                source_path,
+                0,
+                0,
+                "Native state value exceeds the 4 KiB limit.",
+            ));
+        }
+    }
+    Ok(())
 }
 
 struct PlanningContext<'a> {
@@ -146,21 +234,23 @@ impl PlanningContext<'_> {
             // parsing, so the planner never receives one.
             TemplateNodeKind::Comment(_)
             | TemplateNodeKind::Switch { .. }
-            | TemplateNodeKind::Case { .. } => Ok(None),
+            | TemplateNodeKind::Case { .. }
+            | TemplateNodeKind::Slot => Ok(None),
             TemplateNodeKind::Element {
                 tag,
                 attributes,
                 children,
                 ..
             } => self.plan_element(node, tag, attributes, children, depth),
-            TemplateNodeKind::Conditional { .. }
-            | TemplateNodeKind::Iteration { .. }
-            | TemplateNodeKind::Component { .. }
-            | TemplateNodeKind::Slot => Err(self.failure(
-                1602,
-                node,
-                "Unresolved compiler syntax reached native planning.",
-            )),
+            TemplateNodeKind::Component { .. } => {
+                Err(self.failure(1602, node, "Unexpanded component reached native planning."))
+            }
+            TemplateNodeKind::Conditional { .. } | TemplateNodeKind::Iteration { .. } => Err(self
+                .failure(
+                    1602,
+                    node,
+                    "Unresolved compiler syntax reached native planning.",
+                )),
         }
     }
 
@@ -269,7 +359,30 @@ impl PlanningContext<'_> {
                 events.insert(String::from("input"), String::from("dispatch"));
             }
         }
-        if let Some(action) = static_attribute(attributes, "data-tachyon-action") {
+        let authored_action =
+            attributes
+                .get("data-tac-on-click")
+                .and_then(|attribute| match &attribute.value {
+                    AttributeValue::Event(binding)
+                        if binding
+                            .assign
+                            .as_ref()
+                            .is_some_and(|assignment| assignment.operator == "+=")
+                            && matches!(
+                                binding.arguments.as_slice(),
+                                [EventArgument::Literal(value)] if value == "1"
+                            ) =>
+                    {
+                        binding
+                            .assign
+                            .as_ref()
+                            .map(|assignment| format!("increment:{}", assignment.target))
+                    }
+                    _ => None,
+                });
+        if let Some(action) =
+            static_attribute(attributes, "data-tachyon-action").or(authored_action)
+        {
             let Some((verb, binding)) = action.split_once(':') else {
                 return Err(self.failure(1603, node, "Native action syntax is invalid."));
             };
@@ -430,6 +543,241 @@ impl PlanningContext<'_> {
             message,
         )
     }
+}
+
+#[derive(Clone)]
+struct NativeSlot {
+    nodes: Vec<TemplateNode>,
+    scope: Option<BTreeMap<String, String>>,
+}
+
+fn expand_native_components(
+    nodes: &[TemplateNode],
+    components: &ComponentRegistry,
+    scope: Option<&BTreeMap<String, String>>,
+    slot: Option<&NativeSlot>,
+) -> Result<Vec<TemplateNode>, Failure> {
+    let mut expanded = Vec::new();
+    for node in nodes {
+        match &node.kind {
+            TemplateNodeKind::Component {
+                name,
+                properties,
+                children,
+                ..
+            } => {
+                expanded.extend(expand_native_component_node(
+                    node, name, properties, children, components, scope,
+                )?);
+            }
+            TemplateNodeKind::Slot => {
+                if let Some(slot) = slot {
+                    expanded.extend(expand_native_components(
+                        &slot.nodes,
+                        components,
+                        slot.scope.as_ref(),
+                        None,
+                    )?);
+                }
+            }
+            TemplateNodeKind::Element {
+                tag,
+                attributes,
+                children,
+                void,
+            } => {
+                let mut clone = node.clone();
+                clone.kind = TemplateNodeKind::Element {
+                    tag: tag.clone(),
+                    attributes: if let Some(scope) = scope {
+                        resolve_native_attributes(node, attributes, scope)?
+                    } else {
+                        attributes.clone()
+                    },
+                    children: expand_native_components(children, components, scope, slot)?,
+                    void: *void,
+                };
+                expanded.push(clone);
+            }
+            TemplateNodeKind::Text(parts) => {
+                let mut clone = node.clone();
+                clone.kind = TemplateNodeKind::Text(if let Some(scope) = scope {
+                    resolve_native_text(node, parts, scope)?
+                } else {
+                    parts.clone()
+                });
+                expanded.push(clone);
+            }
+            TemplateNodeKind::Comment(_) => expanded.push(node.clone()),
+            TemplateNodeKind::Conditional { .. }
+            | TemplateNodeKind::Iteration { .. }
+            | TemplateNodeKind::Switch { .. }
+            | TemplateNodeKind::Case { .. } => {
+                return Err(native_failure(
+                    1602,
+                    &node.source_path,
+                    node.range.start,
+                    node.range.end,
+                    "Unresolved compiler syntax reached native component expansion.",
+                ));
+            }
+        }
+    }
+    Ok(expanded)
+}
+
+fn expand_native_component_node(
+    node: &TemplateNode,
+    name: &str,
+    properties: &BTreeMap<String, crate::template::TemplateAttribute>,
+    children: &[TemplateNode],
+    components: &ComponentRegistry,
+    scope: Option<&BTreeMap<String, String>>,
+) -> Result<Vec<TemplateNode>, Failure> {
+    let component = components.get(name).ok_or_else(|| {
+        native_failure(
+            1602,
+            &node.source_path,
+            node.range.start,
+            node.range.end,
+            "Native component is unresolved.",
+        )
+    })?;
+    if children.iter().any(|child| !is_trivia(child))
+        && !native_contains_slot(&component.program().nodes)
+    {
+        return Err(native_failure(
+            1602,
+            &node.source_path,
+            node.range.start,
+            node.range.end,
+            &format!("Component '<{name}>' received children but declares no <slot>."),
+        ));
+    }
+    let component_scope = resolve_native_properties(node, properties, scope)?;
+    let component_slot = NativeSlot {
+        nodes: children.to_vec(),
+        scope: scope.cloned(),
+    };
+    expand_native_components(
+        &component.program().nodes,
+        components,
+        Some(&component_scope),
+        Some(&component_slot),
+    )
+}
+
+fn resolve_native_text(
+    node: &TemplateNode,
+    parts: &[TextPart],
+    scope: &BTreeMap<String, String>,
+) -> Result<Vec<TextPart>, Failure> {
+    parts
+        .iter()
+        .map(|part| match part {
+            TextPart::Literal(_, _) => Ok(part.clone()),
+            TextPart::Interpolation(expression, range) => scope
+                .get(expression.source())
+                .cloned()
+                .map(|value| TextPart::Literal(value, *range))
+                .ok_or_else(|| {
+                    native_failure(
+                        1602,
+                        &node.source_path,
+                        range.start,
+                        range.end,
+                        "Native component text requires a statically known property.",
+                    )
+                }),
+        })
+        .collect()
+}
+
+fn resolve_native_properties(
+    node: &TemplateNode,
+    properties: &BTreeMap<String, crate::template::TemplateAttribute>,
+    outer_scope: Option<&BTreeMap<String, String>>,
+) -> Result<BTreeMap<String, String>, Failure> {
+    properties
+        .iter()
+        .map(|(name, attribute)| match &attribute.value {
+            AttributeValue::Static(value) => Ok((name.clone(), value.clone())),
+            AttributeValue::Dynamic(_) => outer_scope
+                .ok_or_else(|| {
+                    native_failure(
+                        1602,
+                        &node.source_path,
+                        attribute.range.start,
+                        attribute.range.end,
+                        "Native component property requires a statically known value.",
+                    )
+                })
+                .and_then(|scope| resolve_native_attribute(node, attribute, scope))
+                .map(|value| (name.clone(), value)),
+            AttributeValue::Control(_) | AttributeValue::Event(_) => Err(native_failure(
+                1602,
+                &node.source_path,
+                attribute.range.start,
+                attribute.range.end,
+                "Native component property cannot contain control or event syntax.",
+            )),
+        })
+        .collect()
+}
+
+fn resolve_native_attributes(
+    node: &TemplateNode,
+    attributes: &BTreeMap<String, crate::template::TemplateAttribute>,
+    scope: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, crate::template::TemplateAttribute>, Failure> {
+    attributes
+        .iter()
+        .map(|(name, attribute)| {
+            if matches!(attribute.value, AttributeValue::Dynamic(_)) {
+                let mut resolved = attribute.clone();
+                resolved.value =
+                    AttributeValue::Static(resolve_native_attribute(node, attribute, scope)?);
+                Ok((name.clone(), resolved))
+            } else {
+                Ok((name.clone(), attribute.clone()))
+            }
+        })
+        .collect()
+}
+
+fn resolve_native_attribute(
+    node: &TemplateNode,
+    attribute: &crate::template::TemplateAttribute,
+    scope: &BTreeMap<String, String>,
+) -> Result<String, Failure> {
+    match &attribute.value {
+        AttributeValue::Static(value) => Ok(value.clone()),
+        AttributeValue::Dynamic(expression) => {
+            scope.get(expression.source()).cloned().ok_or_else(|| {
+                native_failure(
+                    1602,
+                    &node.source_path,
+                    attribute.range.start,
+                    attribute.range.end,
+                    "Native component property requires a statically known value.",
+                )
+            })
+        }
+        AttributeValue::Control(_) | AttributeValue::Event(_) => Err(native_failure(
+            1602,
+            &node.source_path,
+            attribute.range.start,
+            attribute.range.end,
+            "Native component property cannot contain control or event syntax.",
+        )),
+    }
+}
+
+fn native_contains_slot(nodes: &[TemplateNode]) -> bool {
+    nodes.iter().any(|node| {
+        matches!(node.kind, TemplateNodeKind::Slot)
+            || node.kind.children().is_some_and(native_contains_slot)
+    })
 }
 
 /// Removes compiler-generated browser assets before native planning.
@@ -998,22 +1346,17 @@ fn valid_https_url(value: &str) -> bool {
 /// from.
 ///
 /// The project's own stylesheets are inlined rather than linked: they are
-/// stripped from the fragment as generated assets, and a `file://` document
-/// cannot rely on `style-src 'self'` matching, while inline styles are already
-/// permitted by the policy below. Without this a surface renders as unstyled
+/// stripped from the fragment as generated assets. Inline styles are already
+/// permitted by the private resource document policy below. Without this a surface renders as unstyled
 /// default HTML inside an otherwise native window.
 fn fallback_document(fragment: &str, styles: &str) -> String {
     let fragment = native_asset_references(fragment);
     let styles = native_style_references(styles);
-    let island_runtime = fragment.contains("<tachyon-island").then_some(
-        r#"<script type="module" src="../../WebBundle/tachyon-runtime/islands.js"></script>"#,
-    );
     let controller_runtime = fragment.contains("data-tachyon-action=").then_some(
         r#"<script type="module" src="../../WebBundle/tachyon-runtime/native-controller.js"></script>"#,
     );
     format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self';\"><style>:root{{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,sans-serif}}html,body{{margin:0;background:transparent;color:CanvasText}}::-webkit-scrollbar{{display:none}}</style><style>{styles}</style><style>html,body{{min-height:0!important}}</style></head><body>{fragment}<script type=\"module\" src=\"../../WebBundle/tachyon-runtime/native-surface.js\"></script>{}{}</body></html>",
-        island_runtime.unwrap_or_default(),
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self';\"><style>:root{{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,sans-serif}}html,body{{margin:0;background:transparent;color:CanvasText}}::-webkit-scrollbar{{display:none}}</style><style>{styles}</style><style>html,body{{min-height:0!important}}</style></head><body>{fragment}<script type=\"module\" src=\"../../WebBundle/tachyon-runtime/native-surface.js\"></script>{}</body></html>",
         controller_runtime.unwrap_or_default(),
     )
 }
@@ -1130,8 +1473,11 @@ fn native_failure(
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{NativePlanner, valid_https_url};
+    use super::{MAX_STATE_ENTRIES, MAX_STATE_VALUE_BYTES, NativePlanner, valid_https_url};
+    use crate::template::ComponentRegistry;
+    use std::collections::BTreeMap;
     use std::fmt::Write;
+    use std::fs;
     use tachyon_contracts::NativeTarget;
 
     #[test]
@@ -1153,6 +1499,107 @@ mod tests {
         assert_eq!(plan.initial_state["count"], "0");
         assert_eq!(plan.web_surfaces.len(), 1);
         assert!(plan.web_surfaces[0].document.contains("Fallback"));
+    }
+
+    #[test]
+    fn native_component_expansion_preserves_props_slots_repetition_and_multiple_roots() {
+        let project = tempfile::tempdir().expect("project");
+        let component = project.path().join("client/components/product/card");
+        fs::create_dir_all(&component).expect("component directory");
+        fs::write(
+            component.join("tac.html"),
+            r#"<h2>{title}</h2><section :aria-label="title"><slot></slot></section>"#,
+        )
+        .expect("component template");
+        let components = ComponentRegistry::discover(project.path()).expect("registry");
+        let plan = NativePlanner::plan_with_components_and_state(
+            NativeTarget::Macos,
+            "/",
+            "client/pages/tac.html",
+            r#"<main><product-card title="Alpha"><button aria-label="First">First</button></product-card><product-card title="Beta"><p>Second</p></product-card></main>"#,
+            "",
+            &components,
+            BTreeMap::new(),
+        )
+        .expect("expanded native plan");
+        let json = serde_json::to_string(&plan.native_ui).expect("native JSON");
+        for expected in ["Alpha", "Beta", "First", "Second"] {
+            assert!(json.contains(expected), "missing {expected}: {json}");
+        }
+        assert_eq!(json.matches("text.heading2").count(), 2, "{json}");
+        // The page and both expanded component sections each lower to a
+        // column; the component's two roots remain siblings under the page.
+        assert_eq!(json.matches("layout.column").count(), 3, "{json}");
+        assert_eq!(plan.web_surface_count, 0, "{json}");
+    }
+
+    #[test]
+    fn native_component_expansion_preserves_root_page_expressions() {
+        let project = tempfile::tempdir().expect("project");
+        let component = project.path().join("client/components/product/card");
+        fs::create_dir_all(&component).expect("component directory");
+        fs::write(component.join("tac.html"), "<h2>{title}</h2>").expect("component template");
+        let components = ComponentRegistry::discover(project.path()).expect("registry");
+        let plan = NativePlanner::plan_with_components_and_state(
+            NativeTarget::Macos,
+            "/",
+            "client/pages/tac.html",
+            r#"<main><button aria-label="Add" on:click="count += 1">Add</button><p>Count: {count}</p><p>{required.join('|')}</p><product-card title="Static"></product-card></main>"#,
+            "",
+            &components,
+            BTreeMap::from([(String::from("count"), String::from("0"))]),
+        )
+        .expect("root expression must survive component expansion");
+        let json = serde_json::to_string(&plan.native_ui).expect("native JSON");
+        assert!(json.contains("{required.join('|')}"), "{json}");
+        assert!(json.contains("Static"), "{json}");
+        assert!(json.contains("increment:count"), "{json}");
+    }
+
+    #[test]
+    fn seeded_native_state_enforces_names_values_and_entry_limits() {
+        let project = tempfile::tempdir().expect("project");
+        let components = ComponentRegistry::discover(project.path()).expect("registry");
+        let invalid_states = [
+            BTreeMap::from([(String::from("bad-name"), String::from("0"))]),
+            BTreeMap::from([(String::from("large"), "x".repeat(MAX_STATE_VALUE_BYTES + 1))]),
+            (0..=MAX_STATE_ENTRIES)
+                .map(|index| (format!("field_{index}"), String::from("0")))
+                .collect(),
+        ];
+        for state in invalid_states {
+            let error = NativePlanner::plan_with_components_and_state(
+                NativeTarget::Macos,
+                "/",
+                "client/pages/tac.html",
+                "<main>Bounded</main>",
+                "",
+                &components,
+                state,
+            )
+            .expect_err("invalid seeded state must fail closed");
+            assert!(error.to_string().contains("TY1603"), "{error}");
+        }
+    }
+
+    #[test]
+    fn unresolved_native_component_values_fail_closed() {
+        let project = tempfile::tempdir().expect("project");
+        let component = project.path().join("client/components/product/card");
+        fs::create_dir_all(&component).expect("component directory");
+        fs::write(component.join("tac.html"), "<p>{title}</p>").expect("component template");
+        let components = ComponentRegistry::discover(project.path()).expect("registry");
+        let error = NativePlanner::plan_with_components_and_state(
+            NativeTarget::Macos,
+            "/",
+            "client/pages/tac.html",
+            r#"<main><product-card :title="missing"></product-card></main>"#,
+            "",
+            &components,
+            BTreeMap::new(),
+        )
+        .expect_err("dynamic property must not disappear");
+        assert!(error.to_string().contains("TY1602"), "{error}");
     }
 
     #[test]
@@ -1200,7 +1647,7 @@ mod tests {
             NativeTarget::Macos,
             "/",
             "client/pages/tac.html",
-            r#"<main aria-label="Remote"><iframe aria-label="Report" src="https://example.test/report"></iframe></main><script type="module" src="/.tachyon/islands.js"></script>"#,
+            r#"<main aria-label="Remote"><iframe aria-label="Report" src="https://example.test/report"></iframe></main><script type="module" src="/.tachyon/tac-client.js"></script>"#,
             "",
         )
         .expect("plan");
@@ -1371,7 +1818,7 @@ mod tests {
     }
 
     #[test]
-    fn fallback_document_repoints_assets_and_installs_island_runtime() {
+    fn fallback_document_repoints_assets_without_installing_removed_island_runtime() {
         let plan = NativePlanner::plan(
             NativeTarget::Android,
             "/",
@@ -1389,7 +1836,7 @@ mod tests {
             document.contains("url('../../WebBundle/shared/logo.svg')"),
             "{document}"
         );
-        assert!(document.contains("../../WebBundle/tachyon-runtime/islands.js"));
+        assert!(!document.contains("islands.js"));
         assert!(document.contains("href=\"/docs\""));
     }
 

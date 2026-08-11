@@ -6,7 +6,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repo = 'd31ma/Tachyon'
-$base = if ($env:TACHYON_BASE_URL) { $env:TACHYON_BASE_URL } else { "https://github.com/$repo/releases/latest/download" }
+$base = if ($env:TAC_BASE_URL) { $env:TAC_BASE_URL } else { "https://github.com/$repo/releases/latest/download" }
 $asset = 'ty-windows-x64.exe'
 $script:TachyonSteps = 5
 $script:TachyonStep = 0
@@ -28,7 +28,7 @@ Write-Host ''
 
 Write-TachyonStep "Detected windows/x64"
 
-$dest = if ($env:TACHYON_INSTALL_DIR) { $env:TACHYON_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Tachyon' }
+$dest = if ($env:TAC_INSTALL_DIR) { $env:TAC_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Tachyon' }
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 $exe = Join-Path $dest 'ty.exe'
 $download = Join-Path $dest ("ty-{0}.download" -f [Guid]::NewGuid().ToString('N'))

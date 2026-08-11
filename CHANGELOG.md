@@ -8,6 +8,48 @@ independent major versions.
 
 ## [Unreleased]
 
+## [26.33.02] - 2026-08-11
+
+### Added
+
+- Added an environment-selected Yon isolation boundary. Operators can retain
+  the supervised process backend or delegate handler entry points to a
+  Firecracker control program through framed Handler Protocol v1 with bounded
+  CPU, memory, pool, and deny-only egress settings. Partial or conflicting
+  Firecracker configuration fails closed.
+- Added event-driven semantic development updates through Hot Update Protocol
+  v1, including bounded filesystem-event coalescing, last-good diagnostics,
+  state-preserving CSS/component updates, and a safe structural reload fallback.
+- Added a weekly persistent-corpus fuzz campaign and a real-browser semantic
+  hot-update acceptance gate.
+
+### Changed
+
+- Made Tac exclusively client-rendered. Per-route bootstrap documents now
+  carry a bounded render plan and `/.tachyon/tac-client.js`; they contain no
+  server-rendered authored subtree. Component companions mount on explicit
+  schedules and the legacy `hydrate` spelling remains only as a schedule alias.
+- Made Yon REST-only. Builds never execute Yon, `yon.html` is rejected, and
+  Route Manifest v1 no longer advertises build-time view context.
+- Standardized project-owned environment variables under the `TAC_` client,
+  compiler, packaging, and tooling namespace or the `YON_` server and handler
+  namespace. Removed `TACHYON_` names are not aliases.
+- Removed obsolete in-tree JavaScript implementation paths while retaining the
+  immutable v26.30.04 behavioral oracle and a non-executable full-stack
+  migration fixture.
+
+### Fixed
+
+- Retained process-group ownership, descendant termination, deadline-bounded
+  pipe settlement, and bounded reaping for both process and Firecracker-driver
+  handler invocations.
+- Preserved stable-release recovery, corrupt-checksum rollback verification,
+  exact toolchain setup, website acceptance, native execution hardening, and
+  the standalone installer's atomic failed-upgrade guarantees.
+- Generated static assets take precedence over dynamic route patterns, and
+  mounted website components now request rerenders through the current
+  `tachyonComponent` boundary.
+
 ## [26.33.01] - 2026-08-10
 
 ### Fixed
@@ -975,7 +1017,8 @@ should expect to touch imports, bin names, and any code that assumed the old
 
 See the Git history and GitHub release notes for pre-2.0 changes.
 
-[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.33.01...HEAD
+[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.33.02...HEAD
+[26.33.02]: https://github.com/d31ma/Tachyon/compare/v26.33.01...v26.33.02
 [26.33.01]: https://github.com/d31ma/Tachyon/compare/v26.31.06...v26.33.01
 [26.32.07]: https://github.com/d31ma/Tachyon/compare/v26.31.06...v26.32.07
 [26.31.06]: https://github.com/d31ma/Tachyon/compare/v26.30.04...v26.31.06

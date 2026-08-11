@@ -69,7 +69,7 @@ Sustained rebuilds in one long-lived working tree must hold three properties:
 2. open descriptors do not grow beyond a small constant;
 3. latency does not drift upward as state accumulates.
 
-The iteration count is `TACHYON_SOAK_ITERATIONS`, defaulting to 24 locally and
+The iteration count is `TAC_SOAK_ITERATIONS`, defaulting to 24 locally and
 raised in CI.
 
 ## 6. Performance Budgets

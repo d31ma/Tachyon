@@ -1359,7 +1359,7 @@ mod tests {
         let components = BTreeSet::from([String::from("product-card")]);
         let program = TemplateFrontend::compile(
             r#"<logic :if="show"><product-card :item="item">{item.name}</product-card></logic><logic else>none</logic>"#,
-            "server/routes/yon.html",
+            "client/pages/tac.html",
             &components,
         )
         .unwrap_or_else(|_| unreachable!());
@@ -1394,6 +1394,7 @@ mod tests {
         for source in [
             "<main><slot>text</slot></main>",
             "<slot><p>child</p></slot>",
+            "<main><slot>{ text <pr<slot><p>child</p></slot>\n",
             "main><slot>{\u{d}\u{d}\u{d}\u{d}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}-\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{d}\u{d}<pr<main><slot>{\u{d}\u{d}\u{d}\u{d}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}-\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{d}\u{d}<pr\u{d}",
         ] {
             let error = TemplateFrontend::compile(source, "client/pages/tac.html", &empty)
