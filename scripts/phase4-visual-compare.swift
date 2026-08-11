@@ -179,9 +179,9 @@ private func run() throws {
     let edgeRatio = max(native.edgeDensity, web.edgeDensity)
         / max(0.000_001, min(native.edgeDensity, web.edgeDensity))
     let passed = native.width == 420
-        && native.height == 780
-        && web.width == 420
-        && web.height == 780
+        && web.width == native.width
+        && (600...780).contains(native.height)
+        && web.height == native.height
         && (0.01...0.75).contains(native.foregroundDensity)
         && (0.01...0.75).contains(web.foregroundDensity)
         && rowTransportDistance <= 0.16

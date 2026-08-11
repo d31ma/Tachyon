@@ -184,11 +184,12 @@ Phase 4 is complete only when:
 
 Phase 4 does not promote any artifact to preview or supported status.
 
-The screenshot budget normalizes both 420 by 780 captures to 84 by 156
-samples, derives foreground and edge distributions independently of
-light/dark appearance, and requires: nonblank foreground density between 1%
-and 75%, foreground-centroid distance no greater than 0.22, vertical
-foreground earth-mover distance no greater than 0.16, and edge-density ratio
-no greater than 4. This deliberately compares information placement and
-coverage while allowing platform-native fonts, controls, title bars, and
-colors.
+The screenshot budget requires matched 420-point-wide native and web captures
+at the hosted runner's usable height from 600 through 780 points, then
+normalizes both to 84 by 156 samples. It derives foreground and edge
+distributions independently of light/dark appearance and requires: nonblank
+foreground density between 1% and 75%, foreground-centroid distance no greater
+than 0.22, vertical foreground earth-mover distance no greater than 0.16, and
+edge-density ratio no greater than 4. This deliberately compares information
+placement and coverage while allowing platform-native fonts, controls, title
+bars, and colors.
