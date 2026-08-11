@@ -182,11 +182,111 @@ fn request(socket: &str, request: &[u8]) -> String {
     connection
         .write_all(request)
         .expect("request should be sent");
-    let mut response = String::new();
-    connection
-        .read_to_string(&mut response)
-        .expect("response should be read");
-    response
+    let mut response = Vec::new();
+    match connection.read_to_end(&mut response) {
+        Ok(_) => {}
+        // Linux may report a reset instead of EOF after Hyper has written and
+        // closed a `Connection: close` response. Accept the preserved bytes
+        // only when HTTP framing proves the complete message was received.
+        Err(error)
+            if error.kind() == std::io::ErrorKind::ConnectionReset
+                && reset_response_is_complete(request, &response) => {}
+        Err(error) => panic!("response should be read: {error}"),
+    }
+    String::from_utf8(response).expect("response should be UTF-8")
+}
+
+fn reset_response_is_complete(request: &[u8], response: &[u8]) -> bool {
+    let Some(header_end) = response.windows(4).position(|bytes| bytes == b"\r\n\r\n") else {
+        return false;
+    };
+    let Ok(headers) = std::str::from_utf8(&response[..header_end]) else {
+        return false;
+    };
+    let body = &response[header_end + 4..];
+    let mut lines = headers.lines();
+    let Some(status_line) = lines.next() else {
+        return false;
+    };
+    let mut status_parts = status_line.split_whitespace();
+    if status_parts.next() != Some("HTTP/1.1") {
+        return false;
+    }
+    let Some(status_value) = status_parts.next() else {
+        return false;
+    };
+    if status_value.len() != 3 || !status_value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let Ok(status) = status_value.parse::<u16>() else {
+        return false;
+    };
+    let mut content_length = None;
+    let mut transfer_encoding = false;
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        if name.eq_ignore_ascii_case("content-length") {
+            if content_length.is_some() {
+                return false;
+            }
+            content_length = value.trim().parse::<usize>().ok();
+            if content_length.is_none() {
+                return false;
+            }
+        } else if name.eq_ignore_ascii_case("transfer-encoding") {
+            transfer_encoding = true;
+        }
+    }
+    if transfer_encoding && content_length.is_some() {
+        return false;
+    }
+    if transfer_encoding {
+        return false;
+    }
+    let request_is_head = request.starts_with(b"HEAD ");
+    let status_is_bodyless = (100..200).contains(&status) || matches!(status, 204 | 304);
+    if request_is_head || status_is_bodyless {
+        return body.is_empty();
+    }
+    content_length.is_some_and(|length| body.len() == length)
+}
+
+#[test]
+fn reset_responses_require_complete_unambiguous_http_framing() {
+    assert!(reset_response_is_complete(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+    ));
+    assert!(!reset_response_is_complete(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 404 Not Found\r\nContent-Length: 11\r\n\r\n[work",
+    ));
+    assert!(!reset_response_is_complete(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nok\r\n0\r\n\r\n",
+    ));
+    assert!(!reset_response_is_complete(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"not-http 200 OK\r\nContent-Length: 2\r\n\r\nok",
+    ));
+    assert!(reset_response_is_complete(
+        b"HEAD / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 10\r\n\r\n",
+    ));
+    assert!(!reset_response_is_complete(
+        b"HEAD / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 10\r\n\r\npartial",
+    ));
+    assert!(!reset_response_is_complete(
+        b"HEAD / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 405 Method Not Allowed\r\nTransfer-Encoding: chunked\r\n\r\n",
+    ));
+    assert!(reset_response_is_complete(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 204 No Content\r\n\r\n",
+    ));
 }
 
 #[test]
