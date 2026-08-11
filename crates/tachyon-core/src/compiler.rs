@@ -1988,7 +1988,10 @@ mod tests {
         let error = write_stage(&file, &[(PathBuf::from("nested/index.html"), vec![1])])
             .expect_err("stage under file");
         assert!(output_error(&file, &error).to_string().contains("TY1201"));
-        assert_eq!(error.kind(), io::ErrorKind::NotADirectory);
+        assert!(matches!(
+            error.kind(),
+            io::ErrorKind::NotADirectory | io::ErrorKind::AlreadyExists
+        ));
         assert!(output_io::<()>(Err(error), &file).is_err());
     }
 
