@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Gap 4 event-hydration gate.
+// Tac client event gate.
 //
 // Builds a project that binds on:<event> handlers, serves it, and drives the
 // page in a real browser. A marker that renders but never fires is the exact
@@ -16,7 +16,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const TY = process.env.TY_BIN ?? path.join(REPO, 'target/release/ty');
+const TY = process.env.TAC_BIN ?? path.join(REPO, 'target/release/ty');
 const PROJECT = path.join(tmpdir(), 'ty-events-gate');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 
@@ -94,7 +94,7 @@ page.on('pageerror', (error) => errors.push(String(error)));
 
 try {
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
-  expect(await page.textContent('#count'), '0', 'server-rendered value');
+  expect(await page.textContent('#count'), '0', 'client-rendered value');
 
   await page.click('text=Add one');
   await page.waitForTimeout(150);
@@ -129,4 +129,4 @@ try {
   server.close();
 }
 
-console.log(process.exitCode ? 'FAIL: event hydration gate' : 'PASS: event hydration gate');
+console.log(process.exitCode ? 'FAIL: Tac client event gate' : 'PASS: Tac client event gate');

@@ -15,24 +15,26 @@ const YON_ROOT: &str = "server/routes";
 pub enum ViewKind {
     /// A client `tac.html` view.
     Tac,
-    /// A static server `yon.html` view.
-    Yon,
 }
 
 impl ViewKind {
     const fn file_name(self) -> &'static str {
         match self {
             Self::Tac => "tac.html",
-            Self::Yon => "yon.html",
         }
     }
 
     const fn stem(self) -> &'static str {
         match self {
             Self::Tac => "tac.",
-            Self::Yon => "yon.",
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SourceKind {
+    Tac,
+    Yon,
 }
 
 /// One validated Yon handler contributor.
@@ -301,13 +303,13 @@ impl ProjectDiscovery {
         discover_views(
             &canonical_root,
             Path::new(TAC_ROOT),
-            ViewKind::Tac,
+            SourceKind::Tac,
             &mut found,
         );
         discover_views(
             &canonical_root,
             Path::new(YON_ROOT),
-            ViewKind::Yon,
+            SourceKind::Yon,
             &mut found,
         );
         let Discovered {
@@ -324,7 +326,7 @@ impl ProjectDiscovery {
                 1002,
                 "No Tachyon view or handler source was found.",
                 Some(String::from(
-                    "Add a Tac/Yon HTML view or server/routes/yon.js or yon.py.",
+                    "Add a client/pages/tac.html view or a server/routes/yon.* handler.",
                 )),
                 None,
             )));
@@ -393,18 +395,13 @@ fn non_directory_ancestor(project_root: &Path, relative_root: &Path) -> Option<P
 fn discover_views(
     project_root: &Path,
     relative_root: &Path,
-    kind: ViewKind,
+    kind: SourceKind,
     found: &mut Discovered,
 ) {
     let source_root = project_root.join(relative_root);
     let metadata = match fs::symlink_metadata(&source_root) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            // Unix reports `NotADirectory` when a parent component is a regular
-            // file, but Windows reports `NotFound` — the same code that means a
-            // genuinely absent source root. Without this check a project whose
-            // `client` is a file would be reported as merely having no views on
-            // one platform and as a broken layout on the other.
             if let Some(blocking) = non_directory_ancestor(project_root, relative_root) {
                 found.diagnostics.push(diagnostic(
                     1001,
@@ -452,7 +449,7 @@ fn visit_directory(
     project_root: &Path,
     source_root: &Path,
     relative_directory: &Path,
-    kind: ViewKind,
+    kind: SourceKind,
     found: &mut Discovered,
 ) {
     let absolute_directory = project_root.join(relative_directory);
@@ -519,7 +516,7 @@ fn inspect_source_file(
     project_root: &Path,
     source_root: &Path,
     relative: &Path,
-    kind: ViewKind,
+    kind: SourceKind,
     found: &mut Discovered,
 ) {
     let Some(name) = relative.file_name().and_then(OsStr::to_str) else {
@@ -531,23 +528,29 @@ fn inspect_source_file(
         ));
         return;
     };
-    if name == kind.file_name() {
+    if kind == SourceKind::Tac && name == ViewKind::Tac.file_name() {
         match route_for(relative, source_root) {
             Ok(route) => found.views.push((
                 route,
                 ViewSource {
                     source_path: portable(relative),
                     absolute_source_path: project_root.join(relative),
-                    view_kind: kind,
+                    view_kind: ViewKind::Tac,
                 },
             )),
             Err(failure) => found.diagnostics.extend_from_slice(failure.diagnostics()),
         }
-    } else if kind == ViewKind::Yon
-        && name.starts_with("yon.")
-        && name != "yon.html"
-        && companion_kind(kind, name).is_none()
-    {
+    } else if kind == SourceKind::Yon && name == "yon.html" {
+        let path = portable(relative);
+        found.diagnostics.push(diagnostic(
+            1008,
+            format!("Yon HTML view '{path}' is not supported."),
+            Some(String::from(
+                "Return the HTML body from a yon.* handler with Content-Type: text/html.",
+            )),
+            source_span(&path, 0, name.len()),
+        ));
+    } else if kind == SourceKind::Yon && name.starts_with("yon.") {
         // Any yon.<extension> is a handler candidate. Whether it can run is
         // decided by HandlerSource, which resolves built-in adapters, a
         // .tachyonrc interpreter, or an executable file, and reports why not.
@@ -567,7 +570,9 @@ fn inspect_source_file(
                 found.diagnostics.extend_from_slice(failure.diagnostics());
             }
         }
-    } else if let Some(companion_kind) = companion_kind(kind, name) {
+    } else if kind == SourceKind::Tac
+        && let Some(companion_kind) = companion_kind(name)
+    {
         match route_for(relative, source_root) {
             Ok(route) => found.companions.push((
                 route,
@@ -579,14 +584,13 @@ fn inspect_source_file(
             )),
             Err(failure) => found.diagnostics.extend_from_slice(failure.diagnostics()),
         }
-    } else if name.starts_with(kind.stem()) {
+    } else if kind == SourceKind::Tac && name.starts_with(ViewKind::Tac.stem()) {
         let path = portable(relative);
         found.diagnostics.push(diagnostic(
             1008,
             format!("Companion source '{path}' has no available adapter."),
             Some(String::from(
-                "Supported companions are tac.css, yon.css, tac.js, and server \
-                 route yon.js and yon.py handlers.",
+                "Supported Tac companions are tac.css, tac.js, and tac.ts.",
             )),
             source_span(&path, 0, name.len()),
         ));
@@ -696,11 +700,11 @@ fn invalid_route(relative: &Path) -> Failure {
 }
 
 /// Returns the companion kind for a colocated file name, if one applies.
-fn companion_kind(kind: ViewKind, name: &str) -> Option<CompanionKind> {
-    match (kind, name) {
-        (_, "tac.css" | "yon.css") => Some(CompanionKind::Style),
-        (ViewKind::Tac, "tac.js") => Some(CompanionKind::ClientModule),
-        (ViewKind::Tac, "tac.ts") => Some(CompanionKind::TypeScriptModule),
+fn companion_kind(name: &str) -> Option<CompanionKind> {
+    match name {
+        "tac.css" => Some(CompanionKind::Style),
+        "tac.js" => Some(CompanionKind::ClientModule),
+        "tac.ts" => Some(CompanionKind::TypeScriptModule),
         _ => None,
     }
 }
@@ -734,9 +738,7 @@ fn build_route_graph(
                     "Route '{}' is claimed by both '{}' and '{}'.",
                     route, existing.source_path, view.source_path
                 ),
-                Some(String::from(
-                    "Keep exactly one Tac or Yon view for each route.",
-                )),
+                Some(String::from("Keep exactly one Tac view for each route.")),
                 source_span(&view.source_path, 0, view.source_path.len()),
             )));
         }
@@ -841,6 +843,20 @@ mod tests {
     }
 
     #[test]
+    fn a_source_root_blocked_by_a_file_is_found_on_every_platform() {
+        let root = tempfile::tempdir().expect("workspace");
+        assert_eq!(
+            super::non_directory_ancestor(root.path(), Path::new("client/pages")),
+            None
+        );
+        fs::write(root.path().join("client"), "not a directory").expect("blocking file");
+        assert_eq!(
+            super::non_directory_ancestor(root.path(), Path::new("client/pages")),
+            Some(PathBuf::from("client"))
+        );
+    }
+
+    #[test]
     fn invalid_static_segments_are_rejected() {
         // `_slug` is no longer here: dynamic segments are supported and are
         // covered by `dynamic_route_segments_are_discovered_with_their_parameters`.
@@ -895,25 +911,6 @@ mod tests {
         );
     }
 
-    /// Unix and Windows disagree on the error kind for a source root whose
-    /// parent is a regular file, so the blocked ancestor is detected by shape
-    /// rather than by `io::ErrorKind`. Only Windows reaches this through
-    /// `discover`, so the helper is asserted directly on every platform.
-    #[test]
-    fn a_source_root_blocked_by_a_file_is_found_on_every_platform() {
-        let root = tempfile::tempdir().expect("workspace");
-        assert_eq!(
-            super::non_directory_ancestor(root.path(), Path::new("client/pages")),
-            None
-        );
-
-        fs::write(root.path().join("client"), "not a directory").expect("blocking file");
-        assert_eq!(
-            super::non_directory_ancestor(root.path(), Path::new("client/pages")),
-            Some(PathBuf::from("client"))
-        );
-    }
-
     #[cfg(unix)]
     #[test]
     fn symlinked_sources_are_rejected() {
@@ -929,7 +926,7 @@ mod tests {
     }
 
     #[test]
-    fn route_collisions_and_companions_are_rejected() {
+    fn yon_html_and_unavailable_handlers_are_rejected() {
         let collision = tempfile::tempdir().expect("collision project");
         fs::create_dir_all(collision.path().join("client/pages")).expect("Tac root");
         fs::create_dir_all(collision.path().join("server/routes")).expect("Yon root");
@@ -945,9 +942,9 @@ mod tests {
         .expect("Yon source");
         assert!(
             ProjectDiscovery::discover(collision.path())
-                .expect_err("collision")
+                .expect_err("yon.html")
                 .to_string()
-                .contains("TY1003")
+                .contains("TY1008")
         );
 
         // A yon.<extension> with no registered interpreter and no executable

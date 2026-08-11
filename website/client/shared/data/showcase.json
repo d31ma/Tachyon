@@ -1,4 +1,4 @@
 {
   "title": "Tac browser data",
-  "summary": "Hydrated companions use standard fetch and storage APIs, while client/shared files publish at stable same-origin paths."
+  "summary": "Mounted companions use standard fetch and storage APIs, while client/shared files publish at stable same-origin paths."
 }

@@ -12,9 +12,10 @@ flowchart LR
     H --> V["View IR"]
     V --> W["Web code generation"]
     V --> N["Native render planning"]
-    V --> R["Server route rendering"]
-    R --> P["Handler supervisor"]
-    P --> A["Language adapters"]
+    D --> P["Yon endpoint dispatch"]
+    P --> HS["Handler supervisor"]
+    HS --> A["Process language adapters"]
+    HS --> I["Firecracker control driver"]
     N --> PA["Platform adapters"]
     N --> F["WebSurface fallback"]
 ```
@@ -26,7 +27,8 @@ flowchart LR
 - Discovery depends on project configuration and diagnostics.
 - Frontends depend on diagnostics and emit validated source structures.
 - Lowering depends on frontend structures and emits View IR.
-- Web, server, and native backends consume View IR; they do not modify it.
+- Web and native backends consume View IR; they do not modify it. Yon endpoints
+  do not participate in the view pipeline.
 - The handler supervisor depends on Handler Protocol, not on a language
   runtime's internal API.
 - Platform adapters consume Native UI IR and declared capabilities.
@@ -62,13 +64,18 @@ publication, scaffolding, and the development server. `tachyon-contracts` owns
 Route Manifest v1 and repository policy tests; `tachyon-diagnostics` owns
 Diagnostics v1.
 
-The compiler preserves full HTML documents or wraps fragments in a
-deterministic shell. It emits View IR, source maps, route templates, island and
-event modules, shared assets, and an offline service worker into a staged
+The compiler emits Tac routes as deterministic bootstrap documents plus
+bounded client render plans; it never renders Tac view structure on the
+server. Yon is not a compiler frontend and `yon.html` is rejected. The compiler
+also emits View IR, source maps, client modules, shared assets, and an offline service worker into a staged
 directory before atomic publication. The server consumes that generated
-output, matches exact or dynamic route patterns, dispatches handlers and
+output, matches exact or dynamic route patterns, dispatches Yon REST handlers and
 middleware through the supervisor, and retains the last good build after a
-failed watched rebuild.
+failed watched rebuild. In development, an event-driven watcher classifies a
+successful source change as a stylesheet update, client render-plan update,
+or safe full-reload fallback and publishes Hot Update Protocol v1 over SSE.
+Diagnostics retain the running page. The client is injected while serving and
+does not enter production artifacts; see ADR 0013.
 
 ## Handler Data Path
 
@@ -82,10 +89,10 @@ sequenceDiagram
     S->>S: "Validate source, request, deadline, environment"
     S->>A: "Direct spawn + length-prefixed request"
     A->>H: "Static HTTP method(request)"
-    H-->>A: "JSON-serializable value or exception"
+    H-->>A: "JSON value, explicit HTTP response, or exception"
     A-->>S: "One framed HandlerResponse"
     S->>S: "Validate ID, envelope, bounds, stderr, exit"
-    S-->>C: "Typed response or stable diagnostic"
+    S-->>C: "Typed HTTP-compatible response or stable diagnostic"
 ```
 
 `tachyon-core::handler` owns source validation, framing, runtime adapter
@@ -94,16 +101,28 @@ and response validation. `tachyon-contracts` owns the typed public envelope
 shapes. `tachyon-cli` translates command arguments and Ctrl-C into one
 invocation; it does not parse adapter-specific output.
 
-The supervisor spawns one child per request without a shell. Protocol stdout
+The supervisor selects its isolation backend exclusively from the parent
+process environment. Process mode spawns one language child per request;
+Firecracker mode spawns a trusted control client which delegates the same
+framed request to an operator-owned microVM pool. Neither project files nor
+handler requests can weaken that selection. See ADR 0014.
+
+The supervisor spawns its child or control client without a shell. Protocol stdout
 accepts exactly one bounded frame while stderr is drained independently and
 bounded. Queueing, startup, execution, framing, and exit share one deadline.
 Cancellation sends the protocol cancel frame, waits a short grace period, then
-kills and reaps when required. Processes are never pooled or reused.
+kills and reaps when required. Process-mode handlers are never pooled or
+reused.
+
+The built-in JavaScript and Python adapters turn ordinary return values into
+JSON responses. A handler may instead return `{status, headers, body}`; an
+explicit `Content-Type: text/html` body passes through unchanged. No Yon
+response is interpreted as a Tachyon template.
 
 The server invokes this path for HTTP dispatch, middleware, and scheduled
-workers. Static handler fields and the selected method result contribute to
-route context in deterministic source order; duplicate keys fail before
-rendering. Processes are not pooled or reused.
+workers. Builds never invoke it. A Firecracker control program may address a
+warm pool, but pool and snapshot correctness remain its qualified deployment
+responsibility.
 
 ## View Data Path
 
@@ -111,30 +130,27 @@ rendering. Processes are not pooled or reused.
 flowchart LR
     D["Route + component discovery"] --> T["Bounded template AST"]
     T --> I["View IR v1"]
-    H["Supervised Yon handlers"] --> C["Collision-safe JSON context"]
-    C --> R["Escaping SSR renderer"]
-    T --> R
-    R --> O["HTML + source map"]
-    R --> B["External island runtime + modules"]
-    O --> V["Digest-verified route cache"]
+    T --> R["Tac JSON render plan"]
+    R --> B["External Tac browser renderer + modules"]
+    R --> O2["Tac bootstrap + source map"]
+    O2 --> V
+    V["Digest-verified route cache"] --> P["Atomic publication"]
     B --> P["Atomic publication"]
-    V --> P
 ```
 
 `tachyon-core::template` owns expression parsing, control validation, component
-resolution, route-context composition, rendering, island metadata, and source
-mapping. The compiler validates every view before executing handlers, lowers
-View IR before evaluation, treats prior build state as untrusted, and publishes
-only a complete staged output. At runtime, bounded island modules activate only
-the subtrees whose hydration policy permits it. Cross-document navigation
-replaces the legacy client renderer; state that must survive navigation belongs
-in an island, storage, or the server.
+resolution, client-plan encoding, and source mapping. The compiler validates
+every view without executing handlers, treats prior build state as untrusted,
+and publishes only a complete staged output. At runtime, the bounded Tac
+renderer creates the entire Tac DOM and owns structural rerenders. Yon remains
+an independent HTTP dispatch path.
+Cross-document navigation remains browser-native. See ADR 0015.
 
 ## Native Data Path
 
 ```mermaid
 flowchart LR
-    W["Resolved Phase 3 HTML"] --> P["Native planner"]
+    W["Authored Tac declarations"] --> P["Native planner"]
     P --> N["Native UI v1"]
     P --> F["Contained WebSurface documents"]
     N --> S["Generated platform host"]
@@ -154,15 +170,13 @@ retains its documented placeholder reduction until WebView2 evidence exists.
 Same-origin surface links return to the native route stack. Remote content
 requires HTTPS, stays on its declared host, and never receives a native bridge.
 
-## Legacy Boundary
+## Compatibility Boundary
 
-The JavaScript framework implementation and its implementation-coupled test
-suite are not present in this branch. `website/` builds through Rust and acts
-as a real migration and multi-target acceptance project. The checksum-verified
-v26.30.04 executable is fetched only inside the compatibility job and is never
-part of the shipped runtime.
+There is no in-tree legacy framework implementation. `website/` builds through
+Rust and acts as a real migration and multi-target acceptance project. The
+immutable v26.30.04 release binary is the external behavioral oracle, and
+`corpus/` contains the neutral fixtures shared by both implementations.
 
-Observable behavior may be promoted into `corpus/` or the archived migration
-fixture under `crates/tachyon-cli/tests/fixtures/`. Such promotions must
-identify the behavior being preserved and must not embed generated caches,
+New compatibility fixtures must identify the observable behavior being
+preserved and must not embed private implementation logic, generated caches,
 private data, or incidental implementation details.

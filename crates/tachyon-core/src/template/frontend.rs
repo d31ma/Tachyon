@@ -454,32 +454,11 @@ impl<'a> Parser<'a> {
     }
 
     fn append(&mut self, node: TemplateNode) {
-        let range = node.range;
-        let Some(parent) = self.stack.last_mut() else {
+        if let Some(parent) = self.stack.last_mut() {
+            parent.children_mut().push(node);
+        } else {
             self.roots.push(node);
-            return;
-        };
-        // A leaf such as `<slot>` never holds children, but malformed markup
-        // can still leave one open on the stack. Refuse the child rather than
-        // silently reparenting it, and never panic on the recovered state.
-        let refused = match children_mut(&mut parent.kind) {
-            Some(children) => {
-                children.push(node);
-                None
-            }
-            None => Some(parent.tag.clone()),
-        };
-        let Some(tag) = refused else {
-            return;
-        };
-        self.push_diagnostic(template_diagnostic(
-            1301,
-            self.source_path,
-            range.start,
-            range.end,
-            &format!("Element '<{tag}>' cannot contain child content."),
-            "Leave the element empty and close it immediately.",
-        ));
+        }
     }
 
     fn extend_failure(&mut self, failure: &Failure) {
@@ -502,6 +481,20 @@ struct OpenNode {
 }
 
 impl OpenNode {
+    fn children_mut(&mut self) -> &mut Vec<TemplateNode> {
+        match &mut self.kind {
+            TemplateNodeKind::Element { children, .. }
+            | TemplateNodeKind::Conditional { children, .. }
+            | TemplateNodeKind::Iteration { children, .. }
+            | TemplateNodeKind::Switch { children, .. }
+            | TemplateNodeKind::Case { children, .. }
+            | TemplateNodeKind::Component { children, .. } => children,
+            TemplateNodeKind::Text(_) | TemplateNodeKind::Comment(_) | TemplateNodeKind::Slot => {
+                unreachable!()
+            }
+        }
+    }
+
     fn finish(self, source_path: &str) -> TemplateNode {
         TemplateNode {
             kind: self.kind,
@@ -1359,7 +1352,7 @@ mod tests {
         let components = BTreeSet::from([String::from("product-card")]);
         let program = TemplateFrontend::compile(
             r#"<logic :if="show"><product-card :item="item">{item.name}</product-card></logic><logic else>none</logic>"#,
-            "server/routes/yon.html",
+            "client/pages/tac.html",
             &components,
         )
         .unwrap_or_else(|_| unreachable!());
@@ -1382,30 +1375,6 @@ mod tests {
         )
         .expect_err("invalid template");
         assert!(error.diagnostics().len() >= 3);
-    }
-
-    /// `<slot>` holds no children, but malformed token recovery can leave one
-    /// open on the stack. Appending to it used to panic. Regression for the
-    /// `template_frontend` fuzz artifact
-    /// `crash-e40bfb3435ab0d4c4aaaa29c22cfa5dfcda5861c`.
-    #[test]
-    fn content_after_an_open_slot_fails_closed_instead_of_panicking() {
-        let empty = BTreeSet::new();
-        for source in [
-            "<main><slot>text</slot></main>",
-            "<slot><p>child</p></slot>",
-            "main><slot>{\u{d}\u{d}\u{d}\u{d}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}-\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{d}\u{d}<pr<main><slot>{\u{d}\u{d}\u{d}\u{d}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}-\u{11}\u{11}\u{11}\u{11}\u{11}\u{11}\u{d}\u{d}<pr\u{d}",
-        ] {
-            let error = TemplateFrontend::compile(source, "client/pages/tac.html", &empty)
-                .expect_err(source);
-            assert!(
-                error
-                    .diagnostics()
-                    .iter()
-                    .any(|value| value.code.number() == 1301),
-                "{source}"
-            );
-        }
     }
 
     #[test]

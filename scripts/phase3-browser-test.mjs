@@ -41,21 +41,21 @@ try {
   await page.goto(address, { waitUntil: 'load' })
   await page.waitForFunction(() => {
     const loaded = document.querySelector(
-      'tachyon-island[data-tachyon-component="demo-load"]',
+      'tachyon-component[data-tachyon-component="demo-load"]',
     )
     const failure = document.querySelector(
-      'tachyon-island[data-tachyon-component="demo-failure"]',
+      'tachyon-component[data-tachyon-component="demo-failure"]',
     )
     return loaded?.dataset.activated === 'Loaded'
-      && failure?.dataset.tachyonIslandError === 'activation_failed'
+      && failure?.dataset.tachyonMountError === 'activation_failed'
   })
 
-  const state = await page.locator('tachyon-island').evaluateAll((roots) =>
+  const state = await page.locator('tachyon-component').evaluateAll((roots) =>
     roots.map((root) => ({
       component: root.dataset.tachyonComponent,
       activated: root.dataset.activated || null,
-      error: root.dataset.tachyonIslandError || null,
-      module: root.dataset.tachyonModule || null,
+      active: root.dataset.tachyonActive || null,
+      error: root.dataset.tachyonMountError || null,
       text: root.textContent.trim(),
     })),
   )
@@ -63,29 +63,29 @@ try {
     {
       component: 'demo-load',
       activated: 'Loaded',
+      active: 'true',
       error: null,
-      module: '/.tachyon/components/demo-load.js',
       text: 'Loaded',
     },
     {
       component: 'demo-interactive',
       activated: null,
+      active: null,
       error: null,
-      module: '/.tachyon/components/demo-interactive.js',
       text: 'Interactive',
     },
     {
       component: 'demo-failure',
       activated: null,
+      active: 'false',
       error: 'activation_failed',
-      module: '/.tachyon/components/demo-failure.js',
       text: 'Preserved',
     },
     {
       component: 'demo-never',
       activated: null,
+      active: null,
       error: null,
-      module: null,
       text: 'Never',
     },
   ])
@@ -93,7 +93,7 @@ try {
   await page.getByRole('button', { name: 'Interactive', exact: true }).click()
   await page.waitForFunction(() => {
     const root = document.querySelector(
-      'tachyon-island[data-tachyon-component="demo-interactive"]',
+      'tachyon-component[data-tachyon-component="demo-interactive"]',
     )
     return root?.dataset.activated === 'Interactive' && root?.dataset.replayed === '1'
   })

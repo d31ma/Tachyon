@@ -1,5 +1,4 @@
 //! Phase 3 behavior tests against the compiled `ty` executable.
-
 #![allow(clippy::expect_used, clippy::too_many_lines)]
 
 use std::fs;
@@ -76,186 +75,110 @@ fn stdout(output: &Output) -> String {
 }
 
 #[test]
-fn yon_context_controls_components_ir_and_source_maps_form_one_vertical_slice() {
+fn yon_html_is_rejected_without_executing_a_handler() {
     let project = tempfile::tempdir().expect("project");
+    let marker = project.path().join("handler-was-executed");
     write(
         &project.path().join("server/routes/products/yon.html"),
-        r#"
-<main :data-title="title">
-  <h1>{title}</h1>
-  <logic :if="featured"><p>Featured</p></logic>
-  <logic else><p>Standard</p></logic>
-  <ul>
-    <loop :for="product of products">
-      <li>
-        <product-card :product="product" :currency="currency">
-          <strong>{product.sku}</strong>
-        </product-card>
-      </li>
-    </loop>
-  </ul>
-  <w-badge state="ok"></w-badge>
-</main>
-"#,
+        "<main>{products}</main>",
     );
     write(
         &project.path().join("server/routes/products/yon.js"),
-        r#"
-export class Handler {
-  static title = 'Products "Summer"'
-
-  static async GET() {
-    return {
-      featured: true,
-      products: [{ sku: 'A-1', name: '<unsafe>' }],
-    }
-  }
-}
-"#,
-    );
-    write(
-        &project.path().join("server/routes/products/yon.py"),
-        r#"
-class Handler:
-    currency = "CAD"
-
-    @staticmethod
-    async def GET(request):
-        return {"meta": {"route": request["route"]}}
-"#,
-    );
-    write(
-        &project
-            .path()
-            .join("client/components/product/card/tac.html"),
-        r#"<article :data-sku="product.sku" :data-product="product"><slot></slot><span>{product.name}</span><span>{currency}</span></article>"#,
+        &format!(
+            "import {{ writeFileSync }} from 'node:fs'; export class Handler {{ static GET() {{ writeFileSync({}, 'bad'); return {{ products: [] }} }} }}",
+            serde_json::to_string(&marker).expect("marker path")
+        ),
     );
 
     let output = run(ty().arg("build").arg(project.path()));
-    assert!(output.status.success(), "{}", stderr(&output));
-    assert!(stdout(&output).contains("compiled=1 reused=0"));
-
-    let html =
-        fs::read_to_string(project.path().join("dist/products/index.html")).expect("rendered page");
-    assert!(html.contains(r#"data-title="Products &quot;Summer&quot;""#));
-    assert!(html.contains("<h1>Products &quot;Summer&quot;</h1>"));
-    assert!(html.contains("<p>Featured</p>"));
-    assert!(!html.contains("<p>Standard</p>"));
-    assert!(html.contains(r#"data-sku="A-1""#));
-    assert!(html.contains(r#"data-product="{&quot;name&quot;:&quot;\u003cunsafe&gt;&quot;,&quot;sku&quot;:&quot;A-1&quot;}""#));
-    assert!(html.contains("<strong>A-1</strong>"));
-    assert!(html.contains("<span>&lt;unsafe&gt;</span><span>CAD</span>"));
-    assert!(html.contains("<w-badge"));
-    for control in ["<logic", "<loop", "<if", "<else", "<for"] {
-        assert!(!html.contains(control), "{control} leaked into HTML");
-    }
-
-    let manifest: serde_json::Value = serde_json::from_slice(
-        &fs::read(project.path().join("dist/route-manifest.json")).expect("manifest"),
-    )
-    .expect("manifest JSON");
-    let route = &manifest["routes"][0];
-    assert_eq!(
-        route["context"]["static_exports"],
-        serde_json::json!(["currency", "title"])
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("TY1008"), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("Content-Type: text/html"),
+        "{}",
+        stderr(&output)
     );
-    assert_eq!(
-        route["context"]["response_exports"],
-        serde_json::json!(["featured", "meta", "products"])
-    );
-
-    let ir: serde_json::Value = serde_json::from_slice(
-        &fs::read(project.path().join("dist/.tachyon/view-ir/products.json")).expect("View IR"),
-    )
-    .expect("View IR JSON");
-    assert_eq!(ir["contract_version"], 1);
-    assert_eq!(ir["source"], "server/routes/products/yon.html");
-    let ir_text = serde_json::to_string(&ir).expect("canonical IR");
-    assert!(!ir_text.contains(r#""tag":"logic""#));
-    assert!(!ir_text.contains(r#""tag":"loop""#));
-
-    let source_map: serde_json::Value = serde_json::from_slice(
-        &fs::read(
-            project
-                .path()
-                .join("dist/.tachyon/source-maps/products.map.json"),
-        )
-        .expect("source map"),
-    )
-    .expect("source map JSON");
-    assert_eq!(source_map["contract_version"], 1);
-    assert_eq!(source_map["output"], "products/index.html");
-    assert!(source_map["sources"].as_array().is_some_and(|sources| {
-        sources
-            .iter()
-            .any(|source| source == "client/components/product/card/tac.html")
-    }));
+    assert!(!marker.exists(), "Yon GET ran during compilation");
 }
-
 #[test]
-fn direct_control_aliases_and_contextual_escaping_render_deterministically() {
+fn yon_handlers_can_return_explicit_html_responses_without_framework_rendering() {
     let project = tempfile::tempdir().expect("project");
     write(
-        &project.path().join("server/routes/aliases/yon.html"),
-        r#"
-<section>
-  <!-- control aliases and dynamic attributes -->
-  <if :when="show"><p>Hidden</p></if>
-  <else><p>{message}</p></else>
-  <logic :if="archived"><b>Archived</b></logic>
-  <logic :else-if="show"><b>Shown</b></logic>
-  <logic else><b>Current</b></logic>
-  <button :disabled="disabled" :hidden="hidden" :required="required">Buy</button>
-  <output>{disabled}|{count}|{hidden}|{meta}</output>
-  <for :each="item in items"><i :data-id="item.id">{item.label}</i></for>
-</section>
-"#,
-    );
-    write(
-        &project.path().join("server/routes/aliases/yon.js"),
-        r#"
+        &project.path().join("server/routes/javascript/yon.js"),
+        r"
 export class Handler {
   static GET() {
     return {
-      show: false,
-      archived: false,
-      disabled: false,
-      hidden: null,
-      required: true,
-      count: 7,
-      meta: { safe: true },
-      message: '<script>alert(1)</script>',
-      items: [{ id: '" onclick="bad', label: 'one & two' }, { id: '2', label: 'two' }],
+      status: 203,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-View': 'handler' },
+      body: '<main><h1>JavaScript HTML</h1></main>',
     }
   }
 }
+",
+    );
+    write(
+        &project.path().join("server/routes/python/yon.py"),
+        r#"
+class Handler:
+    @staticmethod
+    def GET(request):
+        return {
+            "status": 203,
+            "headers": {
+                "Content-Type": "text/html; charset=utf-8",
+                "X-View": "handler",
+            },
+            "body": "<main><h1>Python HTML</h1></main>",
+        }
 "#,
     );
 
-    let first = run(ty().arg("build").arg(project.path()));
-    assert!(first.status.success(), "{}", stderr(&first));
-    let first_html = fs::read(project.path().join("dist/aliases/index.html")).expect("first HTML");
-    let second = run(ty().arg("build").arg(project.path()));
-    assert!(second.status.success(), "{}", stderr(&second));
-    assert_eq!(
-        first_html,
-        fs::read(project.path().join("dist/aliases/index.html")).expect("second HTML")
-    );
-    let html = String::from_utf8(first_html).expect("UTF-8 HTML");
-    assert!(!html.contains("<p>Hidden</p>"));
-    assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
-    assert!(html.contains(r#"data-id="&quot; onclick=&quot;bad""#));
-    assert!(html.contains("one &amp; two"));
-    assert!(html.contains("<b>Current</b>"));
-    assert!(!html.contains(" disabled"));
-    assert!(!html.contains(" hidden"));
-    assert!(html.contains("<button required>Buy</button>"));
-    assert!(html.contains(r"<output>false|7||{&quot;safe&quot;:true}</output>"));
-    assert_eq!(html.matches("<i ").count(), 2);
+    for (source, route, expected) in [
+        (
+            "server/routes/javascript/yon.js",
+            "/javascript",
+            "<main><h1>JavaScript HTML</h1></main>",
+        ),
+        (
+            "server/routes/python/yon.py",
+            "/python",
+            "<main><h1>Python HTML</h1></main>",
+        ),
+    ] {
+        let mut command = ty();
+        command
+            .args(["handler", "invoke", source])
+            .arg("--project")
+            .arg(project.path())
+            .args(["--route", route, "--method", "GET"]);
+        if std::path::Path::new(source)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("py"))
+        {
+            command.args([
+                "--python-runtime",
+                if cfg!(windows) { "python" } else { "python3" },
+            ]);
+        }
+        let output = run(&mut command);
+        assert!(output.status.success(), "{}", stderr(&output));
+        let response: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("protocol response");
+        assert_eq!(response["status"], 203);
+        assert_eq!(
+            response["headers"]["content-type"],
+            serde_json::json!(["text/html; charset=utf-8"])
+        );
+        assert_eq!(
+            response["headers"]["x-view"],
+            serde_json::json!(["handler"])
+        );
+        assert_eq!(response["body"]["data"], expected);
+    }
 }
-
 #[test]
-fn islands_emit_ssr_public_props_modules_and_all_static_policies() {
+fn tac_components_emit_client_plans_modules_and_all_mount_policies() {
     let project = tempfile::tempdir().expect("project");
     write(
         &project.path().join("client/pages/tac.html"),
@@ -309,12 +232,12 @@ export default class Demo {
     assert!(stdout(&output).contains("compiled=2 reused=0"));
     let html = fs::read_to_string(project.path().join("dist/index.html")).expect("HTML");
     for policy in ["interaction", "idle", "visible", "load", "never"] {
-        assert!(html.contains(&format!(r#"data-tachyon-hydrate="{policy}""#)));
+        assert!(html.contains(&format!(r#""mount":"{policy}""#)));
     }
-    assert!(html.contains(">SSR</button>"));
-    assert!(html.contains(">Never</button>"));
-    assert!(html.contains(r#"<script type="module" src="/.tachyon/islands.js"></script>"#));
-    assert!(project.path().join("dist/.tachyon/islands.js").is_file());
+    assert!(!html.contains("<button data-kind="), "{html}");
+    assert!(html.contains(r#"src="/.tachyon/tac-client.js""#));
+    assert!(project.path().join("dist/.tachyon/tac-client.js").is_file());
+    assert!(!project.path().join("dist/.tachyon/islands.js").exists());
     for component in ["demo-interactive", "demo-idle", "demo-visible", "demo-load"] {
         assert!(
             project
@@ -323,7 +246,7 @@ export default class Demo {
                 .is_file()
         );
     }
-    assert!(html.contains(r#"data-tachyon-component="demo-default" data-tachyon-hydrate="load""#));
+    assert!(html.contains(r#""mount":"load","name":"demo-default""#));
     assert!(
         project
             .path()
@@ -336,21 +259,15 @@ export default class Demo {
             .join("dist/.tachyon/components/demo-never.js")
             .exists()
     );
-    assert!(!html.contains(r#"data-tachyon-module="/.tachyon/components/demo-never.js""#));
+    assert!(!html.contains(r#""module":"/.tachyon/components/demo-never.js""#));
     let fragment =
         fs::read_to_string(project.path().join("dist/fragment/index.html")).expect("fragment HTML");
-    // The island runtime is injected at the end of the body, followed only by
-    // the offline-cache registration every page carries.
-    assert!(
-        fragment.ends_with(
-            r#"<script type="module" src="/.tachyon/islands.js"></script><script type="module" src="/.tachyon/register-sw.js"></script></body></html>"#
-        ),
-        "{fragment}"
-    );
+    assert!(fragment.contains(r#"src="/.tachyon/tac-client.js""#));
+    assert!(!fragment.contains("<section>"), "{fragment}");
 }
 
 #[test]
-fn incremental_reuse_is_verified_and_handler_routes_remain_volatile() {
+fn incremental_reuse_is_verified_and_handler_routes_are_not_built() {
     let project = tempfile::tempdir().expect("project");
     write(
         &project.path().join("client/pages/tac.html"),
@@ -395,10 +312,6 @@ fn incremental_reuse_is_verified_and_handler_routes_remain_volatile() {
     assert!(stdout(&forced).contains("compiled=1 reused=0"));
 
     write(
-        &project.path().join("server/routes/volatile/yon.html"),
-        "<p>{value}</p>",
-    );
-    write(
         &project.path().join("server/routes/volatile/yon.js"),
         "export class Handler { static GET() { return { value: 'fresh' } } }",
     );
@@ -414,7 +327,8 @@ fn incremental_reuse_is_verified_and_handler_routes_remain_volatile() {
         "{}",
         stderr(&volatile_second)
     );
-    assert!(stdout(&volatile_second).contains("compiled=1 reused=1"));
+    assert!(stdout(&volatile_first).contains("compiled=0 reused=1"));
+    assert!(stdout(&volatile_second).contains("compiled=0 reused=1"));
 }
 
 #[test]
@@ -456,20 +370,7 @@ fn diagnostics_recover_across_sources_and_failed_builds_preserve_output() {
 }
 
 #[test]
-fn context_collisions_component_cycles_and_invalid_islands_fail_closed() {
-    let collision = tempfile::tempdir().expect("collision");
-    write(
-        &collision.path().join("server/routes/yon.html"),
-        "<p>{duplicate}</p>",
-    );
-    write(
-        &collision.path().join("server/routes/yon.js"),
-        "export class Handler { static duplicate = 'static'; static GET() { return { duplicate: 'response' } } }",
-    );
-    let output = run(ty().arg("build").arg(collision.path()));
-    assert!(!output.status.success());
-    assert!(stderr(&output).contains("TY1503"));
-
+fn component_cycles_and_missing_mount_modules_fail_closed() {
     let cycle = tempfile::tempdir().expect("cycle");
     write(
         &cycle.path().join("client/pages/tac.html"),
@@ -487,24 +388,24 @@ fn context_collisions_component_cycles_and_invalid_islands_fail_closed() {
     assert!(!output.status.success());
     assert!(stderr(&output).contains("TY1403"));
 
-    let island = tempfile::tempdir().expect("island");
+    let component = tempfile::tempdir().expect("component");
     write(
-        &island.path().join("client/pages/tac.html"),
+        &component.path().join("client/pages/tac.html"),
         r#"<missing-module hydrate="visible"></missing-module>"#,
     );
     write(
-        &island
+        &component
             .path()
             .join("client/components/missing/module/tac.html"),
-        "<p>SSR</p>",
+        "<p>Client content</p>",
     );
-    let output = run(ty().arg("build").arg(island.path()));
+    let output = run(ty().arg("build").arg(component.path()));
     assert!(!output.status.success());
     assert!(stderr(&output).contains("TY1405"));
 }
 
 #[test]
-fn adversarial_parser_component_and_context_shapes_fail_through_the_binary() {
+fn adversarial_parser_and_component_shapes_fail_through_the_binary() {
     let parser = tempfile::tempdir().expect("parser");
     write(
         &parser.path().join("client/pages/tac.html"),
@@ -607,61 +508,6 @@ fn adversarial_parser_component_and_context_shapes_fail_through_the_binary() {
     assert!(!output.status.success());
     assert!(stderr(&output).contains("TY1404"));
 
-    for (source, code) in [
-        (
-            "export class Handler { static GET() { return [] } }",
-            "TY1501",
-        ),
-        ("export class Handler { static ['bad-key'] = 1 }", "TY1502"),
-        (
-            "export class Handler { static platform = 'override' }",
-            "TY1502",
-        ),
-    ] {
-        let context = tempfile::tempdir().expect("context");
-        write(
-            &context.path().join("server/routes/yon.html"),
-            "<p>view</p>",
-        );
-        write(&context.path().join("server/routes/yon.js"), source);
-        let output = run(ty().arg("build").arg(context.path()));
-        assert!(!output.status.success());
-        assert!(stderr(&output).contains(code), "{}", stderr(&output));
-    }
-
-    let many_exports = (0..1_025)
-        .map(|index| format!("key{index}: {index}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let context = tempfile::tempdir().expect("context export budget");
-    write(
-        &context.path().join("server/routes/yon.html"),
-        "<p>view</p>",
-    );
-    write(
-        &context.path().join("server/routes/yon.js"),
-        &format!("export class Handler {{ static GET() {{ return {{ {many_exports} }} }} }}"),
-    );
-    let output = run(ty().arg("build").arg(context.path()));
-    assert!(!output.status.success());
-    assert!(stderr(&output).contains("TY1504"));
-
-    let context = tempfile::tempdir().expect("context nesting budget");
-    write(
-        &context.path().join("server/routes/yon.html"),
-        "<p>view</p>",
-    );
-    write(
-        &context.path().join("server/routes/yon.js"),
-        &format!(
-            "export class Handler {{ static GET() {{ return {{ deep: {} }} }} }}",
-            "[".repeat(34) + "0" + &"]".repeat(34)
-        ),
-    );
-    let output = run(ty().arg("build").arg(context.path()));
-    assert!(!output.status.success());
-    assert!(stderr(&output).contains("TY1502"));
-
     let root_file = tempfile::tempdir().expect("component root file");
     write(
         &root_file.path().join("client/pages/tac.html"),
@@ -710,30 +556,4 @@ fn adversarial_parser_component_and_context_shapes_fail_through_the_binary() {
     let output = run(ty().arg("build").arg(deep_view.path()));
     assert!(!output.status.success());
     assert!(stderr(&output).contains("TY13"));
-
-    let iteration = tempfile::tempdir().expect("iteration");
-    write(
-        &iteration.path().join("server/routes/yon.html"),
-        "<!-- comment --><loop :for=\"item of items\">{item}</loop>",
-    );
-    write(
-        &iteration.path().join("server/routes/yon.js"),
-        "export class Handler { static GET() { return { items: {} } } }",
-    );
-    let output = run(ty().arg("build").arg(iteration.path()));
-    assert!(!output.status.success());
-    assert!(stderr(&output).contains("TY1303"));
-
-    let budget = tempfile::tempdir().expect("iteration budget");
-    write(
-        &budget.path().join("server/routes/yon.html"),
-        "<loop :for=\"item of items\">{item}</loop>",
-    );
-    write(
-        &budget.path().join("server/routes/yon.js"),
-        "export class Handler { static GET() { return { items: Array.from({ length: 10001 }, (_, i) => i) } } }",
-    );
-    let output = run(ty().arg("build").arg(budget.path()));
-    assert!(!output.status.success());
-    assert!(stderr(&output).contains("TY1305"));
 }

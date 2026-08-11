@@ -1,12 +1,19 @@
 // @ts-check
 
 /**
- * @typedef {{ heading: string, body: string, code?: string, id?: string }} TopicSection
+ * @typedef {{ name: string, values: string, use: string, scope: string }} EnvironmentVariable
+ * @typedef {{ heading: string, body: string, code?: string, variables?: EnvironmentVariable[], id?: string }} TopicSection
  * @typedef {{ title: string, summary: string, sections: TopicSection[] }} Topic
  * @typedef {{ order?: string[], groups?: { topics: string[] }[], topics: Record<string, Topic> }} DocsPayload
  */
 
-/** @param {string} tag @param {string} className @param {string} [text] */
+/**
+ * @template {keyof HTMLElementTagNameMap} Tag
+ * @param {Tag} tag
+ * @param {string} className
+ * @param {string} [text]
+ * @returns {HTMLElementTagNameMap[Tag]}
+ */
 function element(tag, className, text) {
   const node = document.createElement(tag)
   if (className) node.className = className
@@ -103,6 +110,7 @@ export default class {
       const sectionNode = element('section', 'topic-section')
       sectionNode.dataset.docAnchor = section.id ?? ''
       sectionNode.append(element('h2', '', section.heading), element('p', '', section.body))
+      if (section.variables?.length) sectionNode.append(this.environmentTable(section.heading, section.variables))
       if (section.code) {
         const pre = element('pre', 'code-block')
         pre.append(element('code', '', section.code))
@@ -124,7 +132,7 @@ export default class {
     const list = element('ul', 'topic-toc-list')
     for (const section of this.topic.sections) {
       const item = element('li', 'topic-toc-item')
-      const button = /** @type {HTMLButtonElement} */ (element('button', '', section.heading))
+      const button = element('button', '', section.heading)
       button.type = 'button'
       button.addEventListener('click', () => this.scrollToSection(section.id ?? ''), { signal })
       item.append(button)
@@ -134,9 +142,43 @@ export default class {
     this.root.append(header, main, toc)
   }
 
+  /** @param {string} heading @param {EnvironmentVariable[]} variables */
+  environmentTable(heading, variables) {
+    const wrapper = element('div', 'environment-table-wrap')
+    wrapper.setAttribute('role', 'region')
+    wrapper.setAttribute('aria-label', `${heading} environment variables`)
+    wrapper.tabIndex = 0
+    const table = element('table', 'environment-table')
+    const head = document.createElement('thead')
+    const headRow = document.createElement('tr')
+    for (const label of ['Variable', 'Values / default', 'Use case', 'Scope']) {
+      headRow.append(element('th', '', label))
+    }
+    head.append(headRow)
+    const body = document.createElement('tbody')
+    for (const variable of variables) {
+      const row = document.createElement('tr')
+      const name = document.createElement('td')
+      name.dataset.label = 'Variable'
+      name.append(element('code', 'environment-name', variable.name))
+      const values = element('td', '', variable.values)
+      values.dataset.label = 'Values / default'
+      const use = element('td', '', variable.use)
+      use.dataset.label = 'Use case'
+      const scope = document.createElement('td')
+      scope.dataset.label = 'Scope'
+      scope.append(element('span', 'environment-scope', variable.scope))
+      row.append(name, values, use, scope)
+      body.append(row)
+    }
+    table.append(head, body)
+    wrapper.append(table)
+    return wrapper
+  }
+
   /** @param {{ slug: string, title: string }} topic @param {string} relation @param {boolean} next */
   pagerLink(topic, relation, next) {
-    const link = /** @type {HTMLAnchorElement} */ (element('a', `topic-pager-link${next ? ' topic-pager-next' : ''}`))
+    const link = element('a', `topic-pager-link${next ? ' topic-pager-next' : ''}`)
     link.href = `/docs/${topic.slug}`
     link.append(element('span', 'topic-pager-rel', relation), element('span', 'topic-pager-title', topic.title))
     return link

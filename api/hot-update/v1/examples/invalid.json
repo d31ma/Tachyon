@@ -1,0 +1,9 @@
+{
+  "contract_version": 1,
+  "sequence": 0,
+  "kind": "execute_source",
+  "build_id": "unverified",
+  "paths": ["/absolute/source.js"],
+  "boundaries": ["ProductCard"],
+  "diagnostics": null
+}

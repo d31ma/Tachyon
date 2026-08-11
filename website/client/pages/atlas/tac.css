@@ -86,7 +86,7 @@
   font-size: var(--w-font-xs);
 }
 
-.atlas-section h2 {
+.atlas-section h1 {
   margin: 0;
   font-size: 1.25rem;
 }
@@ -99,11 +99,13 @@
 
 @media (max-width: 1024px) {
   .atlas-shell {
-    display: block;
+    display: flex;
+    flex-direction: column;
     padding-inline: clamp(1rem, 4vw, 1.5rem);
   }
 
   .atlas-sidebar {
+    order: 2;
     position: static;
     height: auto;
     max-height: none;
@@ -111,6 +113,7 @@
   }
 
   .atlas-main {
+    order: 1;
     padding: var(--w-space-4) 0 var(--w-space-10);
   }
 }

@@ -38,7 +38,7 @@ const KOTLIN_HEADER: &str = "@file:OptIn(kotlin.js.ExperimentalJsExport::class)\
 const KOTLIN_WRAPPER: &str = include_str!("wasm/wrapper.kotlin.mjs");
 /// Where the Kotlin standard library for wasm is, which the command-line
 /// compiler does not ship. `ty doctor` reports it.
-const KOTLIN_STDLIB: &str = "KOTLIN_WASM_STDLIB";
+const KOTLIN_STDLIB: &str = "TAC_KOTLIN_WASM_STDLIB";
 /// What the compiler appends to a Swift companion to make it satisfy the ABI.
 const SWIFT_PRELUDE: &str = include_str!("wasm/prelude.swift");
 /// What the compiler appends to a C# companion to make it satisfy the ABI.

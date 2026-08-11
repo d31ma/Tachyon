@@ -1,7 +1,7 @@
 // @ts-check
-// Enterprise SEO for the Tachyon site, applied as a post-bundle pass over the
-// prerendered HTML. Because every route is prerendered to static HTML, crawlers
-// receive fully-formed <head> metadata on first fetch — no JS execution needed.
+// Enterprise SEO for the Tachyon site, applied as a post-bundle pass over each
+// client-rendered route's bootstrap HTML. Crawlers receive fully formed <head>
+// metadata on first fetch even when they do not execute the Tac client.
 //
 // This runs after every build (both `bundle` and `serve`), so it is the single
 // source of truth for titles, descriptions, canonical URLs, Open Graph / Twitter
@@ -27,7 +27,7 @@ const ROUTES = {
     '/': {
         file: 'index.html',
         title: 'Tachyon — the polyglot full-stack framework for ty',
-        description: 'Tachyon is a polyglot, file-system-routed full-stack framework whose core CLI ships as the standalone ty binary. Author strict HTML that becomes reactive browser DOM, SwiftUI, Android Views, Win32 common controls or GTK4 controls; selected companion and native targets use their platform toolchains.',
+        description: 'Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Author strict HTML that becomes reactive browser DOM or native SwiftUI, Android Views, Win32 and GTK4 controls; serve JavaScript, Python and registered direct-protocol Yon routes.',
     },
     '/atlas': {
         file: 'atlas/index.html',
@@ -73,7 +73,7 @@ const ROUTES = {
     '/docs': {
         file: 'docs/index.html',
         title: 'Documentation — Tachyon',
-        description: 'Guides for building Tachyon apps with file-system routing, island hydration, native-by-default HTML rendering, polyglot Tac and Yon code, and browser storage.',
+        description: 'Guides for building Tachyon apps with file-system routing, client-owned Tac rendering, native-by-default HTML rendering, polyglot Tac and Yon code, and browser storage.',
     },
     '/docs/_topic': {
         file: 'docs/_topic/index.html',
@@ -147,7 +147,7 @@ function headFor(route, meta) {
 }
 
 /**
- * Inject the SEO <head> block (and force the title) into one prerendered file.
+ * Inject the SEO <head> block (and force the title) into one route bootstrap.
  * @param {string} webRoot
  * @param {string} route
  * @param {{ file: string, title?: string, description?: string, noindex?: boolean }} meta

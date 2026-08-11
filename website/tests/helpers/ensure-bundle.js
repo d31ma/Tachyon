@@ -10,7 +10,7 @@ const REQUIRED_OUTPUTS = [
     `${WEB_DIST}/atlas/overview/index.html`,
     `${WEB_DIST}/atlas/connect/index.html`,
     `${WEB_DIST}/docs/index.html`,
-    `${WEB_DIST}/.tachyon/islands.js`,
+    `${WEB_DIST}/.tachyon/tac-client.js`,
     `${WEB_DIST}/.tachyon/components/language-javascript.js`,
     `${WEB_DIST}/.tachyon/components/language-dart.mjs`,
     `${WEB_DIST}/.tachyon/components/language-kotlin.mjs`,
@@ -46,8 +46,24 @@ async function waitForUnlock(timeoutMs = 120_000) {
     throw new Error('Timed out waiting for the Rust website build lock to clear')
 }
 
+/** @param {'cargo' | 'rustc'} tool */
+async function rustupWhich(tool) {
+    const proc = Bun.spawn(['rustup', 'which', '--toolchain', '1.97.1', tool], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+    })
+    const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+    ])
+    if (exitCode !== 0)
+        throw new Error(`Unable to locate Rust 1.97.1 ${tool}: ${stderr}`.trim())
+    return stdout.trim()
+}
+
 async function runBundle() {
-    const configured = process.env.TACHYON_BIN
+    const configured = process.env.TAC_BIN
     const releaseBinary = `${PROJECT_ROOT}/../target/release/ty`
     const debugBinary = `${PROJECT_ROOT}/../target/debug/ty`
     const command = configured
@@ -56,12 +72,15 @@ async function runBundle() {
             ? [releaseBinary, 'bundle', '.']
             : await fileExists(debugBinary)
                 ? [debugBinary, 'bundle', '.']
-                : ['cargo', '+1.97.1', 'run', '--release', '--locked', '--manifest-path', '../Cargo.toml', '--', 'bundle', '.']
+                : [await rustupWhich('cargo'), 'run', '--release', '--locked', '--manifest-path', '../Cargo.toml', '--', 'bundle', '.']
+    const rustc = configured || await fileExists(releaseBinary) || await fileExists(debugBinary)
+        ? process.env.RUSTC
+        : await rustupWhich('rustc')
     const proc = Bun.spawn(command, {
         cwd: PROJECT_ROOT,
         stdout: 'pipe',
         stderr: 'pipe',
-        env: process.env,
+        env: { ...process.env, ...(rustc ? { RUSTC: rustc } : {}) },
     })
     const [stdout, stderr, exitCode] = await Promise.all([
         new Response(proc.stdout).text(),

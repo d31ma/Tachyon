@@ -13,9 +13,11 @@ const samples = {
   headline = "Tac + Yon"
   visits = 0
 
-  hydrate(root, signal) {
-    this.visits = Number(sessionStorage.getItem("visits") ?? 0) + 1
-    sessionStorage.setItem("visits", String(this.visits))
+  constructor(_props, tac) {
+    tac.onMount(() => {
+      this.visits = Number(sessionStorage.getItem("visits") ?? 0) + 1
+      sessionStorage.setItem("visits", String(this.visits))
+    })
   }
 }`,
   yon: `// server/routes/posts/yon.js  ->  /posts
@@ -52,8 +54,5 @@ export default class {
   /** @param {Record<string, unknown>} _props @param {{ onMount(callback: () => void): void }} tac */
   constructor(_props, tac) {
     tac.onMount(populateSamples)
-    if (typeof window !== 'undefined' && !globalThis.__tc_prerender__) {
-      setTimeout(populateSamples, 0)
-    }
   }
 }

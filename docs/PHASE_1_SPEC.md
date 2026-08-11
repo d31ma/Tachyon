@@ -22,12 +22,9 @@ developed.
 
 - `client/pages/tac.html` is the root client page.
 - `client/pages/<static-segments>/tac.html` is a nested static client page.
-- `server/routes/yon.html` is the root static Yon view.
-- `server/routes/<static-segments>/yon.html` is a nested static Yon view.
 - Route segments are lowercase ASCII letters, digits, and single internal
   hyphens.
-- Tac and Yon views cannot claim the same route.
-- Symlinks below either source root are rejected.
+- Symlinks below client and server source roots are rejected.
 - Every source is UTF-8, at most 1 MiB, and contains no NUL byte.
 
 Phase 1 tokenizes HTML with a WHATWG-compatible tokenizer. HTML fragments are
@@ -37,7 +34,7 @@ errors and any feature whose semantics belong to a later phase:
 
 - `if`, `else`, `for`, and `loop`;
 - Tac components without a standards-based custom-element name;
-- companion `tac.*` or `yon.*` source;
+- companion `tac.*` source;
 - inline scripts and event-handler attributes;
 - dynamic route segments.
 
@@ -77,7 +74,7 @@ v1; the default human format is suitable for a terminal.
 - Missing sources, route collisions, unsafe source shapes, unsupported syntax,
   unsafe bind configuration, and non-empty initialization targets fail safely.
 - The workspace passes formatting, check, Clippy, tests, rustdoc, coverage,
-  dependency policy, and the released-binary compatibility differential.
+  dependency policy, and the legacy compatibility suite.
 - Linux, macOS, and Windows CI build and exercise the same generated project.
 
 ## Out of Scope

@@ -31,6 +31,7 @@ export default class {
         this.root = root
         const refresh = () => { void this.refresh() }
         window.addEventListener('tachyon:refresh', refresh, { signal })
+        window.addEventListener('inventory:changed', refresh, { signal })
         await this.refresh()
     }
 
@@ -40,7 +41,7 @@ export default class {
             this.verifyCompanions(),
             this.measureStorage(),
         ])
-        await this.root?.tachyonIsland?.refresh?.()
+        await this.root?.tachyonComponent?.refresh?.()
     }
 
     /** @returns {Promise<void>} */

@@ -7,6 +7,7 @@ mod failure;
 #[cfg(feature = "fuzzing")]
 pub mod fuzzing;
 mod handler;
+mod hot_update;
 mod html;
 mod migrate;
 mod native;
@@ -21,8 +22,9 @@ mod wasm;
 pub use compiler::{BuildOptions, BuildResult, WebCompiler};
 pub use failure::Failure;
 pub use handler::{
-    EnvironmentPolicy, HandlerCancellation, HandlerLanguage, HandlerRuntimePrograms, HandlerSource,
-    HandlerSupervisor, HandlerSupervisorOptions, Interpreters, Workers,
+    EnvironmentPolicy, FirecrackerIsolation, HandlerCancellation, HandlerLanguage,
+    HandlerRuntimePrograms, HandlerSource, HandlerSupervisor, HandlerSupervisorOptions,
+    Interpreters, Workers, YonIsolationPolicy,
 };
 pub use html::{HtmlDocument, HtmlFrontend};
 pub use migrate::{MigrationAnalysis, MigrationFinding, MigrationReport, MigrationStatus};

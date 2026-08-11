@@ -23,6 +23,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .into());
     }
-    println!("cargo:rustc-env=TACHYON_PRODUCT_VERSION={version}");
+    println!("cargo:rustc-env=TAC_PRODUCT_VERSION={version}");
     Ok(())
 }

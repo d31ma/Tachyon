@@ -182,11 +182,11 @@ route, where the compiler understands a subset of each language.
 
 - **A glued companion cannot be verified by instantiating it in isolation**, so
   the browser gate is the check that matters. `scripts/wasm/companion-browser-test.mjs`
-  drives Rust, Dart, Kotlin, Swift, and C# islands on one page and asserts the
-  same five behaviours of each.
+  drives Rust, Dart and Kotlin islands on one page and asserts the same five
+  behaviours of each.
 - **Size follows the language's runtime, not the companion.** The same trivial
   fixture — one integer, one string, one method — is 21 KB from Rust, 98 KB
-  from Dart, 120 KB from Kotlin, 5.5 MB from Swift, and 3.5 MB across 21 files
+  from Dart, 128 KB from Kotlin, 5.5 MB from Swift, and 3.5 MB across 21 files
   from C#. Kotlin is 584 KB without `-Xir-dce` and Swift would be 53 MB with
   Foundation linked, so emission passes the flags that avoid both. The 64 KiB
   budget in the ABI probe therefore applies to the bare Rust shape only: every
@@ -199,7 +199,7 @@ route, where the compiler understands a subset of each language.
 - **Kotlin needs a standard library the compiler does not ship.** `kotlinc-js`
   carries only `kotlin-stdlib-js.klib`, so a wasm build needs
   `kotlin-stdlib-wasm-js` from Maven Central, and the project points
-  `KOTLIN_WASM_STDLIB` at it. `ty doctor` reports its absence rather than
+  `TAC_KOTLIN_WASM_STDLIB` at it. `ty doctor` reports its absence rather than
   letting the build discover it.
 - **Values cross as JavaScript values where the boundary is already
   JavaScript.** The Kotlin prelude exports typed accessors and the wrapper

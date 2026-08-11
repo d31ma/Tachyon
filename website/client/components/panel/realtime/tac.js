@@ -60,7 +60,7 @@ export default class {
   }
 
   refresh() {
-    void this.root?.tachyonIsland?.refresh?.()
+    void this.root?.tachyonComponent?.refresh?.()
   }
 
   messageSummary() {

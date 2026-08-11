@@ -1,6 +1,6 @@
 # ADR 0006: Safe View Evaluation and Island Activation
 
-- Status: Accepted
+- Status: Superseded by ADR 0015 for Tac rendering; retained for Yon evaluation history
 - Date: 2026-07-26
 
 ## Context

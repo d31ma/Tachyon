@@ -9,9 +9,10 @@ deferrals are in [`PHASE_1_SPEC.md`](PHASE_1_SPEC.md).
 ## Delivered Outcome
 
 The compiled Rust `ty` executable initializes a project, discovers static Tac
-and Yon HTML routes, emits deterministic web output and Route Manifest v1, and
-serves generated files from a loopback-safe development server. No Bun, Node.js,
-handler runtime, or application dependency is used by this path.
+views and Yon REST-handler routes, emits deterministic web output and Route
+Manifest v1, and serves generated files from a loopback-safe development
+server. No Bun, Node.js, handler runtime, or application dependency is used by
+this path.
 
 The implementation deliberately rejects Phase 2 and Phase 3 behavior:
 companions, handler execution, context injection, control tags, components,
@@ -48,7 +49,7 @@ The acceptance suite proves:
 
 - `ty init`, `build`, `bundle`, `dev`, and `serve` use the compiled binary;
 - two builds of the generated project are byte-identical;
-- static Tac and Yon routes have canonical manifest order;
+- static Tac views and Yon handler routes have canonical manifest order;
 - failures have stable human and JSON diagnostics;
 - collisions and unsupported companions retain last known-good output;
 - unsafe initialization and non-loopback serving fail closed;
@@ -82,6 +83,6 @@ route and the canonical manifest succeed. A failed compilation restores or
 retains the previous output. Initialization writes through a temporary sibling
 and never overwrites a non-empty target.
 
-The archived release remains the compatibility baseline. Phase 1 adds no
-handler or template semantics that could conflict with the Phase 2 and Phase 3
-compatibility work.
+The legacy implementation remains untouched and continues to pass its type and
+test suites. Phase 1 adds no handler or template semantics that could conflict
+with the Phase 2 and Phase 3 compatibility work.

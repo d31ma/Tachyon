@@ -50,17 +50,16 @@ fn write_phase4_project(project: &Path) {
 }"#,
     );
     write(
-        &project.join("server/routes/yon.html"),
+        &project.join("client/pages/tac.html"),
         r#"
 <!doctype html>
 <html>
-  <head><title>{title}</title></head>
+  <head><title>Native Catalog</title></head>
   <body>
-    <w-app-bar role="banner" aria-label="Primary navigation"><strong>{title}</strong></w-app-bar>
+    <w-app-bar role="banner" aria-label="Primary navigation"><strong>Native Catalog</strong></w-app-bar>
     <main aria-label="Phase Four demo">
-      <h1>{title}</h1>
-      <logic :if="available"><p>{message}</p></logic>
-      <logic else><p>Unavailable</p></logic>
+      <h1>Native Catalog</h1>
+      <p>Native Tac content</p>
       <status-card><span>Slotted native content</span></status-card>
       <button
         aria-label="Increase count"
@@ -83,17 +82,6 @@ fn write_phase4_project(project: &Path) {
   </body>
 </html>
 "#,
-    );
-    write(
-        &project.join("server/routes/yon.js"),
-        r"
-export class Handler {
-  static title = 'Native Catalog'
-  static GET() {
-    return { available: true, message: 'Resolved Yon context' }
-  }
-}
-",
     );
     write(
         &project.join("client/components/status/card/tac.html"),

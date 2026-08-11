@@ -29,6 +29,9 @@ graphify-out/
 CLAUDE.md
 .github/copilot-instructions.md
 
+# Persistent prerender cache output (opt-in TAC_PRERENDER_CACHE)
+.tac-cache/
+
 .codex
 .vscode
 node_modules/

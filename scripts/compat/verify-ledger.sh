@@ -7,7 +7,7 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TY="${TY_BIN:-${REPO}/target/release/ty}"
+TY="${TAC_BIN:-${REPO}/target/release/ty}"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/ty-verify-XXXXXX")"
 
 # Probe projects live outside the repo, so the repo's own TypeScript is put on
@@ -164,32 +164,28 @@ client/components/section/tac.html	<article aria-label="C">s</article>
 EOF
 
 # --------------------------------------------------------------- Yon layer
-check "yon.html + yon.js route context" "ok" <<EOF
-server/routes/yon.html	<main aria-label="T"><h1>{title}</h1><p>{message}</p></main>
-server/routes/yon.js	export class Handler { static title = 'T'\n  static GET() { return { message: 'm' } } }
+check "yon.html is rejected" "TY1008" <<EOF
+server/routes/yon.html	<main>not a Yon endpoint</main>
 EOF
 
-check "yon.py handler" "ok" <<EOF
-server/routes/yon.html	<main aria-label="T"><h1>{title}</h1></main>
-server/routes/yon.py	class Handler:\n    title = 'T'\n    @staticmethod\n    def GET(request):\n        return {}
+check "yon.js handler discovery" "ok" <<EOF
+server/routes/yon.js	export class Handler { static GET() { return { ok: true } } }
 EOF
 
-# A handler in any language is now supported through .tachyonrc, so an
-# unregistered extension is TY2003 (no interpreter and not executable) rather
-# than the old "unsupported companion" TY1008. TY2003 names both remedies.
+check "yon.py handler discovery" "ok" <<EOF
+server/routes/yon.py	class Handler:\n    @staticmethod\n    def GET(request):\n        return {"ok": True}
+EOF
+
+# Unregistered extensions are handler candidates with no available runtime.
 check "yon.ts handler, no interpreter" "TY2003" <<EOF
-server/routes/yon.html	<main aria-label="T"><h1>x</h1></main>
 server/routes/yon.ts	export class Handler { static GET() { return {} } }
 EOF
 
 check "yon.rs handler, no interpreter" "TY2003" <<EOF
-server/routes/yon.html	<main aria-label="T"><h1>x</h1></main>
 server/routes/yon.rs	fn main() {}
 EOF
 
-# The registered case is the claim that matters, and it needs the interpreter
-# actually present. TY2003 is the correct outcome when Ruby is missing, so the
-# expectation follows the machine rather than passing either way.
+# A registered handler is discovered but never executed by the build.
 if command -v ruby >/dev/null 2>&1; then
   RB_EXPECTED="ok"
 else
@@ -197,34 +193,21 @@ else
   echo "note: no ruby on PATH; yon.rb expected to fail closed"
 fi
 check "yon.rb handler, interpreter registered" "${RB_EXPECTED}" <<EOF
-server/routes/yon.html	<main aria-label="T"><h1>{x}</h1></main>
-server/routes/yon.rb	require 'json'\nrequest = JSON.parse(STDIN.read)\nvalues = request['operation'] == 'view.context' ? { static_values: { x: 'from-ruby' } } : { x: 'from-ruby' }\nputs JSON.generate({ status: 200, body: JSON.generate(values) })\n
+server/routes/yon.rb	require 'json'\nrequest = JSON.parse(STDIN.read)\nputs JSON.generate({ status: 200, body: JSON.generate({ ok: true }) })\n
 .tachyonrc	{"interpreters":{"rb":["ruby"]}}
 EOF
 
-check "conditional <logic :if>/<logic else>" "ok" <<EOF
-server/routes/yon.html	<main aria-label="T"><logic :if="on"><p>y</p></logic><logic else><p>n</p></logic></main>
-server/routes/yon.js	export class Handler { static GET() { return { on: true } } }
-EOF
-
+# Structural controls belong only to Tac and are serialized for the browser.
 check "conditional <if :when>/<else>" "ok" <<EOF
-server/routes/yon.html	<main aria-label="T"><if :when="on"><p>y</p></if><else><p>n</p></else></main>
-server/routes/yon.js	export class Handler { static GET() { return { on: true } } }
-EOF
-
-check "iteration <loop :for>" "ok" <<EOF
-server/routes/yon.html	<main aria-label="T"><ul><loop :for="i of items"><li>{i}</li></loop></ul></main>
-server/routes/yon.js	export class Handler { static GET() { return { items: ['a','b'] } } }
+client/pages/tac.html	<main><if :when="on"><p>y</p></if><else><p>n</p></else></main>
 EOF
 
 check "iteration <for :each>" "ok" <<EOF
-server/routes/yon.html	<main aria-label="T"><ul><for :each="i in items"><li>{i}</li></for></ul></main>
-server/routes/yon.js	export class Handler { static GET() { return { items: ['a','b'] } } }
+client/pages/tac.html	<main><for :each="i in items"><p>{i}</p></for></main>
 EOF
 
 check "dynamic attribute :attr" "ok" <<EOF
-server/routes/yon.html	<main :aria-label="label"><h1>x</h1></main>
-server/routes/yon.js	export class Handler { static GET() { return { label: 'L' } } }
+client/pages/tac.html	<main :aria-label="label"><h1>x</h1></main>
 EOF
 
 check "middleware.js present" "ok" <<EOF
@@ -242,8 +225,7 @@ client/pages/tac.html	${PAGE}
 .tachyonrc	{"interpreters":{}}
 EOF
 
-check "handler importing a service module" "TY1501" <<EOF
-server/routes/yon.html	<main aria-label="T"><h1>{v}</h1></main>
+check "handler importing a service module is not executed at build" "ok" <<EOF
 server/routes/yon.js	import { v } from '../services/s.js'\nexport class Handler { static GET() { return { v } } }
 server/services/s.js	export const v = 'from-service'
 EOF

@@ -2,8 +2,7 @@
 
 ## Status
 
-Accepted. Extends [0009](0009-platform-navigation-over-a-client-renderer.md);
-does not reverse it.
+Superseded by [0015](0015-tac-is-exclusively-client-rendered.md).
 
 ## Context
 

@@ -9,6 +9,7 @@ use super::windows::WindowsHostGenerator;
 use crate::compiler::{publish, resolve_output_path};
 use crate::failure::diagnostic;
 use crate::{BuildOptions, Failure, ProjectDiscovery, WebCompiler};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -592,6 +593,7 @@ async fn resolve_routes(
     project: &crate::Project,
     target: NativeTarget,
 ) -> Result<(tempfile::TempDir, Vec<PlannedNativeRoute>), Failure> {
+    let components = crate::template::ComponentRegistry::discover(project.root())?;
     let temporary_web = tempfile::Builder::new()
         .prefix(".tachyon-native-web-")
         .tempdir_in(project.root())
@@ -624,21 +626,28 @@ async fn resolve_routes(
             continue;
         };
         let html_path = temporary_web.path().join(&output);
-        let html = fs::read_to_string(&html_path)
+        let generated_html = fs::read_to_string(&html_path)
             .map_err(|error| native_io_failure(&html_path, &error))?;
-        let styles = linked_styles(temporary_web.path(), &html);
-        // Native planning parses the fully rendered document, whose byte
-        // offsets no longer correspond to the authored page after component
-        // expansion, handler interpolation and generated asset injection.
-        // Label that input honestly instead of attaching impossible ranges to
-        // the original tac.html/yon.html path.
-        let resolved_source = format!("resolved/{}", portable_path(&output));
-        routes.push(NativePlanner::plan(
+        let styles = linked_styles(temporary_web.path(), &generated_html);
+        // Native lowering consumes the authored Tac declaration. The generated
+        // web document is only consulted for its linked styles and fallback
+        // assets; it is never treated as server-rendered view structure.
+        let source_path = route.source_path().unwrap_or("client/pages/tac.html");
+        let source = route
+            .absolute_source_path()
+            .map(fs::read_to_string)
+            .transpose()
+            .map_err(|error| native_io_failure(project.root(), &error))?
+            .unwrap_or_default();
+        let (source, _) = crate::compiler::strip_page_state_scripts(&source, source_path)?;
+        routes.push(NativePlanner::plan_with_components_and_state(
             target,
             route.route(),
-            &resolved_source,
-            &html,
+            source_path,
+            &source,
             &styles,
+            &components,
+            client_route_state(&generated_html),
         )?);
     }
     routes.sort_by(|left, right| left.route.cmp(&right.route));
@@ -918,7 +927,7 @@ fn install_controller_reference(
         let path = web_root.join(output);
         let mut html =
             fs::read_to_string(&path).map_err(|error| native_io_failure(&path, &error))?;
-        if html.contains("data-tachyon-action=") || html.contains("data-tachyon-bind=") {
+        if route_requires_controller(&html) {
             required = true;
             html = inject_before_body(&html, CONTROLLER_SCRIPT_TAG);
             fs::write(&path, html).map_err(|error| native_io_failure(&path, &error))?;
@@ -933,6 +942,46 @@ fn install_controller_reference(
             .map_err(|error| native_io_failure(&runtime, &error))?;
     }
     Ok(())
+}
+
+fn route_requires_controller(html: &str) -> bool {
+    html.contains("data-tachyon-action=")
+        || html.contains("data-tachyon-bind=")
+        || html.contains(r#""name":"data-tachyon-action""#)
+        || html.contains(r#""name":"data-tachyon-bind""#)
+}
+
+fn client_route_state(html: &str) -> BTreeMap<String, String> {
+    let Some(script_start) = html.find(r#"<script id="tachyon-view""#) else {
+        return BTreeMap::new();
+    };
+    let Some(open_end_relative) = html[script_start..].find('>') else {
+        return BTreeMap::new();
+    };
+    let json_start = script_start + open_end_relative + 1;
+    let Some(json_end_relative) = html[json_start..].find("</script>") else {
+        return BTreeMap::new();
+    };
+    let json_end = json_start + json_end_relative;
+    let Ok(plan) = serde_json::from_str::<Value>(&html[json_start..json_end]) else {
+        return BTreeMap::new();
+    };
+    let Some(state) = plan.get("state").and_then(Value::as_object) else {
+        return BTreeMap::new();
+    };
+    state
+        .iter()
+        .filter_map(|(name, value)| {
+            let value = match value {
+                Value::Null => String::new(),
+                Value::Bool(value) => value.to_string(),
+                Value::Number(value) => value.to_string(),
+                Value::String(value) => value.clone(),
+                Value::Array(_) | Value::Object(_) => return None,
+            };
+            Some((name.clone(), value))
+        })
+        .collect()
 }
 
 fn inject_before_body(html: &str, value: &str) -> String {
@@ -1116,7 +1165,8 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::{
-        NativeBuildOptions, NativeCompiler, inject_before_body, linked_styles, source_revision,
+        NativeBuildOptions, NativeCompiler, client_route_state, inject_before_body, linked_styles,
+        route_requires_controller, source_revision,
     };
     use std::fs;
 
@@ -1130,6 +1180,33 @@ mod tests {
             inject_before_body("<main>x</main>", "<script></script>"),
             "<main>x</main><script></script>"
         );
+    }
+
+    #[test]
+    fn controller_detection_covers_authored_html_and_client_view_plans() {
+        for document in [
+            r#"<button data-tachyon-action="increment:count">Add</button>"#,
+            r#"<output data-tachyon-bind="count">0</output>"#,
+            r#"<script id="tachyon-view">{"attributes":[{"name":"data-tachyon-action","value":"increment:count"}]}</script>"#,
+            r#"<script id="tachyon-view">{"attributes":[{"name":"data-tachyon-bind","value":"count"}]}</script>"#,
+        ] {
+            assert!(route_requires_controller(document), "{document}");
+        }
+        assert!(!route_requires_controller(
+            r#"<script id="tachyon-view">{"attributes":[{"name":"class","value":"count"}]}</script>"#
+        ));
+    }
+
+    #[test]
+    fn client_route_state_reads_bounded_scalar_plan_values() {
+        let state = client_route_state(
+            r#"<!doctype html><script id="tachyon-view" type="application/json">{"state":{"count":0,"ready":true,"label":"ok","none":null,"items":[1,2]}}</script>"#,
+        );
+        assert_eq!(state.get("count").map(String::as_str), Some("0"));
+        assert_eq!(state.get("ready").map(String::as_str), Some("true"));
+        assert_eq!(state.get("label").map(String::as_str), Some("ok"));
+        assert_eq!(state.get("none").map(String::as_str), Some(""));
+        assert!(!state.contains_key("items"));
     }
 
     #[test]

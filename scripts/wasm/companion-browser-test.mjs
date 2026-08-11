@@ -3,11 +3,11 @@
 //
 // A module that compiles and ships but never resolves a value in the page is
 // the defect this guards, so nothing is asserted from the generated HTML: the
-// page is loaded in a real browser and every island is driven.
+// page is loaded in a real browser and every client component is driven.
 //
 // One fixture per language, all in one project and one page, so the two module
 // shapes — a bare module from rustc, a glued one from a WasmGC toolchain — are
-// proven to be indistinguishable to everything above the island runtime. A
+// proven to be indistinguishable to everything above the Tac client runtime. A
 // language whose toolchain this machine lacks is reported and skipped, never
 // silently dropped.
 
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '../..');
-const TY = process.env.TY_BIN ?? path.join(REPO, 'target/release/ty');
+const TY = process.env.TAC_BIN ?? path.join(REPO, 'target/release/ty');
 const PROJECT = path.join(tmpdir(), 'ty-wasm-companion-gate');
 const MIME = {
   '.html': 'text/html',
@@ -127,7 +127,7 @@ try {
     .waitForFunction(() => !document.querySelector('tachyon-expr'), null, { timeout: 60000 })
     .catch(() => {
       failed += 1;
-      console.error(`  FAIL   an island never resolved${errors.length ? `: ${errors[0]}` : ''}`);
+      console.error(`  FAIL   a component never resolved${errors.length ? `: ${errors[0]}` : ''}`);
     });
 
   for (const language of testing) {
@@ -140,7 +140,7 @@ try {
     expect(await page.textContent(`#${id}-label`), language.label, 'string field from wasm');
     expect(await page.textContent(`#${id}-doubled`), '12', 'method call into wasm');
 
-    // An assigning binding writes through the ABI and the island refreshes, so
+    // An assigning binding writes through the ABI and the client rerenders, so
     // a wasm companion behaves exactly like a JavaScript one.
     await page.click(`#${id}-bump`);
     await page.waitForFunction(
@@ -151,9 +151,9 @@ try {
     expect(await page.textContent(`#${id}-count`), '7', 'assignment writes into wasm');
     expect(await page.textContent(`#${id}-doubled`), '14', 'method observes the written field');
 
-    const island = `tachyon-island[data-tachyon-component="${id}"]`;
-    expect(await page.getAttribute(island, 'data-tachyon-active'), 'true', 'island activated');
-    expect(await page.getAttribute(island, 'data-tachyon-island-error'), null, 'no island error');
+    const component = `tachyon-component[data-tachyon-component="${id}"]`;
+    expect(await page.getAttribute(component, 'data-tachyon-active'), 'true', 'component mounted');
+    expect(await page.getAttribute(component, 'data-tachyon-mount-error'), null, 'no mount error');
   }
   expect(errors.length, 0, `no console errors${errors.length ? `: ${errors[0]}` : ''}`);
 }

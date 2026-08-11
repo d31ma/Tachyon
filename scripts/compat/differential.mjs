@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Phase 6 compatibility differential.
 //
-// Builds every corpus project with the immutable v26.30.04 release and the
-// Rust implementation, serves each output, renders every route in a
+// Builds every corpus project with both the legacy JavaScript implementation
+// and the Rust implementation, serves each output, renders every route in a
 // real browser, and compares the resulting semantic DOM, route graph, and
 // diagnostics. Byte comparison is meaningless here: the two implementations
 // emit deliberately different artifacts. What must match is what a user or an
@@ -20,11 +20,11 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CORPUS = path.join(REPO, 'corpus');
-const TY = process.env.TY_BIN ?? path.join(REPO, process.env.CARGO_TARGET_DIR ?? 'target', 'debug/ty');
-const RELEASED_TY = process.env.RELEASED_TY_BIN;
-if (!RELEASED_TY) {
+const TY = process.env.TAC_BIN ?? path.join(REPO, process.env.CARGO_TARGET_DIR ?? 'target', 'debug/ty');
+const LEGACY_TY = process.env.TAC_LEGACY_BIN;
+if (!LEGACY_TY) {
   throw new Error(
-    'RELEASED_TY_BIN must name the checksum-verified v26.30.04 ty executable.',
+    'TAC_LEGACY_BIN must name an immutable released ty executable; the in-tree legacy source is not a compatibility oracle.',
   );
 }
 const MIME = {
@@ -201,59 +201,44 @@ async function treeOf(root, current = root, output = {}) {
   return output;
 }
 
+function withoutRemovedLegacyScaffold(tree) {
+  const normalized = { ...tree };
+  for (const file of ['db/README.md', 'db/schemas/.gitkeep', 'db/.collections/.gitkeep']) {
+    delete normalized[file];
+  }
+  const retainedEnvironment = new Set(['YON_PORT', 'YON_HOST', 'YON_HOSTNAME', 'YON_SKIP_BUNDLE']);
+  for (const file of ['.env.example', '.env.test']) {
+    const source = Buffer.from(normalized[file], 'base64').toString('utf8');
+    const retained = source.split('\n').filter((line) => {
+      const separator = line.indexOf('=');
+      return line === '' || (separator > 0 && retainedEnvironment.has(line.slice(0, separator)));
+    }).join('\n');
+    normalized[file] = Buffer.from(retained).toString('base64');
+  }
+  const readme = Buffer.from(normalized['README.md'], 'base64').toString('utf8')
+    .replace('the `fylo`, `chex`, and `ttid` binaries', 'the `chex` and `ttid` binaries');
+  normalized['README.md'] = Buffer.from(readme).toString('base64');
+  return normalized;
+}
+
 async function compareScaffold() {
   const workspace = await mkdtemp(path.join(tmpdir(), 'ty-compat-scaffold-'));
   const legacyRoot = path.join(workspace, 'legacy');
   const rustRoot = path.join(workspace, 'rust');
   try {
-    const legacy = await run(RELEASED_TY, ['init', legacyRoot, '--name', 'Parity App']);
+    const legacy = await run(LEGACY_TY, ['init', legacyRoot, '--name', 'Parity App']);
     const rust = await run(TY, ['init', rustRoot, '--name', 'Parity App']);
     if (legacy.code !== 0 || rust.code !== 0) {
       return { ok: false, detail: `legacy=${legacy.code} rust=${rust.code}\n${legacy.stderr}\n${rust.stderr}` };
     }
-    const legacyTree = await treeOf(legacyRoot);
+    const legacyTree = withoutRemovedLegacyScaffold(await treeOf(legacyRoot));
     const rustTree = await treeOf(rustRoot);
-    const intentionallyChanged = new Set([
-      '.env.example',
-      '.env.test',
-      'README.md',
-      'tachyon-env.d.ts',
-    ]);
-    const intentionallyRemoved = new Set([
-      'db/.collections/.gitkeep',
-      'db/README.md',
-      'db/schemas/.gitkeep',
-    ]);
+    if (JSON.stringify(legacyTree) === JSON.stringify(rustTree)) {
+      return { ok: true, detail: `${Object.keys(rustTree).length} generated files match after declared legacy scaffold removals` };
+    }
     const names = [...new Set([...Object.keys(legacyTree), ...Object.keys(rustTree)])].sort();
-    const differences = names.filter((name) => legacyTree[name] !== rustTree[name]);
-    const expected = new Set([...intentionallyChanged, ...intentionallyRemoved]);
-    const unexpected = differences.find((name) => !expected.has(name));
-    const missingDifference = [...expected].find((name) => !differences.includes(name));
-    if (unexpected || missingDifference) {
-      return {
-        ok: false,
-        detail: unexpected
-          ? `unexpected generated-file difference: ${unexpected}`
-          : `expected generated-file migration is absent: ${missingDifference}`,
-      };
-    }
-    const invalidRemoval = [...intentionallyRemoved].find(
-      (name) => legacyTree[name] === undefined || rustTree[name] !== undefined,
-    );
-    if (invalidRemoval) {
-      return { ok: false, detail: `removed scaffold file has the wrong shape: ${invalidRemoval}` };
-    }
-    const invalidChange = [...intentionallyChanged].find(
-      (name) => legacyTree[name] === undefined || rustTree[name] === undefined,
-    );
-    if (invalidChange) {
-      return { ok: false, detail: `changed scaffold file is missing: ${invalidChange}` };
-    }
-    const retained = names.length - intentionallyChanged.size - intentionallyRemoved.size;
-    return {
-      ok: true,
-      detail: `${retained} retained files are byte-identical; 4 FYLO-facing files changed and 3 db files removed`,
-    };
+    const difference = names.find((name) => legacyTree[name] !== rustTree[name]);
+    return { ok: false, detail: `first generated-file difference: ${difference}` };
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
@@ -284,7 +269,7 @@ async function compareProject(name) {
     if (!ok) result.differences.push(`${check}: ${detail}`);
   };
 
-  const legacy = await run(RELEASED_TY, ['bundle'], { cwd: project });
+  const legacy = await run(LEGACY_TY, ['bundle'], { cwd: project });
   record('legacy build', legacy.code === 0, legacy.code === 0 ? 'ok' : legacy.stderr.slice(-400));
 
   const rust = await run(TY, ['build', project, '--out-dir', 'dist-rust']);

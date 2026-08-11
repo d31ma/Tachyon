@@ -11,21 +11,21 @@ a {
   font-size: 0.95rem;
 }
 
-.brand-tag {
+.brand-link {
+  min-height: 44px;
+}
+
+.brand-badge {
   display: inline-flex;
   align-items: center;
   min-height: 1.25rem;
-  padding-inline: 0.5rem;
+  padding-inline: 0.45rem;
   border-radius: var(--w-radius-pill);
   background: var(--w-success-container);
   color: var(--w-on-success-container);
   font-size: var(--w-font-xs);
-  font-weight: var(--w-font-weight-medium);
+  font-weight: 650;
   line-height: 1;
-}
-
-.site-header-row > a[aria-label="Tachyon home"] {
-  min-height: var(--w-touch-min);
 }
 
 .header-burger {

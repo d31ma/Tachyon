@@ -1,11 +1,14 @@
 # Tachyon Support
 
-## Current Implementation Status
+## Current Release Status
 
-The Rust implementation is Tachyon's sole in-tree implementation. Public
-artifacts are qualified and distributed by the tag-gated stable release
-workflow; target maturity is stated only with the vocabulary and evidence in
-`docs/SUPPORT_TIERS.md`. No target is currently promoted to `supported`.
+The Rust rewrite has completed engineering phases 0–7 and subsequent client,
+server-isolation, and native-runtime work. Version `26.33.02` is a release
+candidate, not a supported or preview application-framework release. There is
+no compatibility, uptime, security-support, or production-use promise for its
+artifacts. Current implementation evidence and remaining promotion gates are
+recorded in `docs/PROJECT_PLAN.md`, `docs/CUTOVER.md`, and
+`docs/SUPPORT_TIERS.md`.
 
 Use:
 

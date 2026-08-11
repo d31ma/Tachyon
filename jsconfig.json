@@ -1,5 +1,26 @@
 {
-  "extends": "./tsconfig.base.json",
-  "include": ["api/types/**/*.d.ts", "website/**/*.d.ts", "website/**/*.js", "website/**/*.ts"],
+  "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["bun-types", "@types/node"],
+    "isolatedModules": true,
+    "allowJs": true,
+    "checkJs": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "noUncheckedSideEffectImports": false
+  },
+  "include": [
+    "types/**/*.d.ts",
+    "website/**/*.d.ts",
+    "website/**/*.js",
+    "website/**/*.ts"
+  ],
   "exclude": ["node_modules", "node_modules*", "dist", "bin", "**/*.as.ts", "website/dist", "website/dist-debug", "website/node_modules", "website/node_modules*", "website/client/shared/assets/duvay/**/*.js"]
 }

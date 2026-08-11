@@ -81,7 +81,7 @@ export default class {
             this.loading = false
         }
         this.scanStorage()
-        await this.root?.tachyonIsland?.refresh?.()
+        await this.root?.tachyonComponent?.refresh?.()
     }
 
     /** @param {HTMLElement} root */

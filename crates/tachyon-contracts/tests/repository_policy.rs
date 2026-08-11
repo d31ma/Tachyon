@@ -103,57 +103,6 @@ fn release_artifact_inputs_are_present_and_nonempty() -> Result<(), Box<dyn std:
 }
 
 #[test]
-fn rewrite_is_the_only_in_tree_framework_implementation() -> Result<(), Box<dyn std::error::Error>>
-{
-    let root = repository_root();
-    for obsolete in [
-        "src",
-        "tests",
-        "bunfig.toml",
-        "tsconfig.src.json",
-        "tsconfig.tests.json",
-        "scripts/typecheck.js",
-        "scripts/windows-native-compile-smoke.js",
-        "scripts/bench",
-    ] {
-        assert!(
-            !root.join(obsolete).exists(),
-            "the removed JavaScript implementation path was reintroduced: {obsolete}"
-        );
-    }
-
-    assert!(root.join("api/types/tachyon-env.d.ts").is_file());
-    assert!(
-        root.join("crates/tachyon-cli/tests/fixtures/migration-fullstack")
-            .is_dir()
-    );
-
-    let package: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(root.join("package.json"))?)?;
-    let scripts = package["scripts"]
-        .as_object()
-        .ok_or("package.json scripts must be an object")?;
-    for command in ["init", "serve", "bundle", "preview", "start"] {
-        assert!(
-            scripts[command]
-                .as_str()
-                .is_some_and(|script| script.starts_with("cargo run --locked --bin ty --")),
-            "package script {command} does not invoke the Rust CLI"
-        );
-    }
-    for script in scripts.values().filter_map(serde_json::Value::as_str) {
-        assert!(!script.contains("src/cli"));
-        assert!(!script.contains("bun test ./tests"));
-    }
-
-    let workflow = fs::read_to_string(root.join(".github/workflows/rust-ci.yml"))?;
-    assert!(workflow.contains("Rewrite-only repository policy"));
-    assert!(workflow.contains("RELEASED_TY_BIN="));
-    assert!(workflow.contains("crates/tachyon-cli/tests/fixtures/migration-fullstack"));
-    Ok(())
-}
-
-#[test]
 fn every_phase7_fuzz_boundary_has_a_target_seed_and_ci_campaign()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = repository_root();
@@ -192,7 +141,8 @@ fn every_phase7_fuzz_boundary_has_a_target_seed_and_ci_campaign()
 }
 
 #[test]
-fn architecture_adrs_are_accepted_and_numbered() -> Result<(), Box<dyn std::error::Error>> {
+fn architecture_adrs_have_final_statuses_and_are_numbered() -> Result<(), Box<dyn std::error::Error>>
+{
     let root = repository_root();
     let adrs = collect_files(&root.join("docs/adr"), "md")?;
     let numbered = adrs
@@ -208,7 +158,7 @@ fn architecture_adrs_are_accepted_and_numbered() -> Result<(), Box<dyn std::erro
         })
         .collect::<Vec<_>>();
 
-    assert_eq!(numbered.len(), 12);
+    assert_eq!(numbered.len(), 16);
     for (index, adr) in numbered.into_iter().enumerate() {
         let expected_prefix = format!("{:04}-", index + 1);
         assert!(
@@ -223,8 +173,8 @@ fn architecture_adrs_are_accepted_and_numbered() -> Result<(), Box<dyn std::erro
             contents
                 .lines()
                 .take(12)
-                .any(|line| line.contains("Accepted")),
-            "{} is not accepted",
+                .any(|line| line.contains("Accepted") || line.contains("Superseded")),
+            "{} has no final status",
             adr.display()
         );
     }
@@ -296,6 +246,104 @@ fn github_actions_are_pinned_to_full_commits() -> Result<(), Box<dyn std::error:
         }
     }
 
+    Ok(())
+}
+
+#[test]
+fn project_environment_variables_use_domain_namespaces() -> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    let mut files = Vec::new();
+    for directory in [".github", "crates", "scripts", "website/tests"] {
+        for extension in ["js", "mjs", "ps1", "rs", "sh", "ts", "yaml", "yml"] {
+            files.extend(collect_files(&root.join(directory), extension)?);
+        }
+    }
+
+    let old_namespace = ["TACH", "YON_"].concat();
+    let removed_data_namespace = ["FY", "LO_"].concat();
+    let removed_packaging_name = ["YON", "_DIST_PATH"].concat();
+    let forbidden = [
+        format!("process.env.{old_namespace}"),
+        format!("std::env::var(\"{old_namespace}"),
+        format!("std::env::var_os(\"{old_namespace}"),
+        format!(".env(\"{old_namespace}"),
+        format!(".env_remove(\"{old_namespace}"),
+        format!("env!(\"{old_namespace}"),
+        format!("cargo:rustc-env={old_namespace}"),
+        format!("$env:{old_namespace}"),
+        format!("${{{old_namespace}"),
+    ];
+    let mut violations = Vec::new();
+    for file in files {
+        if file
+            .components()
+            .any(|component| component.as_os_str() == "fixtures")
+        {
+            continue;
+        }
+        let contents = fs::read_to_string(&file)?;
+        for (index, line) in contents.lines().enumerate() {
+            let workflow_environment = line
+                .trim_start()
+                .strip_prefix(&old_namespace)
+                .is_some_and(|value| value.contains(':'));
+            if workflow_environment
+                || forbidden.iter().any(|pattern| line.contains(pattern))
+                || line.contains(&removed_data_namespace)
+                || line.contains(&removed_packaging_name)
+            {
+                violations.push(format!("{}:{}", file.display(), index + 1));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "project environment variables must start with TAC_ or YON_, and removed namespaces must not return: {violations:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn legacy_framework_tree_cannot_return() -> Result<(), Box<dyn std::error::Error>> {
+    let root = repository_root();
+    for relative in [
+        "src",
+        "tests",
+        "scripts/bench",
+        "scripts/install-vendor-bins.sh",
+        "scripts/typecheck.js",
+        "scripts/windows-native-compile-smoke.js",
+        "bunfig.toml",
+        "tsconfig.json",
+        "tsconfig.base.json",
+        "tsconfig.src.json",
+        "tsconfig.tests.json",
+        "tsconfig.website.json",
+    ] {
+        assert!(
+            !root.join(relative).exists(),
+            "legacy implementation path returned: {relative}"
+        );
+    }
+
+    let package = fs::read_to_string(root.join("package.json"))?;
+    for legacy_command in ["src/cli/", "bun test ./tests", "tests/.env.test"] {
+        assert!(
+            !package.contains(legacy_command),
+            "legacy package command returned: {legacy_command}"
+        );
+    }
+    assert!(root.join("types/tachyon-env.d.ts").is_file());
+    assert!(
+        root.join("crates/tachyon-cli/tests/fixtures/migration-fullstack")
+            .is_dir()
+    );
+
+    let workflow = fs::read_to_string(root.join(".github/workflows/rust-ci.yml"))?;
+    assert!(workflow.contains("Rewrite-only repository policy"));
+    assert!(workflow.contains("TAC_LEGACY_BIN="));
+    assert!(workflow.contains("crates/tachyon-cli/tests/fixtures/migration-fullstack"));
     Ok(())
 }
 
@@ -417,10 +465,10 @@ fn completed_phase_acceptance_is_enforced_by_ci_and_documentation()
     assert!(workflow.contains("bun run test:rust-browser"));
     assert!(workflow.contains("Phase 4 macOS native and mobile-web parity"));
     assert!(workflow.contains("bun run test:rust-macos"));
-    assert!(plan.contains("## Phase 3: Tac and Yon View Semantics"));
+    assert!(plan.contains("## Phase 3: Tac View Semantics"));
     assert!(plan.contains("## Phase 4: Native Vertical Slice"));
     assert!(plan.matches("Status: complete on 2026-07-26").count() >= 4);
-    assert_eq!(version.trim(), "26.33.01");
+    assert_eq!(version.trim(), "26.33.02");
     assert_eq!(version.trim(), tachyon_contracts::PRODUCT_VERSION);
     Ok(())
 }

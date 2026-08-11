@@ -58,7 +58,7 @@ fn released_aliases_environment_and_removed_render_mode_are_compatible() {
             "--package",
             "--skip-package",
         ])
-        .env("YON_DIST_PATH", &output));
+        .env("TAC_DIST_PATH", &output));
     assert!(bundled.status.success(), "{}", stderr(&bundled));
     assert!(output.join("index.html").is_file());
 
@@ -81,7 +81,7 @@ fn target_environment_and_native_command_cardinality_match_the_released_cli() {
         .arg("bundle")
         .arg(&project)
         .env("TAC_BUNDLE_TARGET", "browser,web")
-        .env("YON_DIST_PATH", &output));
+        .env("TAC_DIST_PATH", &output));
     assert!(bundled.status.success(), "{}", stderr(&bundled));
     assert!(output.join("index.html").is_file());
 
@@ -112,7 +112,7 @@ fn multi_target_bundles_publish_each_target_exactly_one_level_below_the_output()
         .arg("bundle")
         .arg(&project)
         .args(["--target", "web,macos,ios,android", "--skip-package"])
-        .env("YON_DIST_PATH", &output));
+        .env("TAC_DIST_PATH", &output));
     assert!(bundled.status.success(), "{}", stderr(&bundled));
     assert!(output.join("web/index.html").is_file());
     for target in ["macos", "ios", "android"] {
@@ -177,35 +177,16 @@ fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 
-/// Sends one request over its own connection and returns the whole response.
-///
-/// A peer that closes a socket still holding unread input resets it rather
-/// than finishing it, and a reset discards whatever this side had already
-/// buffered — so the response is lost outright rather than truncated. That is
-/// a transport event rather than an answer, so an idempotent request is sent
-/// again. Half-closing the write side instead would reach the server as a
-/// client disconnect and cancel the request before it is answered. A server
-/// that has genuinely died still fails loudly, because the retry cannot
-/// connect.
 fn request(socket: &str, request: &[u8]) -> String {
-    for remaining in (0..3).rev() {
-        let mut connection = TcpStream::connect(socket).expect("server should accept connections");
-        connection
-            .write_all(request)
-            .expect("request should be sent");
-        let mut response = Vec::new();
-        match connection.read_to_end(&mut response) {
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::ConnectionReset => {
-                if response.is_empty() && remaining > 0 {
-                    continue;
-                }
-            }
-            Err(error) => panic!("response should be read: {error:?}"),
-        }
-        return String::from_utf8(response).expect("response should be UTF-8");
-    }
-    unreachable!("the final attempt returns or panics")
+    let mut connection = TcpStream::connect(socket).expect("server should accept connections");
+    connection
+        .write_all(request)
+        .expect("request should be sent");
+    let mut response = String::new();
+    connection
+        .read_to_string(&mut response)
+        .expect("response should be read");
+    response
 }
 
 #[test]
@@ -361,14 +342,14 @@ fn serve_no_bundle_uses_the_existing_web_bundle_without_recompiling_sources() {
 }
 
 #[test]
-fn static_tac_and_yon_pages_compile_in_canonical_route_order() {
+fn static_tac_pages_compile_in_canonical_route_order() {
     let project = tempfile::tempdir().expect("project should be created");
     write(
         &project.path().join("client/pages/zeta/tac.html"),
         "<main>Zeta</main>",
     );
     write(
-        &project.path().join("server/routes/about/yon.html"),
+        &project.path().join("client/pages/about/tac.html"),
         "<main>About</main>",
     );
 
@@ -412,7 +393,7 @@ fn diagnostics_are_stable_in_human_and_json_formats() {
 }
 
 #[test]
-fn collisions_and_later_phase_companions_fail_without_replacing_output() {
+fn yon_html_and_unsupported_companions_fail_without_replacing_output() {
     let project = tempfile::tempdir().expect("project should be created");
     let tac = project.path().join("client/pages/tac.html");
     write(&tac, "<main>Known good</main>");
@@ -425,9 +406,10 @@ fn collisions_and_later_phase_companions_fail_without_replacing_output() {
         &project.path().join("server/routes/yon.html"),
         "<main>Collision</main>",
     );
-    let collision = run(ty().arg("build").arg(project.path()));
-    assert!(!collision.status.success());
-    assert!(stderr(&collision).contains("TY1003"));
+    let yon_html = run(ty().arg("build").arg(project.path()));
+    assert!(!yon_html.status.success());
+    assert!(stderr(&yon_html).contains("TY1008"));
+    assert!(stderr(&yon_html).contains("Content-Type: text/html"));
     assert_eq!(published, files_below(&project.path().join("dist")));
 
     fs::remove_file(project.path().join("server/routes/yon.html")).expect("fixture removal");
@@ -480,14 +462,9 @@ fn development_server_builds_and_serves_with_defensive_headers() {
     let output = child.stdout.take().expect("server stdout should be piped");
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut output = BufReader::new(output);
         let mut line = String::new();
-        let result = output.read_line(&mut line).map(|_| line);
+        let result = BufReader::new(output).read_line(&mut line).map(|_| line);
         let _ = sender.send(result);
-        // Keep the pipe open for the server's later status lines. Dropping the
-        // reader after readiness races the next `println!` and can terminate
-        // the child on a broken pipe before its listener is polled.
-        let _ = std::io::copy(&mut output, &mut std::io::sink());
     });
     let ready = receiver
         .recv_timeout(Duration::from_secs(10))

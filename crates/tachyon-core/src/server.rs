@@ -1,21 +1,29 @@
 use crate::failure::diagnostic;
 use crate::handler::{HandlerCancellation, HandlerSource, HandlerSupervisor};
+use crate::hot_update::{SourceAction, SourceChanges, SourceWatcher};
 use crate::routing::match_route;
 use crate::{BuildOptions, BuildResult, Failure, ProjectDiscovery, WebCompiler};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::header::{
-    CACHE_CONTROL, CONTENT_TYPE, HeaderName, HeaderValue, REFERRER_POLICY, X_CONTENT_TYPE_OPTIONS,
+    CACHE_CONTROL, CONNECTION, CONTENT_TYPE, HeaderName, HeaderValue, REFERRER_POLICY,
+    X_CONTENT_TYPE_OPTIONS,
 };
 use axum::http::{Request, Response, StatusCode};
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use tachyon_contracts::{HandlerBody, HandlerBodyEncoding, HandlerRequest, HttpMethod};
+use tachyon_contracts::{
+    HandlerBody, HandlerBodyEncoding, HandlerRequest, HotUpdate, HotUpdateKind, HttpMethod,
+};
+use tokio::io::AsyncWriteExt as _;
 use tokio::net::TcpListener;
+use tokio::sync::broadcast;
+use tokio_util::io::ReaderStream;
 use tower::ServiceExt as _;
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
@@ -24,8 +32,8 @@ use tower_http::set_header::SetResponseHeaderLayer;
 const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
 /// Largest generated document the server will rewrite while serving.
 const MAX_DOCUMENT_BYTES: usize = 16 * 1024 * 1024;
-/// How often the watcher samples the project for changes.
-const WATCH_INTERVAL: Duration = Duration::from_millis(400);
+/// Quiet period used to combine one editor save into one rebuild.
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(75);
 /// Prefix serving a topic subscription as server-sent events.
 const TOPIC_ENDPOINT: &str = "/.tachyon/topics/";
 /// Project-relative directory holding append-only topic logs.
@@ -35,28 +43,175 @@ const MAX_TOPIC_BYTES: u64 = 16 * 1024 * 1024;
 /// How often a subscription checks its topic for new records.
 const TOPIC_POLL: Duration = Duration::from_millis(250);
 
-/// Endpoint a page polls to learn that a rebuild has published.
+/// Compatibility endpoint reporting the latest hot-update sequence.
 const LIVE_ENDPOINT: &str = "/.tachyon/live";
+/// Server-sent event stream carrying Hot Update Protocol v1 messages.
+const HOT_ENDPOINT: &str = "/.tachyon/hot";
 /// Endpoint serving the reload client.
 const LIVE_SCRIPT_ENDPOINT: &str = "/.tachyon/live-reload.js";
-/// Reference injected into served documents so an open page reloads after a
-/// rebuild. It is added while serving, never by `ty build`.
+/// Reference injected into served documents so an open page receives semantic
+/// hot updates. It is added while serving, never by `ty build`.
 ///
 /// The script is a same-origin file rather than an inline block because the
 /// development server sends `default-src 'self'`, which forbids inline script.
 const LIVE_RELOAD: &str = r#"<script type="module" src="/.tachyon/live-reload.js"></script>"#;
 /// The reload client itself.
-const LIVE_RELOAD_CLIENT: &str = r"let seen = null
-const poll = async () => {
-  try {
-    const value = await (await fetch('/.tachyon/live', { cache: 'no-store' })).text()
-    if (seen === null) seen = value
-    else if (value !== seen) { location.reload(); return }
-  } catch {}
-  setTimeout(poll, 500)
+const LIVE_RELOAD_CLIENT: &str = r#"const endpoint = '/.tachyon/hot'
+let applying = Promise.resolve()
+
+const overlay = () => {
+  let root = document.getElementById('tachyon-hot-diagnostics')
+  if (root) return root
+  root = document.createElement('aside')
+  root.id = 'tachyon-hot-diagnostics'
+  root.setAttribute('role', 'alert')
+  root.setAttribute('aria-live', 'assertive')
+  Object.assign(root.style, {
+    position: 'fixed', inset: '16px', zIndex: '2147483647', overflow: 'auto',
+    padding: '18px', border: '1px solid #ef4444', borderRadius: '8px',
+    color: '#fee2e2', background: '#1f1113', font: '13px/1.5 ui-monospace, monospace',
+    whiteSpace: 'pre-wrap', boxShadow: '0 16px 48px #0008'
+  })
+  document.body.append(root)
+  return root
 }
-poll()
-";
+
+const showDiagnostics = (report) => {
+  const diagnostics = report?.diagnostics || []
+  overlay().textContent = diagnostics.map((item) => {
+    const spans = (item.spans || []).map((span) => `\n  ${span.file}:${span.start}..${span.end}`).join('')
+    const help = item.help ? `\n  help: ${item.help}` : ''
+    return `${item.code}: ${item.message}${spans}${help}`
+  }).join('\n\n') || 'Tachyon could not rebuild this page.'
+  document.documentElement.dataset.tachyonHot = 'diagnostics'
+}
+
+const clearDiagnostics = () => document.getElementById('tachyon-hot-diagnostics')?.remove()
+
+const replaceStyles = async (buildId) => {
+  const links = [...document.querySelectorAll('link[rel~="stylesheet"][href]')]
+    .filter((link) => new URL(link.href, location.href).origin === location.origin)
+  await Promise.all(links.map((link) => new Promise((resolve, reject) => {
+    const next = link.cloneNode()
+    const url = new URL(link.href, location.href)
+    url.searchParams.set('tachyon_hot', buildId || String(Date.now()))
+    next.href = url.href
+    next.addEventListener('load', () => { link.remove(); resolve() }, { once: true })
+    next.addEventListener('error', () => { next.remove(); reject(new Error(`Cannot update ${url.pathname}`)) }, { once: true })
+    link.after(next)
+  })))
+}
+
+const updateIslands = async (message) => {
+  // Tac owns its complete DOM in the browser (ADR 0015). A companion edit
+  // replaces the affected client instances and asks that renderer to rebuild;
+  // it never fetches server-rendered component boundaries.
+  const tac = globalThis.__tachyonTac
+  if (!tac?.hotUpdate) throw new Error('The Tac hot-update runtime is unavailable.')
+  await tac.hotUpdate(message.boundaries || [], message.build_id || String(message.sequence))
+}
+
+const apply = async (message) => {
+  if (message.contract_version !== 1) { location.reload(); return }
+  if (message.kind === 'diagnostics') { showDiagnostics(message.diagnostics); return }
+  clearDiagnostics()
+  if (message.kind === 'css') await replaceStyles(message.build_id)
+  else if (message.kind === 'island') await updateIslands(message)
+  else { location.reload(); return }
+  document.documentElement.dataset.tachyonHot = message.kind
+  window.dispatchEvent(new CustomEvent('tachyon:hot-update', { detail: message }))
+}
+
+const source = new EventSource(endpoint)
+source.addEventListener('hot', (event) => {
+  let message
+  try { message = JSON.parse(event.data) }
+  catch { location.reload(); return }
+  applying = applying.then(() => apply(message)).catch((error) => {
+    console.error('[Tachyon hot update]', error)
+    location.reload()
+  })
+})
+"#;
+
+#[derive(Clone, Debug)]
+struct HotUpdateHub {
+    sender: broadcast::Sender<String>,
+    sequence: Arc<AtomicU64>,
+    build_id: Arc<RwLock<Option<String>>>,
+}
+
+impl HotUpdateHub {
+    fn new(build_id: Option<String>) -> Self {
+        let (sender, _) = broadcast::channel(64);
+        Self {
+            sender,
+            sequence: Arc::new(AtomicU64::new(0)),
+            build_id: Arc::new(RwLock::new(build_id)),
+        }
+    }
+
+    fn sequence(&self) -> u64 {
+        self.sequence.load(Ordering::Acquire)
+    }
+
+    fn build_id(&self) -> Option<String> {
+        self.build_id.read().ok().and_then(|value| value.clone())
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<String> {
+        self.sender.subscribe()
+    }
+
+    fn publish(
+        &self,
+        kind: HotUpdateKind,
+        build_id: Option<String>,
+        paths: Vec<String>,
+        boundaries: Vec<String>,
+        diagnostics: Option<tachyon_diagnostics::DiagnosticReport>,
+    ) {
+        if let Some(value) = &build_id
+            && let Ok(mut published) = self.build_id.write()
+        {
+            *published = Some(value.clone());
+        }
+        let sequence = self.sequence.fetch_add(1, Ordering::AcqRel) + 1;
+        let update = HotUpdate::v1(
+            sequence,
+            kind,
+            build_id.or_else(|| self.build_id()),
+            paths,
+            boundaries,
+            diagnostics,
+        );
+        if let Ok(payload) = serde_json::to_string(&update) {
+            let _unused = self.sender.send(sse_frame(&update, &payload));
+        }
+    }
+
+    fn reload_snapshot(&self) -> Option<String> {
+        let sequence = self.sequence();
+        if sequence == 0 {
+            return None;
+        }
+        let update = HotUpdate::v1(
+            sequence,
+            HotUpdateKind::Reload,
+            self.build_id(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        );
+        serde_json::to_string(&update)
+            .ok()
+            .map(|payload| sse_frame(&update, &payload))
+    }
+}
+
+fn sse_frame(update: &HotUpdate, payload: &str) -> String {
+    format!("id: {}\nevent: hot\ndata: {payload}\n\n", update.sequence)
+}
 
 /// One route the server can dispatch to a supervised handler.
 #[derive(Clone, Debug)]
@@ -74,9 +229,9 @@ struct Dispatch {
     page_routes: Arc<Vec<String>>,
     supervisor: Arc<HandlerSupervisor>,
     files: ServeDir,
-    /// Incremented whenever a rebuild publishes, so open pages can reload.
-    generation: Arc<std::sync::atomic::AtomicU64>,
-    /// Whether served documents receive the live-reload script.
+    /// Publishes bounded semantic updates to connected development pages.
+    hot_updates: HotUpdateHub,
+    /// Whether served documents receive the hot-update client.
     watch: bool,
     /// Root middleware consulted before every request, when present.
     middleware: Option<Arc<HandlerSource>>,
@@ -91,6 +246,7 @@ struct PreviewDispatch {
 }
 
 const CONTENT_SECURITY_POLICY: HeaderName = HeaderName::from_static("content-security-policy");
+const LAST_EVENT_ID: HeaderName = HeaderName::from_static("last-event-id");
 const X_FRAME_OPTIONS: HeaderName = HeaderName::from_static("x-frame-options");
 
 /// Development-server network and build options.
@@ -326,29 +482,33 @@ impl DevServer {
         // generated output, exactly as before.
         let project = ProjectDiscovery::discover(&project_root)?;
         let (routes, page_routes) = discover_dispatch_routes(&project)?;
-        let supervisor = HandlerSupervisor::new(crate::HandlerSupervisorOptions::default())?;
+        let supervisor = Arc::new(HandlerSupervisor::from_environment()?);
         let middleware = discover_middleware(project.root())?;
         let workers = crate::Workers::discover(project.root())?;
 
-        spawn_workers(project.root(), &workers)?;
+        spawn_workers(project.root(), &workers, &supervisor)?;
 
-        let generation = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let hot_updates =
+            HotUpdateHub::new(build.as_ref().map(|result| String::from(result.sha256())));
         if options.watch {
+            let watched_root = project.root().to_path_buf();
+            let watcher = SourceWatcher::start(&watched_root)?;
             tokio::spawn(watch_sources(
-                project_root.clone(),
+                watched_root,
                 BuildOptions {
                     output_directory: options.output_directory.clone(),
                     ..BuildOptions::default()
                 },
-                Arc::clone(&generation),
+                hot_updates.clone(),
+                watcher,
             ));
         }
         let dispatch_state = Dispatch {
             routes: Arc::new(routes),
             page_routes: Arc::new(page_routes),
-            supervisor: Arc::new(supervisor),
+            supervisor,
             files: ServeDir::new(&output_directory).append_index_html_on_directories(true),
-            generation,
+            hot_updates,
             watch: options.watch,
             middleware,
             project_root: Arc::new(project.root().to_path_buf()),
@@ -497,9 +657,11 @@ async fn dispatch(State(state): State<Dispatch>, request: Request<Body>) -> Resp
 /// Serves one request, before the after phase runs.
 async fn serve(state: &Dispatch, request: Request<Body>) -> Response<Body> {
     let path = request.uri().path().to_owned();
-    if path == LIVE_ENDPOINT {
-        let generation = state.generation.load(std::sync::atomic::Ordering::Relaxed);
-        return text_response(StatusCode::OK, &generation.to_string());
+    if path == LIVE_ENDPOINT && state.watch {
+        return text_response(StatusCode::OK, &state.hot_updates.sequence().to_string());
+    }
+    if path == HOT_ENDPOINT && state.watch {
+        return hot_update_stream(state, &request);
     }
     if let Some(middleware) = state.middleware.clone() {
         let method = protocol_method(request.method()).unwrap_or(HttpMethod::Get);
@@ -512,7 +674,7 @@ async fn serve(state: &Dispatch, request: Request<Body>) -> Response<Body> {
     if let Some(topic) = path.strip_prefix(TOPIC_ENDPOINT) {
         return subscribe_topic(state, topic, &request);
     }
-    if path == LIVE_SCRIPT_ENDPOINT {
+    if path == LIVE_SCRIPT_ENDPOINT && state.watch {
         return Response::builder()
             .status(StatusCode::OK)
             .header(CONTENT_TYPE, "text/javascript; charset=utf-8")
@@ -523,6 +685,9 @@ async fn serve(state: &Dispatch, request: Request<Body>) -> Response<Body> {
                     "Cannot serve the client.",
                 )
             });
+    }
+    if path == LIVE_ENDPOINT || path == HOT_ENDPOINT || path == LIVE_SCRIPT_ENDPOINT {
+        return text_response(StatusCode::NOT_FOUND, "Not found.");
     }
     let patterns = state.routes.iter().map(|route| route.route.as_str());
     let matched = match_route(patterns, &path);
@@ -593,6 +758,60 @@ async fn serve(state: &Dispatch, request: Request<Body>) -> Response<Body> {
             invocation_failure_response("Handler execution", &protocol_request.request_id)
         }
     }
+}
+
+fn hot_update_stream(state: &Dispatch, request: &Request<Body>) -> Response<Body> {
+    let mut receiver = state.hot_updates.subscribe();
+    let hub = state.hot_updates.clone();
+    let reconnect_sequence = request
+        .headers()
+        .get(LAST_EVENT_ID)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok());
+    let (mut writer, reader) = tokio::io::duplex(16 * 1_024);
+    tokio::spawn(async move {
+        if writer.write_all(b": connected\n\n").await.is_err() {
+            return;
+        }
+        if reconnect_sequence.is_some_and(|sequence| sequence < hub.sequence())
+            && let Some(frame) = hub.reload_snapshot()
+            && writer.write_all(frame.as_bytes()).await.is_err()
+        {
+            return;
+        }
+        loop {
+            match receiver.recv().await {
+                Ok(frame) => {
+                    if writer.write_all(frame.as_bytes()).await.is_err() {
+                        return;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let Some(frame) = hub.reload_snapshot() else {
+                        continue;
+                    };
+                    if writer.write_all(frame.as_bytes()).await.is_err() {
+                        return;
+                    }
+                }
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    });
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "text/event-stream; charset=utf-8")
+        .header(CACHE_CONTROL, "no-store")
+        .header(CONNECTION, "keep-alive")
+        .header("x-accel-buffering", "no")
+        .body(Body::from_stream(ReaderStream::new(reader)))
+        .unwrap_or_else(|_| {
+            text_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Cannot open the hot-update stream.",
+            )
+        })
 }
 
 /// Maps one protocol response onto an HTTP response.
@@ -720,17 +939,18 @@ async fn run_middleware(
 ///
 /// A worker is a handler on a schedule, so it reuses the same supervisor,
 /// deadlines, and bounds as a request-driven one.
-fn spawn_workers(project_root: &Path, workers: &crate::Workers) -> Result<(), Failure> {
+fn spawn_workers(
+    project_root: &Path,
+    workers: &crate::Workers,
+    supervisor: &Arc<HandlerSupervisor>,
+) -> Result<(), Failure> {
     if workers.is_empty() {
         return Ok(());
     }
-    let supervisor = Arc::new(HandlerSupervisor::new(
-        crate::HandlerSupervisorOptions::default(),
-    )?);
     for (relative, seconds) in workers.iter() {
         let source = HandlerSource::discover(project_root, Path::new(relative))?;
         tokio::spawn(run_worker(
-            Arc::clone(&supervisor),
+            Arc::clone(supervisor),
             source,
             String::from(relative),
             Duration::from_secs(seconds),
@@ -901,14 +1121,25 @@ async fn run_middleware_after(
     }
 
     let cancellation = HandlerCancellation::default();
-    let Ok(decision) = state
+    let decision = match state
         .supervisor
         .invoke(middleware, &protocol_request, &cancellation)
         .await
-    else {
-        // An after-phase failure must not discard a response the request
-        // already earned, so the original is sent unchanged.
-        return response;
+    {
+        Ok(decision) => decision,
+        Err(failure) => {
+            eprintln!(
+                "{}",
+                invocation_failure_event(
+                    "middleware.after",
+                    &protocol_request.request_id,
+                    &failure,
+                )
+            );
+            // An after-phase failure must not discard a response the request
+            // already earned, so the original is sent unchanged.
+            return response;
+        }
     };
     if decision.status != 204 {
         return handler_response(decision);
@@ -930,11 +1161,12 @@ async fn run_middleware_after(
 
 /// Serves generated output for a request no handler owns.
 async fn serve_static(state: Dispatch, request: Request<Body>) -> Response<Body> {
-    let mut request = request;
-    rewrite_dynamic_request(&state.page_routes, &mut request);
-    // ServeDir reports a missing file as a 404 response, never as an error.
-    let Ok(response) = state.files.clone().oneshot(request).await;
-    let response = response.map(Body::new);
+    let Some(response) = serve_generated(&state.files, &state.page_routes, request).await else {
+        return text_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Cannot serve generated output.",
+        );
+    };
     let is_document = response
         .headers()
         .get(CONTENT_TYPE)
@@ -972,27 +1204,59 @@ async fn serve_static(state: Dispatch, request: Request<Body>) -> Response<Body>
 
 async fn serve_preview(
     State(state): State<PreviewDispatch>,
-    mut request: Request<Body>,
+    request: Request<Body>,
 ) -> Response<Body> {
-    rewrite_dynamic_request(&state.page_routes, &mut request);
-    state.files.clone().oneshot(request).await.map_or_else(
-        |_| {
+    serve_generated(&state.files, &state.page_routes, request)
+        .await
+        .unwrap_or_else(|| {
             text_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Cannot serve the preview bundle.",
             )
-        },
-        |response| response.map(Body::new),
-    )
+        })
 }
 
-fn rewrite_dynamic_request(patterns: &[String], request: &mut Request<Body>) {
+/// Serves an authored output path before considering a dynamic page rewrite.
+///
+/// A route such as `/docs/_topic` also matches `/docs/client.js`. Generated
+/// assets are concrete public files, so they must win; only a real static 404
+/// is eligible for the dynamic page fallback.
+async fn serve_generated(
+    files: &ServeDir,
+    patterns: &[String],
+    request: Request<Body>,
+) -> Option<Response<Body>> {
+    let mut fallback = request_without_body(&request);
+    let response = files.clone().oneshot(request).await.ok()?.map(Body::new);
+    if response.status() != StatusCode::NOT_FOUND
+        || !rewrite_dynamic_request(patterns, &mut fallback)
+    {
+        return Some(response);
+    }
+    files
+        .clone()
+        .oneshot(fallback)
+        .await
+        .ok()
+        .map(|response| response.map(Body::new))
+}
+
+fn request_without_body(request: &Request<Body>) -> Request<Body> {
+    let mut copy = Request::new(Body::empty());
+    *copy.method_mut() = request.method().clone();
+    *copy.uri_mut() = request.uri().clone();
+    *copy.version_mut() = request.version();
+    *copy.headers_mut() = request.headers().clone();
+    copy
+}
+
+fn rewrite_dynamic_request(patterns: &[String], request: &mut Request<Body>) -> bool {
     let path = request.uri().path();
     let Some(matched) = match_route(patterns.iter().map(String::as_str), path) else {
-        return;
+        return false;
     };
     if matched.route == path || !matched.route.contains("/_") {
-        return;
+        return false;
     }
     let query = request
         .uri()
@@ -1001,7 +1265,9 @@ fn rewrite_dynamic_request(patterns: &[String], request: &mut Request<Body>) {
     let rewritten = format!("{}/{}", matched.route.trim_end_matches('/'), query);
     if let Ok(uri) = rewritten.parse() {
         *request.uri_mut() = uri;
+        return true;
     }
+    false
 }
 
 fn preview_route_patterns(root: &Path) -> Vec<String> {
@@ -1029,53 +1295,6 @@ fn preview_route_patterns(root: &Path) -> Vec<String> {
         .collect()
 }
 
-/// Returns a digest of every source file's path, size, and modified time.
-///
-/// Sampling rather than subscribing keeps the server free of a filesystem-watch
-/// dependency. The ceiling is a project large enough that walking it every
-/// 400 ms costs real time; a notify-based watcher is the upgrade path.
-fn source_fingerprint(project_root: &Path) -> u64 {
-    use std::hash::{Hash as _, Hasher as _};
-
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    let mut pending: Vec<PathBuf> = ["client", "server"]
-        .iter()
-        .map(|directory| project_root.join(directory))
-        .collect();
-    pending.push(project_root.join("tachyon.json"));
-
-    while let Some(current) = pending.pop() {
-        let Ok(metadata) = std::fs::symlink_metadata(&current) else {
-            continue;
-        };
-        if metadata.is_dir() {
-            let Ok(entries) = std::fs::read_dir(&current) else {
-                continue;
-            };
-            let mut children: Vec<PathBuf> = entries
-                .flatten()
-                .map(|entry| entry.path())
-                .filter(|path| {
-                    path.file_name()
-                        .and_then(|name| name.to_str())
-                        .is_some_and(|name| !name.starts_with('.'))
-                })
-                .collect();
-            children.sort();
-            pending.extend(children);
-            continue;
-        }
-        current.to_string_lossy().hash(&mut hasher);
-        metadata.len().hash(&mut hasher);
-        if let Ok(modified) = metadata.modified()
-            && let Ok(elapsed) = modified.duration_since(std::time::UNIX_EPOCH)
-        {
-            elapsed.as_nanos().hash(&mut hasher);
-        }
-    }
-    hasher.finish()
-}
-
 /// Rebuilds the project whenever its sources change.
 ///
 /// A failed rebuild is reported and the previous output is left published, so
@@ -1083,26 +1302,58 @@ fn source_fingerprint(project_root: &Path) -> u64 {
 async fn watch_sources(
     project_root: PathBuf,
     options: BuildOptions,
-    generation: Arc<std::sync::atomic::AtomicU64>,
+    hot_updates: HotUpdateHub,
+    mut watcher: SourceWatcher,
 ) {
-    let mut fingerprint = source_fingerprint(&project_root);
     loop {
-        tokio::time::sleep(WATCH_INTERVAL).await;
-        let current = source_fingerprint(&project_root);
-        if current == fingerprint {
+        let Some(event) = watcher.receive().await else {
+            return;
+        };
+        let mut changes = SourceChanges::new();
+        match event {
+            Ok(event) => changes.record_event(&project_root, event),
+            Err(error) => {
+                eprintln!("Source watcher reported an error: {error}");
+                changes.force_reload();
+            }
+        }
+        tokio::time::sleep(WATCH_DEBOUNCE).await;
+        watcher.drain(&mut changes, &project_root);
+        if changes.is_empty() {
             continue;
         }
-        fingerprint = current;
+        let paths = changes.paths();
+        let action = changes.action();
         match WebCompiler::build_async(&project_root, &options).await {
             Ok(result) => {
-                generation.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let (kind, boundaries) = match action {
+                    SourceAction::Css => (HotUpdateKind::Css, Vec::new()),
+                    SourceAction::Island { boundaries } => (HotUpdateKind::Island, boundaries),
+                    SourceAction::Reload => (HotUpdateKind::Reload, Vec::new()),
+                };
+                hot_updates.publish(
+                    kind,
+                    Some(String::from(result.sha256())),
+                    paths,
+                    boundaries,
+                    None,
+                );
                 println!(
                     "Rebuilt {} route(s) ({})",
                     result.route_count(),
                     result.sha256()
                 );
             }
-            Err(failure) => eprint!("{failure}"),
+            Err(failure) => {
+                hot_updates.publish(
+                    HotUpdateKind::Diagnostics,
+                    None,
+                    paths,
+                    Vec::new(),
+                    Some(failure.report()),
+                );
+                eprint!("{failure}");
+            }
         }
     }
 }
@@ -1183,29 +1434,99 @@ mod tests {
 
     use super::{
         DevServer, DevServerOptions, PreviewServer, PreviewServerOptions, invocation_failure_event,
+        invocation_failure_response, serve_generated,
     };
     use crate::Failure;
     use crate::failure::diagnostic;
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Request, StatusCode};
     use std::fs;
     use std::net::{IpAddr, Ipv4Addr, TcpListener as StandardTcpListener};
+    use tower_http::services::ServeDir;
 
-    #[test]
-    fn invocation_failure_events_are_correlatable_and_redacted() {
-        let event = invocation_failure_event(
-            "handler",
-            "0ABC123DEFG",
-            &Failure::one(diagnostic(
-                2101,
-                "secret-canary from process stderr",
-                Some(String::from("secret-canary recovery detail")),
-                None,
-            )),
-        );
-        assert!(event.contains(r#""event":"handler.invocation_failed""#));
-        assert!(event.contains(r#""operation":"handler""#));
-        assert!(event.contains(r#""request_id":"0ABC123DEFG""#));
-        assert!(event.contains(r#""diagnostic_codes":["TY2101"]"#));
-        assert!(!event.contains("secret-canary"));
+    #[tokio::test]
+    async fn invocation_failures_are_correlatable_and_redacted_for_every_http_path() {
+        let failure = Failure::one(diagnostic(
+            2101,
+            "secret-canary from process stderr",
+            Some(String::from("secret-canary recovery detail")),
+            None,
+        ));
+        for operation in ["handler", "middleware", "middleware.after"] {
+            let request_id = "0ABC123DEFG";
+            let event = invocation_failure_event(operation, request_id, &failure);
+            assert!(event.contains(r#""event":"handler.invocation_failed""#));
+            assert!(event.contains(&format!(r#""operation":"{operation}""#)));
+            assert!(event.contains(r#""request_id":"0ABC123DEFG""#));
+            assert!(event.contains(r#""diagnostic_codes":["TY2101"]"#));
+            assert!(!event.contains("secret-canary"));
+        }
+
+        for kind in ["Handler execution", "Middleware execution"] {
+            let request_id = "0ABC123DEFG";
+            let response = invocation_failure_response(kind, request_id);
+            assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(
+                response
+                    .headers()
+                    .get("x-tachyon-request-id")
+                    .and_then(|value| value.to_str().ok()),
+                Some(request_id)
+            );
+            let body = to_bytes(response.into_body(), 1024)
+                .await
+                .expect("redacted body");
+            let body = std::str::from_utf8(&body).expect("UTF-8 body");
+            assert!(body.contains(kind));
+            assert!(body.contains(request_id));
+            assert!(!body.contains("secret-canary"));
+        }
+    }
+
+    #[tokio::test]
+    async fn generated_assets_take_precedence_over_dynamic_page_patterns() {
+        let root = tempfile::tempdir().expect("bundle");
+        fs::create_dir_all(root.path().join("docs/_topic")).expect("dynamic directory");
+        fs::write(
+            root.path().join("docs/_topic/index.html"),
+            "<main>Dynamic topic</main>",
+        )
+        .expect("dynamic page");
+        fs::write(
+            root.path().join("docs/client.js"),
+            "document.title = 'Static client';",
+        )
+        .expect("static asset");
+        let files = ServeDir::new(root.path()).append_index_html_on_directories(true);
+        let patterns = vec![String::from("/docs/_topic")];
+
+        let asset = serve_generated(
+            &files,
+            &patterns,
+            Request::builder()
+                .uri("/docs/client.js")
+                .body(Body::empty())
+                .expect("asset request"),
+        )
+        .await
+        .expect("asset response");
+        let asset_body = to_bytes(asset.into_body(), 1024).await.expect("asset body");
+        assert_eq!(asset_body, "document.title = 'Static client';");
+
+        let dynamic = serve_generated(
+            &files,
+            &patterns,
+            Request::builder()
+                .uri("/docs/introduction")
+                .body(Body::empty())
+                .expect("dynamic request"),
+        )
+        .await
+        .expect("dynamic response");
+        let dynamic_body = to_bytes(dynamic.into_body(), 1024)
+            .await
+            .expect("dynamic body");
+        assert_eq!(dynamic_body, "<main>Dynamic topic</main>");
     }
 
     #[tokio::test]

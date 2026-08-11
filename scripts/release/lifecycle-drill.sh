@@ -42,6 +42,14 @@ if [ "$(checksum "${FIRST}/bin/ty")" != "$(checksum "${SECOND}/bin/ty")" ]; then
   fail "two builds of one commit produced different binaries"
 fi
 echo "    ok   the binary is bit-identical across builds"
+FIRST_ARCHIVE="$(find "${WORK}/build-a" -maxdepth 1 -type f -name 'tachyon-*.tar.gz' | head -1)"
+SECOND_ARCHIVE="$(find "${WORK}/build-b" -maxdepth 1 -type f -name 'tachyon-*.tar.gz' | head -1)"
+[ -n "${FIRST_ARCHIVE}" ] || fail "the first release archive was not produced"
+[ -n "${SECOND_ARCHIVE}" ] || fail "the second release archive was not produced"
+if [ "$(checksum "${FIRST_ARCHIVE}")" != "$(checksum "${SECOND_ARCHIVE}")" ]; then
+  fail "two builds of one commit produced different release archives"
+fi
+echo "    ok   the release archive is bit-identical across builds"
 
 echo "==> verifying the artifact before trusting it"
 verify_checksums "${FIRST}" || fail "published checksums did not verify"

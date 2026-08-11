@@ -21,7 +21,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const TY = process.env.TY_BIN ?? path.join(REPO, 'target/release/ty');
+const TY = process.env.TAC_BIN ?? path.join(REPO, 'target/release/ty');
 const PROJECT = path.join(tmpdir(), 'ty-service-worker-gate');
 const HOST = 'tachyon.test';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };

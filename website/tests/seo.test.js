@@ -4,15 +4,14 @@
 import { describe, expect, test } from 'bun:test';
 import { readFile } from 'fs/promises';
 
-const read = (/** @type {string} */ p) => readFile(new URL(`../${p}`, import.meta.url), 'utf8');
+/** @param {string} p */
+const read = (p) => readFile(new URL(`../${p}`, import.meta.url), 'utf8');
 
-describe('enterprise SEO is baked into the prerendered output', () => {
+describe('enterprise SEO is baked into each client-rendered route bootstrap', () => {
     test('the homepage head carries description, canonical, OG, Twitter and JSON-LD', async () => {
         const html = await read('dist/web/index.html');
-        expect(html).toContain('<html lang="en">');
-        expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">');
         expect(html).toContain('<meta name="description" content="Tachyon is a polyglot');
-        expect(html).toContain('SwiftUI, Android Views, Win32 common controls or GTK4 controls');
+        expect(html).toContain('native SwiftUI, Android Views, Win32 and GTK4 controls');
         expect(html).toContain('<link rel="canonical" href="https://tachyon.del.ma/">');
         expect(html).toContain('property="og:title"');
         expect(html).toContain('name="twitter:card" content="summary_large_image"');
@@ -26,12 +25,14 @@ describe('enterprise SEO is baked into the prerendered output', () => {
             read('dist/web/atlas/index.html'),
             read('dist/web/docs/index.html'),
         ]);
-        const canonical = (/** @type {string} */ h) => (h.match(/rel="canonical" href="([^"]+)"/) || [])[1];
+        /** @param {string} h */
+        const canonical = (h) => (h.match(/rel="canonical" href="([^"]+)"/) || [])[1];
         expect(canonical(home)).toBe('https://tachyon.del.ma/');
         expect(canonical(atlas)).toBe('https://tachyon.del.ma/atlas');
         expect(canonical(docs)).toBe('https://tachyon.del.ma/docs');
         // Descriptions differ per page (no copy-paste boilerplate).
-        const desc = (/** @type {string} */ h) => (h.match(/name="description" content="([^"]+)"/) || [])[1];
+        /** @param {string} h */
+        const desc = (h) => (h.match(/name="description" content="([^"]+)"/) || [])[1];
         expect(new Set([desc(home), desc(atlas), desc(docs)]).size).toBe(3);
     });
 

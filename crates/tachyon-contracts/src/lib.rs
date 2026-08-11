@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Product identity embedded in CLI and release-facing native artifacts.
-pub const PRODUCT_VERSION: &str = env!("TACHYON_PRODUCT_VERSION");
+pub const PRODUCT_VERSION: &str = env!("TAC_PRODUCT_VERSION");
 
 /// The JSON Schema draft required by every canonical Tachyon contract.
 pub const JSON_SCHEMA_DRAFT: &str = "https://json-schema.org/draft/2020-12/schema";
@@ -29,7 +29,7 @@ pub struct Contract {
 }
 
 /// All public contracts. Registry order is stable and alphabetical.
-pub const CONTRACTS: [Contract; 8] = [
+pub const CONTRACTS: [Contract; 9] = [
     Contract {
         name: "artifact-manifest",
         id: "https://tachyon.del.ma/schema/artifact-manifest/v1",
@@ -61,6 +61,14 @@ pub const CONTRACTS: [Contract; 8] = [
         schema: include_str!("../../../api/handler-protocol/v1/schema.json"),
         valid_example: include_str!("../../../api/handler-protocol/v1/examples/valid.json"),
         invalid_example: include_str!("../../../api/handler-protocol/v1/examples/invalid.json"),
+    },
+    Contract {
+        name: "hot-update",
+        id: "https://tachyon.del.ma/schema/hot-update/v1",
+        major_version: 1,
+        schema: include_str!("../../../api/hot-update/v1/schema.json"),
+        valid_example: include_str!("../../../api/hot-update/v1/examples/valid.json"),
+        invalid_example: include_str!("../../../api/hot-update/v1/examples/invalid.json"),
     },
     Contract {
         name: "native-ui",
@@ -95,6 +103,63 @@ pub const CONTRACTS: [Contract; 8] = [
         invalid_example: include_str!("../../../api/view-source-map/v1/examples/invalid.json"),
     },
 ];
+
+/// One development-only Hot Update Protocol v1 message.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HotUpdate {
+    /// Contract major version.
+    pub contract_version: u8,
+    /// Monotonic sequence within one development-server process.
+    pub sequence: u64,
+    /// Kind of browser action that is safe for this change set.
+    pub kind: HotUpdateKind,
+    /// Digest of the last successfully published build, when available.
+    pub build_id: Option<String>,
+    /// Canonically ordered, project-relative changed source paths.
+    pub paths: Vec<String>,
+    /// Canonically ordered Tac island component boundaries affected by the update.
+    pub boundaries: Vec<String>,
+    /// Structured build diagnostics for an unsuccessful update.
+    pub diagnostics: Option<tachyon_diagnostics::DiagnosticReport>,
+}
+
+impl HotUpdate {
+    /// Creates a Hot Update Protocol v1 message.
+    #[must_use]
+    pub const fn v1(
+        sequence: u64,
+        kind: HotUpdateKind,
+        build_id: Option<String>,
+        paths: Vec<String>,
+        boundaries: Vec<String>,
+        diagnostics: Option<tachyon_diagnostics::DiagnosticReport>,
+    ) -> Self {
+        Self {
+            contract_version: 1,
+            sequence,
+            kind,
+            build_id,
+            paths,
+            boundaries,
+            diagnostics,
+        }
+    }
+}
+
+/// Browser action represented by Hot Update Protocol v1.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HotUpdateKind {
+    /// Replace generated stylesheets without changing the document.
+    Css,
+    /// Replace and reactivate named hydrated island boundaries.
+    Island,
+    /// Reload the document because no narrower safe boundary is known.
+    Reload,
+    /// Keep the last-good page running and present compiler diagnostics.
+    Diagnostics,
+}
 
 /// View IR v1.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -503,7 +568,10 @@ pub struct RouteEntry {
     pub view: Option<String>,
     /// Handler contributors, empty before Phase 2.
     pub handlers: Vec<RouteHandler>,
-    /// Route-context declaration.
+    /// Deprecated Route Manifest v1 context declaration.
+    ///
+    /// ADR 0016 removed build-time Yon context evaluation, but Route Manifest
+    /// v1 is immutable. New manifests retain its empty shape for compatibility.
     pub context: RouteContext,
 }
 
@@ -548,14 +616,14 @@ pub struct RouteHandler {
     pub runtime: String,
 }
 
-/// Route-context collision and export declaration.
+/// Deprecated Route Manifest v1 context declaration retained for compatibility.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RouteContext {
     /// Duplicate export behavior.
     pub collision_policy: CollisionPolicy,
-    /// Static handler exports.
+    /// Static handler exports. New manifests emit an empty list.
     pub static_exports: Vec<String>,
-    /// Method response exports.
+    /// Method response exports. New manifests emit an empty list.
     pub response_exports: Vec<String>,
 }
 
@@ -569,7 +637,7 @@ impl Default for RouteContext {
     }
 }
 
-/// Route-context collision behavior.
+/// Route Manifest v1 context collision behavior.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CollisionPolicy {
@@ -702,23 +770,6 @@ pub struct HandlerResponse {
     pub error: Option<HandlerProtocolError>,
 }
 
-/// JSON contribution returned by the private `view.context` build operation.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HandlerContextContribution {
-    /// Public own data fields declared on the handler class.
-    ///
-    /// Absent means none, so a handler contributing only response values does
-    /// not have to write an empty object.
-    #[serde(default)]
-    pub static_values: BTreeMap<String, Value>,
-    /// Object entries returned from static `GET()`.
-    ///
-    /// Absent means none, for the same reason.
-    #[serde(default)]
-    pub response_values: BTreeMap<String, Value>,
-}
-
 impl HandlerResponse {
     /// Creates a successful Handler Protocol v1 response.
     #[must_use]
@@ -824,9 +875,10 @@ mod tests {
         ArtifactContractVersions, ArtifactManifest, ArtifactOutput, ArtifactTarget,
         ArtifactToolchain, CONTRACTS, CapabilityManifest, CollisionPolicy, HandlerBody,
         HandlerBodyEncoding, HandlerCancel, HandlerEnvelope, HandlerHeaders, HandlerProtocolError,
-        HandlerRequest, HandlerResponse, HttpMethod, JSON_SCHEMA_DRAFT, NativeAccessibility,
-        NativeNode, NativeTarget, NativeUi, RouteContext, RouteEntry, RouteHandler, RouteKind,
-        RouteManifest, WebSurfaceBridge, WebSurfaceSource, find, parse_schema,
+        HandlerRequest, HandlerResponse, HotUpdate, HotUpdateKind, HttpMethod, JSON_SCHEMA_DRAFT,
+        NativeAccessibility, NativeNode, NativeTarget, NativeUi, RouteContext, RouteEntry,
+        RouteHandler, RouteKind, RouteManifest, WebSurfaceBridge, WebSurfaceSource, find,
+        parse_schema,
     };
     use std::collections::BTreeMap;
 
@@ -886,15 +938,38 @@ mod tests {
             find("view-ir").map(|contract| contract.major_version),
             Some(1)
         );
+        assert_eq!(
+            find("hot-update").map(|contract| contract.major_version),
+            Some(1)
+        );
         assert!(find("unknown").is_none());
     }
 
     #[test]
-    fn route_manifest_types_have_the_canonical_wire_shape() -> Result<(), serde_json::Error> {
-        let default_context = RouteContext::default();
-        assert_eq!(default_context.collision_policy, CollisionPolicy::Error);
-        assert!(default_context.static_exports.is_empty());
+    fn hot_update_has_the_canonical_wire_shape() -> Result<(), Box<dyn std::error::Error>> {
+        let update = HotUpdate::v1(
+            7,
+            HotUpdateKind::Island,
+            Some(String::from(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            )),
+            vec![String::from("client/components/product-card/tac.js")],
+            vec![String::from("product-card")],
+            None,
+        );
+        let value = serde_json::to_value(&update)?;
+        let contract = find("hot-update").ok_or_else(|| io::Error::other("missing contract"))?;
+        let validator = jsonschema::validator_for(&parse_schema(contract)?)?;
 
+        assert!(validator.is_valid(&value));
+        assert_eq!(value["kind"], "island");
+        assert_eq!(serde_json::from_value::<HotUpdate>(value)?, update);
+
+        Ok(())
+    }
+
+    #[test]
+    fn route_manifest_types_have_the_canonical_wire_shape() -> Result<(), serde_json::Error> {
         let methods = vec![
             HttpMethod::Delete,
             HttpMethod::Get,
@@ -915,11 +990,7 @@ mod tests {
                 language: String::from("javascript"),
                 runtime: String::from("bun"),
             }],
-            context: RouteContext {
-                collision_policy: CollisionPolicy::Error,
-                static_exports: vec![String::from("title")],
-                response_exports: vec![String::from("products")],
-            },
+            context: RouteContext::default(),
         }]);
         let value = serde_json::to_value(manifest)?;
         assert_eq!(value["contract_version"], 1);
@@ -927,6 +998,18 @@ mod tests {
         assert_eq!(value["routes"][0]["methods"][0], "DELETE");
         assert_eq!(value["routes"][0]["methods"][6], "PUT");
         assert_eq!(value["routes"][0]["context"]["collision_policy"], "error");
+        assert_eq!(
+            value["routes"][0]["context"]["static_exports"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            value["routes"][0]["context"]["response_exports"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            RouteContext::default().collision_policy,
+            CollisionPolicy::Error
+        );
 
         let page = serde_json::to_value(RouteManifest::v1(vec![RouteEntry {
             route: String::from("/"),
@@ -935,7 +1018,7 @@ mod tests {
             methods: vec![HttpMethod::Get],
             view: Some(String::from("client/pages/tac.html")),
             handlers: Vec::new(),
-            context: default_context,
+            context: RouteContext::default(),
         }]))?;
         assert_eq!(page["routes"][0]["kind"], "page");
         Ok(())

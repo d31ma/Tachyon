@@ -232,6 +232,28 @@ export class Handler {
 }
 
 #[test]
+fn compiled_binary_fails_closed_on_partial_environment_isolation() {
+    let project = tempfile::tempdir().expect("project");
+    write(
+        &project.path().join("server/routes/yon.js"),
+        "export class Handler { static GET() { return { ok: true } } }",
+    );
+    let output = run(ty()
+        .args(["handler", "invoke", "server/routes/yon.js"])
+        .arg("--project")
+        .arg(project.path())
+        .env("YON_ISOLATION", "firecracker")
+        .env_remove("YON_FIRECRACKER_DRIVER")
+        .env_remove("YON_FIRECRACKER_POOL")
+        .env_remove("YON_FIRECRACKER_VCPUS")
+        .env_remove("YON_FIRECRACKER_MEMORY_MIB")
+        .env_remove("YON_FIRECRACKER_EGRESS"));
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("TY2010"));
+    assert!(!output.stdout.windows(2).any(|bytes| bytes == b"ok"));
+}
+
+#[test]
 fn every_protocol_http_method_reaches_the_compiled_handler_command() {
     let project = tempfile::tempdir().expect("project");
     write(

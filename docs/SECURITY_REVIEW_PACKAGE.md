@@ -21,7 +21,7 @@ behavioral compatibility differential.
 | [`CONTEXT.md`](../CONTEXT.md) | Domain language, invariants, and non-goals |
 | [`THREAT_MODEL.md`](THREAT_MODEL.md) | Assets, trust boundaries, threats, controls, and per-phase evidence |
 | [`architecture/OVERVIEW.md`](architecture/OVERVIEW.md) | How the pieces fit |
-| [`adr/`](adr/) | Six accepted decisions and their rejected alternatives |
+| [`adr/`](adr/) | Accepted and superseded decisions with their rejected alternatives |
 | [`PHASE_7_EVIDENCE.md`](PHASE_7_EVIDENCE.md) | Fuzzing, sanitizer, drill, soak, and budget results |
 | [`SUPPORT_TIERS.md`](SUPPORT_TIERS.md) | What is and is not claimed for each target |
 
@@ -31,7 +31,8 @@ behavioral compatibility differential.
 | --- | --- | --- |
 | Application HTML into the compiler | `html.rs`, `template/` | Bounded parser, fuzzed |
 | Untrusted child-process output | `handler/frame.rs` | Length-prefixed protocol, fuzzed at 4.4M executions |
-| Handler process lifetime and environment | `handler/process.rs` | Direct spawn, never a shell; deny-by-default environment; deadlines, cancellation, reaping |
+| Handler process lifetime and environment | `handler/process.rs` | Process-group spawn, never a shell; deny-by-default environment; deadlines, cancellation, bounded drain settlement, descendant reaping |
+| Environment-selected Firecracker control plane | `handler/isolation.rs` | Complete fail-closed policy parsing, fixed driver invocation contract, bounded CPU/memory/pool values, deny-only egress |
 | Generated output path handling | `compiler.rs`, `native/host.rs` | Project containment, symlink rejection, atomic publication |
 | Web content inside a native host | `native/{macos,ios,linux,windows,android}.rs` | Ephemeral store, navigation policy, no bridge of any kind |
 | Native capability surface | `CapabilityManifest` | Deny-by-default, `remote_content_bridge` false |
@@ -53,14 +54,19 @@ behavioral compatibility differential.
    Swift, Java, C, XML, and property-list contexts?
 6. Are the deliberate reductions in `PHASE_5_SPEC.md` §6 and the deferred
    decisions in `CONTEXT.md` acceptable at the tiers claimed for them?
+7. Can any partial or conflicting `YON_FIRECRACKER_*` environment configuration
+   downgrade silently, or can the external driver exceed the bounded contract
+   passed by the supervisor?
 
 ## 5. Known Gaps, Declared Up Front
 
 These are recorded so a reviewer does not spend time rediscovering them.
 
-- OS-level filesystem, network, CPU, and memory capability enforcement for
-  handler children is not implemented. The child runs with the developer
-  account's ambient access.
+- The default process backend runs with the developer account's ambient OS
+  capabilities. The optional Firecracker backend delegates enforcement to an
+  external operator-supplied control program; Tachyon validates and supervises
+  the transport but does not qualify that driver's jailer, guest image,
+  snapshots, credentials, or host network policy.
 - Production HTTP dispatch and middleware exist and run application handlers
   with the developer account's ambient filesystem and network access. Their
   public error responses must not expose process diagnostics.

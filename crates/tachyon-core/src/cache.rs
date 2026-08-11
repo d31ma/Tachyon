@@ -20,13 +20,13 @@ pub struct CacheStatus {
     pub legacy_entries: usize,
 }
 
-/// Returns the platform cache directory, honouring `TACHYON_CACHE_DIR`.
+/// Returns the platform cache directory, honouring `TAC_CACHE_DIR`.
 ///
 /// The layout matches the legacy implementation so both find the same
 /// directory and `clean` can remove what the legacy one wrote.
 #[must_use]
 pub fn root() -> PathBuf {
-    if let Some(override_path) = std::env::var_os("TACHYON_CACHE_DIR")
+    if let Some(override_path) = std::env::var_os("TAC_CACHE_DIR")
         .map(PathBuf::from)
         .filter(|path| !path.as_os_str().is_empty())
     {
@@ -82,7 +82,7 @@ pub fn ensure_runtime() -> Result<PathBuf, Failure> {
             1503,
             format!("Cannot initialize the Tachyon runtime cache: {error}"),
             Some(String::from(
-                "Check the directory's permissions, or set TACHYON_CACHE_DIR to a writable location.",
+                "Check the directory's permissions, or set TAC_CACHE_DIR to a writable location.",
             )),
             source_span("cache", 0, 5),
         ))
@@ -111,7 +111,7 @@ fn clean_at(root: PathBuf) -> Result<CacheStatus, Failure> {
                 before.root.display()
             ),
             Some(String::from(
-                "Check the directory's permissions, or set TACHYON_CACHE_DIR to \
+                "Check the directory's permissions, or set TAC_CACHE_DIR to \
                  a writable location.",
             )),
             source_span("cache", 0, 5),

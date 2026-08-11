@@ -1,7 +1,7 @@
 {
   "name": "@d31ma/tachyon",
-  "version": "26.33.01",
-  "description": "A Rust-native, polyglot, file-system-routed full-stack framework",
+  "version": "26.33.02",
+  "description": "Tooling and qualification dependencies for the Tachyon Rust framework",
   "author": "Chidelma",
   "license": "MIT",
   "type": "module",
@@ -10,24 +10,16 @@
     "bun": ">=1.3.0"
   },
   "scripts": {
-    "init": "cargo run --locked --bin ty -- init",
-    "serve": "cargo run --locked --bin ty -- serve",
-    "bundle": "cargo run --locked --bin ty -- bundle",
-    "preview": "cargo run --locked --bin ty -- preview",
-    "bundle:watch": "cargo run --locked --bin ty -- serve",
-    "start": "cargo run --locked --bin ty -- serve",
-    "build:exe": "cargo build --release --locked --bin ty",
-    "typecheck": "tsc -p tsconfig.website.json",
-    "test": "cargo test --workspace --all-targets --all-features --locked",
-    "test:coverage": "cargo llvm-cov --workspace --all-features --locked --ignore-filename-regex 'crates/tachyon-core/src/native/(compiler|macos)\\.rs' --fail-under-lines 80 --fail-under-functions 80 --fail-under-regions 80",
+    "typecheck": "tsc -p jsconfig.json --noEmit",
     "test:website": "bun --cwd website test",
     "test:rust-browser": "node scripts/phase3-browser-test.mjs",
+    "test:rust-hmr": "node scripts/hot-update-browser-test.mjs",
     "test:rust-macos": "node scripts/phase4-macos-test.mjs",
     "test:compat": "node scripts/compat/differential.mjs",
     "test:rust-standalone": "node scripts/compat/standalone-rust.mjs",
     "test:rust-events": "node scripts/events-browser-test.mjs",
     "test:rust-offline": "node scripts/service-worker-browser-test.mjs",
-    "test:rust-islands": "node scripts/island-expression-test.mjs",
+    "test:rust-client": "node scripts/island-expression-test.mjs",
     "test:wasm-abi": "node scripts/wasm/abi-probe.mjs",
     "test:wasm-companion": "node scripts/wasm/companion-browser-test.mjs"
   },
@@ -38,8 +30,8 @@
     "api",
     "polyglot",
     "file-system-routing",
-    "native-apps",
-    "html"
+    "native-ui",
+    "web-framework"
   ],
   "repository": {
     "type": "git",
@@ -50,10 +42,8 @@
     "url": "https://github.com/d31ma/Tachyon/issues"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.8.9",
     "@types/bun": "^1.3.4",
     "@types/node": "^20.4.2",
-    "happy-dom": "^20.8.9",
     "playwright": "^1.62.0",
     "typescript": "^7.0.2"
   }

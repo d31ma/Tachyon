@@ -11,9 +11,8 @@ Read:
 5. `docs/ENGINEERING_STANDARDS.md`;
 6. `docs/THREAT_MODEL.md` for boundary-sensitive work.
 
-The Rust rewrite is the only in-tree implementation. Compatibility work uses
-the checksum-verified v26.30.04 release executable and neutral fixtures; do not
-reintroduce or port private JavaScript implementation structure.
+The legacy JavaScript implementation is a compatibility oracle. Do not port
+private implementation structure into Rust.
 
 ## Toolchain
 
@@ -33,14 +32,14 @@ The Phase 1 contributor path requires Rust only. Phase 2 through Phase 4
 real-process tests also require Node.js and CPython available as `node` and
 `python3` (`python` on Windows). Native CI fixes Node.js 24.18.0 and Python
 3.14.6. The Phase 3 browser gate additionally uses Bun and Playwright Chromium;
-Bun also drives the released-binary compatibility differential. Phase 4 native evidence requires
+Bun also runs the legacy compatibility suite. Phase 4 native evidence requires
 macOS, Xcode/Swift, code signing, a GUI session with Accessibility permission,
 and Playwright Chromium.
 
 ## Phase 1 CLI
 
-The implemented slice accepts static `client/pages/**/tac.html` and
-`server/routes/**/yon.html` sources:
+The implemented slice accepts static `client/pages/**/tac.html` views and
+discovers `server/routes/**/yon.*` REST handlers. `yon.html` is invalid:
 
 ```text
 cargo run --locked --bin ty -- init hello --name "Hello"
@@ -72,8 +71,10 @@ inheritance, or adapter behavior.
 ## Phase 3 View Compiler
 
 Read `docs/PHASE_3_SPEC.md` before changing expressions, controls, component
-scope, Yon context merge order, island markup/runtime behavior, source maps, or
-incremental state. The `phase3_cli` corpus runs the compiled `ty` binary. Run
+scope, client render-plan and component mount behavior, source maps, or
+incremental state. Yon is REST-only under ADR 0016; Route Manifest v1 retains
+only its required empty context shape for wire compatibility. The `phase3_cli`
+corpus runs the compiled `ty` binary. Run
 the real-browser contract after building it:
 
 ```text

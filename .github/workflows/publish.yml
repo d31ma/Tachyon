@@ -129,8 +129,8 @@ jobs:
       - name: Build a deterministic auditable archive
         shell: bash
         env:
-          TACHYON_AUDITABLE: "1"
-          TACHYON_RELEASE_TARGET: ${{ matrix.target }}
+          TAC_AUDITABLE: "1"
+          TAC_RELEASE_TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
@@ -364,8 +364,8 @@ jobs:
             curl --fail --silent http://127.0.0.1:38191/SHA256SUMS >/dev/null && break
             sleep 1
           done
-          TACHYON_BASE_URL=http://127.0.0.1:38191 \
-          TACHYON_INSTALL_DIR="${RUNNER_TEMP}/tachyon-bin" \
+          TAC_BASE_URL=http://127.0.0.1:38191 \
+          TAC_INSTALL_DIR="${RUNNER_TEMP}/tachyon-bin" \
             sh release/install.sh
           installed="${RUNNER_TEMP}/tachyon-bin/ty"
           installed_mode=$(stat -c '%a' "${installed}" 2>/dev/null || stat -f '%Lp' "${installed}")
@@ -378,8 +378,8 @@ jobs:
           cp release/SHA256SUMS release/SHA256SUMS.valid
           awk -v asset="${ASSET}" '$2 == asset {$1="0000000000000000000000000000000000000000000000000000000000000000"} {print}' \
             release/SHA256SUMS.valid >release/SHA256SUMS
-          if TACHYON_BASE_URL=http://127.0.0.1:38191 \
-             TACHYON_INSTALL_DIR="${RUNNER_TEMP}/tachyon-bin" \
+          if TAC_BASE_URL=http://127.0.0.1:38191 \
+             TAC_INSTALL_DIR="${RUNNER_TEMP}/tachyon-bin" \
              sh release/install.sh; then
             echo "installer accepted a mismatched checksum" >&2
             exit 1
@@ -389,8 +389,8 @@ jobs:
             exit 1
           }
           mv release/SHA256SUMS.valid release/SHA256SUMS
-          TACHYON_BASE_URL=http://127.0.0.1:38191 \
-          TACHYON_INSTALL_DIR="${RUNNER_TEMP}/tachyon-bin" \
+          TAC_BASE_URL=http://127.0.0.1:38191 \
+          TAC_INSTALL_DIR="${RUNNER_TEMP}/tachyon-bin" \
             sh release/install.sh
           test "$("${RUNNER_TEMP}/tachyon-bin/ty" --version)" = "${VERSION}"
 
@@ -417,12 +417,12 @@ jobs:
                 Start-Sleep -Seconds 1
               }
             }
-            $env:TACHYON_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'tachyon-bin'
-            New-Item -ItemType Directory -Force -Path $env:TACHYON_INSTALL_DIR | Out-Null
-            $installed = Join-Path $env:TACHYON_INSTALL_DIR 'ty.exe'
+            $env:TAC_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'tachyon-bin'
+            New-Item -ItemType Directory -Force -Path $env:TAC_INSTALL_DIR | Out-Null
+            $installed = Join-Path $env:TAC_INSTALL_DIR 'ty.exe'
             [IO.File]::WriteAllText($installed, 'known-good')
             $knownGood = (Get-FileHash -Algorithm SHA256 $installed).Hash
-            $env:TACHYON_BASE_URL = 'http://127.0.0.1:38191/release-bad'
+            $env:TAC_BASE_URL = 'http://127.0.0.1:38191/release-bad'
             try {
               & ./release/install.ps1
               throw 'installer accepted a mismatched checksum'
@@ -431,9 +431,9 @@ jobs:
               if ($_.Exception.Message -ne "Checksum mismatch for $env:ASSET. Aborting.") { throw }
             }
             if ((Get-FileHash -Algorithm SHA256 $installed).Hash -ne $knownGood) { throw 'failed upgrade replaced the installed executable' }
-            $env:TACHYON_BASE_URL = 'http://127.0.0.1:38191/release'
+            $env:TAC_BASE_URL = 'http://127.0.0.1:38191/release'
             & ./release/install.ps1
-            if ((& "$env:TACHYON_INSTALL_DIR/ty.exe" --version) -ne $env:VERSION) { throw 'installed executable version mismatch' }
+            if ((& "$env:TAC_INSTALL_DIR/ty.exe" --version) -ne $env:VERSION) { throw 'installed executable version mismatch' }
           } finally {
             Stop-Process -Id $server.Id -Force
           }

@@ -1,5 +1,10 @@
 # Handoff — Tachyon Rust Rewrite
 
+> Current architecture override (2026-08-10): ADR 0015 makes Tac exclusively
+> client-rendered. Historical SSR-island notes below describe superseded
+> evidence and must not be used as implementation authority. ADR 0016 makes
+> Yon REST-only; it has no templates or server renderer.
+
 You are taking over the Rust rewrite of Tachyon. This is the whole briefing:
 what is true today, what is left, where the traps are. Everything here was
 verified by running it, not by reading it. Where something is unverified, it
@@ -42,8 +47,8 @@ cache and makes git operations take minutes.
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"          # a Homebrew rustc 1.95 shadows rustup 1.97.1
 export PATH="$HOME/dev/TACHYON/node_modules/.bin:$PATH"  # tsc 7.0.2; the one on PATH is 5.1.3
-export PATH="$HOME/.dotnet:$PATH"             # user-local .NET SDK with the net9 browser-wasm workload
-export KOTLIN_WASM_STDLIB="$HOME/.local/share/tachyon/kotlin-stdlib-wasm-js-2.1.10.klib"
+export PATH="$HOME/.dotnet:$PATH"             # user-local .NET 9 with wasm-tools; the system one has no workload
+export TAC_KOTLIN_WASM_STDLIB="$HOME/.local/share/tachyon/kotlin-stdlib-wasm-js-2.1.10.klib"
 export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 export PATH="$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH"
 ```
@@ -54,9 +59,9 @@ Toolchains installed on this machine, all verified working:
 | --- | --- | --- |
 | Rust | `wasm32-unknown-unknown` | rustup 1.97.1 |
 | Dart | nothing extra | 3.6.0 |
-| Kotlin | `kotlin-stdlib-wasm-js.klib`, which `kotlinc` does not ship | `KOTLIN_WASM_STDLIB` above |
+| Kotlin | `kotlin-stdlib-wasm-js.klib`, which `kotlinc` does not ship | `TAC_KOTLIN_WASM_STDLIB` above |
 | Swift | a swift.org toolchain **and** the wasm SDK; Xcode's `swiftc` cannot cross-compile | Swift 6.3.3 installed user-locally through Swiftly and exposed through `~/Library/Developer/Toolchains/swift-6.3.3-RELEASE.xctoolchain`, plus `~/.swiftpm/swift-sdks` |
-| C# | `wasm-tools` on .NET 9, or `wasm-tools-net9` on .NET 10+ | `~/.dotnet` (system .NET needs root, so it is unpatched) |
+| C# | `wasm-tools` workload | `~/.dotnet` (system .NET needs root, so it is unpatched) |
 
 `ty doctor <project>` reports all five and probes capability, not just
 `--version`. Trust it over your assumptions: four of these looked ready when
@@ -88,38 +93,31 @@ patch.
   compiled, launched, exposed its UIA names and backing `Button` HWND, accepted
   `BM_CLICK`, changed bound state `0 → 1`, recorded lifecycle, and closed.
 - **Compatibility differential** 3/3 corpus projects
-  (`RELEASED_TY_BIN=/path/to/v26.30.04/ty TY_BIN=/path/to/rewrite/ty node
+  (`TAC_LEGACY_BIN=/path/to/released/ty TAC_BIN=/path/to/rewrite/ty node
   scripts/compat/differential.mjs`). The environment variables keep the gate
-  tied to immutable binaries; no prior framework implementation remains in the
-  tree.
+  tied to immutable binaries even after the in-tree legacy runtime is removed.
 - **Release lifecycle drill** PASS, including a bit-identical rebuild.
 
 ### What is open
 
 `docs/CUTOVER.md` is the authority. Five of six gate conditions are met and one
-is open:
+remains open. Automated security qualification is mandatory for each release;
+an independent human review is optional and nonblocking:
 
 1. **Release provenance (condition 4).** The workflow and local reproducible
    release drill pass, but one real tag-driven workflow must publish an archive
-   and attestation before external verification can be recorded. The workflow
-   stages and verifies the release privately before public promotion.
+   and attestation before external verification can be recorded.
 
-Separate target-promotion gaps remain:
-
-- **macOS native evidence** is blocked on macOS Accessibility permission for
-  the process that runs `node scripts/phase4-macos-test.mjs`. Grant it in
-  System Settings and re-run. It is not a code problem.
-- **Windows accessibility promotion** also remains open. Native execution now
-  passes in CI, but the hosted managed UIA client flattens standard child
-  controls to `ControlType.Pane`; semantic roles and `InvokePattern` still
-  need evidence before `native-tested` promotion.
+Separate target-promotion gaps remain: macOS Accessibility permission is still
+needed for the local probe, and Windows semantic UIA roles/`InvokePattern`
+remain unproven even though native execution passed.
 
 The stable workflow is tag-only and cannot create its own tag. It builds five
 native CLI assets with auditable dependency metadata, publishes a CycloneDX
 SBOM, attests and keyless-signs every distributed input, stages a private
 draft, verifies the assets and installers on their native runners, and only
 then makes the release public. `install.sh` and `install.ps1` now fail closed
-on missing or mismatched checksums and install only the standalone `ty` binary.
+on missing or mismatched checksums and no longer install removed FYLO tooling.
 
 ## Website migration — completed 2026-08-01
 
@@ -134,28 +132,30 @@ ledger.
 
 The migration establishes these authoring rules:
 
-- Structural control flow is server-owned. Static lists are authored in HTML;
-  genuinely client-owned structure is created by an island's bounded
-  `hydrate(root, signal)` implementation.
+- Structural control flow is authored in Tac HTML and owned by the client
+  renderer. The compiler serializes bounded expressions and control plans;
+  mounted component companions supply state and methods. The legacy
+  `hydrate` spelling is only a mount-schedule alias, not an imperative
+  structure escape hatch.
 - Shared browser assets under `client/shared/` publish at the stable
   `/shared/` path. The compiler enforces file-count and byte limits and refuses
   links or non-files.
 - The Rust compiler does not implicitly compose ancestor page layouts, so the
   website uses explicit `<atlas-layout>` and `<docs-layout>` components.
 - The five polyglot examples are ordinary Rust, Dart, Kotlin, Swift, and C# in
-  the ADR 0011 ABI shape. Each real-compiler sidecar remains paired with its
-  legacy companion, so all five migrations classify as supported even though
-  neither implementation consumes the other's source shape.
+  the ADR 0011 ABI shape. They are deliberately migration findings because the
+  legacy subset transpiler cannot consume the same sources.
 - Reused incremental routes retain their event descriptors, so a second build
   cannot delete `.tachyon/events.js`.
 
-Evidence run on 2026-08-01:
+The build, companion, and legacy-oracle evidence below was recorded on
+2026-08-01; the website suite was re-run on 2026-08-11:
 
 ```text
 ty build website
   Built 11 routes ... compiled=0 reused=10
 bun run test
-  24 pass, 0 fail, 160 expectations
+  24 pass, 0 fail, 353 assertions
 node scripts/wasm/companion-browser-test.mjs
   wasm companion gate passed for rs, dart, kt, swift, cs
 
@@ -184,40 +184,40 @@ executes its native controller through state, shortcut, and content-surface
 calls.
 
 ```text
-TY_BIN=target/debug/ty node scripts/compat/standalone-rust.mjs
+TAC_BIN=target/debug/ty node scripts/compat/standalone-rust.mjs
   PASS: released standalone workflow matches Rust ty (macos)
 
-RELEASED_TY_BIN=/tmp/.../26.30.04/ty TY_BIN=target/debug/ty \
+TAC_LEGACY_BIN=/tmp/.../26.30.04/ty TAC_BIN=target/debug/ty \
   node scripts/compat/differential.mjs
-  scaffold: 15 retained files byte-identical; 4 FYLO-facing files changed and 3 db files removed
+  scaffold: 19 generated files match after the declared FYLO removal
   3/3 corpus projects match across implementations
 ```
 
 The CLI now preserves the released version output, root help, target aliases,
 comma-separated and `all` targets, target/host/port environment variables,
-absolute `YON_DIST_PATH`, `serve --no-bundle`, source-only native packaging,
+absolute `TAC_DIST_PATH`, `serve --no-bundle`, source-only native packaging,
 and cache shape. A real-binary regression proves `serve --no-bundle` does not
 compile changed source. A second regression proves one multi-target command
 publishes exactly one level at `dist/web`, `dist/macos`, `dist/ios`, and
 `dist/android`; before that test existed, native targets were accidentally
 published as `dist/macos/macos`.
 
-The scaffold migration is explicit: 15 retained files remain byte-identical,
-four FYLO-facing files change, and three legacy `db/` files are removed. The
-released bounded page-class workflow
-is also preserved: literal page state, class fields, `@onMount`, assignment
-events, and native controller capabilities. Inline state is deliberately
-literal-only; executable initializers fail with `TY1306` and are never emitted
-as authored source. The browser gate caught and closed a compiler defect where
-the route-level wrapper was emitted without `/.tachyon/islands.js`; page state
-now has compiler-level emission coverage and repeated browser-level update
-coverage.
+The 19 retained scaffold files remain byte-identical, including the root Yon
+handler and public ambient type file. The declared difference removes the
+obsolete database layout, its environment entries, and the installer sentence
+that named FYLO. The released bounded page-class workflow is still preserved:
+literal page state, class fields, `@onMount`, assignment events, and native
+controller capabilities. Inline state is deliberately literal-only;
+executable initializers fail with `TY1306` and are never emitted as authored
+source. The current browser gate requires a schema-versioned render plan and
+`/.tachyon/tac-client.js` for every Tac route, with compiler-level emission
+coverage and repeated browser-level update coverage.
 
 The migrated website was then rebuilt through the same public commands:
 
 ```text
 bun run bundle                         # Rust ty: 11 routes
-bun run test                           # 24 pass, 160 expectations
+bun run test                           # 24 pass, 353 assertions
 YON_DIST_PATH=<temp> /path/to/26.30.04/ty bundle
                                        # 11 authored route documents
 ty bundle --target macos,ios,android
@@ -236,15 +236,16 @@ WebKit surfaces on this simulator. Automated clicks on those two hosts remain
 blocked by the macOS assistive-access permission named elsewhere in this file,
 so that interaction is not claimed from the screenshots.
 
-The old in-tree JavaScript runtime and its implementation-coupled suite have
-been removed. The archived 26.30.04 executable, standalone workflow, neutral
-differential, and migrated website are the immutable public-behavior oracles.
+The in-tree JavaScript framework and its test suite were removed on 2026-08-09.
+The archived 26.30.04 executable, standalone workflow, neutral differential
+corpus, and migrated website are the immutable public-behavior oracles. A
+repository policy test prevents the deleted implementation paths from
+returning.
 
 ## Recently fixed handoff defects
 
-- Native-planning diagnostics now name `resolved/...` input when their offsets
-  refer to a composed document; they no longer attach impossible ranges to an
-  authored `tac.html` or `yon.html` file.
+- Native-planning diagnostics now attach to authored `tac.html` input. Yon does
+  not participate in native view planning.
 - Same-origin links inside a local WebSurface now hand navigation to the native
   route stack. Android emulator taps executed `/` → `/docs` →
   `/docs/introduction` on the migrated website.
@@ -273,7 +274,7 @@ differential, and migrated website are the immutable public-behavior oracles.
 
 ## How the maintainer works
 
-- Decisions that are theirs — hardware, credentials, risk acceptance, accepting
+- Decisions that are theirs — hardware, credentials, security review, accepting
   simulator evidence — get recorded as **their** attributed, dated sign-off, not
   as a claim by the implementation. See the amendments in `docs/CUTOVER.md` and
   `docs/SUPPORT_TIERS.md` for the form.
@@ -284,8 +285,60 @@ differential, and migrated website are the immutable public-behavior oracles.
 ## Suggested next moves
 
 1. Complete the pull-request matrix and obtain review for the cutover commit.
-2. Confirm the automated security matrix is clean and every critical or high
-   finding in `docs/SECURITY_REVIEW_PACKAGE.md` has an owner and disposition.
-3. Create the annotated `v26.33.01` tag only after the qualified commit is on
+2. Create the annotated `v26.33.02` tag only after the reviewed commit is on
    `main`; the tag workflow will stage, verify, and publish it.
-4. Grant macOS Accessibility permission and rerun the macOS evidence script.
+3. Grant macOS Accessibility permission and rerun the macOS evidence script.
+4. Schedule an independent human security review for major trust-boundary
+   changes when useful; it is not a publication prerequisite.
+
+## Semantic hot updates — completed 2026-08-09
+
+The development loop no longer fingerprints the source tree every 400 ms.
+`notify` feeds a bounded queue and 75 ms quiet-period coalescer; successful
+builds publish Hot Update Protocol v1 at `/.tachyon/hot`. CSS is swapped in
+place, supported Tac companion edits replace compiler-owned island boundaries,
+and all structural or uncertain edits reload. Failed builds leave the previous
+output and DOM running while a text-only structured diagnostic overlay is
+shown.
+
+Island instances can implement `hotState()`, `restoreHotState(state)`, and
+`hotDispose()`. Without explicit state hooks, enumerable non-function fields
+are copied with `structuredClone`; a failed default clone retains an empty
+object. An explicit `hotState()` result is also cloned before restore. No JSON
+or depth bound is claimed. Disposal always aborts the runtime-owned signal.
+Missed event sequences, broadcast lag, changed boundary identity, and client
+errors widen to a reload rather than attempting an unsafe patch.
+
+Evidence lives in `crates/tachyon-core/tests/dispatch.rs`, compiler and watcher
+unit tests, and `scripts/hot-update-browser-test.mjs`. The browser scenario was
+also run interactively against `ty dev`: CSS and island changes retained a
+counter value, the old island disposed and aborted, an invalid template showed
+diagnostics without replacing the page, and restoring the structural template
+caused the expected full reload with no console errors.
+
+The real Tachyon website follow-up found and closed two gaps. Static generated
+assets now win before a dynamic page fallback, so `/docs/client.js` is served
+as JavaScript instead of being rewritten to `/docs/_topic`; `/docs` again
+redirects and renders Introduction. Island replacement now retains a bounded
+set of native browser state in addition to companion state: form values and
+checked state for inputs, `<details>` disclosure, nonzero scroll offsets, and
+focus by element id. The snapshot considers at most the first 2,048 elements
+with an `id`; it does not retain text selection or selected `<option>` state.
+Real-browser verification retained an open quickstart disclosure and a focused
+edited input through a live companion replacement without console errors.
+
+## Environment-selected Yon isolation — added 2026-08-09
+
+ADR 0014 adds a provider boundary without placing deployment policy in
+`tachyon.json`. `YON_ISOLATION=process` is the compatibility default;
+`firecracker` requires an absolute, regular, non-symlinked control program and
+passes bounded pool, vCPU, memory, and deny-egress arguments to it. Every Yon
+entry point reads the same parent environment and uses Handler Protocol v1,
+including middleware, workers, HTTP dispatch, and explicit CLI
+invocation. Invalid or partial configuration fails as `TY2010` before handler
+execution.
+
+Do not describe this as qualified microVM isolation yet. The first-party
+control program, Linux/KVM host profile, jailer configuration, guest image,
+warm-pool and snapshot lifecycle, and native adversarial evidence still need
+their own vertical slice.

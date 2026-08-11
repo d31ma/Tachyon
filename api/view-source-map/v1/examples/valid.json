@@ -3,13 +3,13 @@
   "output": "products/index.html",
   "sources": [
     "client/components/product/card/tac.html",
-    "server/routes/products/yon.html"
+    "client/pages/products/tac.html"
   ],
   "mappings": [
     {
       "generated_start": 120,
       "generated_end": 143,
-      "source": "server/routes/products/yon.html",
+      "source": "client/pages/products/tac.html",
       "source_start": 8,
       "source_end": 25
     },

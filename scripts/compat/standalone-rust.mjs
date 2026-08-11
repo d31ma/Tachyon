@@ -11,10 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const ty = process.env.TY_BIN ?? path.join(repo, process.env.CARGO_TARGET_DIR ?? 'target', 'debug', process.platform === 'win32' ? 'ty.exe' : 'ty');
+const ty = process.env.TAC_BIN ?? path.join(repo, process.env.CARGO_TARGET_DIR ?? 'target', 'debug', process.platform === 'win32' ? 'ty.exe' : 'ty');
 const workspace = await mkdtemp(path.join(tmpdir(), 'tachyon-rust-standalone-'));
 const cache = path.join(workspace, 'cache');
-const environment = { ...process.env, TACHYON_CACHE_DIR: cache };
+const environment = { ...process.env, TAC_CACHE_DIR: cache };
 
 async function exists(file) {
   try { await access(file); return true; } catch { return false; }
@@ -38,6 +38,13 @@ async function run(args, options = {}) {
   return { stdout, stderr };
 }
 
+async function stop(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const closed = new Promise((resolve) => child.once('close', resolve));
+  child.kill('SIGTERM');
+  await closed;
+}
+
 async function waitForHttp(url, deadline = Date.now() + 15_000) {
   let last;
   while (Date.now() < deadline) {
@@ -49,14 +56,6 @@ async function waitForHttp(url, deadline = Date.now() + 15_000) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw last ?? new Error(`Timed out waiting for ${url}`);
-}
-
-async function stop(child) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
-  await new Promise((resolve) => {
-    child.once('close', resolve);
-    child.kill('SIGTERM');
-  });
 }
 
 let server;
@@ -75,9 +74,15 @@ try {
     'server/routes/yon.js', 'server/data/.gitkeep', 'server/deps/.gitkeep',
   ];
   for (const file of expectedScaffold) assert.equal(await exists(path.join(project, file)), true, file);
-  assert.equal(await exists(path.join(project, 'db')), false, 'removed db scaffold');
-  assert.doesNotMatch(await readFile(path.join(project, '.env.example'), 'utf8'), /FYLO_/);
-  assert.doesNotMatch(await readFile(path.join(project, 'tachyon-env.d.ts'), 'utf8'), /\bfylo\b/i);
+  assert.equal(await exists(path.join(project, 'db')), false, 'removed database scaffold');
+  for (const file of ['.env.example', '.env.test']) {
+    const environment = await readFile(path.join(project, file), 'utf8');
+    assert.equal(
+      environment,
+      'YON_PORT=8000\nYON_HOST=127.0.0.1\nYON_HOSTNAME=127.0.0.1\nYON_SKIP_BUNDLE=false\n',
+      `${file} contains only current Rust settings`,
+    );
+  }
 
   await run(['bundle', '--target', 'web'], { cwd: project });
   assert.equal(await exists(path.join(project, 'dist', 'web', 'index.html')), true);
@@ -126,8 +131,7 @@ export default class {
   await assert.doesNotReject(() => page.getByText('Required: shortcuts.register|contentSurface.open', { exact: true }).waitFor());
   await browser.close();
   browser = undefined;
-  preview.kill('SIGTERM');
-  await new Promise((resolve) => preview.once('close', resolve));
+  await stop(preview);
   preview = undefined;
 
   await writeFile(path.join(project, 'client/pages/tac.js'), `

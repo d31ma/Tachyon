@@ -169,10 +169,11 @@ review remains welcome but is not a release gate.
 status, and the migrated website now describe the Rust implementation. Legacy
 OpenAPI, telemetry, client-renderer, runtime-cache, and native-host claims were
 removed from the stable README or named explicitly as compatibility decisions.
-Commands, ports, output paths, Yon context composition, real-language Wasm
-companions, native-first rendering, per-subtree fallback, security boundaries,
-and support vocabulary were checked against the executable implementation and
-its recorded evidence.
+Commands, ports, output paths, Tac client-render and component behavior, Yon's
+REST-only boundary and empty Route Manifest v1 compatibility field,
+real-language Wasm companions, native-first rendering, per-subtree fallback,
+security boundaries, and support vocabulary were checked against the
+executable implementation and its recorded evidence.
 
 ## What Happens Next
 

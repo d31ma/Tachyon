@@ -29,14 +29,17 @@ trust boundaries, abuse cases, and validation evidence.
 2. HTML, styles, components, and companion source to compiler frontends.
 3. Compiler stages to staging and output directories.
 4. Network clients to Tachyon's HTTP edge.
-5. Server runtime to supervised Yon handler processes.
-6. Handler processes to environment, filesystem, and network resources.
+5. Server runtime to the selected Yon isolation backend.
+6. Handler processes or a trusted Firecracker control program to environment,
+   filesystem, network, microVM, and host resources.
 7. View IR to web and native code generators.
 8. Native UI to an isolated WebSurface subtree.
 9. WebSurface content to the native capability bridge.
 10. Generated platform projects to external mobile and desktop toolchains.
 11. Installer and updater to release archives and the local filesystem.
 12. CI jobs to third-party actions, registries, caches, and release identities.
+13. Untrusted development source and diagnostics to the hot-update browser
+    client.
 
 ## Primary Threats and Controls
 
@@ -50,6 +53,8 @@ trust boundaries, abuse cases, and validation evidence.
 | Shell or argument injection | direct process spawning, fixed argv boundaries, no shell interpolation |
 | Handler denial of service | bounded frames, deadlines, cancellation, concurrency limits, process memory/CPU policy, forced termination |
 | Handler protocol desynchronization | four-byte length framing, maximum frame, strict schema, request IDs, stderr separation |
+| Isolation downgrade by application source | parent-environment-only selection; no project or request override; invalid and partial policy fails closed |
+| False Firecracker assurance | absolute regular non-symlinked and non-group/world-writable control-program path; bounded policy arguments; hardware-isolation claims require separate driver and host evidence |
 | Environment secret disclosure | allowlisted environment, redacted diagnostics, secret-canary tests |
 | SSRF and unrestricted egress | deny-by-default network capability, normalized origin allowlists, DNS/redirect revalidation, response limits |
 | Native bridge escalation | explicit capability manifest, per-call validation, local content only, remote bridge always disabled |
@@ -59,6 +64,7 @@ trust boundaries, abuse cases, and validation evidence.
 | Supply-chain compromise | locked dependencies, advisory/license/source policy, pinned actions, minimal release permissions, SBOM, provenance, signatures |
 | Compromised release job | protected environments, tag/version verification, native builders, attestations, post-upload verification |
 | Diagnostic data leakage | allowlisted structured fields, bounded snippets, no secrets or full environment dumps |
+| Development hot-update injection or stale execution | versioned typed messages, JSON serialization, text-only diagnostic rendering, same-origin generated modules, compiler-owned island boundaries, last-good output, and reload on ambiguity |
 
 ## Security Invariants
 
@@ -135,33 +141,47 @@ HTTP dispatch, egress capabilities, application dependency imports, process
 pooling, and streaming are out of scope; no documentation may imply those
 controls exist.
 
+## Environment-Selected Isolation Evidence
+
+- `process` remains the compatibility default. `firecracker` requires a
+  complete environment policy and a directly executed absolute control-program
+  path; invalid mode, path, pool, CPU, memory, or egress fails as `TY2010`.
+- The control program receives a length-prefixed Handler Protocol v1 request,
+  bounded non-secret policy arguments, a cleared environment, and the existing
+  deadline/cancellation supervision.
+- Egress is deny-only. An allowlist cannot be requested until origin, DNS,
+  redirect, and response-limit enforcement has its own acceptance evidence.
+- This boundary does not qualify a Firecracker deployment. The control program
+  and Linux host remain trusted components and must separately prove jailer,
+  cgroup, namespace, seccomp, image, snapshot, credential, and network policy.
+
 ## Phase 3 Evidence
 
 - Template expressions use a bounded JSON-only parser with no calls,
   assignment, construction, prototype access, raw HTML, shell, or `eval`.
 - Text and attributes are escaped by output context. Component templates see
   only evaluated properties; slotted children retain their parent scope.
-- JavaScript and Python view contexts are returned through the supervised
-  protocol, bounded to 1 MiB, limited to 1,024 exports and depth 32, merged in
-  canonical order, and rejected on any duplicate or reserved built-in.
-- View IR is emitted before context evaluation. View IR, source maps,
-  manifests, diagnostics, and build state contain export names and digests,
-  never context or island values.
-- Island props are explicit public client input. Modules use compiler-generated
-  same-origin paths, activate against useful SSR DOM, mark bounded failures,
-  and never expose a native or server capability bridge.
+- Yon handlers never execute during builds and never contribute view context.
+  Route Manifest v1 retains only a deprecated empty context member for wire
+  compatibility; it contains no values or executable declaration.
+- View IR, source maps, manifests, diagnostics, and build state contain no
+  handler response or server-derived view values.
+- Component props are explicit public client input. Modules use
+  compiler-generated same-origin paths, mount against browser-created Tac DOM,
+  mark bounded failures, and never expose a native or server capability bridge.
 - Incremental state is disposable and untrusted. Reuse requires a supported
   state version, contained regular paths, and matching SHA-256 for every route
   artifact; handler-backed routes are never reused.
-- Source, expression, template depth, component count, context, iteration,
+- Source, expression, template depth, component count, iteration,
   expanded-node, rendered-output, diagnostic, process, and protocol limits are
   enforced by tests.
-- Real Chromium evidence covers automatic activation, interaction replay,
-  failure marking, static `never` islands, and SSR preservation.
+- Real Chromium evidence covers client-owned rendering, automatic activation,
+  interaction replay, bounded failure marking, and static `never` components.
 
 ## Phase 4 Evidence
 
-- Native planning consumes resolved Phase 3 HTML, uses a fixed adapter
+- Native planning expands validated Tac component declarations without server
+  rendering, uses a fixed adapter
   allowlist, assigns deterministic identifiers, and emits the smallest
   unsupported custom-element or island subtree as a WebSurface.
 - `tachyon.json` is UTF-8, regular, non-symlinked, limited to 64 KiB, strict
@@ -224,10 +244,39 @@ controls exist.
   carries no compatibility guarantee and must never be enabled in a released
   artifact.
 
+## Semantic Hot-Update Evidence
+
+- Hot Update Protocol v1 permits only `css`, `island`, `reload`, and
+  `diagnostics`; it cannot carry source text or an instruction to evaluate
+  code.
+- The development endpoint is disabled with `--no-watch`, is same-origin, uses
+  a bounded broadcast queue, disables proxy buffering, and widens missed or
+  lagged events to a full reload.
+- The browser writes diagnostics with `textContent`, retains the last-good DOM
+  on compiler failure, and reloads when an island boundary count or stable
+  identity changes.
+- Island replacement imports only compiler-generated same-origin module URLs.
+  The old instance receives an abort signal and a disposal callback before its
+  boundary is replaced. State transfer uses `structuredClone` on either the
+  explicit `hotState()` result or the default enumerable non-function fields;
+  a failed default clone retains an empty object. No JSON or depth bound is
+  claimed.
+- Browser-owned DOM state transfer snapshots at most the first 2,048 elements
+  with an `id`. It preserves input and textarea values, input checked state,
+  `<details>` disclosure, nonzero scroll offsets, and the focused element by
+  id. It does not preserve text selection or selected `<option>` state, and it
+  cannot transfer markup, attributes, listeners, arbitrary DOM properties, or
+  contenteditable HTML.
+- A real Chromium gate exercises CSS retention, island replacement, disposal,
+  component and native DOM state retention, failed-build diagnostics,
+  recovery, and structural reload without browser console errors.
+
 ## Remaining Security Gates
 
-- automated security qualification on the exact release commit, with every
-  critical or high finding assigned and dispositioned before stable cutover;
+- Automated security gates remain mandatory for every release. An independent
+  human assessment is recommended for major trust-boundary changes but is not
+  a publication prerequisite; any accepted residual risk must be recorded in
+  the release review package.
 - enforce handler filesystem, network, CPU, and memory capabilities before
   production routing;
 - run live remote-origin/DNS/redirect `WebSurface` adversarial tests;
