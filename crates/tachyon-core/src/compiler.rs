@@ -1287,7 +1287,13 @@ pub(crate) fn resolve_output_path(root: &Path, path: &Path) -> Result<PathBuf, F
     let mut current = PathBuf::new();
     for component in normalized.components() {
         match component {
-            Component::Prefix(prefix) => current.push(prefix.as_os_str()),
+            // A Windows drive/UNC prefix is not itself a filesystem path. It
+            // becomes inspectable only after the following root component is
+            // appended (for example `\\?\C:\`, not `\\?\C:`).
+            Component::Prefix(prefix) => {
+                current.push(prefix.as_os_str());
+                continue;
+            }
             Component::RootDir => current.push(component.as_os_str()),
             Component::Normal(segment) => current.push(segment),
             Component::CurDir | Component::ParentDir => return Err(invalid_output(path)),
