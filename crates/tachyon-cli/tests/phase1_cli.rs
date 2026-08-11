@@ -177,23 +177,43 @@ fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 
+const MAX_REQUEST_ATTEMPTS: usize = 3;
+
 fn request(socket: &str, request: &[u8]) -> String {
-    let mut connection = TcpStream::connect(socket).expect("server should accept connections");
-    connection
-        .write_all(request)
-        .expect("request should be sent");
-    let mut response = Vec::new();
-    match connection.read_to_end(&mut response) {
-        Ok(_) => {}
-        // Linux may report a reset instead of EOF after Hyper has written and
-        // closed a `Connection: close` response. Accept the preserved bytes
-        // only when HTTP framing proves the complete message was received.
-        Err(error)
-            if error.kind() == std::io::ErrorKind::ConnectionReset
-                && reset_response_is_complete(request, &response) => {}
-        Err(error) => panic!("response should be read: {error}"),
+    for attempt in 1..=MAX_REQUEST_ATTEMPTS {
+        let mut connection = TcpStream::connect(socket).expect("server should accept connections");
+        connection
+            .write_all(request)
+            .expect("request should be sent");
+        let mut response = Vec::new();
+        match connection.read_to_end(&mut response) {
+            Ok(_) => return String::from_utf8(response).expect("response should be UTF-8"),
+            // Linux may report a reset instead of EOF after Hyper has written
+            // and closed a `Connection: close` response. Accept preserved
+            // bytes only when framing proves completeness. If no response
+            // bytes arrived, retry a fresh idempotent request within a small
+            // fixed budget; never discard a partial response.
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ConnectionReset
+                    && reset_response_is_complete(request, &response) =>
+            {
+                return String::from_utf8(response).expect("response should be UTF-8");
+            }
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ConnectionReset
+                    && empty_reset_can_retry(request, &response, attempt) => {}
+            Err(error) => panic!("response should be read: {error}"),
+        }
     }
-    String::from_utf8(response).expect("response should be UTF-8")
+    panic!("response retry budget should end in the error branch")
+}
+
+fn retryable_test_request(request: &[u8]) -> bool {
+    request.starts_with(b"GET ") || request.starts_with(b"HEAD ")
+}
+
+fn empty_reset_can_retry(request: &[u8], response: &[u8], attempt: usize) -> bool {
+    response.is_empty() && retryable_test_request(request) && attempt < MAX_REQUEST_ATTEMPTS
 }
 
 fn reset_response_is_complete(request: &[u8], response: &[u8]) -> bool {
@@ -255,6 +275,20 @@ fn reset_response_is_complete(request: &[u8], response: &[u8]) -> bool {
 
 #[test]
 fn reset_responses_require_complete_unambiguous_http_framing() {
+    assert!(retryable_test_request(b"GET / HTTP/1.1\r\n\r\n"));
+    assert!(retryable_test_request(b"HEAD / HTTP/1.1\r\n\r\n"));
+    assert!(!retryable_test_request(b"POST / HTTP/1.1\r\n\r\n"));
+    assert!(empty_reset_can_retry(b"GET / HTTP/1.1\r\n\r\n", b"", 1));
+    assert!(!empty_reset_can_retry(
+        b"GET /../Cargo.toml HTTP/1.1\r\n\r\n",
+        b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n[workspace]",
+        1,
+    ));
+    assert!(!empty_reset_can_retry(
+        b"GET / HTTP/1.1\r\n\r\n",
+        b"",
+        MAX_REQUEST_ATTEMPTS,
+    ));
     assert!(reset_response_is_complete(
         b"GET / HTTP/1.1\r\n\r\n",
         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
