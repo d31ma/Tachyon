@@ -6,11 +6,13 @@
 use super::config::NativeApplication;
 use super::planner::{NativeRouteIndex, PlannedNativeRoute};
 use crate::Failure;
+use crate::external_command::run as supervise_tool;
 use crate::failure::diagnostic;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 use tachyon_contracts::CapabilityManifest;
 use tokio::process::Command;
 
@@ -175,12 +177,14 @@ pub(super) async fn run_tool_in(
     if let Some(working_directory) = working_directory {
         command.current_dir(working_directory);
     }
-    let output = command.output().await.map_err(|error| {
-        native_tool_failure(
-            1605,
-            &format!("Cannot start native tool '{program}': {error}"),
-        )
-    })?;
+    let output = supervise_tool(&mut command, Duration::from_mins(2), MAX_TOOL_OUTPUT_BYTES)
+        .await
+        .map_err(|error| {
+            native_tool_failure(
+                1605,
+                &format!("Cannot run native tool '{program}': {error}"),
+            )
+        })?;
     let stdout = bounded_text(&output.stdout);
     let stderr = bounded_text(&output.stderr);
     if !output.status.success() {

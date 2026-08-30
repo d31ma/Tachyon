@@ -3,18 +3,21 @@
 pub mod cache;
 mod compiler;
 pub mod doctor;
+mod external_command;
 mod failure;
 #[cfg(feature = "fuzzing")]
 pub mod fuzzing;
 mod handler;
 mod hot_update;
 mod html;
+mod lexical;
 mod migrate;
 mod native;
 mod project;
 mod routing;
 mod scaffold;
 mod server;
+pub mod stereotype;
 mod template;
 mod ttid;
 mod wasm;
@@ -23,8 +26,8 @@ pub use compiler::{BuildOptions, BuildResult, WebCompiler};
 pub use failure::Failure;
 pub use handler::{
     EnvironmentPolicy, FirecrackerIsolation, HandlerCancellation, HandlerLanguage,
-    HandlerRuntimePrograms, HandlerSource, HandlerSupervisor, HandlerSupervisorOptions,
-    Interpreters, Workers, YonIsolationPolicy,
+    HandlerRuntimePrograms, HandlerSource, HandlerSupervisor, HandlerSupervisorOptions, Workers,
+    YonIsolationPolicy,
 };
 pub use html::{HtmlDocument, HtmlFrontend};
 pub use migrate::{MigrationAnalysis, MigrationFinding, MigrationReport, MigrationStatus};

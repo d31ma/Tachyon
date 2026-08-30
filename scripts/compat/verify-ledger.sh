@@ -169,30 +169,24 @@ server/routes/yon.html	<main>not a Yon endpoint</main>
 EOF
 
 check "yon.js handler discovery" "ok" <<EOF
-server/routes/yon.js	export class Handler { static GET() { return { ok: true } } }
+server/routes/yon.js	@Controller\nexport class RootController { static GET() { return { ok: true } } }
 EOF
 
 check "yon.py handler discovery" "ok" <<EOF
-server/routes/yon.py	class Handler:\n    @staticmethod\n    def GET(request):\n        return {"ok": True}
+server/routes/yon.py	@Controller\nclass RootController:\n    @staticmethod\n    def GET(request):\n        return {"ok": True}
 EOF
 
-# Unregistered extensions are handler candidates with no available runtime.
-check "yon.ts handler, no interpreter" "TY2003" <<EOF
-server/routes/yon.ts	export class Handler { static GET() { return {} } }
+# Maintained Yon languages are discovered through their mandatory controller.
+check "yon.ts controller discovery" "ok" <<EOF
+server/routes/yon.ts	@Controller\nexport class RootController { static GET() { return {} } }
 EOF
 
-check "yon.rs handler, no interpreter" "TY2003" <<EOF
-server/routes/yon.rs	fn main() {}
+check "yon.rs controller discovery" "ok" <<EOF
+server/routes/yon.rs	#[Controller]\nstruct RootController;\nimpl RootController {\n    fn GET(_request: &YonRequest) -> YonResponse { YonResponse::json("{}") }\n}
 EOF
 
-# A registered handler is discovered but never executed by the build.
-if command -v ruby >/dev/null 2>&1; then
-  RB_EXPECTED="ok"
-else
-  RB_EXPECTED="TY2003"
-  echo "note: no ruby on PATH; yon.rb expected to fail closed"
-fi
-check "yon.rb handler, interpreter registered" "${RB_EXPECTED}" <<EOF
+# Arbitrary interpreter registration no longer turns another language into Yon.
+check "yon.rb remains unsupported when an interpreter is registered" "TY2003" <<EOF
 server/routes/yon.rb	require 'json'\nrequest = JSON.parse(STDIN.read)\nputs JSON.generate({ status: 200, body: JSON.generate({ ok: true }) })\n
 .tachyonrc	{"interpreters":{"rb":["ruby"]}}
 EOF
@@ -212,7 +206,7 @@ EOF
 
 check "middleware.js present" "ok" <<EOF
 client/pages/tac.html	${PAGE}
-middleware.js	export default function () {}
+middleware.js	@Controller\nexport class AccessController { static GET() { return { status: 204 } } }
 EOF
 
 check "server/workers present" "ok" <<EOF
@@ -226,8 +220,8 @@ client/pages/tac.html	${PAGE}
 EOF
 
 check "handler importing a service module is not executed at build" "ok" <<EOF
-server/routes/yon.js	import { v } from '../services/s.js'\nexport class Handler { static GET() { return { v } } }
-server/services/s.js	export const v = 'from-service'
+server/routes/yon.js	import { ValueService } from '../services/s.js'\n@Controller\nexport class RootController { static GET() { return { v: ValueService.v } } }
+server/services/s.js	@Service\nexport class ValueService { static v = 'from-service' }
 EOF
 
 # ------------------------------------------------------------------ report

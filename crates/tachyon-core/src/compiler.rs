@@ -1,10 +1,11 @@
+use crate::external_command::{ToolError, run as run_tool};
 use crate::failure::diagnostic;
 use crate::failure::source_span;
 use crate::template::{
     ClientViewRenderer, ComponentDefinition, ComponentRegistry, SCOPE_ATTRIBUTE,
     TAC_CLIENT_RUNTIME, TemplateFrontend, client_route_context,
 };
-use crate::{CompanionKind, Failure, ProjectDiscovery};
+use crate::{CompanionKind, Failure, Project, ProjectDiscovery};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,6 +31,8 @@ const MAX_SHARED_ASSET_BYTES: u64 = 16 * 1_048_576;
 const MAX_SHARED_ASSETS: usize = 4_096;
 const MAX_SHARED_ASSET_TOTAL_BYTES: u64 = 64 * 1_048_576;
 const MAX_BUILD_CONFIG_BYTES: u64 = 1_048_576;
+const TOOL_OUTPUT_BYTES: usize = 64 * 1_024;
+const TYPESCRIPT_DEADLINE: Duration = Duration::from_secs(30);
 const POST_BUNDLE_RUNNER: &str = r"import { pathToFileURL } from 'node:url'
 const source = process.env.TAC_CONFIG
 const root = process.env.TAC_STAGE
@@ -222,6 +225,19 @@ impl WebCompiler {
         project_root: impl AsRef<Path>,
         options: &BuildOptions,
     ) -> Result<BuildResult, Failure> {
+        let project = ProjectDiscovery::discover(project_root)?;
+        Self::build_project(&project, options)
+    }
+
+    /// Builds from an immutable project snapshot previously returned by discovery.
+    ///
+    /// # Errors
+    ///
+    /// Returns deterministic compilation or publication diagnostics.
+    pub fn build_project(
+        project: &Project,
+        options: &BuildOptions,
+    ) -> Result<BuildResult, Failure> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -233,7 +249,7 @@ impl WebCompiler {
                     None,
                 ))
             })?;
-        runtime.block_on(Self::build_async(project_root, options))
+        runtime.block_on(Self::build_project_async(project, options))
     }
 
     /// Builds the client-rendered Tac views in a Tachyon project.
@@ -247,21 +263,33 @@ impl WebCompiler {
         options: &BuildOptions,
     ) -> Result<BuildResult, Failure> {
         let project = ProjectDiscovery::discover(project_root)?;
+        Self::build_project_async(&project, options).await
+    }
+
+    /// Asynchronously builds from one immutable discovery snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns deterministic compilation or publication diagnostics.
+    #[allow(clippy::too_many_lines)]
+    pub async fn build_project_async(
+        project: &Project,
+        options: &BuildOptions,
+    ) -> Result<BuildResult, Failure> {
         let output_directory = resolve_output_path(project.root(), &options.output_directory)?;
-        let components = ComponentRegistry::discover(project.root())?;
+        let snapshot_root = project.snapshot_root();
+        let components = ComponentRegistry::discover(snapshot_root)?;
         let component_styles = collect_component_styles(&components)?;
-        let build_config_digest = build_config_digest(project.root())?;
+        let build_config_digest = build_config_digest(snapshot_root)?;
         let component_names = components.names();
         let mut programs = BTreeMap::new();
         let mut diagnostics = Vec::new();
         for route in project.route_graph().routes() {
-            let (Some(absolute), Some(source)) =
-                (route.absolute_source_path(), route.source_path())
-            else {
+            let (Some(bytes), Some(source)) = (route.view_bytes(), route.source_path()) else {
                 continue;
             };
 
-            let template_source = read_template_source(absolute, source)?;
+            let template_source = read_template_source(bytes, source)?;
             let (template_source, inline_state) =
                 match strip_page_state_scripts(&template_source, source) {
                     Ok(value) => value,
@@ -278,9 +306,9 @@ impl WebCompiler {
                 )
             });
             if let Some(companion) = page_module
-                && let Ok(source) = fs::read_to_string(&companion.absolute_source_path)
+                && let Ok(source) = std::str::from_utf8(companion.bytes())
             {
-                page_scope.extend(parse_page_class_fields(&source));
+                page_scope.extend(parse_page_class_fields(source));
             }
             match TemplateFrontend::compile(&template_source, source, &component_names) {
                 Ok(program) => {
@@ -339,24 +367,25 @@ impl WebCompiler {
                 companion_digest.update([0]);
             }
             for companion in route.companions() {
-                let source = fs::read(&companion.absolute_source_path)
-                    .map_err(|error| companion_error(&companion.source_path, &error))?;
+                let source = companion.bytes().to_vec();
                 // A TypeScript companion is emitted through the TypeScript
                 // compiler itself, so its semantics are the reference
                 // semantics rather than a reimplementation of them.
                 let bytes = if companion.kind == CompanionKind::TypeScriptModule {
+                    let snapshot_source = snapshot_root.join(&companion.source_path);
                     transpile_typescript(
-                        project.root(),
-                        &companion.absolute_source_path,
+                        snapshot_root,
+                        &snapshot_source,
                         &companion.source_path,
+                        &source,
                     )
                     .await?
                 } else {
                     source.clone()
                 };
                 let bytes = rewrite_client_shared_imports(
-                    project.root(),
-                    &companion.absolute_source_path,
+                    snapshot_root,
+                    &snapshot_root.join(&companion.source_path),
                     bytes,
                 );
                 let bytes = if !route_program.inline_state.trim().is_empty()
@@ -377,12 +406,10 @@ impl WebCompiler {
             }
             let companion_sha = hex_digest(companion_digest.finalize());
             let input_sha = route_input_sha(
-                route
-                    .absolute_source_path()
-                    .unwrap_or_else(|| unreachable!()),
+                route.view_bytes().unwrap_or_else(|| unreachable!()),
                 components.digest(),
                 &companion_sha,
-            )?;
+            );
             let prior = previous
                 .as_ref()
                 .and_then(|state| state.routes.get(&key))
@@ -487,7 +514,7 @@ impl WebCompiler {
             next_state.routes.insert(key, route_state);
         }
 
-        files.extend(collect_shared_assets(project.root())?);
+        files.extend(collect_shared_assets(snapshot_root)?);
 
         files.push((
             PathBuf::from(".tachyon/navigation.css"),
@@ -521,7 +548,7 @@ impl WebCompiler {
                 )));
             };
             if let Some(source) = component.wasm_path() {
-                for (suffix, bytes) in crate::wasm::compile(project.root(), source, name).await? {
+                for (suffix, bytes) in crate::wasm::compile(snapshot_root, source, name).await? {
                     files.push((
                         PathBuf::from(format!(".tachyon/components/{name}{suffix}")),
                         bytes,
@@ -539,13 +566,14 @@ impl WebCompiler {
             };
             // A TypeScript component companion goes through the
             // TypeScript compiler, the same route a page companion takes.
+            let authored = output_io(fs::read(source), source)?;
             let bytes = if source.extension().is_some_and(|value| value == "ts") {
-                let portable = portable_path(source.strip_prefix(project.root()).unwrap_or(source));
-                transpile_typescript(project.root(), source, &portable).await?
+                let portable = portable_path(source.strip_prefix(snapshot_root).unwrap_or(source));
+                transpile_typescript(snapshot_root, source, &portable, &authored).await?
             } else {
-                output_io(fs::read(source), source)?
+                authored
             };
-            let bytes = rewrite_client_shared_imports(project.root(), source, bytes);
+            let bytes = rewrite_client_shared_imports(snapshot_root, source, bytes);
             // Component modules always publish below `.tachyon/components`.
             // A relative public URL works both at an HTTP origin and when
             // an isolated native surface loads the bundle through `file:`.
@@ -599,7 +627,7 @@ impl WebCompiler {
             &output_directory,
         )?;
         output_io(write_stage(stage.path(), &files), &output_directory)?;
-        run_post_bundle_hook(project.root(), stage.path(), "web").await?;
+        run_post_bundle_hook(snapshot_root, stage.path(), "web").await?;
         let digest = output_io(digest_stage(stage.path()), &output_directory)?;
         output_io(publish(stage, &output_directory), &output_directory)?;
 
@@ -683,12 +711,7 @@ fn validate_artifact_path(path: &Path) -> Option<()> {
     .then_some(())
 }
 
-fn route_input_sha(
-    source: &Path,
-    component_digest: &str,
-    companion_digest: &str,
-) -> Result<String, Failure> {
-    let bytes = output_io(fs::read(source), source)?;
+fn route_input_sha(source: &[u8], component_digest: &str, companion_digest: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(env!("CARGO_PKG_VERSION").as_bytes());
     hasher.update([0]);
@@ -696,8 +719,8 @@ fn route_input_sha(
     hasher.update([0]);
     hasher.update(companion_digest.as_bytes());
     hasher.update([0]);
-    hasher.update(bytes);
-    Ok(hex_digest(hasher.finalize()))
+    hasher.update(source);
+    hex_digest(hasher.finalize())
 }
 
 fn route_key(route: &str) -> String {
@@ -930,15 +953,7 @@ fn validate_page_state(source: &str, source_path: &str, offset: usize) -> Result
     Ok(())
 }
 
-fn read_template_source(path: &Path, source_path: &str) -> Result<String, Failure> {
-    let bytes = fs::read(path).map_err(|error| {
-        Failure::one(diagnostic(
-            1301,
-            format!("Cannot read template source: {error}"),
-            None,
-            source_span(source_path, 0, 0),
-        ))
-    })?;
+fn read_template_source(bytes: &[u8], source_path: &str) -> Result<String, Failure> {
     if bytes.len() > 1_048_576 {
         return Err(Failure::one(diagnostic(
             1301,
@@ -947,15 +962,17 @@ fn read_template_source(path: &Path, source_path: &str) -> Result<String, Failur
             source_span(source_path, 0, bytes.len()),
         )));
     }
-    String::from_utf8(bytes).map_err(|error| {
-        let start = error.utf8_error().valid_up_to();
-        Failure::one(diagnostic(
-            1301,
-            "Template source must be valid UTF-8.",
-            None,
-            source_span(source_path, start, start.saturating_add(1)),
-        ))
-    })
+    std::str::from_utf8(bytes)
+        .map(str::to_owned)
+        .map_err(|error| {
+            let start = error.valid_up_to();
+            Failure::one(diagnostic(
+                1301,
+                "Template source must be valid UTF-8.",
+                None,
+                source_span(source_path, start, start.saturating_add(1)),
+            ))
+        })
 }
 
 fn parse_page_state(source: &str) -> crate::template::Scope {
@@ -1187,7 +1204,7 @@ fn sha256_bytes(bytes: &[u8]) -> String {
     hex_digest(hasher.finalize())
 }
 
-fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
+pub(crate) fn hex_digest(bytes: impl AsRef<[u8]>) -> String {
     let mut encoded = String::with_capacity(bytes.as_ref().len() * 2);
     for byte in bytes.as_ref() {
         encoded.push(char::from(HEX[usize::from(byte >> 4)]));
@@ -1416,10 +1433,12 @@ fn inject_before(html: &str, close: &str, value: &str) -> String {
 /// The compiler is located project-first so a pinned `node_modules` copy wins
 /// over anything on `PATH`. Type checking is skipped: emission must not depend
 /// on a project type-checking cleanly, which `ty` never claims to enforce.
+#[allow(clippy::too_many_lines)]
 async fn transpile_typescript(
     project_root: &Path,
     source: &Path,
     portable_source: &str,
+    source_bytes: &[u8],
 ) -> Result<Vec<u8>, Failure> {
     let local = project_root.join("node_modules/.bin/tsc");
     let program = if local.is_file() {
@@ -1430,11 +1449,11 @@ async fn transpile_typescript(
     // `--ignoreConfig` first exists in TypeScript 6, verified against 5.6, 5.9,
     // 6.0.3, and 7.0.2. An older compiler must
     // be reported as a version requirement, not as an unknown-option error.
-    let version = tokio::process::Command::new(&program)
+    let mut version_command = tokio::process::Command::new(&program);
+    version_command
         .arg("--version")
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .output()
+        .stdin(std::process::Stdio::null());
+    let version = run_tool(&mut version_command, TYPESCRIPT_DEADLINE, TOOL_OUTPUT_BYTES)
         .await
         .map_err(|error| {
             typescript_error(
@@ -1469,9 +1488,16 @@ async fn transpile_typescript(
         .tempdir()
         .map_err(|error| typescript_error(portable_source, &error.to_string()))?;
     let out_dir = staged.path().to_string_lossy().into_owned();
-    let source_argument = source.to_string_lossy().into_owned();
+    let source_name = source
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("tac.ts"));
+    let staged_source = staged.path().join(source_name);
+    fs::write(&staged_source, source_bytes)
+        .map_err(|error| typescript_error(portable_source, &error.to_string()))?;
+    let source_argument = staged_source.to_string_lossy().into_owned();
 
-    let output = tokio::process::Command::new(&program)
+    let mut emit_command = tokio::process::Command::new(&program);
+    emit_command
         .args([
             source_argument.as_str(),
             "--outDir",
@@ -1489,9 +1515,8 @@ async fn transpile_typescript(
             "--ignoreConfig",
         ])
         .current_dir(project_root)
-        .stdin(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .output()
+        .stdin(std::process::Stdio::null());
+    let output = run_tool(&mut emit_command, TYPESCRIPT_DEADLINE, TOOL_OUTPUT_BYTES)
         .await
         .map_err(|error| {
             typescript_error(
@@ -1537,15 +1562,6 @@ fn typescript_error(source: &str, detail: &str) -> Failure {
             "Tachyon emits tac.ts with the TypeScript compiler. Install \
              typescript 6 or newer as a project dependency or on PATH.",
         )),
-        None,
-    ))
-}
-
-fn companion_error(source: &str, error: &io::Error) -> Failure {
-    Failure::one(diagnostic(
-        1008,
-        format!("Cannot read companion source '{source}': {error}"),
-        Some(String::from("Keep companions readable regular files.")),
         None,
     ))
 }
@@ -1596,47 +1612,30 @@ async fn run_post_bundle_hook(
             .env("TAC_CONFIG", &config)
             .env("TAC_STAGE", stage)
             .env("TAC_TARGET", target)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::inherit())
-            .kill_on_drop(true);
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            .stdin(std::process::Stdio::null());
+        let output = match run_tool(&mut command, Duration::from_secs(30), TOOL_OUTPUT_BYTES).await
+        {
+            Ok(output) => output,
+            Err(ToolError::Spawn(error)) if error.kind() == io::ErrorKind::NotFound => continue,
             Err(error) => {
                 return Err(Failure::one(diagnostic(
                     1201,
-                    format!("Cannot start the tac.config.js runtime: {error}"),
+                    format!("Cannot run the tac.config.js runtime: {error}"),
                     None,
                     None,
                 )));
             }
         };
-        let status =
-            if let Ok(result) = tokio::time::timeout(Duration::from_secs(30), child.wait()).await {
-                result.map_err(|error| {
-                    Failure::one(diagnostic(
-                        1201,
-                        format!("Cannot wait for the tac.config.js hook: {error}"),
-                        None,
-                        None,
-                    ))
-                })?
-            } else {
-                let _ = child.kill().await;
-                return Err(Failure::one(diagnostic(
-                    1201,
-                    "tac.config.js postBundle exceeded its 30 second deadline.",
-                    None,
-                    None,
-                )));
-            };
-        if status.success() {
+        if output.status.success() {
             return Ok(());
         }
         return Err(Failure::one(diagnostic(
             1201,
-            format!("tac.config.js postBundle exited with {status}."),
+            format!(
+                "tac.config.js postBundle exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            ),
             Some(String::from(
                 "Fix the hook error reported above or remove postBundle.",
             )),
@@ -1775,6 +1774,8 @@ mod tests {
         BuildOptions, WebCompiler, output_error, output_io, rewrite_client_shared_imports,
         strip_page_state_scripts, transform_page_module, write_stage,
     };
+    #[cfg(unix)]
+    use crate::ProjectDiscovery;
     use std::fs;
     use std::io;
     use std::path::PathBuf;
@@ -2362,5 +2363,102 @@ mod tests {
             // The rules payload is JSON, never executable script.
             assert!(document.contains(r#""prefetch""#), "{route}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn public_build_from_project_uses_only_the_owned_component_asset_and_config_snapshot() {
+        use std::os::unix::fs::symlink;
+
+        if std::process::Command::new("node")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let workspace = tempfile::tempdir().expect("workspace");
+        let authored = workspace.path().join("project");
+        let write = |root: &std::path::Path, relative: &str, contents: &str| {
+            let path = root.join(relative);
+            fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+            fs::write(path, contents).expect("source");
+        };
+        write(
+            &authored,
+            "client/pages/tac.html",
+            r#"<main><owned-card hydrate="load" /></main>"#,
+        );
+        write(
+            &authored,
+            "client/components/owned/card/tac.html",
+            "<section>owned component snapshot</section>",
+        );
+        write(
+            &authored,
+            "client/components/owned/card/tac.js",
+            "export default class OwnedCard { static origin = 'owned-script' }\n",
+        );
+        write(&authored, "client/shared/origin.txt", "owned-shared");
+        write(&authored, "package.json", r#"{"type":"module"}"#);
+        write(
+            &authored,
+            "tac.config.js",
+            "import { writeFile } from 'node:fs/promises'\nexport async function postBundle({ targetRoots }) { await writeFile(`${targetRoots.web}/hook.txt`, 'owned-config') }\n",
+        );
+        let project = ProjectDiscovery::discover(&authored).expect("owned snapshot");
+
+        let retained = workspace.path().join("retained");
+        fs::rename(&authored, &retained).expect("move project");
+        let planted = tempfile::tempdir().expect("planted");
+        write(
+            planted.path(),
+            "client/pages/tac.html",
+            "<main>planted page canary</main>",
+        );
+        write(
+            planted.path(),
+            "client/components/owned/card/tac.html",
+            "<section>planted component canary</section>",
+        );
+        write(
+            planted.path(),
+            "client/components/owned/card/tac.js",
+            "export default class Planted { static origin = 'planted-script' }\n",
+        );
+        write(planted.path(), "client/shared/origin.txt", "planted-shared");
+        write(planted.path(), "package.json", r#"{"type":"module"}"#);
+        write(
+            planted.path(),
+            "tac.config.js",
+            "import { writeFile } from 'node:fs/promises'\nexport async function postBundle({ targetRoots }) { await writeFile(`${targetRoots.web}/hook.txt`, 'planted-config') }\n",
+        );
+        symlink(planted.path(), &authored).expect("ambient replacement");
+
+        let output = workspace.path().join("web-output");
+        let built = WebCompiler::build_project(
+            &project,
+            &BuildOptions {
+                output_directory: output,
+                incremental: false,
+            },
+        )
+        .expect("snapshot build");
+        let root = built.output_directory();
+        let index = fs::read_to_string(root.join("index.html")).expect("index");
+        let component = fs::read_to_string(root.join(".tachyon/components/owned-card.js"))
+            .expect("component script");
+        assert!(index.contains("owned component snapshot"), "{index}");
+        assert!(!index.contains("planted"), "{index}");
+        assert!(component.contains("owned-script"), "{component}");
+        assert!(!component.contains("planted"), "{component}");
+        assert_eq!(
+            fs::read_to_string(root.join("shared/origin.txt")).expect("shared asset"),
+            "owned-shared"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("hook.txt")).expect("config hook"),
+            "owned-config"
+        );
     }
 }

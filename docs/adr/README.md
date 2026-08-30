@@ -21,3 +21,4 @@ implementation choices belong in code review, not an ADR.
 - [14. Environment-Selected Yon Isolation Backends](0014-environment-selected-yon-isolation.md)
 - [15. Tac Is Exclusively Client Rendered](0015-tac-is-exclusively-client-rendered.md)
 - [16. Yon Is REST Endpoints Only](0016-yon-is-rest-endpoints-only.md)
+- [17. Mandatory Yon Layers, Relay, and Streaming](0017-mandatory-yon-layers-relay-and-streaming.md)

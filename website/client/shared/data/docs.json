@@ -65,8 +65,8 @@
         },
         {
           "heading": "Layout",
-          "body": "Pages live in client/pages, components in client/components, and backend routes in server/routes. A companion file sits beside its tac.html template; shared browser assets and data live under client/shared. Optional root middleware is one middleware.<ext> file, and the JSON .tachyonrc file registers interpreters and workers.",
-          "code": "client/\n  pages/tac.html\n  components/hero/tac.html\n  components/hero/tac.swift\n  shared/assets/\n  shared/data/\nserver/\n  routes/posts/yon.js\nmiddleware.js\n.tachyonrc"
+          "body": "Pages live in client/pages and backend routes in server/routes. Yon also defines services, repositories, clients and delegates as mandatory annotated layers. Optional root middleware uses a Yon language; .tachyonrc retains only bounded worker schedules.",
+          "code": "client/\n  pages/tac.html\n  components/hero/tac.html\nserver/\n  routes/posts/yon.py\n  services/\n  repositories/\n  clients/\n  delegates/\nmiddleware.py\n.tachyonrc  # workers only"
         }
       ]
     },
@@ -81,12 +81,12 @@
         },
         {
           "heading": "Backend routes",
-          "body": "A route file at server/routes/<path>/yon.<ext> exports a Handler class whose static methods are HTTP verbs. JavaScript and Python have built-in adapters; another extension requires a JSON .tachyonrc interpreter registration or an executable direct-protocol handler.",
-          "code": "export class Handler {\n  static GET() { return { items: [] } }\n  static async POST(request) { return { created: request.body } }\n}"
+          "body": "A route file at server/routes/<path>/yon.<ext> declares @Controller on a Controller-suffixed class whose static methods are HTTP verbs. The legacy Handler fallback is removed.",
+          "code": "@Controller\nexport class ItemsController {\n  static GET() { return { items: [] } }\n  static async POST(request) { return { created: request.body } }\n}"
         },
         {
           "heading": "Handler protocol",
-          "body": "JavaScript and Python get class-style Handler adapters. Any other executable language can read one bounded JSON request from stdin and write one JSON response to stdout, with interpreters registered in .tachyonrc."
+          "body": "Yon owns JavaScript, TypeScript, Python, Java, C#, Kotlin, PHP and Rust runtimes. Other programs are reached from a method on an @Delegate class carrying @Relay; interpreter registration, shebang handlers and executable-handler fallback are removed."
         }
       ]
     },
@@ -101,13 +101,23 @@
         },
         {
           "heading": "Route convention",
-          "body": "Backend routes live at server/routes/<path>/yon.<ext>. A Handler class exposes static methods named after HTTP verbs. Dynamic path segments use _name folders and arrive in request.parameters.",
-          "code": "server/routes/items/yon.js      -> /items\nserver/routes/items/_id/yon.js  -> /items/:id\n\nexport class Handler {\n  static GET(request) { return { items: [] } }\n  static POST(request) { return request.body }\n}"
+          "body": "Backend routes live at server/routes/<path>/yon.<ext>. A mandatory @Controller class exposes static HTTP methods; dynamic _name folders arrive in request.parameters.",
+          "code": "server/routes/items/yon.py      -> /items\nserver/routes/items/_id/yon.py  -> /items/:id\n\n@Controller\nclass ItemsController:\n    @staticmethod\n    def GET(request): return {\"items\": []}"
         },
         {
           "heading": "Languages",
-          "body": "JavaScript and Python get class-style Handler adapters. Ruby, Swift, Zig, shell scripts, prebuilt binaries and other languages run through the same JSON stdin/stdout protocol; .tachyonrc registers commands for non-executable sources.",
-          "code": "{\n  \"interpreters\": {\n    \"rb\": [\"ruby\"]\n  }\n}"
+          "body": "Routes, middleware and workers use JavaScript, TypeScript, Python, Java, C#, Kotlin, PHP or Rust. Keep Ruby, Go, Swift, Zig and other existing programs behind an explicit @Delegate + @Relay edge.",
+          "code": "@Delegate\nclass ReportDelegate:\n    @staticmethod\n    @Relay(\"ruby\", \"server/delegates/report.rb\")\n    def GET(request): raise RuntimeError(\"proxy body is not called\")"
+        },
+        {
+          "heading": "Layers and streams",
+          "body": "@Controller, @Service, @Repository, @Client and @Delegate must match their server directory and class suffix. @Stream marks a yielding route in JavaScript, TypeScript, Python, PHP, Kotlin or C#; Java and Rust return one response. TY2008–TY2015 report layer and stream contract violations.",
+          "code": "@Controller\nclass TicksController:\n    @staticmethod\n    @Stream\n    def GET(request):\n        yield {\"tick\": 1}\n\nconst ticks = new EventSource('/ticks')\nticks.onmessage = (event) => console.log(event.lastEventId, event.data)\nticks.addEventListener('error', (event) => {\n  if (!event.data) {\n    console.warn('EventSource transport error; the browser may reconnect')\n    return\n  }\n  const failure = JSON.parse(event.data)\n  if (failure.code === 'TY2107' && failure.request_id) {\n    console.error('Tachyon stream failed', failure.request_id)\n  }\n})"
+        },
+        {
+          "heading": "Runtime overrides",
+          "body": "Operators may select the JavaScript and Python executables with YON_JAVASCRIPT_RUNTIME and YON_PYTHON_RUNTIME. Removed TACHYON_* names are not aliases.",
+          "code": "YON_JAVASCRIPT_RUNTIME=/opt/bun/bin/bun ty serve\nYON_PYTHON_RUNTIME=/opt/python/bin/python3 ty serve"
         },
         {
           "heading": "Process lifecycle",
@@ -126,8 +136,8 @@
         },
         {
           "heading": "Realtime topics",
-          "body": "A topic is a bounded append-only NDJSON log under .tachyon/topics. Browsers subscribe with EventSource, receive the log position as the event id and reconnect from the last position automatically.",
-          "code": "const releases = new EventSource('/.tachyon/topics/releases')\nreleases.onmessage = (event) => console.log(event.lastEventId, event.data)"
+          "body": "A topic is a bounded append-only NDJSON log under .tachyon/topics. Admission is 128 subscribers globally, 32 per topic and 32 active topics. Tachyon retains 256 replay records, limits each record to 64 KiB and each log to 16 MiB. A cursor-less EventSource starts at the oldest retained replay record; browser reconnection sends Last-Event-ID and resumes at the following record. An explicitly stale cursor closes with topic-error. Capacity exhaustion is HTTP 503: close and retry with bounded backoff.",
+          "code": "let releases = openReleases()\nfunction openReleases() {\n  const source = new EventSource('/.tachyon/topics/releases')\n  source.onmessage = (event) => console.log(event.lastEventId, JSON.parse(event.data))\n  source.addEventListener('topic-error', (event) => {\n    const failure = JSON.parse(event.data)\n    if (failure.terminal) source.close()\n    if (failure.code === 'TY_TOPIC_CURSOR_STALE') releases = openReleases()\n  })\n  return source\n}"
         },
         {
           "heading": "Security and middleware",
@@ -136,8 +146,8 @@
         },
         {
           "heading": "Polyglot middleware",
-          "body": "Middleware uses the same process protocol as routes and may be written in any configured executable language. A 204 continues; another status answers early in before or replaces the response in after.",
-          "code": "middleware.rb\nserver/\n  routes/\n    items/yon.js"
+          "body": "Middleware uses the same supervised protocol as routes and must use one of the eight Yon languages. A 204 continues; another status answers early in before or replaces the response in after.",
+          "code": "middleware.py\nserver/\n  routes/\n    items/yon.py"
         },
         {
           "heading": "Middleware phases",
@@ -145,9 +155,9 @@
           "code": "{ \"phase\": \"before\", \"request\": {}, \"context\": {} }\n{ \"phase\": \"after\", \"request\": {}, \"response\": {}, \"context\": {} }"
         },
         {
-          "heading": "Raw shim middleware",
-          "body": "Any other language can skip the class adapter and use the raw protocol. The middleware file reads a JSON envelope from stdin and writes one JSON result to stdout. This is useful for Go, Swift, Zig, shell scripts, or a prebuilt binary.",
-          "code": "import json\nimport sys\n\ninput = json.load(sys.stdin)\n\nif input[\"phase\"] == \"before\":\n    print(json.dumps({ \"status\": 204, \"headers\": {} }))\n\nif input[\"phase\"] == \"after\":\n    print(json.dumps({\n        \"status\": 204,\n        \"headers\": { \"x-middleware-phase\": \"after\" }\n    }))"
+          "heading": "External policy engines",
+          "body": "Raw arbitrary-language middleware was removed. Put the middleware entry point in a Yon language and call an existing policy engine from a supervised @Delegate + @Relay boundary.",
+          "code": "@Delegate\nclass PolicyDelegate:\n    @staticmethod\n    @Relay(\"go\", \"run\", \"server/delegates/policy.go\")\n    def evaluate(request): raise RuntimeError(\"proxy\")"
         },
         {
           "heading": "Middleware envelopes",
@@ -172,8 +182,8 @@
         },
         {
           "heading": "Control flow",
-          "body": "Loops, conditionals and switches are elements, so structure stays visible in the markup.",
-          "code": "<loop :for=\"post of posts\">\n  <article>{post.title}</article>\n</loop>\n<logic :if=\"ready\"><p>Ready.</p></logic>\n<switch :value=\"status\">\n  <case :when=\"'loading'\"><p>Working…</p></case>\n  <case default><p>Done.</p></case>\n</switch>"
+          "body": "Loops, conditionals and switches are elements, so structure stays visible in the markup. Nested loops use lexical scope: parent bindings remain available in nested iterables, text, dynamic attributes, conditions, component props and event arguments. The nearest repeated loop name shadows its parent only inside that loop, and siblings restore the outer scope. A component owns the evaluated props it receives rather than inheriting the caller's loop scope.",
+          "code": "<loop :for=\"account of accounts\">\n  <loop :for=\"role of rolesFor(account)\">\n    <logic :if=\"canSelect(account, role)\">\n      <account-role :label=\"format(account, role)\" />\n      <button :data-account=\"account.id\" on:click=\"select(account.id, role.id)\">Select</button>\n    </logic>\n  </loop>\n</loop>\n<switch :value=\"status\">\n  <case :when=\"'loading'\"><p>Working…</p></case>\n  <case default><p>Done.</p></case>\n</switch>"
         },
         {
           "heading": "Components",
@@ -305,7 +315,7 @@
         },
         {
           "heading": "Yon topic logs",
-          "body": "A Yon application may append NDJSON records to a bounded .tachyon/topics/<topic>.jsonl log. EventSource subscribers receive each integer log position as the event id, and browser reconnection resumes from Last-Event-ID. Tachyon does not provide the legacy realtime mailbox or database layer."
+          "body": "A Yon application may append NDJSON records to .tachyon/topics/<topic>.jsonl. EventSource subscribers receive each integer position as the event id. Browser auto-reconnection resumes at Last-Event-ID + 1; a new cursor-less source starts at the oldest retained floor. Named topic-error events carry canonical JSON with code, sanitized message, category, guidance and terminal=true; parse the payload and close the source, recreating it without ?position= after TY_TOPIC_CURSOR_STALE. Limits are 128 global subscribers, 32 per topic, 32 active topics, 256 replay records, 64 KiB per record and 16 MiB per log. HTTP 503 means close and retry with bounded backoff. Tachyon does not provide the legacy realtime mailbox or database layer."
         }
       ]
     },
@@ -325,7 +335,7 @@
         },
         {
           "heading": "Polyglot middleware boundary",
-          "body": "When the frontend prototype grows a Yon server, add one root middleware.<ext> source. JavaScript and Python use the class adapter, while another executable language can keep an existing policy engine behind the direct protocol.",
+          "body": "When the frontend prototype grows a Yon server, add one root middleware.<ext> source in a Yon language. Keep an existing policy engine in another language behind an explicit @Delegate + @Relay boundary.",
           "code": "middleware.py\nserver/\n  routes/users/yon.js\n\nclass Middleware:\n    @staticmethod\n    def before(input):\n        return { \"status\": 204, \"headers\": {} }"
         },
         {
@@ -358,6 +368,8 @@
             { "name": "YON_HOST", "values": "IP address or localhost; 127.0.0.1 default", "use": "Sets the ty serve bind address; non-loopback binding still requires explicit CLI opt-in.", "scope": "Rust rewrite" },
             { "name": "YON_HOSTNAME", "values": "Same as YON_HOST", "use": "Compatibility fallback bind address when YON_HOST is unset.", "scope": "Rust rewrite" },
             { "name": "YON_PORT", "values": "1-65535; 8080 default", "use": "Sets the ty serve listening port.", "scope": "Rust rewrite" },
+            { "name": "YON_JAVASCRIPT_RUNTIME", "values": "Executable path; Bun default", "use": "Selects the JavaScript or TypeScript runtime used by supervised Yon handlers.", "scope": "Operator" },
+            { "name": "YON_PYTHON_RUNTIME", "values": "Executable path; python3 default on Unix and python on Windows", "use": "Selects the Python runtime used by supervised Yon handlers.", "scope": "Operator" },
             { "name": "TAC_DIST_PATH", "values": "Filesystem path; dist/web or dist default", "use": "Overrides bundle output and the directory served by development/native commands.", "scope": "Rust rewrite" },
             { "name": "YON_SKIP_BUNDLE", "values": "1 or true; false default", "use": "Starts ty serve from an existing artifact without its initial bundle step.", "scope": "Rust rewrite" }
           ]
@@ -418,7 +430,12 @@
       "sections": [
         {
           "heading": "Diagnostics and migration evidence",
-          "body": "Compiler, server and toolchain failures use stable TY diagnostics with bounded details. Failed Yon invocations return an x-tachyon-request-id that matches the redacted structured server event. ty doctor reports companion toolchains and ty migrate check records intentional compatibility changes before cutover."
+          "body": "Compiler, server and toolchain failures use stable TY diagnostics with bounded details. Failed Yon invocations return an x-tachyon-request-id that matches the redacted structured server event. Stream delivery admits at most two queued 256 KiB events and 64 MiB total per invocation; a failed stream ends with a sanitized error event carrying the request ID. ty doctor reports companion and project-derived Yon toolchains. ty migrate check records intentional compatibility changes before cutover."
+        },
+        {
+          "heading": "Readiness and signal lifecycle",
+          "body": "For serve, preview and bundle --watch, parse standard error as one compact JSON event per line. runtime.signal_handlers_ready is handler-registration evidence only; it is not application readiness. Wait for the readiness announcement on standard output and a successful deployment health probe before routing traffic. The first supported signal emits runtime.shutdown_requested and requests graceful shutdown. The development server bounds its owned internal tasks, but preview may await cooperative connection drain and bundle --watch may finish its synchronous fingerprint pass or current bounded build. Supervisors must enforce their own grace period and send a second signal for a hard escape. That second signal emits runtime.shutdown_forced and exits with 130 for Unix SIGINT or Windows CTRL-C, 143 for Unix SIGTERM, or 131 for Windows CTRL-BREAK. Unix SIGKILL, Windows TerminateProcess, out-of-memory termination and host shutdown are not observable. See the full event and privacy contract at docs/SIGNAL_LIFECYCLE.md.",
+          "code": "# stderr: parse one JSON object per line\n{\"event\":\"runtime.signal_handlers_ready\",\"installed\":[\"SIGINT\",\"SIGTERM\"]}\n# registration evidence only — now wait for stdout readiness and health\n# stdout: Tachyon server ready at http://127.0.0.1:8080/"
         },
         {
           "heading": "Build and deploy",
@@ -428,6 +445,15 @@
         {
           "heading": "Security",
           "body": "Security headers, loopback-only default binding, traversal rejection, request limits and handler deadlines are enforced by the Rust server. Application authentication and API schema generation stay explicit deployment concerns."
+        },
+        {
+          "heading": "Handler cache recovery",
+          "body": "Compiled Yon artifacts use the project-local .tachyon/handlers cache, confined through non-following directory handles and pruned to 256 recursively accounted entries and 512 MiB. Tachyon reclaims abandoned locks automatically. If manual recovery is necessary, stop every Tachyon process for the project, rename the entire .tachyon/handlers directory on the same filesystem, rerun the command, and retain the backup until the rebuild succeeds. ty cache status and ty cache clean operate on the separate installation/runtime cache selected by TAC_CACHE_DIR; they never repair or delete .tachyon/handlers.",
+          "code": "# After stopping every ty process for this project\nmv .tachyon/handlers .tachyon/handlers.investigation\nty serve"
+        },
+        {
+          "heading": "Rollback",
+          "body": "Restore the ty binary, Yon handler sources, and .tachyonrc as one versioned unit. A partial rollback can revive removed interpreter registrations, shebang execution, or Handler fallback assumptions and is unsupported."
         }
       ]
     },

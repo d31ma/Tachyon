@@ -46,6 +46,19 @@ return one bounded Handler Protocol v1 response and accept the existing
 cancellation frame. Yon retains deadline, stderr, output, cancellation,
 forced-termination, and concurrency supervision around the control program.
 
+The driver contract currently accepts only validated JavaScript and Python
+source snapshots, whose stable adapter identities are `javascript.v1` and
+`python.v1`. The project-relative `--source` identity is resolved below an
+owned project-shaped `--project-root`, so an ambient authored-path replacement
+cannot change what the control program transfers. TypeScript and the Java,
+PHP, Kotlin, C#, and Rust direct paths
+depend on a runtime workspace prepared by Tachyon. Those workspaces are never
+represented by the project-relative `--source` argument. Firecracker mode
+therefore rejects them with `TY2010` before the driver starts. A future
+extension must define an authenticated, bounded artifact-set transfer; passing
+an individual prepared artifact path or authored source as a substitute is not
+an artifact contract.
+
 The control program is a trusted deployment component. It is responsible for
 proving that the selected pool really uses Firecracker, the jailer, unique
 credentials, cgroups, namespaces, seccomp, immutable images, safe snapshot
@@ -66,6 +79,9 @@ are never executed during compilation.
   another backend.
 - Firecracker remains deployable only where the control program and host have
   independent production evidence.
+- Firecracker mode is currently limited to JavaScript and Python; selecting it
+  for a prepared TypeScript or direct-language handler fails closed before the
+  driver starts.
 - Allowlisted egress, writable filesystems, warm-pool policy, snapshot
   identity, attestations, and a first-party control program require later
   vertical slices. They may not be implied by this transport boundary.
@@ -88,6 +104,9 @@ are never executed during compilation.
   invalid identifiers, and deny-only egress;
 - a real executable control-driver fixture receives framed Handler Protocol v1
   plus the bounded policy and returns a validated response;
+- prepared TypeScript and direct-language sources are rejected before the
+  control driver starts, while JavaScript and Python retain their stable
+  adapter identities;
 - process-mode handler tests remain unchanged;
 - every handler entry point constructs its supervisor from the same parent
   environment;

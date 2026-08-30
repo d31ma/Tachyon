@@ -83,7 +83,7 @@ fn the_report_is_deterministic_and_schema_shaped() {
     );
     write(
         &project.path().join("server/routes/yon.py"),
-        "class Handler: pass",
+        "@Controller\nclass RootController: pass",
     );
 
     let first = run(ty()

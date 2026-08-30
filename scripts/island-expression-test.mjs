@@ -44,18 +44,53 @@ write('client/components/panel/status/tac.html', `<section>
   <button id="reset" on:click="reset()">reset</button>
   <input id="typed" on:input="label = $event.target.value">
   <p id="typedOut">{label}</p>
+  <section id="lexical-scope">
+    <loop :for="account of accounts">
+      <p class="outer-before">{account.domain}</p>
+      <loop :for="role of roles">
+        <p class="two-level" :data-pair="value(account, role)">{value(account, role)}</p>
+        <if :when="value(account, role) === 'example.com:inbox'">
+          <p class="matched-pair">{value(account, role)}</p>
+        </if>
+        <scope-probe :label="value(account, role)" />
+        <button class="select-pair" on:click="select(account.domain, role.id)">select</button>
+        <loop :for="folder of foldersFor(account, role)">
+          <p class="three-level">{triple(account, role, folder)}</p>
+        </loop>
+      </loop>
+      <loop :for="account of shadowAccounts">
+        <p class="shadowed-account">{account.domain}</p>
+      </loop>
+      <p class="outer-after">{account.domain}</p>
+    </loop>
+    <output id="selection">{selection}</output>
+  </section>
 </section>
 `);
 write('client/components/panel/status/tac.js', `export default class {
   label = 'ready'
   count = 6
   report = { title: 'Report', rows: [1, 2, 3] }
+  accounts = [{ domain: 'example.com' }, { domain: 'work.test' }]
+  roles = [{ id: 'inbox' }]
+  shadowAccounts = [{ domain: 'shadow.test' }]
+  selection = 'none'
   loadingState() { return 'live' }
   async note() { return 'awaited' }
   reset() { this.count = 0 }
+  value(account, role) { return \`\${account?.domain || 'missing'}:\${role?.id || 'missing'}\` }
+  foldersFor(account, role) {
+    if (!account || !role) return []
+    return [{ id: account.domain === 'example.com' ? 'primary' : 'archive' }]
+  }
+  triple(account, role, folder) {
+    return \`\${account?.domain || 'missing'}:\${role?.id || 'missing'}:\${folder?.id || 'missing'}\`
+  }
+  select(_event, domain, role) { this.selection = \`\${domain}:\${role}\` }
   hydrate() {}
 }
 `);
+write('client/components/scope/probe/tac.html', '<p class="component-prop">{label}</p>\n');
 
 const built = spawnSync(TY, ['build', PROJECT], { encoding: 'utf8' });
 if (built.status !== 0) {
@@ -98,6 +133,50 @@ try {
   expect(await page.textContent('#chained'), '3', 'property of a nested array');
   expect(await page.textContent('#awaited'), 'awaited', 'awaited companion method');
   expect((await page.locator('#rows li').allTextContents()).join(','), '1,2,3', 'client loop renders');
+  expect(
+    (await page.locator('.two-level').allTextContents()).join(','),
+    'example.com:inbox,work.test:inbox',
+    'two-level loops retain outer bindings',
+  );
+  expect(
+    (await page.locator('.two-level').evaluateAll((nodes) => nodes.map((node) => node.dataset.pair))).join(','),
+    'example.com:inbox,work.test:inbox',
+    'dynamic attributes retain outer bindings',
+  );
+  expect(
+    (await page.locator('.matched-pair').allTextContents()).join(','),
+    'example.com:inbox',
+    'conditions retain outer bindings',
+  );
+  expect(
+    (await page.locator('.component-prop').allTextContents()).join(','),
+    'example.com:inbox,work.test:inbox',
+    'component properties retain caller bindings',
+  );
+  expect(
+    (await page.locator('.three-level').allTextContents()).join(','),
+    'example.com:inbox:primary,work.test:inbox:archive',
+    'three-level loops retain every parent binding',
+  );
+  expect(
+    (await page.locator('.outer-before').allTextContents()).join(','),
+    'example.com,work.test',
+    'outer binding before a shadowing loop',
+  );
+  expect(
+    (await page.locator('.shadowed-account').allTextContents()).join(','),
+    'shadow.test,shadow.test',
+    'nearest loop binding shadows its parent',
+  );
+  expect(
+    (await page.locator('.outer-after').allTextContents()).join(','),
+    'example.com,work.test',
+    'shadowed binding does not leak into a sibling',
+  );
+
+  await page.locator('.select-pair').nth(1).click();
+  await page.waitForTimeout(150);
+  expect(await page.textContent('#selection'), 'work.test:inbox', 'event arguments retain parent bindings');
 
   // An assigning binding writes to the instance, and the client renderer
   // rebuilds all affected structure and expressions.

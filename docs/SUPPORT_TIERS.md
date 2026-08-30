@@ -69,10 +69,10 @@ routes. Browser semantic parity remains governed by the differential corpus.
 | Rust workspace and Phase 4 CLI on Linux x86_64 | container-tested development milestone | locked platform-neutral Rust/process suite executes in a pinned official Linux container; macOS packaging correctly remains host-gated |
 | Rust workspace and Phase 4 CLI on Windows x86_64 | buildable | GNU target compiles locally; real Node.js and CPython execution remains enforced by `windows-latest` CI |
 | Static web compiler and development server | implemented milestone | evidence recorded in `docs/PHASE_1_EVIDENCE.md`; not published |
-| JavaScript and Python Yon handler boundary | implemented milestone | evidence recorded in `docs/PHASE_2_EVIDENCE.md`; explicit CLI/library invocation only |
+| Eight-language Yon handler boundary | implemented milestone | mandatory five-layer stereotypes; explicit `@Relay`; direct `@Stream` in JavaScript, TypeScript, Python, PHP, Kotlin, and C#; Java and Rust return one response |
 | Tac client rendering, components, mount schedules, and incremental builds | implemented milestone | evidence recorded in `docs/PHASE_3_EVIDENCE.md`; Yon remains a separate REST boundary |
 | HTTP handler dispatch | implemented milestone | exact and dynamic routes, methods, parameters, bodies, middleware, and bounded topic streams execute through the supervised handler boundary |
-| Environment-selected Yon isolation transport | implemented milestone | process compatibility mode and a fail-closed Firecracker control-driver transport are tested; the driver and Linux/KVM host are not yet qualified, so this is not a hardware-isolation support claim |
+| Environment-selected Yon isolation transport | implemented milestone | process compatibility mode and a fail-closed Firecracker control-driver transport for JavaScript and Python are tested; TypeScript and prepared direct-language artifacts are rejected before driver spawn until an artifact-transfer contract exists; the driver and Linux/KVM host are not yet qualified, so this is not a hardware-isolation support claim |
 | macOS SwiftUI native vertical slice | native-tested development milestone | evidence recorded in `docs/PHASE_4_EVIDENCE.md`; ad-hoc development signing only |
 | Android, iOS, Windows, and Linux native renderers | implemented | see the Phase 5 table above |
 
@@ -81,7 +81,9 @@ process mode the handler child is supervised and receives a restricted
 environment, but it still has the developer account's ambient filesystem and
 network access. The Firecracker driver transport does not satisfy the OS-level
 resource and capability isolation gate until its control program and host have
-native qualification evidence.
+native qualification evidence. It also does not carry prepared TypeScript,
+Java, PHP, Kotlin, C#, or Rust artifact sets; those language paths require
+process mode for now.
 
 ## Promotion Evidence
 

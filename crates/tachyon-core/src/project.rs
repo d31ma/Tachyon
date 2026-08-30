@@ -1,14 +1,22 @@
 use crate::Failure;
 use crate::failure::{diagnostic, source_span};
-use crate::handler::{HandlerLanguage, HandlerSource};
+use crate::handler::{HandlerLanguage, HandlerSource, OwnedSourceRoot};
+use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
+use cap_std::ambient_authority;
+use cap_std::fs::{Dir, OpenOptions};
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
+use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use tachyon_contracts::{HttpMethod, RouteContext, RouteEntry, RouteKind, RouteManifest};
 
 const TAC_ROOT: &str = "client/pages";
 const YON_ROOT: &str = "server/routes";
+const MAX_CAPTURE_FILE_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_CAPTURE_TOTAL_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_CAPTURE_FILES: usize = 4_096;
 
 /// The frontend that owns a discovered view source.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,6 +51,7 @@ pub struct HandlerNode {
     source_path: String,
     absolute_source_path: PathBuf,
     language: HandlerLanguage,
+    source: HandlerSource,
 }
 
 impl HandlerNode {
@@ -63,6 +72,10 @@ impl HandlerNode {
     pub const fn language(&self) -> HandlerLanguage {
         self.language
     }
+
+    pub(crate) fn source(&self) -> &HandlerSource {
+        &self.source
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,6 +83,7 @@ struct ViewSource {
     source_path: String,
     absolute_source_path: PathBuf,
     view_kind: ViewKind,
+    bytes: Vec<u8>,
 }
 
 /// One validated route, optional view, and ordered handler contributors.
@@ -90,6 +104,7 @@ pub struct CompanionSource {
     pub absolute_source_path: PathBuf,
     /// What the compiler emits for this companion.
     pub kind: CompanionKind,
+    bytes: Vec<u8>,
 }
 
 /// The emitted form of a colocated companion.
@@ -111,6 +126,12 @@ impl CompanionKind {
             Self::Style => "style.css",
             Self::ClientModule | Self::TypeScriptModule => "client.js",
         }
+    }
+}
+
+impl CompanionSource {
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
     }
 }
 
@@ -139,6 +160,10 @@ impl RouteNode {
     #[must_use]
     pub fn view_kind(&self) -> Option<ViewKind> {
         self.view.as_ref().map(|view| view.view_kind)
+    }
+
+    pub(crate) fn view_bytes(&self) -> Option<&[u8]> {
+        self.view.as_ref().map(|view| view.bytes.as_slice())
     }
 
     /// Returns handler contributors in canonical source-path order.
@@ -266,11 +291,45 @@ impl RouteGraph {
 }
 
 /// A discovered Tachyon project.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Project {
     root: PathBuf,
     route_graph: RouteGraph,
+    snapshot: Arc<OwnedSourceRoot>,
+    capability: Arc<Dir>,
+    middleware: Option<HandlerSource>,
+    workers: Vec<ScheduledWorker>,
 }
+
+/// One validated scheduled worker bound to the project's immutable snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ScheduledWorker {
+    relative: String,
+    every_seconds: u64,
+    source: HandlerSource,
+}
+
+impl ScheduledWorker {
+    pub(crate) fn relative(&self) -> &str {
+        &self.relative
+    }
+
+    pub(crate) const fn every_seconds(&self) -> u64 {
+        self.every_seconds
+    }
+
+    pub(crate) const fn source(&self) -> &HandlerSource {
+        &self.source
+    }
+}
+
+impl PartialEq for Project {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root && self.route_graph == other.route_graph
+    }
+}
+
+impl Eq for Project {}
 
 impl Project {
     /// Returns the canonical project root.
@@ -283,6 +342,31 @@ impl Project {
     #[must_use]
     pub const fn route_graph(&self) -> &RouteGraph {
         &self.route_graph
+    }
+
+    pub(crate) fn snapshot_root(&self) -> &Path {
+        self.snapshot.path()
+    }
+
+    pub(crate) fn capability(&self) -> Arc<Dir> {
+        Arc::clone(&self.capability)
+    }
+
+    pub(crate) fn middleware(&self) -> Option<&HandlerSource> {
+        self.middleware.as_ref()
+    }
+
+    pub(crate) fn workers(&self) -> &[ScheduledWorker] {
+        &self.workers
+    }
+
+    pub(crate) fn invocation_sources(&self) -> impl Iterator<Item = &HandlerSource> + '_ {
+        self.route_graph
+            .routes
+            .iter()
+            .flat_map(|route| route.handlers.iter().map(HandlerNode::source))
+            .chain(self.middleware.iter())
+            .chain(self.workers.iter().map(ScheduledWorker::source))
     }
 }
 
@@ -299,19 +383,173 @@ impl ProjectDiscovery {
     /// unsupported source, route collision, or missing view/handler.
     pub fn discover(root: impl AsRef<Path>) -> Result<Project, Failure> {
         let canonical_root = canonical_project_root(root.as_ref())?;
+        let project =
+            Dir::open_ambient_dir(&canonical_root, ambient_authority()).map_err(|error| {
+                Failure::one(diagnostic(
+                    1001,
+                    format!(
+                        "Cannot open project root '{}': {error}",
+                        canonical_root.display()
+                    ),
+                    None,
+                    None,
+                ))
+            })?;
+        Self::discover_opened(canonical_root, &project)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn discover_opened(canonical_root: PathBuf, project: &Dir) -> Result<Project, Failure> {
         let mut found = Discovered::default();
-        discover_views(
-            &canonical_root,
-            Path::new(TAC_ROOT),
-            SourceKind::Tac,
-            &mut found,
+        let tac = capture_source_root(project, Path::new(TAC_ROOT), &mut found.diagnostics);
+        let components = capture_source_root(
+            project,
+            Path::new("client/components"),
+            &mut found.diagnostics,
         );
-        discover_views(
-            &canonical_root,
-            Path::new(YON_ROOT),
-            SourceKind::Yon,
-            &mut found,
-        );
+        let shared =
+            capture_source_root(project, Path::new("client/shared"), &mut found.diagnostics);
+        let configs = [
+            "package.json",
+            "tac.config.js",
+            "tachyon.json",
+            ".tachyonrc",
+        ]
+        .into_iter()
+        .filter_map(|relative| {
+            capture_project_file(project, Path::new(relative), &mut found.diagnostics)
+        })
+        .collect::<Vec<_>>();
+        let middleware_file = capture_root_middleware(project, &mut found.diagnostics);
+        let server = open_source_root(project, Path::new("server"), &mut found.diagnostics);
+        let server_files = server.as_ref().map_or_else(Vec::new, |server| {
+            let mut files = Vec::new();
+            visit_capability_directory(
+                server,
+                Path::new("server"),
+                &mut found.diagnostics,
+                &mut files,
+            );
+            files
+        });
+        let routes_valid = server.as_ref().is_some_and(|server| {
+            validate_server_source_root(server, Path::new(YON_ROOT), &mut found.diagnostics)
+        });
+        let routes = if routes_valid {
+            files_beneath(&server_files, Path::new(YON_ROOT))
+        } else {
+            Vec::new()
+        };
+        let mut layers = vec![(PathBuf::from(YON_ROOT), routes.clone())];
+        for layer in crate::stereotype::Stereotype::ALL
+            .into_iter()
+            .filter(|layer| layer.root() != YON_ROOT)
+        {
+            let root = PathBuf::from(layer.root());
+            let valid = server.as_ref().is_some_and(|server| {
+                validate_server_source_root(server, &root, &mut found.diagnostics)
+            });
+            let files = if valid {
+                files_beneath(&server_files, &root)
+            } else {
+                Vec::new()
+            };
+            layers.push((root, files));
+        }
+        check_captured_layers(&layers, &mut found.diagnostics);
+
+        let source_root = OwnedSourceRoot::new_project(YON_ROOT)?;
+        for file in tac
+            .iter()
+            .chain(components.iter())
+            .chain(shared.iter())
+            .chain(configs.iter())
+            .chain(middleware_file.iter())
+            .chain(server_files.iter())
+        {
+            if let Err(failure) = source_root.stage(&file.relative, &file.bytes, &file.portable()) {
+                found
+                    .diagnostics
+                    .extend(failure.diagnostics().iter().cloned());
+            }
+        }
+        for file in tac {
+            inspect_source_file(
+                &canonical_root,
+                project,
+                Path::new(TAC_ROOT),
+                &file,
+                SourceKind::Tac,
+                &source_root,
+                &mut found,
+            );
+        }
+        for file in routes {
+            inspect_source_file(
+                &canonical_root,
+                project,
+                Path::new(YON_ROOT),
+                &file,
+                SourceKind::Yon,
+                &source_root,
+                &mut found,
+            );
+        }
+        let middleware = middleware_file.and_then(|file| {
+            match HandlerSource::discover_snapshot(
+                canonical_root.clone(),
+                project,
+                &file.relative,
+                file.bytes,
+                Arc::clone(&source_root),
+            ) {
+                Ok(source) => Some(source),
+                Err(failure) => {
+                    found.diagnostics.extend_from_slice(failure.diagnostics());
+                    None
+                }
+            }
+        });
+        let worker_config = configs
+            .iter()
+            .find(|file| file.relative == Path::new(".tachyonrc"))
+            .map(|file| file.bytes.as_slice());
+        let schedules = match crate::Workers::from_captured(worker_config) {
+            Ok(workers) => workers,
+            Err(failure) => {
+                found.diagnostics.extend_from_slice(failure.diagnostics());
+                crate::Workers::default()
+            }
+        };
+        let mut workers = Vec::new();
+        for (relative, every_seconds) in schedules.iter() {
+            let Some(file) = server_files
+                .iter()
+                .find(|file| file.relative == Path::new(relative))
+            else {
+                found.diagnostics.push(diagnostic(
+                    2001,
+                    format!("Cannot inspect handler source '{relative}': source does not exist"),
+                    None,
+                    source_span(relative, 0, relative.len()),
+                ));
+                continue;
+            };
+            match HandlerSource::discover_snapshot(
+                canonical_root.clone(),
+                project,
+                &file.relative,
+                file.bytes.clone(),
+                Arc::clone(&source_root),
+            ) {
+                Ok(source) => workers.push(ScheduledWorker {
+                    relative: relative.clone(),
+                    every_seconds,
+                    source,
+                }),
+                Err(failure) => found.diagnostics.extend_from_slice(failure.diagnostics()),
+            }
+        }
         let Discovered {
             views,
             handlers,
@@ -336,7 +574,434 @@ impl ProjectDiscovery {
         Ok(Project {
             root: canonical_root,
             route_graph,
+            snapshot: source_root,
+            capability: Arc::new(project.try_clone().map_err(|error| {
+                Failure::one(diagnostic(
+                    1001,
+                    format!("Cannot retain the project capability: {error}"),
+                    None,
+                    None,
+                ))
+            })?),
+            middleware,
+            workers,
         })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct CapturedFile {
+    relative: PathBuf,
+    bytes: Vec<u8>,
+}
+
+impl CapturedFile {
+    fn portable(&self) -> String {
+        portable(&self.relative)
+    }
+}
+
+fn capture_project_file(
+    project: &Dir,
+    relative: &Path,
+    diagnostics: &mut Vec<tachyon_diagnostics::Diagnostic>,
+) -> Option<CapturedFile> {
+    let metadata = match project.symlink_metadata(relative) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(error) => {
+            diagnostics.push(diagnostic(
+                1001,
+                format!("Cannot inspect '{}': {error}", portable(relative)),
+                None,
+                None,
+            ));
+            return None;
+        }
+    };
+    if metadata.is_symlink() {
+        diagnostics.push(unsafe_symlink(relative));
+        return None;
+    }
+    if !metadata.is_file() {
+        diagnostics.push(diagnostic(
+            1001,
+            format!(
+                "Project input '{}' is not a regular file.",
+                portable(relative)
+            ),
+            None,
+            None,
+        ));
+        return None;
+    }
+    if metadata.len() > MAX_CAPTURE_FILE_BYTES {
+        diagnostics.push(diagnostic(
+            1001,
+            format!(
+                "Project input '{}' exceeds the 16 MiB snapshot limit.",
+                portable(relative)
+            ),
+            None,
+            None,
+        ));
+        return None;
+    }
+    let mut options = OpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let bytes = project
+        .open_with(relative, &options)
+        .and_then(|mut source| {
+            let mut bytes = Vec::new();
+            source.read_to_end(&mut bytes).map(|_| bytes)
+        });
+    match bytes {
+        Ok(bytes) => Some(CapturedFile {
+            relative: relative.to_path_buf(),
+            bytes,
+        }),
+        Err(error) => {
+            diagnostics.push(diagnostic(
+                1001,
+                format!(
+                    "Cannot read project input '{}': {error}",
+                    portable(relative)
+                ),
+                None,
+                None,
+            ));
+            None
+        }
+    }
+}
+
+fn capture_root_middleware(
+    project: &Dir,
+    diagnostics: &mut Vec<tachyon_diagnostics::Diagnostic>,
+) -> Option<CapturedFile> {
+    let entries = match project.entries() {
+        Ok(entries) => entries,
+        Err(error) => {
+            diagnostics.push(diagnostic(
+                1001,
+                format!("Cannot enumerate project root: {error}"),
+                None,
+                None,
+            ));
+            return None;
+        }
+    };
+    let mut entries = match entries.collect::<Result<Vec<_>, _>>() {
+        Ok(entries) => entries,
+        Err(error) => {
+            diagnostics.push(diagnostic(
+                1001,
+                format!("Cannot enumerate project root: {error}"),
+                None,
+                None,
+            ));
+            return None;
+        }
+    };
+    entries.sort_by_key(cap_std::fs::DirEntry::file_name);
+    let selected = entries.into_iter().find_map(|entry| {
+        let name = entry.file_name();
+        name.to_str()
+            .filter(|name| name.starts_with("middleware."))
+            .map(PathBuf::from)
+    });
+    selected.and_then(|relative| capture_project_file(project, &relative, diagnostics))
+}
+
+fn validate_server_source_root(
+    server: &Dir,
+    relative_root: &Path,
+    diagnostics: &mut Vec<tachyon_diagnostics::Diagnostic>,
+) -> bool {
+    let Some(name) = relative_root.file_name() else {
+        return false;
+    };
+    match server.symlink_metadata(name) {
+        Ok(metadata) if metadata.is_symlink() => false,
+        Ok(metadata) if metadata.is_dir() => true,
+        Ok(_) => {
+            diagnostics.push(diagnostic(
+                1001,
+                format!(
+                    "Source root '{}' is not a directory.",
+                    portable(relative_root)
+                ),
+                None,
+                None,
+            ));
+            false
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            diagnostics.push(diagnostic(
+                1001,
+                format!("Cannot inspect '{}': {error}", portable(relative_root)),
+                None,
+                None,
+            ));
+            false
+        }
+    }
+}
+
+fn files_beneath(files: &[CapturedFile], root: &Path) -> Vec<CapturedFile> {
+    files
+        .iter()
+        .filter(|file| {
+            file.relative
+                .strip_prefix(root)
+                .is_ok_and(|relative| !relative.as_os_str().is_empty())
+        })
+        .cloned()
+        .collect()
+}
+
+fn capture_source_root(
+    project: &Dir,
+    relative_root: &Path,
+    diagnostics: &mut Vec<tachyon_diagnostics::Diagnostic>,
+) -> Vec<CapturedFile> {
+    let Some(directory) = open_source_root(project, relative_root, diagnostics) else {
+        return Vec::new();
+    };
+    let mut files = Vec::new();
+    visit_capability_directory(&directory, relative_root, diagnostics, &mut files);
+    files
+}
+
+fn open_source_root(
+    project: &Dir,
+    relative_root: &Path,
+    diagnostics: &mut Vec<tachyon_diagnostics::Diagnostic>,
+) -> Option<Dir> {
+    let mut opened: Option<Dir> = None;
+    let mut current = PathBuf::new();
+    let components = relative_root.components().collect::<Vec<_>>();
+    for (index, component) in components.iter().enumerate() {
+        let Component::Normal(name) = component else {
+            return None;
+        };
+        current.push(name);
+        let parent = opened.as_ref().unwrap_or(project);
+        let metadata = match parent.symlink_metadata(name) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(error) => {
+                diagnostics.push(diagnostic(
+                    1001,
+                    format!("Cannot inspect '{}': {error}", portable(&current)),
+                    None,
+                    None,
+                ));
+                return None;
+            }
+        };
+        if metadata.is_symlink() {
+            diagnostics.push(unsafe_symlink(&current));
+            return None;
+        }
+        if !metadata.is_dir() {
+            let message = if index + 1 == components.len() {
+                format!(
+                    "Source root '{}' is not a directory.",
+                    portable(relative_root)
+                )
+            } else {
+                format!(
+                    "Source root '{}' is blocked by '{}', which is not a directory.",
+                    portable(relative_root),
+                    portable(&current)
+                )
+            };
+            diagnostics.push(diagnostic(1001, message, None, None));
+            return None;
+        }
+        match parent.open_dir_nofollow(name) {
+            Ok(directory) => opened = Some(directory),
+            Err(error) => {
+                diagnostics.push(diagnostic(
+                    1001,
+                    format!(
+                        "Cannot read source directory '{}': {error}",
+                        portable(&current)
+                    ),
+                    None,
+                    None,
+                ));
+                return None;
+            }
+        }
+    }
+    opened
+}
+
+#[allow(clippy::too_many_lines)]
+fn visit_capability_directory(
+    directory: &Dir,
+    relative_directory: &Path,
+    diagnostics: &mut Vec<tachyon_diagnostics::Diagnostic>,
+    files: &mut Vec<CapturedFile>,
+) {
+    let entries = match directory.entries() {
+        Ok(entries) => entries,
+        Err(error) => {
+            diagnostics.push(diagnostic(
+                1001,
+                format!(
+                    "Cannot read source directory '{}': {error}",
+                    portable(relative_directory)
+                ),
+                None,
+                None,
+            ));
+            return;
+        }
+    };
+    let mut entries = match entries.collect::<Result<Vec<_>, _>>() {
+        Ok(entries) => entries,
+        Err(error) => {
+            diagnostics.push(diagnostic(
+                1001,
+                format!(
+                    "Cannot enumerate source directory '{}': {error}",
+                    portable(relative_directory)
+                ),
+                None,
+                None,
+            ));
+            return;
+        }
+    };
+    entries.sort_by_key(cap_std::fs::DirEntry::file_name);
+
+    for entry in entries {
+        let relative = relative_directory.join(entry.file_name());
+        let metadata = match directory.symlink_metadata(entry.file_name()) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                diagnostics.push(diagnostic(
+                    1001,
+                    format!("Cannot inspect '{}': {error}", portable(&relative)),
+                    None,
+                    None,
+                ));
+                continue;
+            }
+        };
+        if metadata.file_type().is_symlink() {
+            diagnostics.push(unsafe_symlink(&relative));
+        } else if metadata.is_dir() {
+            match directory.open_dir_nofollow(entry.file_name()) {
+                Ok(child) => visit_capability_directory(&child, &relative, diagnostics, files),
+                Err(error) => diagnostics.push(diagnostic(
+                    1001,
+                    format!(
+                        "Cannot read source directory '{}': {error}",
+                        portable(&relative)
+                    ),
+                    None,
+                    None,
+                )),
+            }
+        } else if metadata.is_file() {
+            if metadata.len() > MAX_CAPTURE_FILE_BYTES {
+                diagnostics.push(diagnostic(
+                    1001,
+                    format!(
+                        "Source '{}' exceeds the 16 MiB snapshot limit.",
+                        portable(&relative)
+                    ),
+                    None,
+                    None,
+                ));
+                continue;
+            }
+            if files.len() >= MAX_CAPTURE_FILES {
+                diagnostics.push(diagnostic(
+                    1001,
+                    format!(
+                        "Source tree '{}' exceeds the 4,096-file snapshot limit.",
+                        portable(relative_directory)
+                    ),
+                    None,
+                    None,
+                ));
+                return;
+            }
+            let total = files.iter().fold(metadata.len(), |total, file| {
+                total.saturating_add(file.bytes.len() as u64)
+            });
+            if total > MAX_CAPTURE_TOTAL_BYTES {
+                diagnostics.push(diagnostic(
+                    1001,
+                    format!(
+                        "Source tree '{}' exceeds the 64 MiB snapshot limit.",
+                        portable(relative_directory)
+                    ),
+                    None,
+                    None,
+                ));
+                return;
+            }
+            let mut options = OpenOptions::new();
+            options.read(true).follow(FollowSymlinks::No);
+            let bytes = directory
+                .open_with(entry.file_name(), &options)
+                .and_then(|mut source| {
+                    let mut bytes = Vec::new();
+                    source.read_to_end(&mut bytes).map(|_| bytes)
+                });
+            match bytes {
+                Ok(bytes) => files.push(CapturedFile { relative, bytes }),
+                Err(error) => diagnostics.push(diagnostic(
+                    1001,
+                    format!("Cannot read source '{}': {error}", portable(&relative)),
+                    None,
+                    None,
+                )),
+            }
+        } else {
+            diagnostics.push(diagnostic(
+                1001,
+                format!(
+                    "Source '{}' is not a regular file or directory.",
+                    portable(&relative)
+                ),
+                None,
+                None,
+            ));
+        }
+    }
+}
+
+fn check_captured_layers(
+    layers: &[(PathBuf, Vec<CapturedFile>)],
+    diagnostics: &mut Vec<tachyon_diagnostics::Diagnostic>,
+) {
+    for (_, files) in layers {
+        for file in files
+            .iter()
+            .filter(|file| crate::stereotype::is_annotated_language(&file.relative))
+        {
+            match std::str::from_utf8(&file.bytes) {
+                Ok(contents) => {
+                    if let Err(failure) = crate::stereotype::check(&file.relative, contents) {
+                        diagnostics.extend(failure.diagnostics().iter().cloned());
+                    }
+                }
+                Err(error) => diagnostics.push(diagnostic(
+                    1001,
+                    format!("Cannot read source '{}': {error}", portable(&file.relative)),
+                    None,
+                    None,
+                )),
+            }
+        }
     }
 }
 
@@ -377,148 +1042,16 @@ fn canonical_project_root(root: &Path) -> Result<PathBuf, Failure> {
     Ok(canonical)
 }
 
-/// Returns the first ancestor of `relative_root` that exists but is not a
-/// directory, which is what makes the source root unreachable.
-fn non_directory_ancestor(project_root: &Path, relative_root: &Path) -> Option<PathBuf> {
-    let mut current = PathBuf::new();
-    for component in relative_root.components() {
-        current.push(component);
-        match fs::symlink_metadata(project_root.join(&current)) {
-            Ok(metadata) if !metadata.is_dir() => return Some(current),
-            Ok(_) => {}
-            Err(_) => return None,
-        }
-    }
-    None
-}
-
-fn discover_views(
-    project_root: &Path,
-    relative_root: &Path,
-    kind: SourceKind,
-    found: &mut Discovered,
-) {
-    let source_root = project_root.join(relative_root);
-    let metadata = match fs::symlink_metadata(&source_root) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            if let Some(blocking) = non_directory_ancestor(project_root, relative_root) {
-                found.diagnostics.push(diagnostic(
-                    1001,
-                    format!(
-                        "Source root '{}' is blocked by '{}', which is not a directory.",
-                        portable(relative_root),
-                        portable(&blocking)
-                    ),
-                    None,
-                    None,
-                ));
-            }
-            return;
-        }
-        Err(error) => {
-            found.diagnostics.push(diagnostic(
-                1001,
-                format!("Cannot inspect '{}': {error}", portable(relative_root)),
-                None,
-                None,
-            ));
-            return;
-        }
-    };
-    if metadata.file_type().is_symlink() {
-        found.diagnostics.push(unsafe_symlink(relative_root));
-        return;
-    }
-    if !metadata.is_dir() {
-        found.diagnostics.push(diagnostic(
-            1001,
-            format!(
-                "Source root '{}' is not a directory.",
-                portable(relative_root)
-            ),
-            None,
-            None,
-        ));
-        return;
-    }
-    visit_directory(project_root, relative_root, relative_root, kind, found);
-}
-
-fn visit_directory(
-    project_root: &Path,
-    source_root: &Path,
-    relative_directory: &Path,
-    kind: SourceKind,
-    found: &mut Discovered,
-) {
-    let absolute_directory = project_root.join(relative_directory);
-    let entries = match fs::read_dir(&absolute_directory) {
-        Ok(entries) => entries,
-        Err(error) => {
-            found.diagnostics.push(diagnostic(
-                1001,
-                format!(
-                    "Cannot read source directory '{}': {error}",
-                    portable(relative_directory)
-                ),
-                None,
-                None,
-            ));
-            return;
-        }
-    };
-    let mut entries = match entries.collect::<Result<Vec<_>, _>>() {
-        Ok(entries) => entries,
-        Err(error) => {
-            found.diagnostics.push(diagnostic(
-                1001,
-                format!(
-                    "Cannot enumerate source directory '{}': {error}",
-                    portable(relative_directory)
-                ),
-                None,
-                None,
-            ));
-            return;
-        }
-    };
-    entries.sort_by_key(fs::DirEntry::file_name);
-
-    for entry in entries {
-        let path = entry.path();
-        let Ok(relative) = path.strip_prefix(project_root) else {
-            continue;
-        };
-        let metadata = match fs::symlink_metadata(&path) {
-            Ok(metadata) => metadata,
-            Err(error) => {
-                found.diagnostics.push(diagnostic(
-                    1001,
-                    format!("Cannot inspect '{}': {error}", portable(relative)),
-                    None,
-                    None,
-                ));
-                continue;
-            }
-        };
-        if metadata.file_type().is_symlink() {
-            found.diagnostics.push(unsafe_symlink(relative));
-        } else if metadata.is_dir() {
-            visit_directory(project_root, source_root, relative, kind, found);
-        } else if metadata.is_file() {
-            inspect_source_file(project_root, source_root, relative, kind, found);
-        }
-    }
-}
-
 fn inspect_source_file(
     project_root: &Path,
+    project: &Dir,
     source_root: &Path,
-    relative: &Path,
+    file: &CapturedFile,
     kind: SourceKind,
+    owned_root: &std::sync::Arc<OwnedSourceRoot>,
     found: &mut Discovered,
 ) {
+    let relative = &file.relative;
     let Some(name) = relative.file_name().and_then(OsStr::to_str) else {
         found.diagnostics.push(diagnostic(
             1005,
@@ -536,6 +1069,7 @@ fn inspect_source_file(
                     source_path: portable(relative),
                     absolute_source_path: project_root.join(relative),
                     view_kind: ViewKind::Tac,
+                    bytes: file.bytes.clone(),
                 },
             )),
             Err(failure) => found.diagnostics.extend_from_slice(failure.diagnostics()),
@@ -551,12 +1085,18 @@ fn inspect_source_file(
             source_span(&path, 0, name.len()),
         ));
     } else if kind == SourceKind::Yon && name.starts_with("yon.") {
-        // Any yon.<extension> is a handler candidate. Whether it can run is
-        // decided by HandlerSource, which resolves built-in adapters, a
-        // .tachyonrc interpreter, or an executable file, and reports why not.
+        // Any yon.<extension> is a handler candidate. HandlerSource accepts
+        // only the framework-owned Yon language set and reports how an
+        // unsupported implementation can be reached through @Relay.
         match (
             route_for(relative, source_root),
-            HandlerSource::discover(project_root, relative),
+            HandlerSource::discover_snapshot(
+                project_root.to_path_buf(),
+                project,
+                relative,
+                file.bytes.clone(),
+                std::sync::Arc::clone(owned_root),
+            ),
         ) {
             (Ok(route), Ok(source)) => found.handlers.push((
                 route,
@@ -564,6 +1104,7 @@ fn inspect_source_file(
                     source_path: String::from(source.relative_path()),
                     absolute_source_path: source.absolute_path().to_path_buf(),
                     language: source.language(),
+                    source,
                 },
             )),
             (Err(failure), _) | (_, Err(failure)) => {
@@ -580,6 +1121,7 @@ fn inspect_source_file(
                     source_path: portable(relative),
                     absolute_source_path: project_root.join(relative),
                     kind: companion_kind,
+                    bytes: file.bytes.clone(),
                 },
             )),
             Err(failure) => found.diagnostics.extend_from_slice(failure.diagnostics()),
@@ -812,8 +1354,10 @@ mod tests {
     #![allow(clippy::expect_used)]
 
     use super::{ProjectDiscovery, ViewKind};
+    use crate::handler::HandlerSource;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    #[cfg(unix)]
+    use std::path::Path;
 
     #[test]
     fn routes_are_sorted_and_manifested() {
@@ -843,16 +1387,127 @@ mod tests {
     }
 
     #[test]
+    fn middleware_and_worker_schedules_share_one_ordered_owned_snapshot() {
+        let root = tempfile::tempdir().expect("project");
+        fs::create_dir_all(root.path().join("client/pages")).expect("pages");
+        fs::write(
+            root.path().join("client/pages/tac.html"),
+            "<main>Page</main>",
+        )
+        .expect("page");
+        fs::write(
+            root.path().join("middleware.py"),
+            "@Controller\nclass AccessController:\n    @staticmethod\n    def GET(request):\n        return {'status': 204, 'headers': {}, 'body': ''}\n",
+        )
+        .expect("middleware");
+        fs::create_dir_all(root.path().join("server/workers")).expect("workers");
+        for name in ["zeta.py", "alpha.py"] {
+            fs::write(
+                root.path().join("server/workers").join(name),
+                "@Controller\nclass JobController:\n    @staticmethod\n    def POST(request):\n        return {'status': 204, 'headers': {}, 'body': ''}\n",
+            )
+            .expect("worker");
+        }
+        fs::write(
+            root.path().join(".tachyonrc"),
+            r#"{"workers":{"server/workers/zeta.py":{"every_seconds":20},"server/workers/alpha.py":{"every_seconds":10}}}"#,
+        )
+        .expect("schedules");
+
+        let project = ProjectDiscovery::discover(root.path()).expect("discovery");
+        assert_eq!(
+            project
+                .workers()
+                .iter()
+                .map(|worker| (worker.relative(), worker.every_seconds()))
+                .collect::<Vec<_>>(),
+            [
+                ("server/workers/alpha.py", 10),
+                ("server/workers/zeta.py", 20),
+            ]
+        );
+        let execution_root = project.middleware().expect("middleware").execution_root();
+        assert!(
+            project
+                .workers()
+                .iter()
+                .all(|worker| worker.source().execution_root() == execution_root)
+        );
+        assert_eq!(
+            project
+                .invocation_sources()
+                .map(HandlerSource::relative_path)
+                .collect::<Vec<_>>(),
+            [
+                "middleware.py",
+                "server/workers/alpha.py",
+                "server/workers/zeta.py",
+            ]
+        );
+        assert_eq!(execution_root, project.snapshot_root());
+    }
+
+    #[test]
+    fn a_scheduled_worker_must_exist_in_the_captured_server_snapshot() {
+        let root = tempfile::tempdir().expect("project");
+        fs::create_dir_all(root.path().join("client/pages")).expect("pages");
+        fs::write(
+            root.path().join("client/pages/tac.html"),
+            "<main>Page</main>",
+        )
+        .expect("page");
+        fs::write(
+            root.path().join(".tachyonrc"),
+            r#"{"workers":{"server/workers/missing.py":{"every_seconds":10}}}"#,
+        )
+        .expect("schedule");
+
+        let failure = ProjectDiscovery::discover(root.path()).expect_err("missing worker");
+        let rendered = failure.to_string();
+        assert!(rendered.contains("TY2001"), "{rendered}");
+        assert!(rendered.contains("server/workers/missing.py"), "{rendered}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_root_middleware_is_rejected_without_following_it() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("project");
+        fs::create_dir_all(root.path().join("client/pages")).expect("pages");
+        fs::write(
+            root.path().join("client/pages/tac.html"),
+            "<main>Page</main>",
+        )
+        .expect("page");
+        let outside = tempfile::NamedTempFile::new().expect("outside");
+        fs::write(
+            outside.path(),
+            "@Controller\nclass PlantedController: pass\n",
+        )
+        .expect("outside source");
+        symlink(outside.path(), root.path().join("middleware.py")).expect("middleware link");
+
+        let failure = ProjectDiscovery::discover(root.path()).expect_err("symlink middleware");
+        let rendered = failure.to_string();
+        assert!(rendered.contains("TY1004"), "{rendered}");
+        assert!(rendered.contains("middleware.py"), "{rendered}");
+        assert!(
+            !rendered.contains("PlantedController"),
+            "link target was read"
+        );
+    }
+
+    #[test]
     fn a_source_root_blocked_by_a_file_is_found_on_every_platform() {
         let root = tempfile::tempdir().expect("workspace");
-        assert_eq!(
-            super::non_directory_ancestor(root.path(), Path::new("client/pages")),
-            None
-        );
         fs::write(root.path().join("client"), "not a directory").expect("blocking file");
-        assert_eq!(
-            super::non_directory_ancestor(root.path(), Path::new("client/pages")),
-            Some(PathBuf::from("client"))
+        let failure = ProjectDiscovery::discover(root.path()).expect_err("blocked root");
+        assert!(
+            failure.to_string().contains(
+                "Source root 'client/pages' is blocked by 'client', which is not a directory."
+            ),
+            "{failure}"
         );
     }
 
@@ -925,6 +1580,220 @@ mod tests {
         assert!(error.to_string().contains("TY1004"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn layer_discovery_rejects_external_and_cyclic_links_without_following_them() {
+        use std::os::unix::fs::symlink;
+
+        for layer in ["services", "repositories", "clients", "delegates"] {
+            let root = tempfile::tempdir().expect("workspace");
+            fs::create_dir_all(root.path().join("client/pages")).expect("page root");
+            fs::write(
+                root.path().join("client/pages/tac.html"),
+                "<main>Safe</main>",
+            )
+            .expect("page");
+            let outside = tempfile::tempdir().expect("outside");
+            fs::write(
+                outside.path().join("source.py"),
+                "@Service\nclass XService: pass",
+            )
+            .expect("outside source");
+            let layer_root = root.path().join("server").join(layer);
+            fs::create_dir_all(&layer_root).expect("layer root");
+            symlink(outside.path(), layer_root.join("external")).expect("external link");
+            symlink(&layer_root, layer_root.join("cycle")).expect("cyclic link");
+
+            let error = ProjectDiscovery::discover(root.path()).expect_err("unsafe layer links");
+            let rendered = error.to_string();
+            assert!(rendered.contains("TY1004"), "{layer}: {rendered}");
+            assert!(rendered.contains(&format!("server/{layer}/cycle")));
+            assert!(rendered.contains(&format!("server/{layer}/external")));
+            assert!(!rendered.contains("source.py"), "link target was traversed");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn opened_layer_directory_cannot_be_redirected_by_an_ambient_root_swap() {
+        use cap_std::ambient_authority;
+        use cap_std::fs::Dir;
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("workspace");
+        let services = root.path().join("server/services");
+        fs::create_dir_all(&services).expect("services");
+        fs::write(
+            services.join("owned.py"),
+            "@Repository\nclass OwnedRepository: pass",
+        )
+        .expect("owned source");
+        let project = Dir::open_ambient_dir(root.path(), ambient_authority()).expect("project");
+        let original = root.path().to_path_buf();
+        let opened = original.with_extension("opened");
+        fs::rename(&original, &opened).expect("move ambient project");
+        let outside = tempfile::tempdir().expect("outside");
+        fs::create_dir_all(outside.path().join("services")).expect("outside services");
+        fs::write(
+            outside.path().join("services/decoy.py"),
+            "@Service\nclass DecoyService: pass",
+        )
+        .expect("outside decoy");
+        symlink(outside.path(), &original).expect("ambient replacement");
+
+        let mut diagnostics = Vec::new();
+        let files =
+            super::capture_source_root(&project, Path::new("server/services"), &mut diagnostics);
+        super::check_captured_layers(
+            &[(std::path::PathBuf::from("server/services"), files)],
+            &mut diagnostics,
+        );
+        let rendered = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("owned.py"), "{rendered}");
+        assert!(
+            !rendered.contains("decoy.py"),
+            "ambient replacement was read"
+        );
+        drop(project);
+        fs::remove_file(&original).expect("remove replacement");
+        fs::rename(opened, original).expect("restore temporary root");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn opened_project_discovery_and_execution_ignore_planted_views_and_routes() {
+        use crate::{HandlerCancellation, HandlerSupervisor, HandlerSupervisorOptions};
+        use cap_std::ambient_authority;
+        use cap_std::fs::Dir;
+        use std::os::unix::fs::symlink;
+        use tachyon_contracts::{HandlerRequest, HttpMethod};
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let root = workspace.path().join("project");
+        fs::create_dir_all(root.join("client/pages/owned")).expect("owned page root");
+        fs::create_dir_all(root.join("server/routes/owned")).expect("owned route root");
+        fs::write(
+            root.join("client/pages/owned/tac.html"),
+            "<main>owned-view</main>",
+        )
+        .expect("owned view");
+        fs::write(
+            root.join("server/routes/owned/yon.py"),
+            "@Controller\nclass OwnedController:\n    @staticmethod\n    def GET(request):\n        return {'origin': 'owned-py'}\n",
+        )
+        .expect("owned Python handler");
+        fs::write(
+            root.join("server/routes/owned/yon.js"),
+            "@Controller\nexport class OwnedController {\n  static GET() { return { origin: 'owned-js' } }\n}\n",
+        )
+        .expect("owned JavaScript handler");
+        let canonical = fs::canonicalize(&root).expect("canonical root");
+        let opened =
+            Dir::open_ambient_dir(&canonical, ambient_authority()).expect("project handle");
+
+        let retained = workspace.path().join("retained-project");
+        fs::rename(&root, &retained).expect("move authored root after opening");
+        let planted = tempfile::tempdir().expect("planted root");
+        fs::create_dir_all(planted.path().join("client/pages/canary")).expect("canary page root");
+        fs::create_dir_all(planted.path().join("server/routes/canary")).expect("canary route root");
+        fs::write(
+            planted.path().join("client/pages/canary/tac.html"),
+            "<main>external-canary-view</main>",
+        )
+        .expect("canary view");
+        fs::write(
+            planted.path().join("server/routes/canary/yon.py"),
+            "@Controller\nclass CanaryController:\n    pass\n",
+        )
+        .expect("canary handler");
+        fs::create_dir_all(planted.path().join("server/routes/owned"))
+            .expect("planted owned route");
+        fs::write(
+            planted.path().join("server/routes/owned/yon.py"),
+            "@Controller\nclass OwnedController:\n    @staticmethod\n    def GET(request):\n        return {'origin': 'planted-py'}\n",
+        )
+        .expect("planted Python handler");
+        fs::write(
+            planted.path().join("server/routes/owned/yon.js"),
+            "@Controller\nexport class OwnedController {\n  static GET() { return { origin: 'planted-js' } }\n}\n",
+        )
+        .expect("planted JavaScript handler");
+        symlink(planted.path(), &root).expect("replace ambient project root");
+
+        let project = ProjectDiscovery::discover_opened(canonical, &opened).expect("snapshot");
+        let routes = project.route_graph().routes();
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].route(), "/owned");
+        assert_eq!(
+            routes[0].view_bytes(),
+            Some(b"<main>owned-view</main>".as_slice())
+        );
+        assert_eq!(routes[0].handlers().len(), 2);
+        let supervisor =
+            HandlerSupervisor::new(HandlerSupervisorOptions::default()).expect("supervisor");
+        for handler in routes[0].handlers() {
+            let request = HandlerRequest::route(
+                format!("project_snapshot_{}", handler.language().name()),
+                "/owned",
+                HttpMethod::Get,
+            );
+            let response = supervisor
+                .invoke(handler.source(), &request, &HandlerCancellation::default())
+                .await
+                .expect("owned snapshot response");
+            let body = response.body.expect("response body").data;
+            assert!(body.contains("owned-"), "{body}");
+            assert!(!body.contains("planted"), "{body}");
+        }
+        let rendered = format!("{project:?}");
+        assert!(!rendered.contains("canary"), "planted project was observed");
+    }
+
+    #[test]
+    fn layer_discovery_reports_unreadable_source_and_sorts_diagnostics() {
+        let root = tempfile::tempdir().expect("workspace");
+        fs::create_dir_all(root.path().join("client/pages")).expect("page root");
+        fs::write(
+            root.path().join("client/pages/tac.html"),
+            "<main>Safe</main>",
+        )
+        .expect("page");
+        let services = root.path().join("server/services");
+        fs::create_dir_all(&services).expect("services");
+        fs::write(
+            services.join("z.py"),
+            "@Repository\nclass ZRepository: pass",
+        )
+        .expect("z source");
+        fs::write(
+            services.join("a.py"),
+            "@Repository\nclass ARepository: pass",
+        )
+        .expect("a source");
+        for layer in ["services", "repositories", "clients", "delegates"] {
+            let directory = root.path().join("server").join(layer);
+            fs::create_dir_all(&directory).expect("layer directory");
+            fs::write(directory.join("invalid.py"), [0xff, 0xfe]).expect("invalid UTF-8 source");
+        }
+
+        let error = ProjectDiscovery::discover(root.path()).expect_err("invalid layer sources");
+        let rendered = error.to_string();
+        assert!(rendered.contains("TY1001"), "{rendered}");
+        for layer in ["services", "repositories", "clients", "delegates"] {
+            assert!(
+                rendered.contains(&format!("Cannot read source 'server/{layer}/invalid.py'")),
+                "{layer}: {rendered}"
+            );
+        }
+        let a = rendered.find("server/services/a.py").expect("a diagnostic");
+        let z = rendered.find("server/services/z.py").expect("z diagnostic");
+        assert!(a < z, "layer diagnostics are not path sorted: {rendered}");
+    }
+
     #[test]
     fn yon_html_and_unavailable_handlers_are_rejected() {
         let collision = tempfile::tempdir().expect("collision project");
@@ -947,14 +1816,13 @@ mod tests {
                 .contains("TY1008")
         );
 
-        // A yon.<extension> with no registered interpreter and no executable
-        // bit is now a handler candidate that cannot run, so it reports the
-        // handler diagnostic naming both remedies rather than TY1008.
+        // A yon.<extension> outside the eight owned languages is a migration
+        // error. Projects keep that program behind an explicit @Relay edge.
         let companion = tempfile::tempdir().expect("companion project");
         fs::create_dir_all(companion.path().join("server/routes")).expect("Yon root");
         fs::write(
             companion.path().join("server/routes/yon.rb"),
-            "class Handler; end",
+            "class LegacyHandler; end",
         )
         .expect("companion");
         assert!(
@@ -973,7 +1841,7 @@ mod tests {
         fs::create_dir_all(root.path().join("server/routes/products")).expect("handlers");
         fs::write(
             root.path().join("server/routes/api/yon.py"),
-            "class Handler: pass",
+            "@Controller\nclass ApiController: pass",
         )
         .expect("Python");
         fs::write(
@@ -983,12 +1851,12 @@ mod tests {
         .expect("view");
         fs::write(
             root.path().join("server/routes/products/yon.py"),
-            "class Handler: pass",
+            "@Controller\nclass ProductsController: pass",
         )
         .expect("Python");
         fs::write(
             root.path().join("server/routes/products/yon.js"),
-            "export class Handler {}",
+            "@Controller\nexport class ProductsController {}",
         )
         .expect("JavaScript");
 

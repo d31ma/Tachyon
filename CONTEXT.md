@@ -95,8 +95,9 @@ Engineering phases 0–7 are implemented. The current Rust data path:
 1. discovers static and dynamic `tac.html` routes and `yon.*` REST handlers;
 2. parses bounded HTML, expressions, control tags, components, slots, events,
    styles, and browser component mount schedules;
-3. supervises JavaScript, Python, and registered executable Yon handlers only
-   when an HTTP request or explicit handler invocation reaches them;
+3. validates mandatory layer stereotypes and supervises JavaScript, TypeScript,
+   Python, Java, C#, Kotlin, PHP, and Rust Yon handlers only when an HTTP
+   request, middleware phase, worker tick, or explicit invocation reaches them;
 4. emits deterministic Tac client render plans, View IR, source maps, client
    modules, shared assets, a service worker, and Route Manifest v1;
 5. dispatches exact and dynamic HTTP routes, before/after middleware, workers,

@@ -20,16 +20,12 @@ const samples = {
     })
   }
 }`,
-  yon: `// server/routes/posts/yon.js  ->  /posts
-export class Handler {
-  static GET() {
-    return { posts: [] }
-  }
-
-  static async POST(request) {
-    return { created: request.body }
-  }
-}`,
+  yon: `# server/routes/posts/yon.py  ->  /posts
+@Controller
+class PostsController:
+  @staticmethod
+  def GET(request):
+    return {"posts": []}`,
   polyglot: `// client/components/counter/tachyon-wasm.swift
 var count: Int = 0
 

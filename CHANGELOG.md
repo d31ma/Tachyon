@@ -8,6 +8,84 @@ independent major versions.
 
 ## [Unreleased]
 
+### Added
+
+- Added mandatory `@Controller`, `@Service`, `@Repository`, `@Client`, and
+  `@Delegate` layer contracts, supervised `@Relay` migration for non-Yon
+  programs, and direct multi-frame `@Stream` responses for JavaScript,
+  TypeScript, Python, PHP, Kotlin, and C#.
+- Added a structured signal lifecycle for `serve`, `preview`, and
+  `bundle --watch`. Signal handlers are registered before readiness;
+  registration evidence is emitted as privacy-safe JSON lines on stderr and is
+  explicitly distinct from application readiness on stdout. The first signal
+  requests graceful shutdown: the development server bounds its owned internal
+  tasks, while preview may await cooperative connection drain and bundle watch
+  may finish its synchronous fingerprint pass or current bounded build.
+  Supervisors enforce their own grace period; a second signal forces exit with
+  `130` for Unix `SIGINT` or Windows CTRL-C, `143` for Unix `SIGTERM`, and `131`
+  for Windows CTRL-BREAK.
+
+### Changed
+
+- Development topic subscriptions now share one bounded incremental tailer per
+  topic with admission limits, replay cursors, slow-consumer eviction, and
+  shutdown ownership. Compiler, native, WASM, post-bundle, and doctor tool
+  processes use one deadline/output-capped process-tree supervisor.
+
+- Yon handlers, middleware, and workers now use the framework-owned JavaScript,
+  TypeScript, Python, Java, C#, Kotlin, PHP, or Rust runtime. The legacy
+  `Handler` fallback, `.tachyonrc.interpreters`, shebang handlers, and executable
+  handler discovery are removed. `.tachyonrc.workers` remains supported.
+- JavaScript and Python runtime overrides are now
+  `YON_JAVASCRIPT_RUNTIME` and `YON_PYTHON_RUNTIME`.
+
+### Fixed
+
+- Preserve lexical loop scope through nested iterables, text, dynamic
+  attributes, conditions, component props, and event arguments. The nearest
+  repeated loop name shadows its parent only within that loop, siblings restore
+  the outer binding, and a component owns the evaluated props it receives.
+- Probe every discovered Yon runtime requirement before development-server
+  output preparation or socket binding. Missing executables now report the
+  distinct `TY2112` diagnostic both at startup and across the invocation spawn
+  race; `ty doctor` uses the same bounded probes, deduplicates JavaScript /
+  TypeScript and Java / Kotlin runtime needs, and never prints configured
+  executable paths. C# readiness now builds a framework-owned minimal project
+  against the installed SDK rather than accepting a runtime-only `dotnet`.
+- Drained and bounded compiled-language relay stdout and stderr concurrently,
+  redacted delegate failures, and applied deadlines plus descendant cleanup to
+  relays, streaming timeouts, and subscriber disconnects.
+- End failed streams with one sanitized SSE error event carrying the request ID,
+  including failures before the first value and after partial delivery.
+- Preserve every admitted event on successful finite streams and apply
+  JavaScript stdout backpressure before requesting the next generator value.
+- Reject symlinked or unreadable non-route layer sources deterministically, and
+  ignore stereotype decoys inside comments and language-specific strings.
+- Bind one discovery pass to a retained, non-following project capability;
+  route graphs, layer checks, Tac pages/components/shared assets, build/native
+  configuration, and Yon execution now consume an owned bounded snapshot
+  rather than reopening ambient authored paths. Standalone handlers snapshot
+  the complete permitted `server/**` dependency boundary before invocation.
+- Bind the development server from that same discovery object: its initial web
+  build, route dispatch, selected root middleware, `.tachyonrc` schedules, and
+  scheduled-worker sources cannot be mixed across ambient root replacements.
+- Make the development server own its scheduled-worker and source-watcher
+  tasks. Graceful shutdown cancels and boundedly settles them, while dropping a
+  merely bound server starts no background work and cannot detach a task.
+- Make every streaming-handler bridge, hot-update stream, and topic stream part
+  of that same owned lifetime. Shutdown cancels response producers before
+  Axum's graceful wait and reserves the final slice of one bounded deadline for
+  abort-and-join settlement, so an infinite SSE client cannot retain the server
+  or a handler child. Completed producer tasks are reaped continuously rather
+  than accumulating until shutdown.
+- Reject Firecracker execution of TypeScript and prepared direct-language
+  artifacts before driver spawn until a bounded artifact-transfer contract
+  exists; JavaScript and Python remain supported by that transport.
+- Confined the project-local `.tachyon/handlers` cache to non-following
+  directory capabilities, identity-checked cleanup, atomic publication, and
+  private runtime copies. The cache now recovers abandoned locks and enforces a
+  256-entry / 512 MiB quota without confusing it with `TAC_CACHE_DIR`.
+
 ## [26.33.02] - 2026-08-11
 
 ### Added

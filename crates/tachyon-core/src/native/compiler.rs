@@ -8,7 +8,7 @@ use super::planner::{NativePlanner, NativeRouteIndex, NativeRouteIndexEntry, Pla
 use super::windows::WindowsHostGenerator;
 use crate::compiler::{publish, resolve_output_path};
 use crate::failure::diagnostic;
-use crate::{BuildOptions, Failure, ProjectDiscovery, WebCompiler};
+use crate::{BuildOptions, Failure, Project, ProjectDiscovery, WebCompiler};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
@@ -242,6 +242,19 @@ impl NativeCompiler {
         project_root: impl AsRef<Path>,
         options: &NativeBuildOptions,
     ) -> Result<NativeBuildResult, Failure> {
+        let project = ProjectDiscovery::discover(project_root)?;
+        Self::build_project(&project, options)
+    }
+
+    /// Builds a native application from one immutable discovery snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns deterministic planning, generation, or publication diagnostics.
+    pub fn build_project(
+        project: &Project,
+        options: &NativeBuildOptions,
+    ) -> Result<NativeBuildResult, Failure> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -253,7 +266,7 @@ impl NativeCompiler {
                     None,
                 ))
             })?;
-        runtime.block_on(Self::build_async(project_root, options))
+        runtime.block_on(Self::build_project_async(project, options))
     }
 
     /// Builds and atomically publishes a native application.
@@ -267,7 +280,20 @@ impl NativeCompiler {
         options: &NativeBuildOptions,
     ) -> Result<NativeBuildResult, Failure> {
         let project = ProjectDiscovery::discover(project_root)?;
-        let application = NativeApplication::discover(project.root())?;
+        Self::build_project_async(&project, options).await
+    }
+
+    /// Asynchronously builds a native application from one immutable discovery snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns deterministic planning, generation, or publication diagnostics.
+    pub async fn build_project_async(
+        project: &Project,
+        options: &NativeBuildOptions,
+    ) -> Result<NativeBuildResult, Failure> {
+        let application =
+            NativeApplication::discover_from_snapshot(project.snapshot_root(), project.root())?;
         let base_output = resolve_output_path(project.root(), &options.output_directory)?;
         if !project
             .route_graph()
@@ -288,7 +314,7 @@ impl NativeCompiler {
             )));
         }
 
-        let (temporary_web, routes) = resolve_routes(&project, options.target).await?;
+        let (temporary_web, routes) = resolve_routes(project, options.target).await?;
         let web_surface_count = routes
             .iter()
             .map(|route| route.web_surface_count)
@@ -593,27 +619,15 @@ async fn resolve_routes(
     project: &crate::Project,
     target: NativeTarget,
 ) -> Result<(tempfile::TempDir, Vec<PlannedNativeRoute>), Failure> {
-    let components = crate::template::ComponentRegistry::discover(project.root())?;
+    let components = crate::template::ComponentRegistry::discover(project.snapshot_root())?;
     let temporary_web = tempfile::Builder::new()
         .prefix(".tachyon-native-web-")
-        .tempdir_in(project.root())
-        .map_err(|error| native_io_failure(project.root(), &error))?;
-    let temporary_name = temporary_web
-        .path()
-        .file_name()
-        .map(PathBuf::from)
-        .ok_or_else(|| {
-            Failure::one(diagnostic(
-                1605,
-                "Cannot allocate the resolved web bundle.",
-                None,
-                None,
-            ))
-        })?;
-    WebCompiler::build_async(
-        project.root(),
+        .tempdir()
+        .map_err(|error| native_io_failure(project.snapshot_root(), &error))?;
+    WebCompiler::build_project_async(
+        project,
         &BuildOptions {
-            output_directory: temporary_name,
+            output_directory: temporary_web.path().to_path_buf(),
             incremental: false,
         },
     )
@@ -634,10 +648,8 @@ async fn resolve_routes(
         // assets; it is never treated as server-rendered view structure.
         let source_path = route.source_path().unwrap_or("client/pages/tac.html");
         let source = route
-            .absolute_source_path()
-            .map(fs::read_to_string)
-            .transpose()
-            .map_err(|error| native_io_failure(project.root(), &error))?
+            .view_bytes()
+            .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
             .unwrap_or_default();
         let (source, _) = crate::compiler::strip_page_state_scripts(&source, source_path)?;
         routes.push(NativePlanner::plan_with_components_and_state(
@@ -1168,7 +1180,11 @@ mod tests {
         NativeBuildOptions, NativeCompiler, client_route_state, inject_before_body, linked_styles,
         route_requires_controller, source_revision,
     };
+    #[cfg(unix)]
+    use crate::ProjectDiscovery;
     use std::fs;
+    #[cfg(unix)]
+    use tachyon_contracts::NativeTarget;
 
     #[test]
     fn controller_script_injection_preserves_documents_and_fragments() {
@@ -1312,5 +1328,121 @@ mod tests {
         let error = NativeCompiler::build(root.path(), &NativeBuildOptions::default())
             .expect_err("missing entry");
         assert!(error.to_string().contains("TY1601"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn public_native_build_from_project_reuses_the_owned_web_and_config_snapshot() {
+        use std::os::unix::fs::symlink;
+
+        if std::process::Command::new("node")
+            .arg("--version")
+            .output()
+            .is_err()
+        {
+            return;
+        }
+        let workspace = tempfile::tempdir().expect("workspace");
+        let authored = workspace.path().join("project");
+        let write = |root: &std::path::Path, relative: &str, contents: &str| {
+            let path = root.join(relative);
+            fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+            fs::write(path, contents).expect("source");
+        };
+        write(
+            &authored,
+            "client/pages/tac.html",
+            r#"<main><owned-card hydrate="load" /></main>"#,
+        );
+        write(
+            &authored,
+            "client/components/owned/card/tac.html",
+            "<section>owned native component</section>",
+        );
+        write(
+            &authored,
+            "client/components/owned/card/tac.js",
+            "export default class OwnedCard { static origin = 'owned-native-script' }\n",
+        );
+        write(&authored, "client/shared/origin.txt", "owned-native-shared");
+        write(&authored, "package.json", r#"{"type":"module"}"#);
+        write(
+            &authored,
+            "tac.config.js",
+            "import { writeFile } from 'node:fs/promises'\nexport async function postBundle({ targetRoots }) { await writeFile(`${targetRoots.web}/hook.txt`, 'owned-native-hook') }\n",
+        );
+        write(
+            &authored,
+            "tachyon.json",
+            r#"{"application":{"name":"Owned Snapshot","id":"dev.tachyon.owned","version":"1.2.3","entry_route":"/"}}"#,
+        );
+        let project = ProjectDiscovery::discover(&authored).expect("owned snapshot");
+
+        let retained = workspace.path().join("retained");
+        fs::rename(&authored, &retained).expect("move project");
+        let planted = tempfile::tempdir().expect("planted");
+        write(
+            planted.path(),
+            "client/pages/tac.html",
+            "<main>planted native page</main>",
+        );
+        write(
+            planted.path(),
+            "client/components/owned/card/tac.html",
+            "<section>planted native component</section>",
+        );
+        write(
+            planted.path(),
+            "client/components/owned/card/tac.js",
+            "export default class Planted {}\n",
+        );
+        write(
+            planted.path(),
+            "client/shared/origin.txt",
+            "planted-native-shared",
+        );
+        write(planted.path(), "package.json", r#"{"type":"module"}"#);
+        write(
+            planted.path(),
+            "tac.config.js",
+            "import { writeFile } from 'node:fs/promises'\nexport async function postBundle({ targetRoots }) { await writeFile(`${targetRoots.web}/hook.txt`, 'planted-native-hook') }\n",
+        );
+        write(
+            planted.path(),
+            "tachyon.json",
+            r#"{"application":{"name":"Planted Canary","id":"dev.tachyon.planted","version":"9.9.9","entry_route":"/"}}"#,
+        );
+        symlink(planted.path(), &authored).expect("ambient replacement");
+
+        let result = NativeCompiler::build_project(
+            &project,
+            &NativeBuildOptions {
+                output_directory: workspace.path().join("native-output"),
+                target: NativeTarget::Macos,
+                package: false,
+            },
+        )
+        .expect("snapshot native build");
+        let output = result.output_directory();
+        let web = output.join("web");
+        let index = fs::read_to_string(web.join("index.html")).expect("web index");
+        let component = fs::read_to_string(web.join(".tachyon/components/owned-card.js"))
+            .expect("component script");
+        let plist = fs::read_to_string(output.join("OwnedSnapshot.app/Contents/Info.plist"))
+            .expect("native config output");
+        assert!(index.contains("owned native component"), "{index}");
+        assert!(!index.contains("planted"), "{index}");
+        assert!(component.contains("owned-native-script"), "{component}");
+        assert_eq!(
+            fs::read_to_string(web.join("shared/origin.txt")).expect("shared"),
+            "owned-native-shared"
+        );
+        assert_eq!(
+            fs::read_to_string(web.join("hook.txt")).expect("hook"),
+            "owned-native-hook"
+        );
+        assert!(plist.contains("Owned Snapshot"), "{plist}");
+        assert!(!plist.contains("Planted Canary"), "{plist}");
     }
 }

@@ -122,9 +122,17 @@ page.on('pageerror', (error) => errors.push(String(error)));
 try {
   await page.goto(`${origin}/`, { waitUntil: 'networkidle' });
   // A .NET companion boots a runtime before it can answer, which is slower than
-  // instantiating a module.
+  // instantiating a module. Wait for the authored panels as well as the
+  // expression placeholders to settle: checking only for an absent placeholder
+  // can win the race before the client runtime has rendered its first node.
   await page
-    .waitForFunction(() => !document.querySelector('tachyon-expr'), null, { timeout: 60000 })
+    .waitForFunction(
+      (components) =>
+        components.every((component) => document.querySelector(`#${component}-count`))
+        && !document.querySelector('tachyon-expr'),
+      testing.map(({ component }) => component),
+      { timeout: 60000 },
+    )
     .catch(() => {
       failed += 1;
       console.error(`  FAIL   a component never resolved${errors.length ? `: ${errors[0]}` : ''}`);

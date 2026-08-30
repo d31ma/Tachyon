@@ -1,5 +1,7 @@
+use super::readiness::YonLanguage;
 use crate::Failure;
 use crate::failure::diagnostic;
+use crate::handler::HandlerLanguage;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -259,11 +261,66 @@ pub(crate) fn apply_backend_environment(
     }
 }
 
+pub(crate) fn validate_backend_language(
+    policy: &YonIsolationPolicy,
+    language: HandlerLanguage,
+) -> Result<(), Failure> {
+    if matches!(policy, YonIsolationPolicy::Firecracker(_))
+        && !matches!(
+            language,
+            HandlerLanguage::JavaScript | HandlerLanguage::Python
+        )
+    {
+        return Err(Failure::one(diagnostic(
+            2010,
+            format!(
+                "Firecracker isolation cannot invoke a prepared {} handler.",
+                language.name()
+            ),
+            Some(String::from(
+                "The current Firecracker driver contract transfers only project-contained \
+                 JavaScript and Python source. Use process isolation for TypeScript, Java, PHP, \
+                 Kotlin, C#, or Rust until an artifact-transfer contract is implemented.",
+            )),
+            None,
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_backend_yon_language(
+    policy: &YonIsolationPolicy,
+    language: YonLanguage,
+) -> Result<(), Failure> {
+    if matches!(policy, YonIsolationPolicy::Firecracker(_))
+        && !matches!(language, YonLanguage::JavaScript | YonLanguage::Python)
+    {
+        return Err(Failure::one(diagnostic(
+            2010,
+            format!(
+                "Firecracker isolation cannot invoke a prepared {} handler.",
+                language.family()
+            ),
+            Some(String::from(
+                "The current Firecracker driver contract transfers only project-contained \
+                 JavaScript and Python source. Use process isolation for TypeScript, Java, PHP, \
+                 Kotlin, C#, or Rust until an artifact-transfer contract is implemented.",
+            )),
+            None,
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{YonIsolationPolicy, configuration_failure};
+    use super::{
+        YonIsolationPolicy, configuration_failure, validate_backend_language,
+        validate_backend_yon_language,
+    };
+    use crate::handler::{HandlerLanguage, YonLanguage};
     use std::collections::BTreeMap;
     use std::ffi::OsString;
     #[cfg(unix)]
@@ -318,6 +375,44 @@ mod tests {
                 .to_string()
                 .contains("TY2010")
         );
+    }
+
+    #[test]
+    fn firecracker_support_is_limited_to_source_languages() {
+        let process = YonIsolationPolicy::Process;
+        assert!(validate_backend_language(&process, HandlerLanguage::Direct).is_ok());
+
+        // The driver value is irrelevant to this pure contract check.
+        let firecracker = YonIsolationPolicy::Firecracker(super::FirecrackerIsolation {
+            driver: std::path::PathBuf::from("driver"),
+            pool: String::from("default"),
+            vcpus: 1,
+            memory_mib: 256,
+        });
+        for language in [HandlerLanguage::JavaScript, HandlerLanguage::Python] {
+            assert!(validate_backend_language(&firecracker, language).is_ok());
+            assert!(matches!(language.adapter(), "javascript.v1" | "python.v1"));
+        }
+        for language in [HandlerLanguage::TypeScript, HandlerLanguage::Direct] {
+            let failure = validate_backend_language(&firecracker, language)
+                .expect_err("prepared artifact must be refused");
+            assert!(failure.to_string().contains("TY2010"), "{failure}");
+        }
+        for language in [YonLanguage::JavaScript, YonLanguage::Python] {
+            assert!(validate_backend_yon_language(&firecracker, language).is_ok());
+        }
+        for language in [
+            YonLanguage::TypeScript,
+            YonLanguage::Java,
+            YonLanguage::Php,
+            YonLanguage::Kotlin,
+            YonLanguage::CSharp,
+            YonLanguage::Rust,
+        ] {
+            let failure = validate_backend_yon_language(&firecracker, language)
+                .expect_err("unsupported deployment language must fail readiness");
+            assert!(failure.to_string().contains("TY2010"), "{failure}");
+        }
     }
 
     #[cfg(unix)]
@@ -387,12 +482,15 @@ mod tests {
         let directory = tempfile::tempdir().expect("temporary directory");
         let route = directory.path().join("server/routes/example");
         fs::create_dir_all(&route).expect("route directory");
-        let handler = route.join("yon.sh");
-        fs::write(&handler, "#!/bin/sh\nexit 0\n").expect("source");
-        fs::set_permissions(&handler, fs::Permissions::from_mode(0o700)).expect("permissions");
+        let handler = route.join("yon.py");
+        fs::write(
+            &handler,
+            "@Controller\nclass ExampleController:\n    pass\n",
+        )
+        .expect("source");
         let source = HandlerSource::discover(
             directory.path(),
-            std::path::Path::new("server/routes/example/yon.sh"),
+            std::path::Path::new("server/routes/example/yon.py"),
         )
         .expect("handler source");
         let request = HandlerRequest::route(
@@ -422,7 +520,7 @@ mod tests {
         let script = format!(
             "#!/bin/sh\n\
              case \"$*\" in\n\
-               *\"--protocol handler-v1\"*\"--pool tenant_a\"*\"--vcpus 2\"*\"--memory-mib 512\"*\"--egress deny\"*\"--source server/routes/example/yon.sh\"*\"--adapter direct.v1\"*) ;;\n\
+               *\"--protocol handler-v1\"*\"--pool tenant_a\"*\"--vcpus 2\"*\"--memory-mib 512\"*\"--egress deny\"*\"--source server/routes/example/yon.py\"*\"--adapter python.v1\"*) ;;\n\
                *) echo 'invalid driver arguments' >&2; exit 9 ;;\n\
              esac\n\
              [ \"$YON_ISOLATION\" = firecracker ] || exit 10\n\
@@ -455,5 +553,70 @@ mod tests {
             .expect("driver response");
         assert_eq!(received.status, 200);
         assert_eq!(received.body.expect("body").data, "isolated");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn firecracker_refuses_prepared_sources_without_starting_the_driver() {
+        use crate::{
+            HandlerCancellation, HandlerSource, HandlerSupervisor, HandlerSupervisorOptions,
+        };
+        use std::os::unix::fs::PermissionsExt;
+        use tachyon_contracts::{HandlerRequest, HttpMethod};
+
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let marker = directory.path().join("driver-invoked");
+        let driver = directory.path().join("firecracker-driver");
+        fs::write(
+            &driver,
+            format!(
+                "#!/bin/sh\nprintf invoked > '{}'\nexit 99\n",
+                marker.display()
+            ),
+        )
+        .expect("driver");
+        fs::set_permissions(&driver, fs::Permissions::from_mode(0o700)).expect("permissions");
+        let path = driver.to_string_lossy();
+        let isolation = parse(&[
+            ("YON_ISOLATION", "firecracker"),
+            ("YON_FIRECRACKER_DRIVER", &path),
+        ])
+        .expect("isolation policy");
+        let supervisor = HandlerSupervisor::new(HandlerSupervisorOptions {
+            isolation,
+            ..HandlerSupervisorOptions::default()
+        })
+        .expect("supervisor");
+
+        let cases = [
+            (
+                "server/routes/typescript/yon.ts",
+                "@Controller\nexport class TypescriptController {}\n",
+            ),
+            (
+                "server/routes/php/yon.php",
+                "<?php\n#[Controller]\nclass PhpController {}\n",
+            ),
+        ];
+        for (relative, contents) in cases {
+            let source_path = directory.path().join(relative);
+            fs::create_dir_all(source_path.parent().expect("route parent")).expect("route");
+            fs::write(&source_path, contents).expect("source");
+            let source = HandlerSource::discover(directory.path(), relative).expect("discovery");
+            let request = HandlerRequest::route(
+                format!("firecracker_refusal_{}", source.language().name()),
+                "/unsupported",
+                HttpMethod::Get,
+            );
+            let failure = supervisor
+                .invoke(&source, &request, &HandlerCancellation::default())
+                .await
+                .expect_err("prepared source must be refused");
+            assert!(failure.to_string().contains("TY2010"), "{failure}");
+            assert!(
+                !marker.exists(),
+                "Firecracker driver was invoked for {relative}"
+            );
+        }
     }
 }

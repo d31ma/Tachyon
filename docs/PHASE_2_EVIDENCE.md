@@ -1,5 +1,10 @@
 # Phase 2 Yon Handler Boundary Evidence
 
+> Historical evidence: these counts and claims describe the original
+> JavaScript/Python Phase 2 gate. The current eight-language, mandatory-layer,
+> relay, and streaming contract is defined by ADR 0017 and its newer workspace
+> tests.
+
 ## Status
 
 Phase 2 is complete as a development milestone on 2026-07-26. It is not a
@@ -17,6 +22,14 @@ or stable diagnostic.
 Handler-only routes and handlers colocated with a Tac view are represented
 deterministically in Route Manifest v1. Handler values are HTTP responses and
 are never merged into a build-time view context.
+
+The current eight-language successor adds a bounded, deduplicated readiness
+probe before development-server output work or binding. Runtime absence is
+`TY2112` during both preflight and the later spawn race. Doctor reports and
+structured server events use only logical runtime labels; configured paths and
+operating-system errors are excluded. C# readiness performs a bounded build of
+framework-owned minimal source, so `Microsoft.NETCore.App` without an SDK is
+reported incomplete before the server binds.
 
 ## Toolchain and Platforms
 

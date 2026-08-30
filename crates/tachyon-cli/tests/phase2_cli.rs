@@ -30,7 +30,8 @@ fn compiled_binary_invokes_javascript_and_python_through_the_shared_contract() {
     write(
         &project.join("server/routes/javascript/yon.js"),
         r"
-export class Handler {
+@Controller
+export class JavascriptController {
   static async POST(request) {
     return {
       route: request.route,
@@ -46,7 +47,8 @@ export class Handler {
     write(
         &project.join("server/routes/python/yon.py"),
         r#"
-class Handler:
+@Controller
+class PythonController:
     @staticmethod
     async def POST(request):
         return {
@@ -114,7 +116,7 @@ fn handler_error_responses_and_supervisor_diagnostics_remain_distinct() {
     let project = tempfile::tempdir().expect("project");
     write(
         &project.path().join("server/routes/yon.js"),
-        "export class Handler { static GET() { return { ok: true } } }",
+        "@Controller\nexport class RootController { static GET() { return { ok: true } } }",
     );
 
     let method = run(ty()
@@ -128,13 +130,33 @@ fn handler_error_responses_and_supervisor_diagnostics_remain_distinct() {
     assert_eq!(response["status"], 405);
     assert_eq!(response["error"]["code"], "TY2202");
 
+    let runtime_canary = "tachyon-runtime-does-not-exist-secret-canary";
     let runtime = run(ty()
         .args(["handler", "invoke", "server/routes/yon.js"])
         .arg("--project")
         .arg(project.path())
-        .args(["--javascript-runtime", "tachyon-runtime-does-not-exist"]));
+        .args(["--javascript-runtime", runtime_canary]));
     assert!(!runtime.status.success());
-    assert!(stderr(&runtime).contains("error[TY2101]"));
+    let human = stderr(&runtime);
+    assert!(human.contains("error[TY2112]"), "{human}");
+    assert!(!human.contains(runtime_canary), "{human}");
+
+    let runtime_json = run(ty()
+        .args([
+            "--diagnostic-format",
+            "json",
+            "handler",
+            "invoke",
+            "server/routes/yon.js",
+        ])
+        .arg("--project")
+        .arg(project.path())
+        .args(["--javascript-runtime", runtime_canary]));
+    assert!(!runtime_json.status.success());
+    let runtime_report: serde_json::Value =
+        serde_json::from_slice(&runtime_json.stderr).expect("runtime diagnostic JSON");
+    assert_eq!(runtime_report["diagnostics"][0]["code"], "TY2112");
+    assert!(!stderr(&runtime_json).contains(runtime_canary));
 
     let machine = run(ty()
         .args([
@@ -158,11 +180,11 @@ fn handler_only_builds_emit_deterministic_api_manifest_entries() {
     let project = tempfile::tempdir().expect("project");
     write(
         &project.path().join("server/routes/products/yon.py"),
-        "class Handler: pass",
+        "@Controller\nclass ProductsController: pass",
     );
     write(
         &project.path().join("server/routes/products/yon.js"),
-        "export class Handler {}",
+        "@Controller\nexport class ProductsController {}",
     );
 
     let first = run(ty().arg("build").arg(project.path()));
@@ -197,7 +219,8 @@ fn compiled_binary_enforces_deadline_and_environment_name_policy() {
     write(
         &project.path().join("server/routes/yon.js"),
         r"
-export class Handler {
+@Controller
+export class RootController {
   static async GET() {
     await new Promise((resolve) => setTimeout(resolve, 5000))
     return { tooLate: true }
@@ -236,7 +259,7 @@ fn compiled_binary_fails_closed_on_partial_environment_isolation() {
     let project = tempfile::tempdir().expect("project");
     write(
         &project.path().join("server/routes/yon.js"),
-        "export class Handler { static GET() { return { ok: true } } }",
+        "@Controller\nexport class RootController { static GET() { return { ok: true } } }",
     );
     let output = run(ty()
         .args(["handler", "invoke", "server/routes/yon.js"])
@@ -259,7 +282,8 @@ fn every_protocol_http_method_reaches_the_compiled_handler_command() {
     write(
         &project.path().join("server/routes/yon.js"),
         r"
-export class Handler {
+@Controller
+export class RootController {
   static DELETE(request) { return request.method }
   static GET(request) { return request.method }
   static HEAD(request) { return request.method }

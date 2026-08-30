@@ -1,5 +1,14 @@
 # Tachyon Rust Rewrite Threat Model
 
+Toolchains and project hooks are untrusted child process trees. Tachyon bounds
+their wall time and retained output and terminates the complete POSIX process
+group or Windows Job Object on completion, cancellation, or timeout. Topic log
+subscriptions accept only bounded slugs, reject symlink/non-regular or
+identity-raced inputs, cap cumulative reads at 16 MiB, and evict lagging or
+over-capacity subscribers without exposing filesystem details. Topic errors
+use a named `topic-error` SSE event with canonical sanitized JSON; they never
+reuse the handler-stream `error`/`TY2107` contract or include raw log content.
+
 ## Scope
 
 This model covers project discovery, HTML and companion parsing, compiler
@@ -59,7 +68,7 @@ trust boundaries, abuse cases, and validation evidence.
 | SSRF and unrestricted egress | deny-by-default network capability, normalized origin allowlists, DNS/redirect revalidation, response limits |
 | Native bridge escalation | explicit capability manifest, per-call validation, local content only, remote bridge always disabled |
 | WebSurface origin confusion | isolated storage/origin, local bundle identity, no ambient navigation privilege |
-| Cache poisoning | versioned cache keys include compiler, contract, target, config, and source digests; verified atomic writes |
+| Cache poisoning or path replacement | versioned cache keys include compiler, contract, target, config, and source digests; non-following directory capabilities; identity-checked cleanup; verified atomic writes; private runtime copies |
 | Malicious archive | bounded extraction, path and symlink validation, explicit manifest, digest verification |
 | Supply-chain compromise | locked dependencies, advisory/license/source policy, pinned actions, minimal release permissions, SBOM, provenance, signatures |
 | Compromised release job | protected environments, tag/version verification, native builders, attestations, post-upload verification |
@@ -88,8 +97,30 @@ trust boundaries, abuse cases, and validation evidence.
 
 ## Phase 1 Evidence
 
-- Discovery rejects symlinks, path escapes, invalid route shapes, collisions,
-  dynamic segments, and later-phase companions.
+- Discovery opens one project capability, rejects symlinks at every traversed
+  component, and builds routes and layer diagnostics from bytes read through
+  that retained handle. Ambient root replacements cannot redirect views,
+  routes, components, shared assets, build/native configuration, or any of the
+  five layer roots during the pass. Web and native compilers consume the same
+  owned snapshot; native compilation does not perform a second discovery. The
+  development server likewise consumes one Project for its initial build,
+  routes, selected root middleware, captured worker schedules, and worker
+  HandlerSources. A root swap cannot mix those startup inputs. The server owns
+  the watcher and worker task set, cancels them with HTTP shutdown, boundedly
+  awaits settlement, and aborts any remainder on drop; no worker or rebuild
+  task is detached. Handler-stream bridges, hot-update SSE, and topic SSE are
+  tracked under the same cancellation token. Cancellation precedes Axum's
+  graceful connection wait and one global deadline bounds HTTP and task
+  settlement. Its final slice is reserved for aborting and join-draining both
+  task registries, preventing an infinite response from retaining a handler
+  child or blocking watcher/worker cleanup. Completed producer records are
+periodically reaped before shutdown, bounding registry retention by live
+work rather than historical request count. Worker schedule changes take effect on
+server restart, not during a web-only hot rebuild.
+An infinite handler stream is signalled and then fail-fast dropped through its
+supervised process-group guard; shutdown never polls cancellation-uncooperative
+producer work again. Task-registry draining yields at a bounded cadence so an
+immediately-ready backlog cannot starve the hard deadline.
 - HTML input is limited to 1 MiB, UTF-8, and NUL-free content; scripts, inline
   event handlers, compiler control tags, and unresolved bare components fail
   closed.
@@ -98,24 +129,54 @@ trust boundaries, abuse cases, and validation evidence.
   output.
 - The development server builds before binding, defaults to loopback, requires
   explicit opt-in for non-loopback addresses, serves only generated files, and
-  emits CSP, frame, MIME-sniffing, referrer, and cache controls.
+  emits CSP, frame, MIME-sniffing, referrer, and cache controls. Each watched
+  rebuild performs a fresh discovery and passes that Project to the compiler;
+  shutdown cancels and settles the owned watcher before returning.
+- Before the build or `--no-bundle` output check and before socket binding, the
+  development server runs deadline- and output-bounded synthetic capability
+  probes for the deduplicated runtime requirements of routes, root middleware,
+  and configured workers. Static-only projects probe nothing. Firecracker
+  readiness fails closed for unsupported discovered languages or an invalid
+  driver; it does not claim that a remote microVM pool is healthy. The C# probe
+  builds framework-owned source in a private temporary project with no package
+  sources, proving SDK/build capability instead of trusting a runtime list.
 - Real-binary tests cover missing routes and a raw traversal request in
   addition to successful GET and HEAD behavior.
 
 ## Phase 2 Evidence
 
-- Handler sources are project-contained, regular, non-symlinked
-  `server/routes/**/yon.js` or `yon.py` files with UTF-8, NUL, and 1 MiB
-  validation.
+- Handler sources are project-contained, regular, non-symlinked files in the
+  eight owned Yon languages, with UTF-8, NUL, and 1 MiB validation. Sources in
+  the five server layer roots must declare the matching stereotype and class
+  suffix before runtime selection.
+- The validated bytes are copied into an owned project-shaped source snapshot.
+  Process adapters and the JavaScript/Python Firecracker source contract use
+  that immutable copy; the authored absolute path remains diagnostic metadata
+  and is never reopened as the handler program or working directory.
+  Standalone handler discovery captures the complete bounded, non-following
+  `server/**` tree so relative imports and relay programs resolve only from the
+  owned snapshot.
 - Runtime programs are spawned directly with fixed argument boundaries and no
   shell. Embedded adapters are selected from the discovered source language;
-  there is no extension fallback.
+  arbitrary interpreter registration, shebang execution, executable-handler
+  fallback, and class-name inference are rejected.
+- A missing runtime is `TY2112` both during startup preflight and if it
+  disappears in the later spawn race. Terminal and JSON diagnostics identify
+  only the logical runtime or the relevant configuration variable. Structured
+  failure events add only the runtime family and `not_found` category; raw
+  override paths, OS errors, environment values, authored source, request
+  bodies, and child output are excluded.
+- Programs outside the owned language set cross only an explicit `@Delegate`
+  plus `@Relay` boundary. Delegate stdout and stderr are drained concurrently
+  under fixed bounds, public failures are redacted, and the supervisor retains
+  the absolute deadline and complete process-group cleanup boundary.
 - The child environment is cleared, then rebuilt from a small platform runtime
   baseline and explicitly named allowlist entries. Tests prove a host value is
   absent by default and present only when allowed.
-- Protocol stdout accepts exactly one UTF-8 JSON frame with a four-byte
-  big-endian length and 16 MiB maximum. Request IDs, kinds, versions, fields,
-  bodies, headers, statuses, and adapter error shapes are validated.
+- Protocol stdout accepts one UTF-8 JSON response frame with a four-byte
+  big-endian length and 16 MiB maximum, or a declared stream of at most 100,000
+  events, 256 KiB per event, and 64 MiB total. Request IDs, kinds, versions,
+  fields, bodies, headers, statuses, and adapter error shapes are validated.
 - stderr is drained concurrently and capped at 64 KiB. Adapter console output,
   exceptions, and syntax/load errors produce bounded public messages without
   tracebacks or environment values.
@@ -133,13 +194,21 @@ trust boundaries, abuse cases, and validation evidence.
   inherit protocol pipes. HTTP dispatch returns only a request reference for
   supervisor failures; a secret-canary test proves process diagnostics do not
   cross the network boundary.
+- Stream failure sends one terminal, sanitized SSE `error` event containing a
+  stable code and request ID, whether failure occurs before the first value or
+  after partial delivery. Subscriber disconnect and deadline expiry terminate
+  and reap the complete process group.
+- Compiled handler artifacts are published atomically into a capability-confined
+  `.tachyon/handlers` cache whose recursively accounted inactive entries are
+  pruned to 256 entries and 512 MiB. Cache hits are copied into private runtime
+  workspaces before execution. Lock recovery verifies process liveness,
+  identity, and ownership token; a ten-minute lease bounds PID reuse.
 
-Phase 2 is process supervision, not a security sandbox. Application handlers
+Process mode is supervision, not a security sandbox. Application handlers
 retain the invoking developer account's ambient filesystem and network access,
-and the operating system does not yet enforce CPU or memory quotas. Production
-HTTP dispatch, egress capabilities, application dependency imports, process
-pooling, and streaming are out of scope; no documentation may imply those
-controls exist.
+and the operating system does not enforce CPU or memory quotas there.
+Application dependency imports and process pooling remain out of scope; no
+documentation may imply those controls exist.
 
 ## Environment-Selected Isolation Evidence
 
@@ -149,6 +218,10 @@ controls exist.
 - The control program receives a length-prefixed Handler Protocol v1 request,
   bounded non-secret policy arguments, a cleared environment, and the existing
   deadline/cancellation supervision.
+- Only JavaScript and Python source reach the current driver contract.
+  TypeScript and the prepared direct-language paths fail with `TY2010` before
+  driver spawn; private runtime-workspace paths are not treated as transferable
+  artifacts.
 - Egress is deny-only. An allowlist cannot be requested until origin, DNS,
   redirect, and response-limit enforcement has its own acceptance evidence.
 - This boundary does not qualify a Firecracker deployment. The control program
