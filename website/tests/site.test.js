@@ -396,6 +396,15 @@ describe('responsive system', () => {
 })
 
 describe('documentation structure', () => {
+  test('every footer documentation link names a published page', async () => {
+    const { default: Footer } = await import('../client/components/site/footer/tac.js')
+    const docs = JSON.parse(await read('client/shared/data/docs.json'))
+    const published = ['/docs', '/docs/features', ...docs.order.map((slug) => `/docs/${slug}`)]
+    for (const link of new Footer().columns().flatMap((column) => column.links)) {
+      if (link.href.startsWith('/docs')) expect(published).toContain(link.href)
+    }
+  })
+
   const readJson = async (relative) => JSON.parse(await read(relative))
 
   test('every feature is a page of its own', async () => {
