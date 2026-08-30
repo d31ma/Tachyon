@@ -1,3 +1,30 @@
-<article class="topic" aria-live="polite">
-  <p class="topic-summary">Loading documentation…</p>
-</article>
+<!-- `display: contents` on this element, so the article and the contents list
+     become the shell's second and third columns rather than being boxed
+     inside its first. -->
+<div class="docs-page">
+  <main class="docs-article">
+    <docs-pagelinks :source="source()" />
+
+    <h1 class="text-section font-semibold text-balance">{topic().title}</h1>
+    <p class="mt-3 text-lede opacity-80 text-pretty">{topic().summary}</p>
+
+    <loop :for="section of sections()">
+      <section class="mt-10">
+        <h2 :id="section.anchor" class="text-xl font-semibold text-balance">{section.heading}</h2>
+        <p class="mt-2 opacity-85 text-pretty">{section.body}</p>
+        <logic :if="section.code">
+          <docs-snippet :files="section.single" hydrate="load" />
+        </logic>
+        <logic :if="section.files">
+          <docs-snippet :files="section.files" hydrate="load" />
+        </logic>
+      </section>
+    </loop>
+
+    <docs-pager :path="path()" />
+  </main>
+
+  <aside class="docs-toc" aria-label="On this page">
+    <docs-toc :entries="contents()" />
+  </aside>
+</div>

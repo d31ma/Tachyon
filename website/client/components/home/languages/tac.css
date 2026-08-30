@@ -1,0 +1,24 @@
+/* Every handler sample is a different length, and a card that resizes as the
+   reader clicks through them makes the page jump under the cursor. So the
+   height is pinned — to the longest sample, measured from the data by the
+   companion, which is the one value that both stops the jump and leaves
+   nothing to scroll. */
+.language-sample,
+.demo-code .code-block[style*="--lines"] {
+  /* Tall enough for the longest sample, so there is never a vertical
+     scrollbar. Horizontal scrolling stays: a long line has to move inside the
+     block, or it pushes the whole page sideways on a phone. */
+  min-height: calc(var(--lines, 12) * 1lh + 2rem);
+  overflow: auto;
+}
+
+/* What the handler does, under the code rather than in the label beside its
+   name: it is a sentence, and a sentence in a label row is a paragraph with no
+   measure — which is what the responsive gate caught it being. */
+.demo-code-note {
+  margin: 0 1rem 1rem;
+  max-width: 72ch;
+  font-size: .8125rem;
+  opacity: .7;
+  text-wrap: pretty;
+}

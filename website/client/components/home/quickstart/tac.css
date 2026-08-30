@@ -1,48 +1,25 @@
-.quickstart {
-  padding-block: 2rem;
-}
-
-.quickstart h2 {
-  margin: 0 0 0.4rem;
-  font-size: clamp(1.4rem, 2.6vw, 1.9rem);
-}
-
-.quickstart-sub {
-  margin: 0 0 1rem;
-  color: var(--w-text-subtle);
-}
-
-.quickstart-samples {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.65rem;
-}
-
-.quickstart-samples details {
+/* A grid item defaults to min-width:auto, so the long install command inside
+   the first card refused to shrink and dragged the page sideways on a phone.
+   The <pre> already scrolls on its own once it is allowed to. */
+.quickstart-step {
   min-width: 0;
-  border: 1px solid var(--w-border-color);
-  border-radius: var(--w-radius-md);
-  padding: 0.75rem;
 }
 
-.quickstart-samples summary {
-  cursor: pointer;
-  font-weight: 650;
+/* The install command is one long line. Wrapping it is better than a
+   scrollbar on a card the reader is meant to copy from at a glance. */
+.quickstart-step .code-block {
+  overflow-x: visible;
 }
 
-.quickstart-samples .code-block {
-  min-width: 0;
-  max-width: 100%;
-  margin-top: 0.75rem;
+.quickstart-step .code-block code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.quickstart-samples code:empty::before {
-  content: attr(data-fallback);
-  white-space: pre;
-}
-
-.quickstart-note {
-  margin: 0.5rem 0 0;
-  color: var(--w-text-very-subtle);
-  font-size: var(--w-font-sm);
+/* Room for the copy button pinned in the corner, so a wrapped command never
+   runs under it. The block wraps rather than scrolls (above), so without this
+   the last line would sit behind the button rather than past it. */
+.quickstart-step .code-block {
+  position: relative;
+  padding-right: 4.5rem;
 }

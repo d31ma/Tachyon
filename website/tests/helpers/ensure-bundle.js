@@ -6,17 +6,14 @@ const LOCK_DIR = `${PROJECT_ROOT}/.test-bundle-lock`
 const WEB_DIST = `${PROJECT_ROOT}/dist/web`
 const REQUIRED_OUTPUTS = [
     `${WEB_DIST}/index.html`,
-    `${WEB_DIST}/atlas/index.html`,
-    `${WEB_DIST}/atlas/overview/index.html`,
-    `${WEB_DIST}/atlas/connect/index.html`,
     `${WEB_DIST}/docs/index.html`,
+    `${WEB_DIST}/docs/_topic/index.html`,
+    `${WEB_DIST}/docs/features/index.html`,
+    `${WEB_DIST}/docs/features/_id/index.html`,
+    `${WEB_DIST}/shared/data/languages.json`,
+    `${WEB_DIST}/route-manifest.json`,
+    `${WEB_DIST}/sitemap.xml`,
     `${WEB_DIST}/.tachyon/tac-client.js`,
-    `${WEB_DIST}/.tachyon/components/language-javascript.js`,
-    `${WEB_DIST}/.tachyon/components/language-dart.mjs`,
-    `${WEB_DIST}/.tachyon/components/language-kotlin.mjs`,
-    `${WEB_DIST}/.tachyon/components/language-swift.wasm`,
-    `${WEB_DIST}/.tachyon/components/language-csharp.mjs`,
-    `${WEB_DIST}/.tachyon/components/panel-portablebridge.wasm`,
 ]
 
 /** @type {Promise<void> | null} */

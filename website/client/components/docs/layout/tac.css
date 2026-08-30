@@ -1,0 +1,20 @@
+/* Two wrappers sit between the shell and the article it should lay out: the
+   element Tachyon mounts a component into, and the component's own root. Both
+   are dissolved, so the article and the contents list become the shell's
+   second and third grid items instead of being stacked inside the first.
+ *
+ * This lives here rather than in site.css because that file is `@layer brand`
+ * and the runtime's rule for a mounted component is unlayered — a layered rule
+ * loses to an unlayered one whatever its specificity, so the same declaration
+ * there had no effect at all.
+ *
+ * The mount element is named by its `data-tachyon-component` rather than by
+ * its tag: every component on the page is a `<tachyon-component>`, and
+ * dissolving all of them would take every other component's layout with it. */
+.docs-shell > [data-tachyon-component='docs-topic'],
+.docs-shell > [data-tachyon-component='docs-feature'],
+.docs-shell > [data-tachyon-component='docs-catalog'],
+.docs-shell > [data-tachyon-component='docs-home'],
+.docs-shell .docs-page {
+  display: contents;
+}

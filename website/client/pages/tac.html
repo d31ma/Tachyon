@@ -1,31 +1,15 @@
-<site-header />
-
-<main class="page-main cq">
-  <w-container size="xl">
-    <home-hero />
-    <w-divider></w-divider>
-    <home-features />
-    <w-divider></w-divider>
-    <home-yon hydrate="load" />
-    <w-divider></w-divider>
-    <home-targets />
-    <w-divider></w-divider>
-    <home-quickstart hydrate="load" />
-
-    <section class="atlas-teaser" aria-label="Capability atlas teaser">
-      <w-card variant="tonal" color="primary" title="See it all running" subtitle="The capability atlas is a live frontend application, not a screenshot reel — it has no Tachyon/Yon app backend or first-party server-side data storage.">
-        <w-card-text>
-          Reactive inputs, a canvas studio, Wikimedia SSE streaming, tab-to-tab realtime,
-          polyglot Tac companions, browser storage, and client-side timing —
-          every panel runs in the browser, with public fetch and SSE where shown.
-        </w-card-text>
-        <w-card-actions>
-          <w-btn href="/atlas" variant="filled">Open the atlas</w-btn>
-          <w-btn href="/docs" variant="text">Read the docs</w-btn>
-        </w-card-actions>
-      </w-card>
-    </section>
+<site-layout>
+  <!-- Development only: it proves the companion ran, which is worth
+       seeing while working on the site and nothing to a reader. -->
+  <logic :if="development">
+    <p class="runtime-note">Rendered by: {runtime}</p>
+  </logic>
+  <home-hero hydrate="load" />
+  <w-container aria-label="Pages" size="xl">
+    <home-pillars />
+    <home-languages hydrate="load" />
+    <home-quickstart />
+    <home-faq />
   </w-container>
-</main>
-
-<site-footer />
+  <site-cta />
+</site-layout>

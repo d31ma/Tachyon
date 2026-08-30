@@ -1,23 +1,30 @@
-<w-footer border>
-  <w-container size="xl" class="footer-inner">
-    <div class="w-row align-center ga-2">
-      <img class="brand-mark" src="/shared/assets/logo.svg" alt="" width="24" height="24" />
-      <span class="brand-name">TACHYON</span>
-      <span class="footer-note">A polyglot, file-system-routed full-stack framework for the standalone <code>ty</code> binary.</span>
+<footer class="border-t border-line">
+  <w-container size="xl" class="py-12">
+    <div class="grid-auto" style="--col: 13rem; --grid-gap: 2rem">
+      <div>
+        <div class="w-row align-center ga-2">
+          <img src="/shared/assets/logo.svg" alt="" width="22" height="22" class="block" />
+          <span class="font-bold tracking-widest text-sm">TACHYON</span>
+        </div>
+        <p class="mt-3 text-sm opacity-70 max-w-[34ch] text-pretty">
+          A polyglot, file-system-routed full-stack framework shipped as the standalone
+          <code>ty</code> binary.
+        </p>
+      </div>
+
+      <loop :for="column of columns()">
+        <nav :aria-label="column.title">
+          <h2 class="text-sm font-semibold">{column.title}</h2>
+          <ul class="mt-3 grid gap-2 text-sm opacity-70 list-none p-0 m-0">
+            <loop :for="link of column.links">
+              <li><a :href="link.href">{link.label}</a></li>
+            </loop>
+          </ul>
+        </nav>
+      </loop>
     </div>
 
-    <p class="footer-note">
-      Running on the web platform.
-      This site is frontend-only: Tac companions power its UI, and the theme, fetches and stored data all live in your browser.
-    </p>
-
-    <nav class="w-row ga-3 footer-links" aria-label="Footer">
-      <a href="/atlas">Capability atlas</a>
-      <a href="/docs">Documentation</a>
-      <a href="https://duvay.del.ma" target="_blank" rel="noopener">DuVay</a>
-      <a href="https://github.com/d31ma/Tachyon" target="_blank" rel="noopener">GitHub</a>
-    </nav>
-
-    <p class="footer-note">MIT licensed. Interface built with DuVay web components, vendored at v26.27.06. Package @d31ma/tachyon.</p>
+    <w-divider class="my-8"></w-divider>
+    <p class="text-sm opacity-60">MIT licensed. Part of the DELMA family.</p>
   </w-container>
-</w-footer>
+</footer>

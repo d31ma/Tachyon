@@ -1,0 +1,17 @@
+/* The group, above the title, linking back to where this was found. */
+.feature-group {
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  opacity: .6;
+  margin-bottom: .25rem;
+}
+
+.feature-group a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.feature-group a:hover {
+  text-decoration: underline;
+}

@@ -1,0 +1,11 @@
+<!-- Where the page is up to. Rendered only when there is more than one place
+     to go: a contents list of one entry is a link to the top of the screen
+     the reader is already looking at. -->
+<logic :if="worthShowing()">
+  <p class="docs-toc__heading">On this page</p>
+  <ul class="docs-toc__list list-none p-0 m-0">
+    <loop :for="entry of list()">
+      <li><a class="docs-toc__link" :href="entry.anchor">{entry.heading}</a></li>
+    </loop>
+  </ul>
+</logic>

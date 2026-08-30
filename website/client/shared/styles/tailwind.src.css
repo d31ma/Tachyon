@@ -1,0 +1,37 @@
+/* Theme tokens and utilities only — deliberately not Preflight. DuVay owns the
+   base layer, and a second competing reset would strip the heading sizes, list
+   styling and form controls its components rely on. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* DuVay's design tokens, exposed as Tailwind utilities.
+ *
+ * Without this a template reaches for an inline style every time it needs a
+ * DuVay colour or type step, which is how a design system quietly splits in
+ * two. Mapping the tokens instead means `text-sm` and `border-line` follow the
+ * theme — including across a light/dark switch, since these resolve at use
+ * rather than being copied here. */
+@theme {
+  --color-surface: var(--w-surface);
+  --color-raised: var(--w-surface-container-high);
+  --color-ink: var(--w-text);
+  --color-line: var(--w-border, color-mix(in srgb, var(--w-text) 14%, transparent));
+  --color-accent: var(--w-primary);
+
+  --text-xs: var(--w-font-xs);
+  --text-sm: var(--w-font-sm);
+
+  --radius-token: var(--w-radius-lg);
+
+  /* Fluid steps, so type and rhythm scale with the viewport rather than
+     jumping at a breakpoint. */
+  --text-display: clamp(2.25rem, 1.5rem + 3.6vw, 4rem);
+  --text-section: clamp(1.5rem, 1.2rem + 1.2vw, 2.125rem);
+  --text-lede: clamp(1rem, 0.95rem + 0.4vw, 1.25rem);
+  --spacing-section: clamp(2.5rem, 1.5rem + 4vw, 5rem);
+  --spacing-gutter: clamp(1rem, 0.5rem + 2vw, 2.5rem);
+}
+
+@source "../../pages/**/*.{html,js,ts}";
+@source "../../components/**/*.{html,js,ts}";
+@source "../scripts/**/*.{js,ts}";

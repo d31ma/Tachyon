@@ -1,9 +1,17 @@
-<site-header />
-<div class="docs-shell">
-  <aside class="docs-sidebar" aria-label="Documentation navigation">
-    <docs-sidebar hydrate="load" />
-  </aside>
-  <main class="docs-main">
-    <article class="docs-page"><slot /></article>
-  </main>
-</div>
+<!-- The documentation's own chrome, inside the site's.
+     Three columns: the navigation, the page, and where it is up to. The slot
+     is the page, and the component filling it is `display: contents`, so its
+     article and its table of contents become the second and third columns
+     rather than being boxed inside the first.
+
+     `.docs-frame` is what the shell's column count is measured against — the
+     space the shell actually has, which is narrower than the window by the
+     container's own padding. -->
+<w-container size="xl" class="docs-frame">
+  <div class="docs-shell">
+    <aside class="docs-shell__nav">
+      <docs-sidebar />
+    </aside>
+    <slot></slot>
+  </div>
+</w-container>

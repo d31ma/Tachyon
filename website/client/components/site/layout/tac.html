@@ -1,0 +1,16 @@
+<!-- The page chrome, authored once.
+     Navigation is cross-document (ADR 0009), so every document genuinely
+     carries its own header and footer — there is no persistent shell to keep
+     them in. What this removes is the repetition in the *source*: five pages
+     that each restated the skip link, the bar and the footer, and would each
+     need editing to change any of them. -->
+<!-- First tab stop, so a keyboard user can pass the navigation. -->
+<a class="w-btn w-btn--sm sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50"
+   href="#main">Skip to content</a>
+<site-header />
+
+<main id="main" tabindex="-1">
+  <slot></slot>
+</main>
+
+<site-footer />

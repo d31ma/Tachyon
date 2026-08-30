@@ -1,50 +1,35 @@
-<nav class="docs-sidebar-nav" aria-label="Docs">
-  <a href="/docs/introduction" class="docs-sidebar-home">Documentation home</a>
+<!-- One navigation for the whole documentation, sectioned.
+     <details> rather than a scripted accordion: the disclosure, its keyboard
+     behaviour and its announced state are the element's own, and a component
+     reimplementing them would only be a worse version that also needs
+     JavaScript to open.
 
-  <w-field class="docs-search" label="Search docs" hint="Try middleware, companions, routing...">
-    <input class="w-input" type="search" placeholder="Search Tachyon docs" />
-  </w-field>
+     Below the width where the shell has a column to put this in, it becomes a
+     drawer. Stacked in flow it pushed the article a whole screen down, which
+     on a phone means every documentation page opens on its own navigation. -->
+<button type="button" class="docs-nav-toggle" on:click="toggle()"
+        :aria-expanded="open ? 'true' : 'false'" aria-controls="docs-nav-panel">
+  <span aria-hidden="true">☰</span> Documentation menu
+</button>
 
-  <section class="docs-sidebar-section" aria-label="Start">
-    <h3 class="docs-sidebar-subhead">Start</h3>
-    <p class="docs-group-summary">Install, project shape, routing and target choices.</p>
-    <ul class="docs-sidebar-list">
-      <li data-topic="introduction"><a href="/docs/introduction">Introduction</a></li>
-      <li data-topic="routing"><a href="/docs/routing">Routing</a></li>
-      <li data-topic="devices"><a href="/docs/devices">Devices and targets</a></li>
-    </ul>
-  </section>
+<div class="docs-nav-scrim" hidden="{open ? '' : 'hidden'}" on:click="close()"></div>
 
-  <section class="docs-sidebar-section" aria-label="Tac frontend">
-    <h3 class="docs-sidebar-subhead">Tac frontend</h3>
-    <p class="docs-group-summary">Templates, polyglot companions and browser-local data.</p>
-    <ul class="docs-sidebar-list">
-      <li data-topic="templates"><a href="/docs/templates">Tac templates</a></li>
-      <li data-topic="native-rendering"><a href="/docs/native-rendering">Native HTML rendering</a></li>
-      <li data-topic="companions"><a href="/docs/companions">Companions</a></li>
-      <li data-topic="polyglot"><a href="/docs/polyglot">Polyglot companions</a></li>
-      <li data-topic="platform-apis"><a href="/docs/platform-apis">Platform APIs</a></li>
-      <li data-topic="storage"><a href="/docs/storage">Storage and data</a></li>
-    </ul>
-  </section>
-
-  <section class="docs-sidebar-section" aria-label="Yon backend">
-    <h3 class="docs-sidebar-subhead">Yon backend</h3>
-    <p class="docs-group-summary">Routes, middleware, validation and observability.</p>
-    <ul class="docs-sidebar-list">
-      <li data-topic="yon"><a href="/docs/yon">Yon backend</a></li>
-      <li data-topic="environment"><a href="/docs/environment">Environment variables</a></li>
-      <li data-topic="operations"><a href="/docs/operations">Operations</a></li>
-    </ul>
-  </section>
-
-  <section class="docs-sidebar-section" aria-label="Cookbook">
-    <h3 class="docs-sidebar-subhead">Cookbook</h3>
-    <p class="docs-group-summary">Production-shaped recipes that combine Tac and Yon.</p>
-    <ul class="docs-sidebar-list">
-      <li data-topic="cookbook"><a href="/docs/cookbook">Cookbook</a></li>
-    </ul>
-  </section>
-
-  <p class="docs-no-results" hidden>No docs found. Try a broader term.</p>
+<nav id="docs-nav-panel" aria-label="Documentation" class="docs-nav"
+     :data-open="open ? 'true' : 'false'" on:keydown="dismiss($event.key)">
+  <loop :for="section of sections()">
+    <details class="docs-nav__section" :open="section.open">
+      <summary class="docs-nav__summary">
+        <span>{section.name}</span>
+        <span class="docs-nav__chevron" aria-hidden="true">›</span>
+      </summary>
+      <ul class="docs-nav__list list-none p-0 m-0">
+        <loop :for="link of section.links">
+          <li>
+            <a class="docs-nav__link" :href="link.path"
+               :aria-current="link.current ? 'page' : 'false'">{link.title}</a>
+          </li>
+        </loop>
+      </ul>
+    </details>
+  </loop>
 </nav>

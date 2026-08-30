@@ -1,0 +1,21 @@
+{
+  "summary": "Search the documentation index",
+  "methods": {
+    "GET": {
+      "summary": "Rank documentation sections against a term",
+      "request": {
+        "parameters": { "query": "^[^/]{1,80}$" }
+      },
+      "ok": {
+        "query": "^.{0,80}$",
+        "results": [
+          {
+            "title": "^.{1,160}$",
+            "path": "^/.*$",
+            "kind": "^(topic|section)$"
+          }
+        ]
+      }
+    }
+  }
+}
