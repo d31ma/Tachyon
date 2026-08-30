@@ -117,6 +117,10 @@ fn validate_runtime_workspace_paths(
         let candidate = argument
             .split_once('=')
             .map_or(argument.as_str(), |(_, value)| value);
+        let candidate = candidate
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap_or(candidate);
         let path = Path::new(candidate);
         if !path.is_absolute() {
             continue;
@@ -2461,7 +2465,7 @@ fn prepare_php(
         interpreter: vec![
             String::from("php"),
             String::from("-d"),
-            format!("auto_append_file={}", php_cli_path(&runtime_copy)),
+            format!("auto_append_file=\"{}\"", php_cli_path(&runtime_copy)),
             String::from("-f"),
             php_cli_path(&handler_copy),
         ],
@@ -3523,6 +3527,17 @@ mod tests {
             super::php_cli_path(Path::new(r"C:\runtime\yon-runtime.php")),
             "C:/runtime/yon-runtime.php"
         );
+    }
+
+    #[test]
+    fn quoted_runtime_arguments_remain_workspace_validated() {
+        let workspace = super::RuntimeWorkspace::new("server/routes/yon.php").expect("workspace");
+        let runtime = workspace.path().join("yon-runtime.php");
+        fs::write(&runtime, "<?php").expect("runtime");
+        let argument = format!("auto_append_file=\"{}\"", super::php_cli_path(&runtime));
+
+        super::validate_runtime_workspace_paths(&[argument], &workspace, "server/routes/yon.php")
+            .expect("quoted path remains inside workspace");
     }
 
     #[test]
