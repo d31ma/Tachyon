@@ -149,76 +149,103 @@ final class Yon
         if ($command === []) {
             return self::failed('A delegate command cannot be empty.');
         }
-        $descriptors = [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        $windows = PHP_OS_FAMILY === 'Windows';
+        // PHP cannot select or make proc_open pipes non-blocking on Windows.
+        // Sending sideband output to the OS sink leaves one bounded response
+        // pipe to read and cannot expose delegate diagnostics to the client.
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => $windows ? ['file', 'NUL', 'a'] : ['pipe', 'w'],
+        ];
         // The array form, so nothing is passed through a shell: a route
         // parameter that reached a command line would be an injection.
         $process = @proc_open($command, $descriptors, $pipes);
         if (!is_resource($process)) {
             return self::failed('Delegate could not be started.');
         }
-        foreach ($pipes as $pipe) {
-            stream_set_blocking($pipe, false);
-        }
         $payload = json_encode($request->raw()) ?: '{}';
         $written = 0;
         $stdout = '';
         $stderrBytes = 0;
         $stdoutOverflow = false;
-        $deadlineMs = max(1, min(300000, (int) ($request->raw()['deadline_ms'] ?? 30000)));
-        $deadline = microtime(true) + ($deadlineMs / 1000);
         $timedOut = false;
 
-        // All three pipes are serviced together. Sequential read-to-end can
-        // deadlock when the delegate fills stderr while the shim reads stdout.
-        while (true) {
-            $state = proc_get_status($process);
-            if (microtime(true) >= $deadline) {
-                $timedOut = true;
-                break;
+        if ($windows) {
+            // The Rust supervisor owns the deadline and the Windows process
+            // group. With stderr detached, writing the bounded request before
+            // reading bounded stdout cannot form a cross-pipe deadlock.
+            while ($written < strlen($payload)) {
+                $count = @fwrite($pipes[0], substr($payload, $written, 8192));
+                if ($count === false || $count === 0) break;
+                $written += $count;
             }
-            $read = [];
-            if (is_resource($pipes[1]) && !feof($pipes[1])) $read[] = $pipes[1];
-            if (is_resource($pipes[2]) && !feof($pipes[2])) $read[] = $pipes[2];
-            $write = [];
-            if (is_resource($pipes[0]) && $written < strlen($payload)) $write[] = $pipes[0];
-            if (!$state['running'] && $read === [] && $write === []) break;
-            if ($read === [] && $write === []) {
-                usleep(1000);
-                continue;
+            fclose($pipes[0]);
+            $pipes[0] = null;
+            $captured = @stream_get_contents($pipes[1], self::MAX_RELAY_STDOUT_BYTES + 1);
+            if ($captured !== false) $stdout = $captured;
+            $stdoutOverflow = strlen($stdout) > self::MAX_RELAY_STDOUT_BYTES;
+            if ($stdoutOverflow) $stdout = substr($stdout, 0, self::MAX_RELAY_STDOUT_BYTES);
+            if ($stdoutOverflow) @proc_terminate($process, 9);
+        } else {
+            foreach ($pipes as $pipe) {
+                stream_set_blocking($pipe, false);
             }
-            $except = [];
-            $selected = @stream_select($read, $write, $except, 0, 100000);
-            if ($selected === false) {
-                $timedOut = true;
-                break;
-            }
-            foreach ($write as $pipe) {
-                $count = @fwrite($pipe, substr($payload, $written, 8192));
-                if ($count === false) {
-                    fclose($pipes[0]);
-                    $pipes[0] = null;
+            $deadlineMs = max(1, min(300000, (int) ($request->raw()['deadline_ms'] ?? 30000)));
+            $deadline = microtime(true) + ($deadlineMs / 1000);
+
+            // All three pipes are serviced together. Sequential read-to-end can
+            // deadlock when the delegate fills stderr while the shim reads stdout.
+            while (true) {
+                $state = proc_get_status($process);
+                if (microtime(true) >= $deadline) {
+                    $timedOut = true;
                     break;
                 }
-                $written += $count;
-                if ($written >= strlen($payload)) {
-                    fclose($pipes[0]);
-                    $pipes[0] = null;
+                $read = [];
+                if (is_resource($pipes[1]) && !feof($pipes[1])) $read[] = $pipes[1];
+                if (is_resource($pipes[2]) && !feof($pipes[2])) $read[] = $pipes[2];
+                $write = [];
+                if (is_resource($pipes[0]) && $written < strlen($payload)) $write[] = $pipes[0];
+                if (!$state['running'] && $read === [] && $write === []) break;
+                if ($read === [] && $write === []) {
+                    usleep(1000);
+                    continue;
                 }
-            }
-            foreach ($read as $pipe) {
-                $chunk = @fread($pipe, 8192);
-                if ($chunk === false || $chunk === '') continue;
-                if ($pipe === $pipes[1]) {
-                    $remaining = self::MAX_RELAY_STDOUT_BYTES - strlen($stdout);
-                    if (strlen($chunk) > $remaining) $stdoutOverflow = true;
-                    if ($remaining > 0) $stdout .= substr($chunk, 0, $remaining);
-                } else {
-                    // Stderr is drained but never reflected. Keep only a
-                    // bounded count so a hostile delegate cannot grow memory.
-                    $stderrBytes = min(
-                        self::MAX_RELAY_STDERR_BYTES,
-                        $stderrBytes + strlen($chunk)
-                    );
+                $except = [];
+                $selected = @stream_select($read, $write, $except, 0, 100000);
+                if ($selected === false) {
+                    $timedOut = true;
+                    break;
+                }
+                foreach ($write as $pipe) {
+                    $count = @fwrite($pipe, substr($payload, $written, 8192));
+                    if ($count === false) {
+                        fclose($pipes[0]);
+                        $pipes[0] = null;
+                        break;
+                    }
+                    $written += $count;
+                    if ($written >= strlen($payload)) {
+                        fclose($pipes[0]);
+                        $pipes[0] = null;
+                    }
+                }
+                foreach ($read as $pipe) {
+                    $chunk = @fread($pipe, 8192);
+                    if ($chunk === false || $chunk === '') continue;
+                    if ($pipe === $pipes[1]) {
+                        $remaining = self::MAX_RELAY_STDOUT_BYTES - strlen($stdout);
+                        if (strlen($chunk) > $remaining) $stdoutOverflow = true;
+                        if ($remaining > 0) $stdout .= substr($chunk, 0, $remaining);
+                    } else {
+                        // Stderr is drained but never reflected. Keep only a
+                        // bounded count so a hostile delegate cannot grow memory.
+                        $stderrBytes = min(
+                            self::MAX_RELAY_STDERR_BYTES,
+                            $stderrBytes + strlen($chunk)
+                        );
+                    }
                 }
             }
         }

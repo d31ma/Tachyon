@@ -1021,15 +1021,10 @@ impl ContractDelegate {
 "#,
         ),
     ];
-    let cold_start_timeout = if cfg!(windows) {
-        Duration::from_secs(30)
-    } else {
-        Duration::from_secs(10)
-    };
     let supervisor = supervisor(HandlerSupervisorOptions {
-        // Compiled adapters may pay a cold-start cost on a contended Windows
-        // host; the explicit hanging relay below still has its own 250 ms bound.
-        default_timeout: cold_start_timeout,
+        // Compiled adapters may pay a cold-start cost on a contended CI host;
+        // the explicit hanging relay below still carries its own 250 ms bound.
+        default_timeout: Duration::from_secs(10),
         ..HandlerSupervisorOptions::default()
     });
     for &(extension, contents) in &relay_sources {
