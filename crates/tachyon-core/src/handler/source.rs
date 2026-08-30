@@ -3016,8 +3016,10 @@ mod tests {
         let root = tempfile::tempdir().expect("cache");
         let cache = root.path().to_path_buf();
         let registered = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let pruned = std::sync::Arc::new(std::sync::Barrier::new(2));
         std::thread::scope(|scope| {
             let registered_a = std::sync::Arc::clone(&registered);
+            let pruned_a = std::sync::Arc::clone(&pruned);
             let cache_a = cache.clone();
             let build_a = scope.spawn(move || {
                 let global = acquire_cache_lock(&cache_a.join(".prune.lock"), "a").expect("global");
@@ -3028,6 +3030,7 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(50));
                 assert!(cache_a.join("a_tmp_yon.kt").exists());
                 fs::rename(cache_a.join("a_tmp_yon.kt"), cache_a.join("a.jar")).expect("publish a");
+                pruned_a.wait();
             });
             let cache_b = cache.clone();
             let build_b = scope.spawn(move || {
@@ -3035,6 +3038,7 @@ mod tests {
                 let global = acquire_cache_lock(&cache_b.join(".prune.lock"), "b").expect("global");
                 let _active = acquire_cache_lock(&cache_b.join("b.lock"), "b").expect("b lock");
                 prune_handler_cache_with_limits(&cache_b, 0, 0).expect("pressure prune");
+                pruned.wait();
                 drop(global);
                 fs::write(cache_b.join("b.jar"), b"b").expect("publish b");
             });
