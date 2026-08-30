@@ -287,7 +287,7 @@ returning.
 ## Suggested next moves
 
 1. Complete the pull-request matrix and obtain review for the cutover commit.
-2. Create the annotated `v26.33.02` tag only after the reviewed commit is on
+2. Create the annotated `v26.35.07` tag only after the reviewed commit is on
    `main`; the tag workflow will stage, verify, and publish it.
 3. Grant macOS Accessibility permission and rerun the macOS evidence script.
 4. Schedule an independent human security review for major trust-boundary

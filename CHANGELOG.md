@@ -8,6 +8,8 @@ independent major versions.
 
 ## [Unreleased]
 
+## [26.35.07] - 2026-08-30
+
 ### Added
 
 - Added mandatory `@Controller`, `@Service`, `@Repository`, `@Client`, and
@@ -52,9 +54,10 @@ independent major versions.
   TypeScript and Java / Kotlin runtime needs, and never prints configured
   executable paths. C# readiness now builds a framework-owned minimal project
   against the installed SDK rather than accepting a runtime-only `dotnet`.
-- Drained and bounded compiled-language relay stdout and stderr concurrently,
-  redacted delegate failures, and applied deadlines plus descendant cleanup to
-  relays, streaming timeouts, and subscriber disconnects.
+- Bounded compiled-language relay output, prevented delegate stderr from
+  reaching responses, and applied deadlines plus descendant cleanup to relays,
+  streaming timeouts, and subscriber disconnects. Windows PHP relays avoid the
+  platform's unsupported non-blocking `proc_open` pipe multiplexing.
 - End failed streams with one sanitized SSE error event carrying the request ID,
   including failures before the first value and after partial delivery.
 - Preserve every admitted event on successful finite streams and apply
@@ -1095,7 +1098,8 @@ should expect to touch imports, bin names, and any code that assumed the old
 
 See the Git history and GitHub release notes for pre-2.0 changes.
 
-[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.33.02...HEAD
+[Unreleased]: https://github.com/d31ma/Tachyon/compare/v26.35.07...HEAD
+[26.35.07]: https://github.com/d31ma/Tachyon/compare/v26.33.02...v26.35.07
 [26.33.02]: https://github.com/d31ma/Tachyon/compare/v26.33.01...v26.33.02
 [26.33.01]: https://github.com/d31ma/Tachyon/compare/v26.31.06...v26.33.01
 [26.32.07]: https://github.com/d31ma/Tachyon/compare/v26.31.06...v26.32.07

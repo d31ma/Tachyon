@@ -3,7 +3,7 @@
 ## Current Release Status
 
 The Rust rewrite has completed engineering phases 0–7 and subsequent client,
-server-isolation, and native-runtime work. Version `26.33.02` is a release
+server-isolation, and native-runtime work. Version `26.35.07` is a release
 candidate, not a supported or preview application-framework release. There is
 no compatibility, uptime, security-support, or production-use promise for its
 artifacts. Current implementation evidence and remaining promotion gates are

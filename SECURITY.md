@@ -23,7 +23,7 @@ claims a supported Rust release.
 ## Supported Versions
 
 The Rust rewrite has completed engineering phases 0–7, but version
-`26.33.02` remains a release candidate with no supported or preview tier.
+`26.35.07` remains a release candidate with no supported or preview tier.
 Supported released versions of the existing implementation are listed in the
 public release notes. See `docs/SUPPORT_TIERS.md` for the evidence required to
 promote a Rust target.

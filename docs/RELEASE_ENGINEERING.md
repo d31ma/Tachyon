@@ -4,7 +4,7 @@
 
 Engineering phases 0–7 implement the compiler, supervised server boundary,
 view semantics and islands, five native host families, migration tooling, and
-enterprise qualification automation. Product release candidate `26.33.02`
+enterprise qualification automation. Product release candidate `26.35.07`
 is recorded in `VERSION`; the internal Cargo package identity remains
 `0.0.0-phase4` so package metadata cannot be mistaken for the public product
 version.
