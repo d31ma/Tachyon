@@ -103,6 +103,9 @@ Status: complete on 2026-07-26. The normative behavior is recorded in
 - Deterministic `yon.js` and `yon.py` discovery and manifest metadata.
 - Direct-spawn, bounded, one-process-per-request supervision.
 - JavaScript and Python sync/async adapters.
+- Mandatory five-layer stereotypes across the eight owned Yon languages,
+  explicit supervised `@Relay`, and declared multi-frame `@Stream` delivery
+  were added by ADR 0017 after the original Phase 2 gate.
 - Deadlines, cancellation, concurrency admission, forced termination, reaping,
   and crash isolation.
 - Deny-by-default environment inheritance with explicit allowlisting.
@@ -112,6 +115,9 @@ Status: complete on 2026-07-26. The normative behavior is recorded in
 
 - [x] JavaScript and Python pass the same request/response corpus against real
       child processes.
+- [x] Missing layer annotations and removed interpreter registrations fail
+      closed; relay stderr is redacted and streaming timeout/disconnect reaps
+      inheriting descendants.
 - [x] The compiled `ty handler invoke` path exercises both runtimes and every
       Handler Protocol v1 HTTP method.
 - [x] Handler-only and composed routes emit deterministic Route Manifest v1
@@ -342,7 +348,10 @@ workers, and explicit invocation use that policy. Builds never execute Yon.
 Both paths retain Handler Protocol v1 framing, process-group cleanup,
 deadlines, cancellation, concurrency, bounded output, and diagnostics while
 the Firecracker path passes bounded pool, CPU, memory, and deny-egress policy
-to the driver.
+to the driver. The current driver transport accepts JavaScript and Python only.
+TypeScript and the prepared Java, PHP, Kotlin, C#, and Rust paths fail closed
+before driver spawn until a bounded authenticated artifact-transfer contract
+exists.
 
 This is not yet a first-party Firecracker runtime or hardware-isolation support
 claim. A production-qualified control program, jailer/host profile, guest

@@ -230,6 +230,12 @@ function withoutRemovedLegacyScaffold(tree) {
       'This shows a staged Tachyon progress bar while installing only the standalone `ty` binary.',
     );
   normalized['README.md'] = Buffer.from(readme).toString('base64');
+  // ADR 0017 makes the controller stereotype and its role-specific class name
+  // part of every new scaffold. Normalize only the archived oracle's exact
+  // route template; any other generated route difference still fails below.
+  const route = Buffer.from(normalized['server/routes/yon.js'], 'base64').toString('utf8')
+    .replace('export class Handler {', '@Controller\nexport class RootController {');
+  normalized['server/routes/yon.js'] = Buffer.from(route).toString('base64');
   return normalized;
 }
 

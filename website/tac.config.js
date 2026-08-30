@@ -27,7 +27,7 @@ const ROUTES = {
     '/': {
         file: 'index.html',
         title: 'Tachyon — the polyglot full-stack framework for ty',
-        description: 'Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Author strict HTML that becomes reactive browser DOM or native SwiftUI, Android Views, Win32 and GTK4 controls; serve JavaScript, Python and registered direct-protocol Yon routes.',
+        description: 'Tachyon is a polyglot, file-system-routed full-stack framework distributed through the standalone ty binary. Author strict HTML that becomes reactive browser DOM or native SwiftUI, Android Views, Win32 and GTK4 controls; serve eight owned Yon languages with explicit relay boundaries.',
     },
     '/atlas': {
         file: 'atlas/index.html',

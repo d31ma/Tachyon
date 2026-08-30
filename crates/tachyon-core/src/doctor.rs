@@ -9,14 +9,22 @@
 //! is not told about the TypeScript compiler, because it does not need one.
 
 use crate::Failure;
+use crate::external_command::run_sync;
 use crate::failure::{diagnostic, source_span};
-use crate::handler::Interpreters;
+use crate::handler::{
+    HandlerSupervisorOptions, RuntimeProbeResult, RuntimeProbeState, RuntimeRequirements,
+    probe_all_sync,
+};
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
+
+const PROBE_DEADLINE: Duration = Duration::from_secs(10);
+const PROBE_OUTPUT_BYTES: usize = 64 * 1_024;
 
 /// Directories that never hold project sources.
 const IGNORED: [&str; 7] = [
@@ -115,7 +123,16 @@ impl DoctorReport {
 ///
 /// Returns a diagnostic when the project root cannot be read.
 pub fn check(project_root: impl AsRef<Path>) -> Result<DoctorReport, Failure> {
-    let root = project_root.as_ref();
+    check_with_options(
+        project_root.as_ref(),
+        &HandlerSupervisorOptions::from_environment()?,
+    )
+}
+
+fn check_with_options(
+    root: &Path,
+    options: &HandlerSupervisorOptions,
+) -> Result<DoctorReport, Failure> {
     if !root.is_dir() {
         return Err(Failure::one(diagnostic(
             1601,
@@ -126,6 +143,8 @@ pub fn check(project_root: impl AsRef<Path>) -> Result<DoctorReport, Failure> {
     }
 
     let extensions = companion_extensions(root);
+    let workers = crate::Workers::discover(root)?;
+    let yon = yon_extensions(root, &workers);
     let mut toolchains = Vec::new();
     if extensions.contains("ts") {
         toolchains.push(typescript(root));
@@ -135,11 +154,96 @@ pub fn check(project_root: impl AsRef<Path>) -> Result<DoctorReport, Failure> {
             toolchains.push(entry);
         }
     }
-    toolchains.extend(interpreters(root));
+    let requirements = RuntimeRequirements::from_extensions(yon.iter().map(String::as_str));
+    let resolved = requirements.resolve(&options.runtimes, &options.isolation)?;
+    toolchains.extend(
+        probe_all_sync(resolved, &options.environment)?
+            .iter()
+            .map(runtime_toolchain),
+    );
     Ok(DoctorReport {
         contract_version: 1,
         toolchains,
     })
+}
+
+fn yon_extensions(root: &Path, workers: &crate::Workers) -> BTreeSet<String> {
+    let mut extensions = BTreeSet::new();
+    let mut pending: Vec<_> = [
+        "server/routes",
+        "server/services",
+        "server/repositories",
+        "server/clients",
+        "server/delegates",
+    ]
+    .into_iter()
+    .map(|relative| root.join(relative))
+    .filter(|path| {
+        fs::symlink_metadata(path)
+            .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+    })
+    .collect();
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = fs::read_dir(directory) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_symlink() {
+                continue;
+            }
+            if file_type.is_dir() {
+                if !IGNORED.contains(&name.as_str()) && !name.starts_with('.') {
+                    pending.push(entry.path());
+                }
+            } else if file_type.is_file()
+                && let Some(extension) = name.strip_prefix("yon.")
+            {
+                extensions.insert(String::from(extension));
+            }
+        }
+    }
+    if let Ok(entries) = fs::read_dir(root) {
+        for entry in entries.filter_map(Result::ok) {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if entry.file_type().is_ok_and(|kind| kind.is_file())
+                && let Some(extension) = name.strip_prefix("middleware.")
+            {
+                extensions.insert(String::from(extension));
+            }
+        }
+    }
+    for (worker, _) in workers.iter() {
+        if let Some(extension) = Path::new(worker)
+            .extension()
+            .and_then(|value| value.to_str())
+        {
+            extensions.insert(String::from(extension));
+        }
+    }
+    extensions
+}
+
+fn runtime_toolchain(result: &RuntimeProbeResult) -> Toolchain {
+    let requirement = result.requirement();
+    let state = match result.state() {
+        RuntimeProbeState::Ready => {
+            ToolchainState::Ready(String::from("deployment readiness probe succeeded"))
+        }
+        RuntimeProbeState::Missing => ToolchainState::Missing,
+        RuntimeProbeState::Incomplete => ToolchainState::Incomplete(String::from(
+            "deployment readiness probe did not complete successfully",
+        )),
+    };
+    Toolchain {
+        requirement: requirement.label().to_owned(),
+        command: requirement.command_label().to_owned(),
+        state,
+        install: requirement.help().to_owned(),
+    }
 }
 
 /// Collects the extensions of every browser companion in a project.
@@ -347,8 +451,8 @@ fn compiles_empty(name: &str, build: impl Fn(&Path, &Path) -> Command) -> bool {
     if fs::write(&source, "").is_err() {
         return true;
     }
-    build(staged.path(), &source)
-        .output()
+    let mut command = build(staged.path(), &source);
+    run_sync(&mut command, PROBE_DEADLINE, PROBE_OUTPUT_BYTES)
         .is_ok_and(|result| result.status.success())
 }
 
@@ -360,7 +464,8 @@ fn compiles_empty(name: &str, build: impl Fn(&Path, &Path) -> Command) -> bool {
 /// call a toolchain ready that cannot build. So the question is put to the
 /// compiler itself, by asking it to prepare a build for that target.
 fn rust_wasm_target() -> bool {
-    Command::new("rustc")
+    let mut command = Command::new("rustc");
+    command
         .args([
             "--target",
             "wasm32-unknown-unknown",
@@ -373,34 +478,12 @@ fn rust_wasm_target() -> bool {
         ])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .is_ok_and(|result| {
-            // rustc names the missing crate as core or std depending on the
-            // crate type, but always adds this note for a target it lacks.
-            !String::from_utf8_lossy(&result.stderr).contains("target may not be installed")
-        })
-}
-
-/// Checks every interpreter a project registered in `.tachyonrc`.
-fn interpreters(root: &Path) -> Vec<Toolchain> {
-    let Ok(registered) = Interpreters::discover(root) else {
-        return Vec::new();
-    };
-    registered
-        .commands()
-        .map(|(extension, command)| {
-            let program = command.first().cloned().unwrap_or_default();
-            let state = run(&program, &["--version"])
-                .map_or(ToolchainState::Missing, ToolchainState::Ready);
-            Toolchain {
-                requirement: format!("yon.{extension} handlers"),
-                command: program.clone(),
-                state,
-                install: format!("Install {program}, or change the interpreter in .tachyonrc."),
-            }
-        })
-        .collect()
+        .stderr(std::process::Stdio::piped());
+    run_sync(&mut command, PROBE_DEADLINE, PROBE_OUTPUT_BYTES).is_ok_and(|result| {
+        // rustc names the missing crate as core or std depending on the
+        // crate type, but always adds this note for a target it lacks.
+        !String::from_utf8_lossy(&result.stderr).contains("target may not be installed")
+    })
 }
 
 /// Runs one command and returns its first line of output.
@@ -416,7 +499,9 @@ fn run(program: &str, arguments: &[&str]) -> Option<String> {
 /// A tool that reports its version on standard error is common enough that
 /// falling back to it is the difference between "missing" and "found".
 fn output(program: &str, arguments: &[&str]) -> Option<String> {
-    let result = Command::new(program).args(arguments).output().ok()?;
+    let mut command = Command::new(program);
+    command.args(arguments);
+    let result = run_sync(&mut command, PROBE_DEADLINE, PROBE_OUTPUT_BYTES).ok()?;
     if !result.status.success() {
         return None;
     }
@@ -432,8 +517,10 @@ fn output(program: &str, arguments: &[&str]) -> Option<String> {
 mod tests {
     #![allow(clippy::expect_used)]
 
-    use super::{ToolchainState, check};
+    use super::{ToolchainState, check, check_with_options};
+    use crate::handler::{HandlerRuntimePrograms, HandlerSupervisorOptions};
     use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn a_project_is_told_only_about_what_it_uses() {
@@ -476,6 +563,134 @@ mod tests {
             ToolchainState::Incomplete(reason) => assert!(reason.contains("wasm")),
             ToolchainState::Missing => {}
         }
+    }
+
+    #[test]
+    fn yon_sources_report_only_the_runtime_toolchains_the_project_uses() {
+        let root = tempfile::tempdir().expect("project");
+        for relative in ["server/routes/a/yon.py", "server/routes/b/yon.java"] {
+            let path = root.path().join(relative);
+            fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+            fs::write(path, "source").expect("source");
+        }
+        let report = check(root.path()).expect("report");
+        let commands: Vec<_> = report
+            .toolchains
+            .iter()
+            .map(|toolchain| toolchain.command.as_str())
+            .collect();
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        assert!(commands.contains(&python), "{commands:?}");
+        assert!(commands.contains(&"java"), "{commands:?}");
+        assert!(!commands.contains(&"bun"), "{commands:?}");
+    }
+
+    #[test]
+    fn yon_runtime_checks_use_resolved_overrides_without_disclosing_them() {
+        let root = tempfile::tempdir().expect("project");
+        let route = root.path().join("server/routes/example/yon.js");
+        fs::create_dir_all(route.parent().expect("parent")).expect("directory");
+        fs::write(route, "@Controller class ExampleController {}").expect("source");
+        let canary = "/private/credentials/doctor-runtime-canary";
+        let options = HandlerSupervisorOptions {
+            runtimes: HandlerRuntimePrograms {
+                javascript: PathBuf::from(canary),
+                ..HandlerRuntimePrograms::from_lookup(|_| None)
+            },
+            ..HandlerSupervisorOptions::default()
+        };
+        let report = check_with_options(root.path(), &options).expect("report");
+        let javascript = report.toolchains.first().expect("javascript");
+        assert_eq!(javascript.command, "YON_JAVASCRIPT_RUNTIME");
+        assert_eq!(javascript.state, ToolchainState::Missing);
+        let human = report.to_text();
+        let json = serde_json::to_string(&report).expect("json");
+        assert!(!human.contains(canary), "{human}");
+        assert!(!json.contains(canary), "{json}");
+        assert!(human.contains("YON_JAVASCRIPT_RUNTIME"), "{human}");
+    }
+
+    #[test]
+    fn yon_discovery_is_limited_to_maintained_source_roots_and_configured_workers() {
+        let root = tempfile::tempdir().expect("project");
+        for (relative, source) in [
+            ("server/routes/a/yon.js", "source"),
+            ("server/services/a/yon.py", "source"),
+            ("server/services/typescript/yon.ts", "source"),
+            ("server/repositories/a/yon.java", "source"),
+            ("server/clients/a/yon.cs", "source"),
+            ("server/delegates/a/yon.kt", "source"),
+            ("middleware.php", "source"),
+            ("server/workers/cleanup.rs", "source"),
+            ("fixtures/decoy/yon.ts", "source"),
+            ("docs/examples/yon.py", "source"),
+            ("generated/preludes/yon.php", "source"),
+        ] {
+            let path = root.path().join(relative);
+            fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+            fs::write(path, source).expect("source");
+        }
+        fs::write(
+            root.path().join(".tachyonrc"),
+            r#"{"workers":{"server/workers/cleanup.rs":{"every_seconds":60}}}"#,
+        )
+        .expect("workers");
+        let report = check(root.path()).expect("report");
+        let commands: Vec<_> = report
+            .toolchains
+            .iter()
+            .map(|toolchain| toolchain.command.as_str())
+            .collect();
+        for expected in ["bun", "java", "dotnet", "kotlinc", "php", "rustc"] {
+            assert!(commands.contains(&expected), "{expected}: {commands:?}");
+        }
+        assert!(
+            commands.contains(&if cfg!(windows) { "python" } else { "python3" }),
+            "{commands:?}"
+        );
+        assert_eq!(
+            commands.iter().filter(|command| **command == "php").count(),
+            1
+        );
+        assert_eq!(
+            commands.iter().filter(|command| **command == "bun").count(),
+            1
+        );
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|command| **command == "java")
+                .count(),
+            1
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn yon_discovery_never_follows_outside_or_cyclic_directory_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("project");
+        let outside = tempfile::tempdir().expect("outside");
+        fs::create_dir_all(outside.path().join("nested")).expect("outside directory");
+        fs::write(outside.path().join("nested/yon.py"), "source").expect("outside source");
+        fs::create_dir_all(root.path().join("server/routes/live")).expect("route");
+        fs::write(root.path().join("server/routes/live/yon.js"), "source").expect("source");
+        symlink(outside.path(), root.path().join("server/routes/outside")).expect("outside link");
+        symlink(
+            root.path().join("server/routes"),
+            root.path().join("server/routes/live/parent"),
+        )
+        .expect("cycle");
+        let report = check(root.path()).expect("bounded discovery");
+        let commands: Vec<_> = report
+            .toolchains
+            .iter()
+            .map(|toolchain| toolchain.command.as_str())
+            .collect();
+        assert!(commands.contains(&"bun"), "{commands:?}");
+        let python = if cfg!(windows) { "python" } else { "python3" };
+        assert!(!commands.contains(&python), "{commands:?}");
     }
 
     #[test]

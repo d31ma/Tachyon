@@ -23,6 +23,8 @@ license = "MIT"
 repository = "https://github.com/d31ma/Tachyon"
 
 [workspace.dependencies]
+cap-fs-ext = "4.0.2"
+cap-std = "4.0.2"
 notify = "8.2.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

@@ -7,6 +7,10 @@ contracts, bounded failure, deterministic builds, native validation, secure
 defaults, recoverable releases, and documentation that agrees with behavior.
 It does not mean maximizing crate count, abstractions, or CI jobs.
 
+All external build, probe, and hook commands must use the shared supervised
+runner. Direct `Command::output`, unbounded pipe capture, leader-only timeout,
+and detached descendant cleanup are prohibited in production paths.
+
 ## Repository Rules
 
 - Build vertical slices.
@@ -43,6 +47,51 @@ It does not mean maximizing crate count, abstractions, or CI jobs.
   environment values.
 - Avoid feature flags that create unsupported combinations. Every supported
   combination must compile and test in CI.
+
+## Yon Boundaries
+
+- Server layer sources declare exactly one matching `@Controller`, `@Service`,
+  `@Repository`, `@Client`, or `@Delegate`; class-name inference is forbidden.
+- Routes, middleware, and workers use the eight framework-owned Yon languages.
+  Other programs cross an explicit `@Relay` delegate boundary; project files
+  cannot register an interpreter or select an executable handler.
+- Relay and streaming implementations concurrently drain bounded pipes, use
+  one absolute request deadline, redact child diagnostics from public
+  responses, and prove descendant reaping on timeout and subscriber closure.
+- Environment variables use `TAC_` or `YON_`; `TACHYON_*` names are forbidden.
+- Topic SSE clients handle the named `topic-error` event, parse its canonical
+  JSON payload, and close on `terminal: true`. Cursor-stale recovery recreates
+  the subscription without an explicit cursor; HTTP 503 admission failures use
+  bounded backoff. Limits are 128 global subscribers, 32 per topic, 32 active
+  topics, 256 replay records, 64 KiB per record, and 16 MiB per log.
+
+## Handler Cache Operations
+
+Compiled and staged Yon artifacts live in the project-local
+`.tachyon/handlers` directory. All lookups and mutations after opening that
+directory are relative to its non-following directory handle. The cache is
+content-addressed and pruned to at most 256 recursively accounted entries and
+512 MiB. Tachyon normally recovers abandoned build locks automatically: a lock
+whose process is gone is reclaimed immediately, while a hard ten-minute lease
+bounds a lock whose process identifier was reused. Cache pruning then accounts
+for and removes the abandoned digest and temporary publication files under the
+same capability-confined prune transaction.
+
+To inspect an incident, list `.tachyon/handlers` without following symlinks and
+preserve the directory for diagnosis. Never delete an individual `*.lock` or
+artifact while `ty serve`, `ty bundle`, or another Tachyon build may still be
+running. For manual recovery:
+
+1. Stop every Tachyon server and build process using that project.
+2. Rename `.tachyon/handlers` to a diagnostic backup on the same filesystem.
+3. Run the original Tachyon command; it creates a new confined cache and
+   rebuilds content-addressed artifacts.
+4. Remove the backup only after the rebuild succeeds and any required incident
+   evidence has been collected.
+
+`ty cache status` and `ty cache clean` operate on the installation/runtime
+cache selected by `TAC_CACHE_DIR`. They do not inspect, repair, or remove the
+project-local `.tachyon/handlers` cache.
 
 ## Naming
 

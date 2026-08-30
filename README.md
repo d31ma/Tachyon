@@ -26,8 +26,9 @@ layer. Both use the standalone `ty` executable.
   Yon templates or execute handlers during a build.
 - JavaScript, TypeScript, Rust, Dart, Kotlin, Swift, and C# can implement Tac
   component behavior.
-- JavaScript and Python have built-in Yon adapters. Other languages can use a
-  registered interpreter or executable that implements the direct protocol.
+- Yon runs JavaScript, TypeScript, Python, Java, C#, Kotlin, PHP, and Rust.
+  Every server layer declares its mandatory stereotype; existing programs in
+  other languages stay behind an explicit `@Delegate` + `@Relay` boundary.
 - One project produces deterministic web and native artifacts.
 - Generated output, child processes, input sizes, build hooks, and native
   fallback boundaries are explicitly bounded.
@@ -81,12 +82,15 @@ server/
   routes/
     products/
       yon.js
-      yon.py
-  middleware/
-    yon.js
+  services/
+  repositories/
+  clients/
+  delegates/
   workers/
     cleanup/
       yon.py
+middleware.py
+.tachyonrc        # worker intervals only
 tachyon.json
 tac.config.js
 ```
@@ -194,6 +198,21 @@ Arbitrary inline JavaScript, attributed script tags, and executable state
 initializers fail with `TY1306`; they are never evaluated as authored source by
 the compiler.
 
+Nested loops use lexical scope. An inner loop can read every parent binding in
+its iterable, text, dynamic attributes, conditions, component props, and event
+arguments. Reusing a binding name shadows only the nearest scope; a following
+sibling sees the restored outer value. Components receive evaluated props and
+own those values rather than inheriting the caller's loop scope.
+
+```html
+<loop :for="account of accounts">
+  <loop :for="role of rolesFor(account)">
+    <account-role :label="format(account, role)" />
+    <button on:click="select(account.id, role.id)">Select</button>
+  </loop>
+</loop>
+```
+
 ## Yon REST endpoints
 
 A `server/routes/**/yon.*` file defines a REST endpoint. Its selected static
@@ -201,7 +220,8 @@ HTTP method receives the request and returns either a JSON-serializable value
 or an explicit response descriptor:
 
 ```javascript
-export class Handler {
+@Controller
+export class ProductsController {
   static async GET() {
     return { products: await loadProducts() }
   }
@@ -212,7 +232,8 @@ Ordinary values become JSON responses. To return HTML, the handler must provide
 the body and explicitly select `text/html`:
 
 ```javascript
-export class Handler {
+@Controller
+export class ProductsController {
   static GET() {
     return {
       status: 200,
@@ -228,11 +249,23 @@ component expansion, control-tag evaluation, or server-side rendering.
 `yon.html` is rejected with `TY1008` so a project cannot accidentally acquire
 build-time handler execution.
 
-JavaScript and Python have a `Handler` class convenience adapter. Any other
-language can participate through the bounded length-prefixed JSON handler
-protocol and an explicit interpreter registration. Children are spawned
-directly, never through a shell, with bounded input, output, stderr, queueing,
-runtime, and cancellation.
+Routes must attach `@Controller` to a class whose name ends in `Controller`;
+the legacy `Handler` name fallback is removed. `@Service`, `@Repository`,
+`@Client`, and `@Delegate` are likewise mandatory under their matching server
+directories, with `TY2008`, `TY2009`, `TY2011`, `TY2012`, and `TY2015`
+enforcing placement, dependency direction, naming, route methods, and presence.
+
+`@Relay` belongs on a delegate-facing method and runs an explicit command
+without a shell under bounded stdout, stderr, deadline, and process-tree
+cleanup. `.tachyonrc.interpreters`, shebang handlers, and executable-handler
+fallbacks are removed. `.tachyonrc.workers` remains, but middleware and workers
+must use one of the eight Yon languages.
+
+`@Stream` marks a yielding route method. JavaScript, TypeScript, Python, PHP,
+Kotlin, and C# stream multiple bounded frames as server-sent events; Java and
+Rust remain single-response languages. Dropped subscribers and deadlines reap
+the complete handler process group. Runtime overrides use
+`YON_JAVASCRIPT_RUNTIME` and `YON_PYTHON_RUNTIME`.
 
 ## Server runtime
 
@@ -248,6 +281,19 @@ ty serve --host 127.0.0.1 --no-watch
 The default bind address is loopback. A non-loopback address requires the
 explicit `--allow-non-loopback` acknowledgement.
 
+Before preparing output, binding a socket, advertising readiness, registering
+routes or middleware, or starting workers, `ty serve` runs bounded capability
+probes for every runtime required by the discovered Yon entry points. This also
+applies to `--no-bundle`; a static-only project requires no Yon runtime.
+JavaScript and TypeScript share one JavaScript-runtime probe, while Java and
+Kotlin share one Java-runtime probe. A missing executable is `TY2112`; an
+installed but unusable capability remains a bounded `TY2101` readiness failure.
+The C# probe resolves the installed SDK and builds a framework-owned minimal
+project in isolated temporary CLI/NuGet state, so a runtime-only installation
+cannot advertise readiness.
+`ty doctor` uses the same probe matrix and reports configured overrides by
+environment-variable name, never by executable path.
+
 The runtime supports:
 
 - exact and dynamic filesystem routes;
@@ -258,11 +304,25 @@ The runtime supports:
 - defensive response headers and traversal-resistant static serving;
 - semantic CSS and island hot updates with a safe reload fallback for development pages.
 
+Topic subscriptions admit at most 128 clients globally, 32 clients per topic,
+and 32 active topics. Each active topic retains 256 replay records; records are
+at most 64 KiB and a log is at most 16 MiB. A cursor-less `EventSource` starts
+at the oldest retained record. Browser reconnection sends `Last-Event-ID` and
+resumes at the following record; an explicitly stale cursor terminates with a
+named `topic-error` event. Its JSON payload includes `code`, `message`,
+`category`, `guidance`, and `terminal: true`. Clients should parse that event,
+call `close()`, and, for `TY_TOPIC_CURSOR_STALE`, recreate the `EventSource`
+without `?position=` to recover at the replay floor. Capacity exhaustion is an
+HTTP 503: close the attempted subscription and retry with bounded backoff.
+
 Handler and middleware invocation failures return a bounded public message and
 an `x-tachyon-request-id` header. The server writes a redacted structured
 failure event containing the same time-sortable request ID, so operators can
 correlate a client-visible failure without exposing child stderr or internal
-diagnostics over HTTP.
+diagnostics over HTTP. A `TY2112` event adds only the logical `runtime_family`
+and `failure_kind: "not_found"`; it does not include the executable path,
+operating-system error, environment values, source, request body, or child
+output.
 
 OpenAPI generation and built-in telemetry from the legacy implementation are
 deliberately out of scope. The exact compatibility decision and migration
@@ -338,6 +398,11 @@ cross-build is `buildable`, not `native-tested` or `supported`; see
 | `ty preview [project] --target <target>` | Serve an existing target's embedded web bundle |
 | `ty cache [status\|clean]` | Inspect or remove cache left by an earlier installation |
 
+`ty cache` manages the installation/runtime cache selected by `TAC_CACHE_DIR`.
+It does **not** inspect or clear a project's compiled handler cache at
+`.tachyon/handlers`; use the safe handler-cache recovery procedure in
+[the engineering standards](docs/ENGINEERING_STANDARDS.md#handler-cache-operations).
+
 Useful options:
 
 ```text
@@ -366,6 +431,26 @@ subtree planning is unconditional.
 The public command names from the latest standalone binary remain accepted.
 Internal qualification commands such as `doctor`, `migrate`, and
 `handler invoke` are intentionally omitted from normal help until cutover.
+
+### Long-running command readiness and shutdown
+
+For `serve`, `preview`, and `bundle --watch`, standard error is a stream of
+compact JSON lifecycle events. Parse it one line at a time. The
+`runtime.signal_handlers_ready` event proves only which operating-system signal
+handlers were installed; despite its name, it is **not** application-readiness
+evidence. Wait for the command's readiness line on standard output and, for a
+deployed service, a successful health probe before sending traffic.
+
+The first supported signal emits `runtime.shutdown_requested` and requests
+graceful shutdown. The development server bounds its owned internal tasks, but
+preview may await cooperative connection drain and `bundle --watch` may finish
+its synchronous fingerprint pass or current bounded build. Supervisors should
+enforce their own grace period. A second signal during graceful shutdown emits
+`runtime.shutdown_forced` and exits immediately: `130` for Unix `SIGINT` or
+Windows CTRL-C, `143` for Unix `SIGTERM`, and `131` for Windows CTRL-BREAK.
+Unix `SIGKILL`, Windows `TerminateProcess`, out-of-memory termination, and host
+shutdown cannot be observed through this interface. The complete structured
+event and privacy contract is [CLI Signal Lifecycle](docs/SIGNAL_LIFECYCLE.md).
 
 ## Configuration and hooks
 
@@ -412,9 +497,9 @@ Deploy handlers inside the isolation boundary your environment requires.
 
 ### Environment-selected Yon isolation
 
-Production operators can route every Yon execution path through a qualified
-Firecracker control program without giving the application a project-file
-override:
+Production operators can route JavaScript and Python Yon execution through a
+qualified Firecracker control program without giving the application a
+project-file override:
 
 ```sh
 export YON_ISOLATION=firecracker
@@ -428,9 +513,12 @@ ty serve
 
 `process` is the default. Firecracker mode uses the same framed Handler
 Protocol, deadlines, cancellation, bounded diagnostics, and response
-validation. The configured control program and host must be qualified
-separately; setting the environment variable alone does not prove hardware
-isolation. See [ADR 0014](docs/adr/0014-environment-selected-yon-isolation.md).
+validation. It currently rejects TypeScript and the prepared Java, PHP,
+Kotlin, C#, and Rust paths with `TY2010` before starting the driver because the
+driver contract has no artifact-transfer boundary for them. The configured
+control program and host must be qualified separately; setting the environment
+variable alone does not prove hardware isolation. See
+[ADR 0014](docs/adr/0014-environment-selected-yon-isolation.md).
 
 ## Migration from the released implementation
 
@@ -478,6 +566,11 @@ Start with:
 - [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor workflow;
 - [docs/RELEASE_ENGINEERING.md](docs/RELEASE_ENGINEERING.md) for release and
   rollback policy.
+
+A rollback across the mandatory-layer migration is one coordinated restore:
+restore the matching `ty` binary, Yon handler sources, and `.tachyonrc`
+together. Restoring only one of them can revive removed interpreter,
+shebang, or `Handler` fallback assumptions and is not a supported rollback.
 
 The Rust implementation is greenfield. The former JavaScript framework and its
 test tree have been removed. Compatibility gates compare Rust with the

@@ -5,8 +5,8 @@
       <h2>Filesystem routes, polyglot handlers, production guardrails.</h2>
       <p>
         Yon is Tachyon's server runtime. Drop <code>yon.&lt;ext&gt;</code>
-        files under <code>server/routes</code>, export a <code>Handler</code>
-        class or executable protocol adapter, and Tachyon wires HTTP methods,
+        files under <code>server/routes</code>, declare an <code>@Controller</code>
+        class, and Tachyon wires HTTP methods,
         bounded process supervision, middleware and request identifiers around each request.
       </p>
     </div>
@@ -28,18 +28,15 @@ NODE_ENV=production ty serve</code></pre>
     <w-card class="yon-card" variant="outlined" title="Route handlers" subtitle="FastAPI-style returns">
       <w-card-text>
         <p>Handlers return protocol responses. Yon binds route parameters, supervises the process, preserves headers and bodies, and reports bounded failures consistently.</p>
-        <pre class="code-block"><code>export class Handler &#123;
-  static GET() &#123; return &#123; ok: true &#125; &#125;
-  static POST(request) &#123; return request.body &#125;
-&#125;</code></pre>
+        <pre class="code-block"><code data-sample="handler"></code></pre>
       </w-card-text>
     </w-card>
-    <w-card class="yon-card" variant="outlined" title="Handler protocol" subtitle="one JSON request and response">
+    <w-card class="yon-card" variant="outlined" title="Five layers" subtitle="mandatory architecture declarations">
       <w-card-text>
-        <p>Any executable language can read one bounded JSON request from stdin and write one JSON response to stdout; .tachyonrc registers interpreters.</p>
-        <pre class="code-block"><code>server/routes/items/
-  yon.rb
-.tachyonrc</code></pre>
+        <p>@Controller, @Service, @Repository, @Client and @Delegate must match their directory and class suffix. Missing declarations fail with TY2015.</p>
+        <pre class="code-block"><code>server/routes/items/yon.py
+server/services/catalog.py
+server/delegates/report.py</code></pre>
       </w-card-text>
     </w-card>
     <w-card class="yon-card" variant="outlined" title="Durable realtime" subtitle="append-only SSE topics">
@@ -48,11 +45,15 @@ NODE_ENV=production ty serve</code></pre>
         <pre class="code-block"><code>new EventSource('/.tachyon/topics/releases')</code></pre>
       </w-card-text>
     </w-card>
-    <w-card class="yon-card" variant="outlined" title="Polyglot middleware" subtitle="before and after phases">
+    <w-card class="yon-card" variant="outlined" title="Relay and middleware" subtitle="explicit language boundaries">
       <w-card-text>
-        <p>Root middleware uses the same supervised protocol as handlers. Return 204 to continue, answer early from before, or merge response headers in after.</p>
-        <pre class="code-block"><code>middleware.rb
-.tachyonrc</code></pre>
+        <p>Middleware uses a Yon language. Existing programs in other languages stay behind a supervised @Delegate method carrying @Relay.</p>
+        <pre class="code-block"><code>@Delegate
+class ReportDelegate:
+  @staticmethod
+  @Relay("ruby", "server/delegates/report.rb")
+  def generate(request):
+    raise RuntimeError("proxy body is never called")</code></pre>
       </w-card-text>
     </w-card>
     <w-card class="yon-card" variant="outlined" title="Operations" subtitle="security and deterministic limits">
@@ -66,16 +67,17 @@ ty migrate check</code></pre>
   </div>
 
   <div class="yon-languages">
-    <h3>Built-in ergonomic adapters</h3>
+    <h3>Owned Yon runtimes</h3>
     <p>
-      Yon can run any executable handler that speaks its JSON stdin/stdout
-      protocol. JavaScript and Python also get the <code>class Handler</code>
-      convenience path; every other language keeps its ordinary executable semantics.
+      Yon owns eight route runtimes. <code>@Stream</code> supports direct
+      multi-frame SSE in JavaScript, TypeScript, Python, PHP, Kotlin and C#;
+      Java and Rust return one response. Runtime overrides use
+      <code>YON_JAVASCRIPT_RUNTIME</code> and <code>YON_PYTHON_RUNTIME</code>.
     </p>
     <div class="language-row">
-      <w-chip size="small">JavaScript</w-chip>
-      <w-chip size="small">Python</w-chip>
-      <w-chip size="small">Any executable protocol adapter</w-chip>
+      <w-chip size="small">JavaScript / TypeScript</w-chip>
+      <w-chip size="small">Python / PHP</w-chip>
+      <w-chip size="small">Java / Kotlin / C# / Rust</w-chip>
     </div>
   </div>
 </section>

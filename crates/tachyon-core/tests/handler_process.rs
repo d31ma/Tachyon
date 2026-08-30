@@ -3,6 +3,8 @@
 #![allow(clippy::expect_used)]
 
 use std::fs;
+#[cfg(unix)]
+use std::path::Path;
 use std::process::Command as StdCommand;
 #[cfg(unix)]
 use std::process::Stdio;
@@ -19,6 +21,14 @@ fn source(root: &tempfile::TempDir, extension: &str, contents: &str) -> HandlerS
     let relative = format!("server/routes/contract/yon.{extension}");
     let path = root.path().join(&relative);
     fs::create_dir_all(path.parent().expect("handler parent")).expect("handler directory");
+    let contents = match extension {
+        "js" | "ts" => contents.replace(
+            "export class Handler",
+            "@Controller\nexport class ContractController",
+        ),
+        "py" => contents.replace("class Handler", "@Controller\nclass ContractController"),
+        _ => String::from(contents),
+    };
     fs::write(path, contents).expect("handler source");
     HandlerSource::discover(root.path(), &relative).expect("validated source")
 }
@@ -43,6 +53,15 @@ fn body_json(response: &HandlerResponse) -> serde_json::Value {
 
 fn supervisor(options: HandlerSupervisorOptions) -> HandlerSupervisor {
     HandlerSupervisor::new(options).expect("valid supervisor")
+}
+
+fn available(program: &str) -> bool {
+    StdCommand::new(program)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 #[cfg(unix)]
@@ -141,6 +160,241 @@ class Handler:
         assert_eq!(value["headers"][1], "second");
         assert_eq!(value["body"], "payload");
         assert_eq!(value["unicode"], "héllø 🌍");
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn interpreted_handlers_execute_owned_dependencies_after_the_project_root_is_swapped() {
+    use std::os::unix::fs::symlink;
+
+    let mut cases = vec![
+        (
+            "js",
+            "import { origin } from './origin.js'\n@Controller\nexport class ContractController {\n  static GET() { return { origin } }\n}\n",
+            "export const origin = 'owned-js'\n",
+            "import { origin } from './origin.js'\n@Controller\nexport class ContractController {\n  static GET() { return { origin } }\n}\n",
+            "export const origin = 'planted-js'\n",
+            "owned-js",
+        ),
+        (
+            "py",
+            "from origin import value\n@Controller\nclass ContractController:\n    @staticmethod\n    def GET(request):\n        return {'origin': value}\n",
+            "value = 'owned-py'\n",
+            "from origin import value\n@Controller\nclass ContractController:\n    @staticmethod\n    def GET(request):\n        return {'origin': value}\n",
+            "value = 'planted-py'\n",
+            "owned-py",
+        ),
+    ];
+    if available("bun") {
+        cases.push((
+            "ts",
+            "import { origin } from './origin.ts'\n@Controller\nexport class ContractController {\n  static GET() { return { origin } }\n}\n",
+            "export const origin: string = 'owned-ts'\n",
+            "import { origin } from './origin.ts'\n@Controller\nexport class ContractController {\n  static GET() { return { origin } }\n}\n",
+            "export const origin: string = 'planted-ts'\n",
+            "owned-ts",
+        ));
+    }
+
+    for (extension, owned, owned_dependency, planted, planted_dependency, expected) in cases {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let project = workspace.path().join(format!("project-{extension}"));
+        let relative = format!("server/routes/contract/yon.{extension}");
+        let authored = project.join(&relative);
+        fs::create_dir_all(authored.parent().expect("handler parent")).expect("handler root");
+        fs::write(&authored, owned).expect("owned source");
+        fs::write(
+            authored
+                .parent()
+                .expect("handler parent")
+                .join(format!("origin.{extension}")),
+            owned_dependency,
+        )
+        .expect("owned dependency");
+        let source = HandlerSource::discover(&project, &relative).expect("snapshot source");
+
+        let retained = workspace.path().join(format!("retained-{extension}"));
+        fs::rename(&project, &retained).expect("move opened project");
+        let outside = tempfile::tempdir().expect("planted project");
+        let planted_source = outside.path().join(&relative);
+        fs::create_dir_all(planted_source.parent().expect("planted parent")).expect("planted root");
+        fs::write(&planted_source, planted).expect("planted source");
+        fs::write(
+            planted_source
+                .parent()
+                .expect("planted parent")
+                .join(format!("origin.{extension}")),
+            planted_dependency,
+        )
+        .expect("planted dependency");
+        symlink(outside.path(), &project).expect("ambient project replacement");
+
+        let response = supervisor(HandlerSupervisorOptions::default())
+            .invoke(
+                &source,
+                &request(
+                    &format!("owned_snapshot_{extension}"),
+                    HttpMethod::Get,
+                    None,
+                ),
+                &HandlerCancellation::default(),
+            )
+            .await
+            .expect("owned handler response");
+        assert_eq!(body_json(&response)["origin"], expected, "{extension}");
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn relay_executes_the_owned_delegate_after_the_project_root_is_swapped() {
+    use std::os::unix::fs::symlink;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let project = workspace.path().join("project-relay");
+    let handler = project.join("server/routes/contract/yon.py");
+    let delegate = project.join("server/delegates/origin.py");
+    fs::create_dir_all(handler.parent().expect("handler parent")).expect("handler root");
+    fs::create_dir_all(delegate.parent().expect("delegate parent")).expect("delegate root");
+    fs::write(
+        &handler,
+        "@Controller\nclass ContractController:\n    @staticmethod\n    def GET(request):\n        return OriginDelegate.GET(request)\n\n@Delegate\nclass OriginDelegate:\n    @staticmethod\n    @Relay('python3', 'server/delegates/origin.py')\n    def GET(request):\n        raise RuntimeError('placeholder')\n",
+    )
+    .expect("handler");
+    fs::write(
+        &delegate,
+        "import json\nprint(json.dumps({'status': 200, 'headers': {'content-type': ['application/json']}, 'body': json.dumps({'origin': 'owned-relay'})}))\n",
+    )
+    .expect("owned delegate");
+    let source = HandlerSource::discover(&project, "server/routes/contract/yon.py")
+        .expect("snapshot source");
+
+    let retained = workspace.path().join("retained-relay");
+    fs::rename(&project, &retained).expect("move opened project");
+    let outside = tempfile::tempdir().expect("planted project");
+    let planted = outside.path().join("server/delegates/origin.py");
+    fs::create_dir_all(planted.parent().expect("planted parent")).expect("planted root");
+    fs::write(
+        &planted,
+        "import json\nprint(json.dumps({'status': 200, 'headers': {'content-type': ['application/json']}, 'body': json.dumps({'origin': 'planted-relay'})}))\n",
+    )
+    .expect("planted delegate");
+    symlink(outside.path(), &project).expect("replace ambient project");
+
+    let response = supervisor(HandlerSupervisorOptions::default())
+        .invoke(
+            &source,
+            &request("owned_relay", HttpMethod::Get, None),
+            &HandlerCancellation::default(),
+        )
+        .await
+        .expect("relay response");
+    assert_eq!(body_json(&response)["origin"], "owned-relay");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn prepared_handlers_ignore_an_ambient_project_root_swap_during_real_invocation() {
+    use std::os::unix::fs::symlink;
+
+    let cases = [
+        (
+            "rs",
+            "rustc",
+            r#"#[Controller]
+struct ContractController;
+impl ContractController {
+    fn GET(_request: &YonRequest) -> YonResponse {
+        YonResponse::json("{\"kind\":\"rust\"}")
+    }
+}
+"#,
+            "rust",
+        ),
+        (
+            "cs",
+            "dotnet",
+            r#"[Controller]
+sealed class ContractController {
+    public static YonResponse GET(YonRequest request) =>
+        YonResponse.Json("{\"kind\":\"csharp\"}");
+}
+"#,
+            "csharp",
+        ),
+        (
+            "php",
+            "php",
+            r#"<?php
+#[Controller]
+final class ContractController
+{
+    public static function GET(YonRequest $request): YonResponse
+    {
+        return YonResponse::json('{"kind":"php"}');
+    }
+}
+"#,
+            "php",
+        ),
+    ];
+
+    for (extension, tool, contents, expected) in cases {
+        if !available(tool) {
+            continue;
+        }
+        let root = tempfile::tempdir().expect("project");
+        let prepared = source(&root, extension, contents);
+        let absolute_artifacts = prepared
+            .interpreter()
+            .iter()
+            .filter_map(|argument| {
+                let candidate = argument
+                    .split_once('=')
+                    .map_or(argument.as_str(), |(_, value)| value);
+                Path::new(candidate).is_absolute().then_some(candidate)
+            })
+            .collect::<Vec<_>>();
+        assert!(!absolute_artifacts.is_empty(), "{extension}");
+        for artifact in absolute_artifacts {
+            assert!(Path::new(artifact).is_file(), "{extension}: {artifact}");
+            assert!(
+                !Path::new(artifact).starts_with(root.path()),
+                "{extension} runtime still points into the authored project: {artifact}"
+            );
+        }
+
+        let authored = root.path().to_path_buf();
+        let retained = authored.with_extension(format!("retained-{extension}"));
+        fs::rename(&authored, &retained).expect("move authored project");
+        let outside = tempfile::tempdir().expect("planted project");
+        let planted = outside
+            .path()
+            .join(format!("server/routes/contract/yon.{extension}"));
+        fs::create_dir_all(planted.parent().expect("planted parent")).expect("planted root");
+        fs::write(&planted, "planted source must never execute").expect("planted source");
+        symlink(outside.path(), &authored).expect("replace authored project");
+        let response = supervisor(HandlerSupervisorOptions {
+            default_timeout: Duration::from_secs(10),
+            ..HandlerSupervisorOptions::default()
+        })
+        .invoke(
+            &prepared,
+            &request(&format!("root_swap_{extension}"), HttpMethod::Get, None),
+            &HandlerCancellation::default(),
+        )
+        .await
+        .expect("prepared handler must use its owned runtime workspace");
+        assert_eq!(response.status, 200, "{extension}");
+        assert_eq!(body_json(&response)["kind"], expected, "{extension}");
+        assert_eq!(
+            fs::read_to_string(&planted).expect("planted source remains"),
+            "planted source must never execute",
+            "{extension}"
+        );
+        fs::remove_file(&authored).expect("remove replacement symlink");
+        fs::rename(&retained, &authored).expect("restore authored project for cleanup");
     }
 }
 
@@ -245,16 +499,14 @@ class Handler:
         .expect("authoring response");
     assert_eq!(rejected.error.expect("error").code, "TY2202");
 
-    let missing_class = source(&root, "js", "export const notAHandler = true");
-    let rejected = supervisor(HandlerSupervisorOptions::default())
-        .invoke(
-            &missing_class,
-            &request("missing_class", HttpMethod::Get, None),
-            &HandlerCancellation::default(),
-        )
-        .await
-        .expect("adapter load response");
-    assert_eq!(rejected.error.expect("error").code, "TY2201");
+    let missing_class_path = root.path().join("server/routes/missing/yon.js");
+    fs::create_dir_all(missing_class_path.parent().expect("handler parent"))
+        .expect("handler directory");
+    fs::write(&missing_class_path, "export const notAHandler = true")
+        .expect("invalid handler source");
+    let rejected = HandlerSource::discover(root.path(), "server/routes/missing/yon.js")
+        .expect_err("missing stereotype is rejected before runtime");
+    assert!(rejected.to_string().contains("TY2015"), "{rejected}");
 
     let invalid_python = source(&root, "py", "class Handler\n    pass");
     let rejected = supervisor(HandlerSupervisorOptions::default())
@@ -401,6 +653,7 @@ export class Handler {
     return { descendant: descendant.pid }
   }
 }
+
 ",
     );
 
@@ -481,6 +734,429 @@ export class Handler {
     assert!(cancelled.to_string().contains("TY2111"));
     let cancellation_pid = descendant_pid(&cancellation_pid_file);
     assert_process_gone(cancellation_pid).await;
+}
+
+fn streaming_descendant_source(root: &tempfile::TempDir) -> HandlerSource {
+    source(
+        root,
+        "py",
+        r#"
+import subprocess
+import sys
+import time
+
+class Handler:
+    @staticmethod
+    @Stream
+    def GET(request):
+        descendant = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            stdin=sys.stdin,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        with open(request["headers"]["x-pid-file"][0], "w") as target:
+            target.write(str(descendant.pid))
+        yield {"descendant": descendant.pid}
+        while True:
+            time.sleep(1)
+"#,
+    )
+}
+
+#[tokio::test]
+async fn streaming_deadlines_reap_inheriting_descendants() {
+    let root = tempfile::tempdir().expect("project");
+    let source = streaming_descendant_source(&root);
+    let pid_file = root.path().join("stream-timeout.pid");
+    let supervisor = supervisor(HandlerSupervisorOptions {
+        default_timeout: Duration::from_millis(250),
+        cancellation_grace: Duration::from_millis(25),
+        ..HandlerSupervisorOptions::default()
+    });
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(4);
+    let request = descendant_request("stream_timeout", "hang", &pid_file);
+    let invocation = supervisor.invoke_streaming(&source, &request, sender);
+    let (result, first) = tokio::join!(invocation, receiver.recv());
+    assert!(first.is_some(), "stream should yield before its deadline");
+    let failure = result.expect_err("stream deadline");
+    assert!(failure.to_string().contains("TY2110"), "{failure}");
+    assert_process_gone(descendant_pid(&pid_file)).await;
+}
+
+#[tokio::test]
+async fn closing_a_stream_subscription_reaps_the_process_group() {
+    let root = tempfile::tempdir().expect("project");
+    let source = streaming_descendant_source(&root);
+    let pid_file = root.path().join("stream-disconnect.pid");
+    let supervisor = supervisor(HandlerSupervisorOptions {
+        default_timeout: Duration::from_secs(3),
+        ..HandlerSupervisorOptions::default()
+    });
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+    let request = descendant_request("stream_disconnect", "hang", &pid_file);
+    let task =
+        tokio::spawn(async move { supervisor.invoke_streaming(&source, &request, sender).await });
+    receiver.recv().await.expect("first streamed event");
+    drop(receiver);
+    tokio::time::timeout(Duration::from_secs(2), task)
+        .await
+        .expect("disconnect cleanup stayed bounded")
+        .expect("stream task joined")
+        .expect("subscriber close is a clean stop");
+    assert_process_gone(descendant_pid(&pid_file)).await;
+}
+
+#[tokio::test]
+async fn oversized_python_stream_event_emits_only_a_bounded_failure_frame() {
+    let root = tempfile::tempdir().expect("project");
+    let source = source(
+        &root,
+        "py",
+        r#"
+class Handler:
+    @staticmethod
+    @Stream
+    def GET(_request):
+        yield "x" * (300 * 1024)
+"#,
+    );
+    let supervisor = supervisor(HandlerSupervisorOptions::default());
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+    let result = supervisor
+        .invoke_streaming(
+            &source,
+            &request("oversized_python_stream", HttpMethod::Get, None),
+            sender,
+        )
+        .await
+        .expect_err("oversized stream event");
+    assert!(result.to_string().contains("TY2107"), "{result}");
+    assert!(
+        receiver.recv().await.is_none(),
+        "oversized event must not escape"
+    );
+}
+
+#[tokio::test]
+async fn a_slow_subscriber_applies_backpressure_until_the_stream_deadline() {
+    let root = tempfile::tempdir().expect("project");
+    let source = source(
+        &root,
+        "py",
+        r#"
+class Handler:
+    @staticmethod
+    @Stream
+    def GET(_request):
+        while True:
+            yield "x" * (200 * 1024)
+"#,
+    );
+    let supervisor = supervisor(HandlerSupervisorOptions {
+        default_timeout: Duration::from_millis(200),
+        ..HandlerSupervisorOptions::default()
+    });
+    let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+    let started = std::time::Instant::now();
+    let failure = supervisor
+        .invoke_streaming(
+            &source,
+            &request("slow_subscriber", HttpMethod::Get, None),
+            sender,
+        )
+        .await
+        .expect_err("a full subscriber queue must remain deadline bounded");
+    assert!(failure.to_string().contains("TY2110"), "{failure}");
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[tokio::test]
+async fn a_fast_javascript_generator_obeys_stdout_and_subscriber_backpressure() {
+    if !available("bun") {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    let source = source(
+        &root,
+        "js",
+        r#"
+export class Handler {
+  @Stream
+  static async *GET(_request) {
+    while (true) yield "x".repeat(200 * 1024)
+  }
+}
+"#,
+    );
+    let supervisor = supervisor(HandlerSupervisorOptions {
+        default_timeout: Duration::from_millis(250),
+        ..HandlerSupervisorOptions::default()
+    });
+    let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+    let started = std::time::Instant::now();
+    let failure = supervisor
+        .invoke_streaming(
+            &source,
+            &request("javascript_slow_subscriber", HttpMethod::Get, None),
+            sender,
+        )
+        .await
+        .expect_err("a fast generator must remain deadline bounded");
+    assert!(failure.to_string().contains("TY2110"), "{failure}");
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn compiled_relay_bounds_sideband_redacts_errors_and_reaps_descendants() {
+    if !available("php") || !available("python3") {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    let delegate = root.path().join("server/delegates/probe.py");
+    fs::create_dir_all(delegate.parent().expect("delegate parent")).expect("delegates");
+    fs::write(
+        &delegate,
+        r#"import json
+import subprocess
+import sys
+import time
+
+request = json.load(sys.stdin)
+mode = request.get("body", {}).get("data", "")
+if mode == "sideband":
+    sys.stderr.write("secret-canary:" + "x" * (128 * 1024))
+    sys.stderr.flush()
+    sys.exit(9)
+else:
+    descendant = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        stdin=sys.stdin,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    with open(request["headers"]["x-pid-file"][0], "w") as target:
+        target.write(str(descendant.pid))
+    time.sleep(60)
+"#,
+    )
+    .expect("delegate");
+    let relay_sources = [
+        (
+            "php",
+            r#"<?php
+#[Controller]
+final class ContractController
+{
+    public static function POST(YonRequest $request): YonResponse
+    {
+        return ContractDelegate::POST($request);
+    }
+}
+
+#[Delegate]
+final class ContractDelegate
+{
+    #[Relay("python3", "server/delegates/probe.py")]
+    public static function POST(YonRequest $request): YonResponse
+    {
+        throw new RuntimeException("relay method body must not execute");
+    }
+}
+"#,
+        ),
+        (
+            "java",
+            r#"@Controller
+class ContractController {
+    static YonResponse POST(YonRequest request) { return ContractDelegate.POST(request); }
+}
+@Delegate
+class ContractDelegate {
+    @Relay({"python3", "server/delegates/probe.py"})
+    static YonResponse POST(YonRequest request) { throw new RuntimeException("proxy body"); }
+}
+"#,
+        ),
+        (
+            "kt",
+            r#"@Controller
+object ContractController {
+    @JvmStatic fun POST(request: YonRequest): YonResponse = ContractDelegate.POST(request)
+}
+@Delegate
+object ContractDelegate {
+    @Relay("python3", "server/delegates/probe.py")
+    fun POST(request: YonRequest): YonResponse { throw RuntimeException("proxy body") }
+}
+"#,
+        ),
+        (
+            "cs",
+            r#"[Controller]
+sealed class ContractController {
+    public static YonResponse POST(YonRequest request) => ContractDelegate.POST(request);
+}
+[Delegate]
+sealed class ContractDelegate {
+    [Relay("python3", "server/delegates/probe.py")]
+    public static YonResponse POST(YonRequest request) { throw new Exception("proxy body"); }
+}
+"#,
+        ),
+        (
+            "rs",
+            r#"#[Controller]
+struct ContractController;
+impl ContractController {
+    fn POST(request: &YonRequest) -> YonResponse { ContractDelegate::POST(request) }
+}
+#[Delegate]
+struct ContractDelegate;
+impl ContractDelegate {
+    #[Relay("python3", "server/delegates/probe.py")]
+    fn POST(_request: &YonRequest) -> YonResponse { panic!("proxy body") }
+}
+"#,
+        ),
+    ];
+    let supervisor = supervisor(HandlerSupervisorOptions {
+        default_timeout: Duration::from_secs(2),
+        ..HandlerSupervisorOptions::default()
+    });
+    for &(extension, contents) in &relay_sources {
+        let tool = match extension {
+            "java" => "java",
+            "kt" => "kotlinc",
+            "cs" => "dotnet",
+            "rs" => "rustc",
+            _ => "php",
+        };
+        if !available(tool) {
+            continue;
+        }
+        let relay = source(&root, extension, contents);
+        let response = supervisor
+            .invoke(
+                &relay,
+                &request(
+                    &format!("relay_sideband_{extension}"),
+                    HttpMethod::Post,
+                    Some("sideband"),
+                ),
+                &HandlerCancellation::default(),
+            )
+            .await
+            .expect("relay produces a sanitized upstream response");
+        assert_eq!(response.status, 502, "{extension}");
+        let rendered = response.body.expect("error body").data;
+        assert!(
+            !rendered.contains("secret-canary"),
+            "{extension}: {rendered}"
+        );
+        assert!(!rendered.contains("xxxx"), "{extension}: {rendered}");
+    }
+
+    let source = source(&root, "php", relay_sources[0].1);
+    let pid_file = root.path().join("relay-descendant.pid");
+    let mut invocation = descendant_request("relay_timeout", "hang", &pid_file);
+    invocation.method = HttpMethod::Post;
+    invocation.deadline_ms = Some(250);
+    let failure = supervisor
+        .invoke(&source, &invocation, &HandlerCancellation::default())
+        .await
+        .expect_err("relay deadline");
+    assert!(failure.to_string().contains("TY2110"), "{failure}");
+    assert_process_gone(descendant_pid(&pid_file)).await;
+}
+
+#[tokio::test]
+async fn interpreted_relays_bound_both_streams_and_redact_process_details() {
+    if !available("python3") {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    let delegate = root.path().join("server/delegates/probe.py");
+    fs::create_dir_all(delegate.parent().expect("delegate parent")).expect("delegates");
+    fs::write(
+        &delegate,
+        r#"import json
+import sys
+request = json.load(sys.stdin)
+mode = request.get("body", {}).get("data", "")
+if mode == "stdout":
+    sys.stdout.write("secret-canary:" + "x" * (17 * 1024 * 1024))
+    sys.stdout.flush()
+else:
+    sys.stderr.write("secret-canary:" + "x" * (128 * 1024))
+    sys.stderr.flush()
+    sys.exit(9)
+"#,
+    )
+    .expect("delegate");
+    let cases = [
+        (
+            "py",
+            r#"@Controller
+class ContractController:
+    @staticmethod
+    def POST(request):
+        return ContractDelegate.POST(request)
+
+@Delegate
+class ContractDelegate:
+    @staticmethod
+    @Relay("python3", "server/delegates/probe.py")
+    def POST(request):
+        raise RuntimeError("placeholder")
+"#,
+            true,
+        ),
+        (
+            "js",
+            r"@Controller
+export class ContractController {
+  static POST(request) { return ContractDelegate.POST(request) }
+}
+@Delegate
+class ContractDelegate {
+  @Relay('python3', 'server/delegates/probe.py')
+  static POST(_request) { throw new Error('placeholder') }
+}
+",
+            available("bun"),
+        ),
+    ];
+    let supervisor = supervisor(HandlerSupervisorOptions::default());
+    for (extension, contents, supported) in cases {
+        if !supported {
+            continue;
+        }
+        let relay = source(&root, extension, contents);
+        for mode in ["sideband", "stdout"] {
+            let response = supervisor
+                .invoke(
+                    &relay,
+                    &request(
+                        &format!("interpreted_relay_{extension}_{mode}"),
+                        HttpMethod::Post,
+                        Some(mode),
+                    ),
+                    &HandlerCancellation::default(),
+                )
+                .await
+                .expect("relay returns a sanitized upstream response");
+            assert_eq!(response.status, 502, "{extension}:{mode}");
+            let rendered = response.body.expect("error body").data;
+            assert!(
+                !rendered.contains("secret-canary"),
+                "{extension}: {rendered}"
+            );
+            assert!(!rendered.contains("python3"), "{extension}: {rendered}");
+            assert!(rendered.len() < 1024, "{extension}: {rendered}");
+        }
+    }
 }
 
 #[tokio::test]

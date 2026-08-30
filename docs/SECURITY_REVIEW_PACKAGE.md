@@ -5,6 +5,10 @@ stable release and remains a useful brief for optional independent review.
 Exact-head CI, the technical audit record, and explicit disposition of every
 critical or high finding close the security gate.
 
+Qualification includes adversarial process-tree tests (timeout, flooding, and
+successful-parent descendants) and topic-stream tests for bounded admission,
+incremental replay, symlink/identity races, slow consumers, and shutdown.
+
 ## 1. What to Review
 
 The Rust implementation under `crates/`, the generated native hosts under
@@ -30,9 +34,10 @@ behavioral compatibility differential.
 | Boundary | Where | Existing assurance |
 | --- | --- | --- |
 | Application HTML into the compiler | `html.rs`, `template/` | Bounded parser, fuzzed |
+| Project source discovery and reuse | `project.rs`, `handler/source.rs`, `compiler.rs`, `native/compiler.rs` | One retained capability root, deterministic bounded no-follow traversal, captured pages/components/shared/config/server bytes, owned compiler and execution working roots, ambient whole-root-swap regressions |
 | Untrusted child-process output | `handler/frame.rs` | Length-prefixed protocol, fuzzed at 4.4M executions |
 | Handler process lifetime and environment | `handler/process.rs` | Process-group spawn, never a shell; deny-by-default environment; deadlines, cancellation, bounded drain settlement, descendant reaping |
-| Environment-selected Firecracker control plane | `handler/isolation.rs` | Complete fail-closed policy parsing, fixed driver invocation contract, bounded CPU/memory/pool values, deny-only egress |
+| Environment-selected Firecracker control plane | `handler/isolation.rs` | Complete fail-closed policy parsing, fixed JavaScript/Python driver invocation contract, pre-spawn rejection of prepared language artifacts, bounded CPU/memory/pool values, deny-only egress |
 | Generated output path handling | `compiler.rs`, `native/host.rs` | Project containment, symlink rejection, atomic publication |
 | Web content inside a native host | `native/{macos,ios,linux,windows,android}.rs` | Ephemeral store, navigation policy, no bridge of any kind |
 | Native capability surface | `CapabilityManifest` | Deny-by-default, `remote_content_bridge` false |
@@ -67,9 +72,22 @@ These are recorded so a reviewer does not spend time rediscovering them.
   external operator-supplied control program; Tachyon validates and supervises
   the transport but does not qualify that driver's jailer, guest image,
   snapshots, credentials, or host network policy.
+- The Firecracker transport currently supports JavaScript and Python source
+  only. TypeScript and prepared direct-language artifacts fail closed before
+  driver spawn because no artifact-transfer contract exists.
 - Production HTTP dispatch and middleware exist and run application handlers
   with the developer account's ambient filesystem and network access. Their
-  public error responses must not expose process diagnostics.
+  public error responses must not expose process diagnostics. Startup binds
+  the initial build, routes, middleware, schedules, and worker sources to one
+  immutable Project snapshot; runtime process mode still carries ambient OS
+  capabilities outside that source-selection boundary. The server owns and
+  boundedly settles its watcher and scheduled-worker tasks at shutdown; worker
+  schedule changes require a server restart. Active streaming-handler, hot
+  update, and topic response producers are tracked by the same lifetime token;
+  shutdown cancels them before the bounded HTTP graceful-close wait, and client
+  disconnect reaps a streaming child. The final slice of the global shutdown
+  deadline is reserved for abort-and-join settlement of both task registries,
+  and completed response-producer records are continuously reaped while live.
 - Native signing is ad-hoc or debug-key only on every platform.
 - Windows exposes no accessible name distinct from a control's visible text,
   and embeds no web view.

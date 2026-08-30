@@ -16,6 +16,8 @@ fuzzing = []
 
 [dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+cap-fs-ext.workspace = true
+cap-std.workspace = true
 command-group = { version = "5.0.1", features = ["with-tokio"] }
 html5gum = { version = "0.8.4", default-features = false }
 notify.workspace = true

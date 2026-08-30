@@ -17,8 +17,8 @@
 
     <details>
       <summary>Yon route</summary>
-      <pre class="code-block"><code data-sample="yon" data-fallback="// server/routes/posts/yon.js  -&gt;  /posts&#10;export class Handler {&#10;  static GET() {&#10;    return { posts: [] }&#10;  }&#10;&#10;  static async POST(request) {&#10;    return { created: request.body }&#10;  }&#10;}"></code></pre>
-      <p class="quickstart-note">server/routes/posts/yon.js — verbs are static methods; return plain data.</p>
+      <pre class="code-block"><code data-sample="yon" data-fallback="# server/routes/posts/yon.py  -&gt;  /posts&#10;@Controller&#10;class PostsController:&#10;  @staticmethod&#10;  def GET(request):&#10;    return {&quot;posts&quot;: []}"></code></pre>
+      <p class="quickstart-note">server/routes/posts/yon.py — @Controller is mandatory; verbs are static methods.</p>
     </details>
 
     <details>

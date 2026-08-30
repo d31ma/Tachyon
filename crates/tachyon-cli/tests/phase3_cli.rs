@@ -74,6 +74,60 @@ fn stdout(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+#[cfg(unix)]
+#[test]
+fn csharp_runtime_without_sdk_build_capability_fails_before_serve_readiness() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = tempfile::tempdir().expect("project");
+    write(
+        &project.path().join("server/routes/yon.cs"),
+        "[Controller]\nsealed class RootController { public static YonResponse GET(YonRequest request) => YonResponse.Json(\"{}\"); }\n",
+    );
+    fs::create_dir_all(project.path().join("dist/web")).expect("existing bundle");
+    fs::write(
+        project.path().join("dist/web/index.html"),
+        "<main>Ready</main>",
+    )
+    .expect("existing output");
+
+    let tools = tempfile::tempdir().expect("fake tools");
+    let canary = tools.path().join("dotnet");
+    fs::write(
+        &canary,
+        "#!/bin/sh\n\
+         if [ \"$1\" = \"--version\" ]; then echo 10.0.302; exit 0; fi\n\
+         if [ \"$1\" = \"--list-runtimes\" ]; then echo 'Microsoft.NETCore.App 10.0.0 [/fake]'; exit 0; fi\n\
+         if [ \"$1\" = \"build\" ] && [ \"$2\" = \"Readiness.csproj\" ]; then exit 9; fi\n\
+         if [ \"$1\" = \"build\" ]; then /bin/mkdir -p out; echo x > out/handler.dll; echo x > out/handler.deps.json; echo x > out/handler.runtimeconfig.json; exit 0; fi\n\
+         exit 9\n",
+    )
+    .expect("runtime-only dotnet fake");
+    fs::set_permissions(&canary, fs::Permissions::from_mode(0o700)).expect("permissions");
+
+    let occupied =
+        std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).expect("occupied listener");
+    let port = occupied
+        .local_addr()
+        .expect("occupied address")
+        .port()
+        .to_string();
+    let output = run(ty()
+        .arg("serve")
+        .arg(project.path())
+        .args(["--port", &port, "--no-watch", "--no-bundle"])
+        .env("PATH", tools.path()));
+    assert!(!output.status.success(), "{}", stdout(&output));
+    let diagnostic = stderr(&output);
+    assert!(diagnostic.contains("TY2101"), "{diagnostic}");
+    assert!(!diagnostic.contains("TY1302"), "{diagnostic}");
+    assert!(!stdout(&output).contains("server ready"));
+    assert!(
+        !diagnostic.contains(canary.to_string_lossy().as_ref()),
+        "{diagnostic}"
+    );
+}
+
 #[test]
 fn yon_html_is_rejected_without_executing_a_handler() {
     let project = tempfile::tempdir().expect("project");
@@ -85,7 +139,7 @@ fn yon_html_is_rejected_without_executing_a_handler() {
     write(
         &project.path().join("server/routes/products/yon.js"),
         &format!(
-            "import {{ writeFileSync }} from 'node:fs'; export class Handler {{ static GET() {{ writeFileSync({}, 'bad'); return {{ products: [] }} }} }}",
+            "import {{ writeFileSync }} from 'node:fs';\n@Controller\nexport class ProductsController {{ static GET() {{ writeFileSync({}, 'bad'); return {{ products: [] }} }} }}",
             serde_json::to_string(&marker).expect("marker path")
         ),
     );
@@ -106,7 +160,8 @@ fn yon_handlers_can_return_explicit_html_responses_without_framework_rendering()
     write(
         &project.path().join("server/routes/javascript/yon.js"),
         r"
-export class Handler {
+@Controller
+export class JavascriptController {
   static GET() {
     return {
       status: 203,
@@ -120,7 +175,8 @@ export class Handler {
     write(
         &project.path().join("server/routes/python/yon.py"),
         r#"
-class Handler:
+@Controller
+class PythonController:
     @staticmethod
     def GET(request):
         return {
@@ -313,7 +369,7 @@ fn incremental_reuse_is_verified_and_handler_routes_are_not_built() {
 
     write(
         &project.path().join("server/routes/volatile/yon.js"),
-        "export class Handler { static GET() { return { value: 'fresh' } } }",
+        "@Controller\nexport class VolatileController { static GET() { return { value: 'fresh' } } }",
     );
     let volatile_first = run(ty().arg("build").arg(project.path()));
     assert!(
@@ -491,7 +547,9 @@ fn adversarial_parser_and_component_shapes_fail_through_the_binary() {
     }
     let output = run(ty().arg("build").arg(component_shapes.path()));
     assert!(!output.status.success());
-    assert!(stderr(&output).contains("TY1401"));
+    // Project discovery owns the no-follow capability boundary, so the unsafe
+    // component link is rejected before compiler-specific shape validation.
+    assert!(stderr(&output).contains("TY1004"));
 
     let missing_slot = tempfile::tempdir().expect("missing slot");
     write(
@@ -519,7 +577,7 @@ fn adversarial_parser_and_component_shapes_fail_through_the_binary() {
     );
     let output = run(ty().arg("build").arg(root_file.path()));
     assert!(!output.status.success());
-    assert!(stderr(&output).contains("TY1401"));
+    assert!(stderr(&output).contains("TY1001"));
 
     for bytes in [b"bad\0script".to_vec(), vec![b'x'; 1_048_577]] {
         let companion = tempfile::tempdir().expect("companion");

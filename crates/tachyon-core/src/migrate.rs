@@ -7,7 +7,6 @@
 
 use crate::Failure;
 use crate::failure::{diagnostic, source_span};
-use crate::handler::Interpreters;
 use crate::template::{ComponentRegistry, TemplateFrontend};
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -163,11 +162,6 @@ impl MigrationAnalysis {
             ));
         }
 
-        // A handler in another language is only a divergence when nothing
-        // says how to run it, so the registrations are read up front. A
-        // malformed .tachyonrc is reported as registering nothing rather than
-        // failing the check, since reporting is the whole point of the command.
-        let interpreters = Interpreters::discover(root).unwrap_or_default();
         let mut findings = Vec::new();
         let mut signals = ProjectSignals::default();
         let mut pending = vec![root.to_path_buf()];
@@ -197,14 +191,7 @@ impl MigrationAnalysis {
                     continue;
                 }
                 let relative = portable_path(path.strip_prefix(root).unwrap_or(&path));
-                classify_file(
-                    root,
-                    &relative,
-                    &name,
-                    &interpreters,
-                    &mut signals,
-                    &mut findings,
-                )?;
+                classify_file(root, &relative, &name, &mut signals, &mut findings)?;
                 if findings.len() > MAX_FINDINGS {
                     return Err(migration_failure(
                         "Project exceeds the limit of 10,000 migration findings.",
@@ -314,11 +301,10 @@ fn classify_file(
     root: &Path,
     relative: &str,
     name: &str,
-    interpreters: &Interpreters,
     signals: &mut ProjectSignals,
     findings: &mut Vec<MigrationFinding>,
 ) -> Result<(), Failure> {
-    let Some(mut finding) = classify_name(relative, name, interpreters) else {
+    let Some(mut finding) = classify_name(relative, name) else {
         return Ok(());
     };
     if finding.feature == "companion.polyglot"
@@ -336,12 +322,44 @@ fn classify_file(
         );
         finding.action = None;
     }
-    findings.push(finding);
+    if name == ".tachyonrc"
+        && fs::read_to_string(root.join(relative))
+            .ok()
+            .and_then(|source| serde_json::from_str::<serde_json::Value>(&source).ok())
+            .and_then(|value| value.get("interpreters").cloned())
+            .is_some_and(|interpreters| {
+                interpreters
+                    .as_object()
+                    .is_some_and(|entries| !entries.is_empty())
+            })
+    {
+        finding.status = MigrationStatus::Changed;
+        finding.detail = String::from(
+            "The workers object remains supported, but the configured interpreters were removed.",
+        );
+        finding.action = Some(String::from(
+            "Delete every interpreters registration. Keep worker intervals under workers, \
+             move workers to a Yon language, and reach other programs through @Relay.",
+        ));
+    }
     let read = |what: &str| {
         fs::read_to_string(root.join(relative)).map_err(|error| {
             migration_failure(&format!("Cannot read {what} '{relative}': {error}"))
         })
     };
+    if name.starts_with("yon.")
+        && crate::stereotype::is_annotated_language(Path::new(relative))
+        && crate::stereotype::declared_class(Path::new(relative), &read("handler")?).is_none()
+    {
+        finding.status = MigrationStatus::Changed;
+        finding.detail = String::from(
+            "Every Yon layer source now requires the stereotype implied by its directory.",
+        );
+        finding.action = Some(String::from(
+            "Attach @Controller, @Service, @Repository, @Client or @Delegate to the layer class, and use the matching class-name suffix.",
+        ));
+    }
+    findings.push(finding);
     if name == "tac.html" {
         let source = read("view")?;
         signals.observe(&source);
@@ -374,41 +392,21 @@ fn is_other_language_handler(name: &str) -> bool {
         )
 }
 
-/// Classifies a handler in any language by whether it can actually be run.
-///
-/// A handler in any language runs under the direct protocol, so the only
-/// question is whether this project says how to run this one.
-fn classify_other_language_handler(
-    relative: &str,
-    name: &str,
-    interpreters: &Interpreters,
-) -> MigrationFinding {
-    let extension = name.trim_start_matches("yon.");
-    let (status, detail, action) = if interpreters.command(extension).is_some() {
-        (
-            MigrationStatus::Supported,
-            "Runs under the direct protocol using the interpreter registered in \
-             .tachyonrc. The handler reads one JSON request from standard input and \
-             writes one JSON response to standard output.",
-            None,
-        )
-    } else {
-        (
-            MigrationStatus::Changed,
-            "A handler in any language is supported, but this project does not say \
-             how to run this one.",
-            Some(
-                "Register the extension in .tachyonrc, or make the file executable \
-                 so it can run directly.",
-            ),
-        )
-    };
+/// Classifies a handler outside the framework-owned Yon language set.
+fn classify_other_language_handler(relative: &str) -> MigrationFinding {
     MigrationFinding {
         source: String::from(relative),
         feature: String::from("handler.other_language"),
-        status,
-        detail: String::from(detail),
-        action: action.map(String::from),
+        status: MigrationStatus::Changed,
+        detail: String::from(
+            "Arbitrary handler interpreters and executable/shebang handlers were removed. \
+             Routes, middleware and workers must use a framework-owned Yon language.",
+        ),
+        action: Some(String::from(
+            "Move the entry point to yon.js, yon.ts, yon.py, yon.java, yon.cs, yon.kt, \
+             yon.php or yon.rs, and call the existing program from an @Delegate method \
+             carrying @Relay.",
+        )),
     }
 }
 
@@ -427,11 +425,7 @@ fn classify_route_schema(relative: &str) -> MigrationFinding {
 }
 
 /// Classifies one file by its conventional name.
-fn classify_name(
-    relative: &str,
-    name: &str,
-    interpreters: &Interpreters,
-) -> Option<MigrationFinding> {
+fn classify_name(relative: &str, name: &str) -> Option<MigrationFinding> {
     let finding = |feature: &str, status, detail: &str, action: Option<&str>| {
         Some(MigrationFinding {
             source: String::from(relative),
@@ -462,11 +456,7 @@ fn classify_name(
             "JavaScript and Python handlers run under Handler Protocol v1.",
             None,
         ),
-        _ if is_other_language_handler(name) => Some(classify_other_language_handler(
-            relative,
-            name,
-            interpreters,
-        )),
+        _ if is_other_language_handler(name) => Some(classify_other_language_handler(relative)),
         "tac.js" | "tac.ts" => finding(
             "companion.controller",
             MigrationStatus::Supported,
@@ -523,10 +513,10 @@ fn classify_name(
             None,
         ),
         ".tachyonrc" => finding(
-            "config.interpreters",
+            "config.workers",
             MigrationStatus::Supported,
-            "Registers an interpreter per handler extension, and the interval for \
-             each background worker.",
+            "Declares bounded worker intervals. The removed interpreters field is classified \
+             separately when present.",
             None,
         ),
         _ => classify_by_location(relative, name),
@@ -565,8 +555,8 @@ fn classify_by_location(relative: &str, name: &str) -> Option<MigrationFinding> 
     if relative.starts_with("server/workers/") {
         return supported(
             "server.worker",
-            "A worker is a handler invoked on a schedule, so it may be written in any \
-             language. Declare its interval under \"workers\" in .tachyonrc.",
+            "A worker is a supervised Yon handler invoked on a schedule. Declare its interval \
+             under \"workers\" in .tachyonrc; arbitrary interpreter registration is removed.",
         );
     }
     if relative.starts_with("server/repositories/") || relative.starts_with("server/services/") {
@@ -772,7 +762,7 @@ mod tests {
         );
         write(
             &root.path().join("server/routes/yon.js"),
-            "export class Handler { static GET() { return {} } }",
+            "@Controller\nexport class HomeController { static GET() { return {} } }",
         );
         let report = MigrationAnalysis::check(root.path()).expect("report");
         assert!(report.is_clean(), "{}", report.to_text());
@@ -822,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    fn implemented_features_are_not_reported_as_blockers() {
+    fn retained_worker_configuration_is_not_reported_as_a_blocker() {
         // Every one of these was reported as unsupported after it had been
         // implemented, which is worse than saying nothing: it sends a
         // developer back to the legacy server for features that work.
@@ -838,18 +828,11 @@ mod tests {
         );
         write(
             &root.path().join(".tachyonrc"),
-            r#"{"interpreters":{"rb":["ruby"]}}"#,
+            r#"{"workers":{"server/workers/job.js":{"every_seconds":30}}}"#,
         );
-        write(&root.path().join("server/routes/a/yon.rb"), "# handler");
 
         let report = MigrationAnalysis::check(root.path()).expect("report");
-        assert!(report.is_clean(), "{}", report.to_text());
-        for feature in [
-            "server.middleware",
-            "server.worker",
-            "config.interpreters",
-            "handler.other_language",
-        ] {
+        for feature in ["server.middleware", "server.worker"] {
             let found = report
                 .findings
                 .iter()
@@ -865,9 +848,7 @@ mod tests {
     }
 
     #[test]
-    fn a_handler_language_with_no_interpreter_is_reported_as_changed() {
-        // The file is a valid handler; the project just never said how to run
-        // it, so the action is to register it rather than to rewrite it.
+    fn a_removed_handler_language_is_reported_with_relay_migration() {
         let root = tempfile::tempdir().expect("project");
         write(&root.path().join("client/pages/tac.html"), "<main>x</main>");
         write(&root.path().join("server/routes/b/yon.swift"), "// handler");
@@ -883,7 +864,59 @@ mod tests {
             finding
                 .action
                 .as_deref()
-                .is_some_and(|action| action.contains(".tachyonrc")),
+                .is_some_and(|action| action.contains("@Relay")),
+            "{finding:?}"
+        );
+    }
+
+    #[test]
+    fn removed_interpreter_registration_keeps_workers_and_requires_relay() {
+        let root = tempfile::tempdir().expect("project");
+        write(&root.path().join("client/pages/tac.html"), "<main>x</main>");
+        write(
+            &root.path().join(".tachyonrc"),
+            r#"{"interpreters":{"rb":["ruby"]},"workers":{"server/workers/beat.js":{"every_seconds":30}}}"#,
+        );
+
+        let report = MigrationAnalysis::check(root.path()).expect("report");
+        let finding = report
+            .findings
+            .iter()
+            .find(|finding| finding.source == ".tachyonrc")
+            .expect("configuration finding");
+        assert_eq!(finding.status, MigrationStatus::Changed);
+        assert_eq!(finding.feature, "config.workers");
+        assert!(finding.detail.contains("interpreters"), "{finding:?}");
+        assert!(
+            finding
+                .action
+                .as_deref()
+                .is_some_and(|action| action.contains("@Relay")),
+            "{finding:?}"
+        );
+    }
+
+    #[test]
+    fn unannotated_yon_source_is_reported_as_a_required_migration() {
+        let root = tempfile::tempdir().expect("project");
+        write(&root.path().join("client/pages/tac.html"), "<main>x</main>");
+        write(
+            &root.path().join("server/routes/yon.py"),
+            "class LegacyHandler: pass",
+        );
+
+        let report = MigrationAnalysis::check(root.path()).expect("report");
+        let finding = report
+            .findings
+            .iter()
+            .find(|finding| finding.source == "server/routes/yon.py")
+            .expect("handler finding");
+        assert_eq!(finding.status, MigrationStatus::Changed);
+        assert!(
+            finding
+                .action
+                .as_deref()
+                .is_some_and(|action| action.contains("@Controller")),
             "{finding:?}"
         );
     }
@@ -899,7 +932,7 @@ mod tests {
         );
         write(
             &quiet.path().join("server/routes/yon.js"),
-            "export class Handler { static GET() { return {} } }",
+            "@Controller\nexport class HomeController { static GET() { return {} } }",
         );
         let report = MigrationAnalysis::check(quiet.path()).expect("report");
         assert!(report.is_clean(), "{}", report.to_text());
@@ -909,7 +942,7 @@ mod tests {
         write(&loud.path().join("client/pages/tac.html"), "<main>x</main>");
         write(
             &loud.path().join("server/routes/yon.js"),
-            "import { telemetry } from 'x'\nexport class Handler {}\n// openapi.json",
+            "import { telemetry } from 'x'\n@Controller\nexport class HomeController {}\n// openapi.json",
         );
         let report = MigrationAnalysis::check(loud.path()).expect("report");
         let named: Vec<&str> = report
@@ -949,7 +982,7 @@ mod tests {
             "handler.other_language",
             "server.middleware",
             "server.worker",
-            "config.interpreters",
+            "config.workers",
         ] {
             assert!(features.contains(&expected), "missing {expected}");
         }

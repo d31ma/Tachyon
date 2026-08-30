@@ -231,7 +231,7 @@ fn scaffold_files(app_name: &str) -> BTreeMap<&'static str, String> {
         (
             "server/routes/yon.js",
             String::from(
-                "export class Handler {\n  static async GET() {\n    return { ok: true, framework: 'Tachyon' }\n  }\n}\n",
+                "@Controller\nexport class RootController {\n  static async GET() {\n    return { ok: true, framework: 'Tachyon' }\n  }\n}\n",
             ),
         ),
         ("server/data/.gitkeep", String::new()),

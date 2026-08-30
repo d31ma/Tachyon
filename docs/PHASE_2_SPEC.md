@@ -1,5 +1,11 @@
 # Phase 2 Yon Handler Boundary
 
+> Historical milestone: this document records the original JavaScript/Python
+> Phase 2 gate. ADR 0017 supersedes its handler-authoring and streaming scope
+> with mandatory layer stereotypes, eight owned Yon languages, explicit relay,
+> and declared multi-frame streaming. Use the README and ADR 0017 for current
+> authoring behavior.
+
 ## Outcome
 
 A developer can invoke a JavaScript or Python Yon handler through the compiled
@@ -120,6 +126,8 @@ diagnostic, not a fallback to another language or a shell command.
 - `TY2101`–`TY2109`: spawn, framing, protocol, exit, or stderr failures.
 - `TY2110`: deadline exceeded.
 - `TY2111`: invocation cancelled.
+- `TY2112`: a required Yon runtime executable is absent during readiness or
+  the post-readiness spawn race. Configured executable paths are redacted.
 - `TY2201`–`TY2209`: adapter-reported handler authoring or execution failures.
 
 Messages are bounded and may include a project-relative source path and

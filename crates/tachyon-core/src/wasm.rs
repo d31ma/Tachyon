@@ -19,12 +19,22 @@
 //! that no one hand-writes `tac_invoke`.
 
 use crate::Failure;
+use crate::external_command::{ToolOutput, run as supervise_tool, run_sync};
 use crate::failure::{diagnostic, source_span};
 use std::path::Path;
+use std::time::Duration;
 use tokio::process::Command;
 
 /// What the compiler appends to a Dart companion to make it satisfy the ABI.
 const DART_PRELUDE: &str = include_str!("wasm/prelude.dart");
+const TOOL_DEADLINE: Duration = Duration::from_mins(2);
+const TOOL_OUTPUT_BYTES: usize = 256 * 1_024;
+
+async fn execute(portable: &str, tool: &str, command: &mut Command) -> Result<ToolOutput, Failure> {
+    supervise_tool(command, TOOL_DEADLINE, TOOL_OUTPUT_BYTES)
+        .await
+        .map_err(|error| failure(portable, &format!("Cannot run {tool}: {error}")))
+}
 /// Imports the prelude needs, placed before the author's own.
 const DART_IMPORTS: &str = "import 'dart:convert';\nimport 'dart:js_interop';\n\
                             import 'dart:js_interop_unsafe';\n";
@@ -141,7 +151,8 @@ fn stage(
 /// large: the reference fixture is 819 KB unstripped and 21 KB stripped.
 async fn rust(portable: &str, staged: &Path, source: &Path) -> Result<Vec<Artefact>, Failure> {
     let output = staged.join("companion.wasm");
-    let result = Command::new("rustc")
+    let mut command = Command::new("rustc");
+    command
         .args([
             "--target",
             "wasm32-unknown-unknown",
@@ -159,10 +170,8 @@ async fn rust(portable: &str, staged: &Path, source: &Path) -> Result<Vec<Artefa
             "-o",
         ])
         .arg(&output)
-        .arg(source)
-        .output()
-        .await
-        .map_err(|error| ran(portable, "rustc", &error))?;
+        .arg(source);
+    let result = execute(portable, "rustc", &mut command).await?;
     if !result.status.success() {
         return Err(rejected(portable, &result.stderr));
     }
@@ -184,13 +193,12 @@ async fn dart(portable: &str, staged: &Path, source: &Path) -> Result<Vec<Artefa
         DART_PRELUDE,
     )?;
     let output = staged.join("companion.wasm");
-    let result = Command::new("dart")
+    let mut command = Command::new("dart");
+    command
         .args(["compile", "wasm", "--no-source-maps", "-o"])
         .arg(&output)
-        .arg(&entry)
-        .output()
-        .await
-        .map_err(|error| ran(portable, "dart", &error))?;
+        .arg(&entry);
+    let result = execute(portable, "dart", &mut command).await?;
     if !result.status.success() {
         // dart reports compilation errors on standard output.
         let detail = if result.stderr.is_empty() {
@@ -243,21 +251,21 @@ async fn kotlin(
     let emitted = staged.join("module");
     let name = format!("{component}.kotlin");
 
-    let compiled = Command::new("kotlinc-js")
+    let mut compile_command = Command::new("kotlinc-js");
+    compile_command
         .args(["-Xwasm", "-Xwasm-target=wasm-js", "-libraries"])
         .arg(&stdlib)
         .args(["-Xir-produce-klib-file", "-ir-output-dir"])
         .arg(&library)
         .args(["-ir-output-name", "companion"])
-        .arg(&entry)
-        .output()
-        .await
-        .map_err(|error| ran(portable, "kotlinc-js", &error))?;
+        .arg(&entry);
+    let compiled = execute(portable, "kotlinc-js", &mut compile_command).await?;
     if !compiled.status.success() {
         return Err(rejected(portable, &compiled.stderr));
     }
 
-    let linked = Command::new("kotlinc-js")
+    let mut link_command = Command::new("kotlinc-js");
+    link_command
         .args(["-Xwasm", "-Xwasm-target=wasm-js", "-libraries"])
         .arg(&stdlib)
         .args(["-Xir-produce-js", "-Xir-dce"])
@@ -267,10 +275,8 @@ async fn kotlin(
         ))
         .arg("-ir-output-dir")
         .arg(&emitted)
-        .args(["-ir-output-name", &name])
-        .output()
-        .await
-        .map_err(|error| ran(portable, "kotlinc-js", &error))?;
+        .args(["-ir-output-name", &name]);
+    let linked = execute(portable, "kotlinc-js", &mut link_command).await?;
     if !linked.status.success() {
         return Err(rejected(portable, &linked.stderr));
     }
@@ -320,8 +326,8 @@ async fn swift(portable: &str, staged: &Path, source: &Path) -> Result<Vec<Artef
     )?;
     let output = staged.join("companion.wasm");
     let resources = sdk.join("swift.xctoolchain/usr/lib/swift_static");
-    let result = Command::new(swift_compiler())
-        .args(["-target", "wasm32-unknown-wasip1", "-sdk"])
+    let mut command = Command::new(swift_compiler());
+    command.args(["-target", "wasm32-unknown-wasip1", "-sdk"])
         .arg(sdk.join("WASI.sdk"))
         .arg("-resource-dir")
         .arg(&resources)
@@ -346,10 +352,8 @@ async fn swift(portable: &str, staged: &Path, source: &Path) -> Result<Vec<Artef
             "-o",
         ])
         .arg(&output)
-        .arg(&entry)
-        .output()
-        .await
-        .map_err(|error| ran(portable, "swiftc", &error))?;
+        .arg(&entry);
+    let result = execute(portable, "swiftc", &mut command).await?;
     if !result.status.success() {
         return Err(rejected(portable, &result.stderr));
     }
@@ -362,9 +366,9 @@ async fn swift(portable: &str, staged: &Path, source: &Path) -> Result<Vec<Artef
 /// `swift-autolink-extract` and fails before it reaches the linker. `xcrun`
 /// knows where a swift.org toolchain was installed, so it is asked first.
 pub(crate) fn swift_compiler() -> std::path::PathBuf {
-    std::process::Command::new("xcrun")
-        .args(["--toolchain", "swift", "--find", "swiftc"])
-        .output()
+    let mut command = std::process::Command::new("xcrun");
+    command.args(["--toolchain", "swift", "--find", "swiftc"]);
+    run_sync(&mut command, Duration::from_secs(5), 16 * 1_024)
         .ok()
         .filter(|found| found.status.success())
         .map(|found| {
@@ -414,12 +418,11 @@ async fn csharp(portable: &str, staged: &Path, source: &Path) -> Result<Vec<Arte
         CSHARP_PRELUDE,
     )?;
 
-    let result = Command::new("dotnet")
+    let mut command = Command::new("dotnet");
+    command
         .args(["publish", "-c", "Release"])
-        .current_dir(&project)
-        .output()
-        .await
-        .map_err(|error| ran(portable, "dotnet", &error))?;
+        .current_dir(&project);
+    let result = execute(portable, "dotnet", &mut command).await?;
     if !result.status.success() {
         // MSBuild writes the build log to stdout but workload and restore
         // notices to stderr. Keep both: choosing stderr whenever it is
@@ -466,13 +469,6 @@ fn read(portable: &str, path: &Path) -> Result<Vec<u8>, Failure> {
             &format!("Cannot read {}: {error}", path.display()),
         )
     })
-}
-
-fn ran(portable: &str, program: &str, error: &std::io::Error) -> Failure {
-    failure(
-        portable,
-        &format!("Cannot run {program}: {error}. Run ty doctor to see what is missing."),
-    )
 }
 
 fn rejected(portable: &str, output: &[u8]) -> Failure {

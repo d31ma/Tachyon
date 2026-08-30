@@ -5,6 +5,13 @@
 Tachyon is a modular monolith. The command-line interface orchestrates typed
 in-process modules; it does not introduce internal network services.
 
+External build tools are framework-owned process trees: stdout and stderr are
+drained concurrently into fixed-size diagnostic buffers, an absolute tool
+deadline covers execution, and descendants are terminated and reaped even when
+their parent exits successfully. Development topic SSE uses a runtime-owned
+hub, not a reader per client; each topic has one incremental reader, bounded
+replay and broadcast buffers, and explicit global/per-topic admission.
+
 ```mermaid
 flowchart LR
     S["Project source"] --> D["Discovery and route graph"]
@@ -84,13 +91,13 @@ sequenceDiagram
     participant C as "CLI or library caller"
     participant S as "Handler supervisor"
     participant A as "Embedded language adapter"
-    participant H as "Application Handler"
+    participant H as "Annotated Yon controller"
     C->>S: "Typed HandlerRequest"
     S->>S: "Validate source, request, deadline, environment"
     S->>A: "Direct spawn + length-prefixed request"
     A->>H: "Static HTTP method(request)"
-    H-->>A: "JSON value, explicit HTTP response, or exception"
-    A-->>S: "One framed HandlerResponse"
+    H-->>A: "JSON value, explicit HTTP response, yielded events, or exception"
+    A-->>S: "One response frame or declared event sequence"
     S->>S: "Validate ID, envelope, bounds, stderr, exit"
     S-->>C: "Typed HTTP-compatible response or stable diagnostic"
 ```
@@ -101,28 +108,94 @@ and response validation. `tachyon-contracts` owns the typed public envelope
 shapes. `tachyon-cli` translates command arguments and Ctrl-C into one
 invocation; it does not parse adapter-specific output.
 
+Project discovery opens one capability root and reads Tac pages, components,
+shared assets, web/native configuration, Yon, and the complete server source
+boundary without following any component. The route graph retains captured
+Tac/companion bytes and the project owns one private project-shaped snapshot.
+Web compilation, native planning, and supervised handler execution reuse that
+snapshot, including their working directories; native compilation never
+rediscovers the project. Development-server startup also derives its initial
+web build, route dispatch, selected root middleware, worker schedules, and
+worker HandlerSources from this one Project. Replacing an authored file or
+ambient project root after discovery cannot redirect an input. A hot-update
+rebuild performs one new discovery and builds from that fresh snapshot. Before
+output preparation, socket binding, route/middleware readiness, or worker
+startup, the server resolves and probes the deduplicated runtime requirements
+from those HandlerSources. The same ordering holds for `--no-bundle`, while a
+static-only Project has an empty runtime requirement set. JavaScript and
+TypeScript share the selected JavaScript runtime; Java and Kotlin share the
+Java runtime, with Kotlin retaining its compiler requirement. Firecracker mode
+validates the exact discovered language set and configured driver before the
+server can become observable. C# readiness resolves the installed SDK major and
+builds a framework-owned minimal project with isolated temporary CLI and NuGet
+state; listing `Microsoft.NETCore.App` alone is not readiness. The
+development server owns the watcher and every scheduled-worker task: they
+start with `run_until`, receive cooperative cancellation at shutdown, and are
+awaited under a bounded settlement deadline before the server returns. Dropping
+a bound server starts no tasks; dropping a running server future aborts every
+owned task. Streaming-handler bridges, hot-update SSE, and topic SSE share that
+runtime lifetime: shutdown closes producer admission, cancels active response
+producers and request handlers before Axum drains connections, then force-closes
+the HTTP future before the final reserved settlement slice. It then aborts and
+join-drains both task registries under the one global deadline. Completed
+producer records are reaped periodically while admission remains open rather
+than growing with request count. Infinite streaming invocations receive their cancellation signal and are then
+dropped through the supervised process-group guard rather than polled again;
+this prevents a ready-loop producer from monopolizing shutdown while retaining
+kill-and-reap semantics. The cooperative task drain yields every 16 joins.
+A client disconnect also closes its bridge and
+reaps its streaming child. Worker
+schedules remain fixed to the startup Project for the life
+of that server process, so changing `.tachyonrc.workers` requires a server
+restart rather than replacing live schedules during a web hot rebuild.
+
 The supervisor selects its isolation backend exclusively from the parent
 process environment. Process mode spawns one language child per request;
 Firecracker mode spawns a trusted control client which delegates the same
-framed request to an operator-owned microVM pool. Neither project files nor
-handler requests can weaken that selection. See ADR 0014.
+framed request to an operator-owned microVM pool for JavaScript and Python.
+TypeScript and the prepared Java, PHP, Kotlin, C#, and Rust paths are rejected
+before driver spawn because the current contract cannot transfer their
+artifact sets. Neither project files nor handler requests can weaken that
+selection. See ADR 0014.
 
-The supervisor spawns its child or control client without a shell. Protocol stdout
-accepts exactly one bounded frame while stderr is drained independently and
-bounded. Queueing, startup, execution, framing, and exit share one deadline.
-Cancellation sends the protocol cancel frame, waits a short grace period, then
-kills and reaps when required. Process-mode handlers are never pooled or
-reused.
+The supervisor spawns its child or control client without a shell. Protocol
+stdout accepts one bounded response frame, or a bounded sequence of event
+frames from a method declared with `@Stream`, while stderr is drained
+independently and bounded. Queueing, startup, execution, framing, and exit
+share one deadline. Cancellation sends the protocol cancel frame, waits a
+short grace period, then kills and reaps when required. Process-mode handlers
+are never pooled or reused.
 
-The built-in JavaScript and Python adapters turn ordinary return values into
-JSON responses. A handler may instead return `{status, headers, body}`; an
+Runtime absence has a distinct `TY2112` mapping. The startup probe and the
+subsequent process spawn use the same logical runtime identity, so an
+executable removed between them still produces `TY2112` instead of a generic
+spawn failure. Human diagnostics, JSON diagnostics, and structured invocation
+events expose only a fixed runtime family/configuration label. Raw executable
+paths and operating-system errors remain private.
+
+Yon owns eight language paths: JavaScript, TypeScript, Python, Java, C#,
+Kotlin, PHP, and Rust. Every source in the five server layer roots declares its
+matching stereotype; discovery rejects an absent or misplaced declaration
+before runtime selection. A handler may return `{status, headers, body}`; an
 explicit `Content-Type: text/html` body passes through unchanged. No Yon
 response is interpreted as a Tachyon template.
 
+Other programs sit behind an `@Delegate` + `@Relay` edge. The per-language
+prelude drains delegate stdout and stderr concurrently under fixed bounds and
+sanitizes failures, while the supervisor owns the absolute request deadline
+and the complete process group. `@Stream` methods yield framed events in the
+six generator-capable languages (JavaScript, TypeScript, Python, PHP, Kotlin,
+and C#); subscriber disconnect is a lifecycle event that terminates and reaps
+the group. See ADR 0017.
+
 The server invokes this path for HTTP dispatch, middleware, and scheduled
-workers. Builds never invoke it. A Firecracker control program may address a
+workers. Those entry points use the same eight-language boundary;
+`.tachyonrc.workers` schedules but cannot register an interpreter. Root
+middleware and workers are controller-shaped protocol entry points, and their
+source, dependencies, and working directory are the Project's owned snapshot.
+Builds never invoke them. A Firecracker control program may address a
 warm pool, but pool and snapshot correctness remain its qualified deployment
-responsibility.
+responsibility. Its current transport is limited to JavaScript and Python.
 
 ## View Data Path
 

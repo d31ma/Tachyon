@@ -1,5 +1,7 @@
 //! The `ty` command-line interface.
 
+mod shutdown;
+
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use std::hash::{Hash as _, Hasher as _};
 use std::io::Write;
@@ -17,6 +19,8 @@ use tachyon_core::{
     Scaffold, WebCompiler, native_target_directory,
 };
 use tachyon_diagnostics::{Diagnostic, DiagnosticCode, Severity};
+
+use shutdown::{LongRunningCommand, ShutdownSignals};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum DiagnosticFormat {
@@ -306,8 +310,8 @@ enum HandlerCommand {
         /// Explicit environment variable name to inherit.
         #[arg(long = "allow-env")]
         allow_environment: Vec<String>,
-        /// Node.js executable name or path.
-        #[arg(long, default_value = "node")]
+        /// Decorator-capable JavaScript executable name or path.
+        #[arg(long, default_value = "bun")]
         javascript_runtime: PathBuf,
         /// `CPython` executable name or path.
         #[arg(long)]
@@ -587,16 +591,13 @@ async fn execute_serve(
         },
     )
     .await?;
+    let shutdown = ShutdownSignals::install(LongRunningCommand::Serve);
     println!("Tachyon server ready at http://{}/", server.address());
     if !no_watch {
         println!("Watching sources; open pages receive semantic hot updates.");
     }
     let _flush_result = std::io::stdout().flush();
-    server
-        .run_until(async {
-            let _signal_result = tokio::signal::ctrl_c().await;
-        })
-        .await
+    server.run_until(shutdown.wait()).await
 }
 
 async fn execute_preview(
@@ -608,11 +609,13 @@ async fn execute_preview(
     watch: bool,
     target: BuildTarget,
 ) -> Result<(), Failure> {
-    if watch {
+    let build_output = if watch {
         let build_output = preview_build_output(out_dir, target);
         execute_build(project, &build_output, false, target).await?;
-        spawn_bundle_watcher(project.to_path_buf(), build_output, target);
-    }
+        Some(build_output)
+    } else {
+        None
+    };
 
     let root = resolve_preview_root(project, out_dir, target);
     let server = PreviewServer::bind(
@@ -624,6 +627,13 @@ async fn execute_preview(
         },
     )
     .await?;
+    let shutdown = ShutdownSignals::install(LongRunningCommand::Preview);
+    let watcher = build_output.map(|build_output| {
+        PreviewBundleWatcher::start(project.to_path_buf(), build_output, target)
+    });
+    let watcher_cancellation = watcher
+        .as_ref()
+        .map(PreviewBundleWatcher::cancellation_handle);
     println!(
         "Tachyon preview ready at http://{}/ ({})",
         server.address(),
@@ -633,11 +643,21 @@ async fn execute_preview(
         println!("Watching sources and rebuilding the preview.");
     }
     let _flush_result = std::io::stdout().flush();
-    server
-        .run_until(async {
-            let _signal_result = tokio::signal::ctrl_c().await;
+    let server_result = server
+        .run_until(async move {
+            shutdown.wait().await;
+            if let Some(cancellation) = watcher_cancellation {
+                cancellation.send_replace(true);
+            }
         })
-        .await
+        .await;
+    let watcher_result = if let Some(watcher) = watcher {
+        watcher.cancel_and_join().await
+    } else {
+        Ok(())
+    };
+    server_result?;
+    watcher_result
 }
 
 async fn execute_bundle(
@@ -661,11 +681,14 @@ async fn execute_bundle(
         return Ok(());
     }
 
+    let shutdown = ShutdownSignals::install(LongRunningCommand::BundleWatch);
     println!("Watching sources and rebuilding the bundle.");
     let mut fingerprint = source_fingerprint(project);
+    let shutdown = shutdown.wait();
+    tokio::pin!(shutdown);
     loop {
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => return Ok(()),
+            () = &mut shutdown => return Ok(()),
             () = tokio::time::sleep(Duration::from_millis(400)) => {
                 let next = source_fingerprint(project);
                 if next == fingerprint {
@@ -900,21 +923,83 @@ fn cli_failure(number: u16, message: impl Into<String>, help: impl Into<String>)
     })
 }
 
-fn spawn_bundle_watcher(project: PathBuf, out_dir: PathBuf, target: BuildTarget) {
-    tokio::spawn(async move {
+struct PreviewBundleWatcher {
+    cancellation: tokio::sync::watch::Sender<bool>,
+    task: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl PreviewBundleWatcher {
+    fn start(project: PathBuf, out_dir: PathBuf, target: BuildTarget) -> Self {
+        let (cancellation, mut cancelled) = tokio::sync::watch::channel(false);
         let mut fingerprint = source_fingerprint(&project);
-        loop {
-            tokio::time::sleep(Duration::from_millis(400)).await;
-            let next = source_fingerprint(&project);
-            if next == fingerprint {
-                continue;
+        let task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = preview_watcher_cancelled(&mut cancelled) => return,
+                    () = tokio::time::sleep(Duration::from_millis(400)) => {}
+                }
+                let next = source_fingerprint(&project);
+                if next == fingerprint {
+                    continue;
+                }
+                fingerprint = next;
+                let build = execute_build(&project, &out_dir, false, target);
+                tokio::pin!(build);
+                tokio::select! {
+                    biased;
+                    () = preview_watcher_cancelled(&mut cancelled) => return,
+                    result = &mut build => {
+                        if let Err(failure) = result {
+                            eprint!("{failure}");
+                        }
+                    }
+                }
             }
-            fingerprint = next;
-            if let Err(failure) = execute_build(&project, &out_dir, false, target).await {
-                eprint!("{failure}");
-            }
+        });
+        Self {
+            cancellation,
+            task: Some(task),
         }
-    });
+    }
+
+    fn cancellation_handle(&self) -> tokio::sync::watch::Sender<bool> {
+        self.cancellation.clone()
+    }
+
+    async fn cancel_and_join(mut self) -> Result<(), Failure> {
+        self.cancellation.send_replace(true);
+        let Some(task) = self.task.take() else {
+            return Ok(());
+        };
+        task.await.map_err(|error| {
+            cli_failure(
+                1303,
+                format!("Preview rebuild watcher stopped unexpectedly: {error}"),
+                "Restart the preview server.",
+            )
+        })
+    }
+}
+
+impl Drop for PreviewBundleWatcher {
+    fn drop(&mut self) {
+        self.cancellation.send_replace(true);
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
+async fn preview_watcher_cancelled(cancelled: &mut tokio::sync::watch::Receiver<bool>) {
+    loop {
+        if *cancelled.borrow() {
+            return;
+        }
+        if cancelled.changed().await.is_err() {
+            return;
+        }
+    }
 }
 
 fn source_fingerprint(project: &Path) -> u64 {

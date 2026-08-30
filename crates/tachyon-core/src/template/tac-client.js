@@ -18,7 +18,7 @@ const evaluate = async (node, environment) => {
     case 'await': return await evaluate(node.e, environment)
     case 'lit': return node.v
     case 'id': {
-      if (Object.prototype.hasOwnProperty.call(environment.locals, node.n)) {
+      if (node.n in environment.locals) {
         return environment.locals[node.n]
       }
       if (environment.owner && node.n in environment.owner) return environment.owner[node.n]

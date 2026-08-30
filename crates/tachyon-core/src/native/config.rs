@@ -33,8 +33,16 @@ struct ApplicationConfiguration {
 }
 
 impl NativeApplication {
+    #[cfg(test)]
     pub(super) fn discover(project_root: &Path) -> Result<Self, Failure> {
-        let path = project_root.join(CONFIG_PATH);
+        Self::discover_from_snapshot(project_root, project_root)
+    }
+
+    pub(super) fn discover_from_snapshot(
+        snapshot_root: &Path,
+        authored_root: &Path,
+    ) -> Result<Self, Failure> {
+        let path = snapshot_root.join(CONFIG_PATH);
         match fs::symlink_metadata(&path) {
             Ok(metadata) => {
                 if metadata.file_type().is_symlink() || !metadata.is_file() {
@@ -47,7 +55,7 @@ impl NativeApplication {
                 }
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                return Ok(Self::defaults(project_root));
+                return Ok(Self::defaults(authored_root));
             }
             Err(error) => {
                 return Err(config_failure(&format!(
