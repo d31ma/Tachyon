@@ -1217,7 +1217,8 @@ mod tests {
         let root = tempfile::tempdir().expect("cache");
         let path = root.path().join("oversized.lock");
         let file = fs::File::create(&path).expect("create sparse lock");
-        file.set_len(1_u64 << 40).expect("make sparse lock");
+        file.set_len((MAX_LOCK_METADATA_BYTES + 1) as u64)
+            .expect("make oversized lock");
         drop(file);
         let cache = CacheDirectory::open_test_root(root.path()).expect("cache capability");
         let now = || Duration::from_secs(10_000_000_000);
@@ -1250,7 +1251,8 @@ mod tests {
         let root = tempfile::tempdir().expect("cache");
         let path = root.path().join("future.lock");
         let file = fs::File::create(&path).expect("create sparse lock");
-        file.set_len(1_u64 << 40).expect("make sparse lock");
+        file.set_len((MAX_LOCK_METADATA_BYTES + 1) as u64)
+            .expect("make oversized lock");
         file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(1_000))
             .expect("set hostile future mtime");
         drop(file);

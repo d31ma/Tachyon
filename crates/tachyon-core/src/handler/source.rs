@@ -3041,9 +3041,12 @@ mod tests {
             build_a.join().expect("build a");
             build_b.join().expect("build b");
         });
-        prune_handler_cache_with_limits(&cache, 2, 160).expect("post-publish bound");
         assert!(cache.join("a.jar").exists());
         assert!(cache.join("b.jar").exists());
+        prune_handler_cache_with_limits(&cache, 2, 160).expect("post-publish bound");
+        let (entries, bytes) = path_usage(&cache).expect("bounded cache usage");
+        assert!(entries <= 3, "cache root plus entries: {entries}");
+        assert!(bytes <= 160, "cache bytes: {bytes}");
         assert!(
             fs::read_dir(&cache)
                 .expect("cache")
@@ -3486,6 +3489,15 @@ mod tests {
         fs::write(path, bytes).expect("source");
     }
 
+    fn command_available(program: &str) -> bool {
+        std::process::Command::new(program)
+            .arg("-version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
     #[test]
     fn valid_sources_select_stable_adapters() {
         let root = tempfile::tempdir().expect("project");
@@ -3664,6 +3676,9 @@ mod tests {
 
     #[test]
     fn an_ahead_of_time_language_is_compiled_once_and_reused() {
+        if !command_available("kotlinc") {
+            return;
+        }
         // A compiled handler is keyed on its source digest, so the build cost
         // is paid on first use and every later request reuses the artefact.
         let root = tempfile::tempdir().unwrap_or_else(|_| unreachable!());
@@ -3815,7 +3830,11 @@ mod tests {
     fn unsafe_unsupported_and_malformed_sources_fail_closed() {
         let root = tempfile::tempdir().expect("project");
         write(root.path(), "server/routes/yon.rb", b"handler");
-        write(root.path(), "server/routes/nul/yon.py", b"class\0 Handler");
+        write(
+            root.path(),
+            "server/routes/contains-nul/yon.py",
+            b"class\0 Handler",
+        );
         write(root.path(), "server/routes/bytes/yon.js", &[0xff, 0xfe]);
         write(
             root.path(),
@@ -3829,7 +3848,7 @@ mod tests {
             // that cannot declare a layer rather than one nothing can start.
             ("server/routes/yon.rb", "TY2003"),
             ("server/routes/missing/yon.py", "TY2001"),
-            ("server/routes/nul/yon.py", "TY2004"),
+            ("server/routes/contains-nul/yon.py", "TY2004"),
             ("server/routes/bytes/yon.js", "TY2004"),
             ("server/routes/large/yon.py", "TY2004"),
         ] {
