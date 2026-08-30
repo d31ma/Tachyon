@@ -23,10 +23,10 @@ export default class {
       // A denied clipboard is the reader's choice rather than a fault.
       this.copiedLabel = 'Press \u2318C'
     }
-    await this.tac.render()
+    await globalThis.__tachyonTac?.render()
     setTimeout(() => {
       this.copied = ''
-      void this.tac.render()
+      void globalThis.__tachyonTac?.render()
     }, 2000)
   }
 
