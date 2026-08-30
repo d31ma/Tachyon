@@ -468,7 +468,7 @@ fn completed_phase_acceptance_is_enforced_by_ci_and_documentation()
     assert!(plan.contains("## Phase 3: Tac View Semantics"));
     assert!(plan.contains("## Phase 4: Native Vertical Slice"));
     assert!(plan.matches("Status: complete on 2026-07-26").count() >= 4);
-    assert_eq!(version.trim(), "26.33.02");
+    assert_eq!(version.trim(), "26.35.07");
     assert_eq!(version.trim(), tachyon_contracts::PRODUCT_VERSION);
     Ok(())
 }
