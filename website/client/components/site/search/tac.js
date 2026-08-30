@@ -1,4 +1,6 @@
 // @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
+import { searchDocs } from '/shared/scripts/navigation.js'
+
 export default class {
   static __tachyonOnMount = ['shortcut']
 
@@ -6,6 +8,7 @@ export default class {
   results = []
   term = ''
   searching = false
+  timer = null
 
   /**
    * The runtime calls a handler as `handler(event, ...declaredArguments)`, so
@@ -14,17 +17,37 @@ export default class {
   open() {
     this.showing = true
     // The input only exists once the dialog has rendered.
-    setTimeout(() => document.getElementById('site-search-input')?.focus(), 0)
+    setTimeout(() => this.bindInput(), 0)
   }
 
   close() {
+    clearTimeout(this.timer)
     this.showing = false
     this.results = []
     this.term = ''
+    this.searching = false
   }
 
   dismiss(_event, key) {
-    if (key === 'Escape') this.close()
+    if (key === 'Escape') {
+      this.close()
+      void globalThis.__tachyonTac?.render()
+    }
+  }
+
+  /**
+   * Keep keystrokes outside Tachyon's auto-rendering event bridge. Replacing
+   * the input after each native `input` event would drop focus mid-query.
+   */
+  bindInput() {
+    const input = document.getElementById('site-search-input')
+    if (!input) return
+    input.focus()
+    input.setSelectionRange?.(this.term.length, this.term.length)
+    if (input.dataset.searchBound) return
+    input.dataset.searchBound = 'true'
+    input.addEventListener('input', (event) => this.find(event, event.target?.value))
+    input.addEventListener('keydown', (event) => this.dismiss(event, event.key))
   }
 
   status() {
@@ -35,30 +58,18 @@ export default class {
     return 'Search titles and body text across every guide.'
   }
 
-  async find(_event, value) {
+  find(_event, value) {
     this.term = String(value ?? '').trim()
-    if (this.term.length < 2) {
-      this.results = []
-      await this.tac.render()
-      return
-    }
-    this.searching = true
-    await this.tac.render()
-    try {
-      // Handler Protocol v1 carries no query string, so the term is a path
-      // segment rather than a parameter.
-      const response = await this.tac.fetch(`/api/search/${encodeURIComponent(this.term)}`, {}, {
-        cache: 'cache-first',
-      })
-      const payload = await response.json()
-      this.results = Array.isArray(payload.results) ? payload.results : []
-    } catch {
-      // An unreachable server should read as no results, not a broken dialog.
-      this.results = []
-    } finally {
+    clearTimeout(this.timer)
+    this.searching = this.term.length >= 2
+    const query = this.term
+    this.timer = setTimeout(async () => {
+      if (query !== this.term) return
+      this.results = searchDocs(query)
       this.searching = false
-      await this.tac.render()
-    }
+      await globalThis.__tachyonTac?.render()
+      setTimeout(() => this.bindInput(), 0)
+    }, 120)
   }
 
   shortcut() {
@@ -68,7 +79,7 @@ export default class {
         event.preventDefault()
         if (this.showing) this.close()
         else this.open()
-        void this.tac.render()
+        void globalThis.__tachyonTac?.render()
       }
     })
   }

@@ -10,11 +10,10 @@
         id="site-search-input"
         class="search-input"
         type="search"
+        :value="term"
         placeholder="Search the documentation"
         aria-label="Search documentation"
         autocomplete="off"
-        on:input="find($event.target.value)"
-        on:keydown="dismiss($event.key)"
       >
       <p class="text-sm opacity-70 px-4 py-2" aria-live="polite">{status()}</p>
       <ul class="search-results" role="listbox">

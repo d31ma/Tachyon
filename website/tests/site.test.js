@@ -423,9 +423,18 @@ describe('documentation structure', () => {
     // Every feature is a page now, so a search that could only land a reader
     // on /docs and leave them to hunt is a search that lost the change.
     const seed = await read('scripts/seed.mjs')
+    const navigation = await read('client/shared/scripts/navigation.js')
+    const search = await read('client/components/site/search/tac.js')
     expect(seed).toContain('features.json')
     expect(seed).toContain("kind: 'feature'")
     expect(seed).toContain('/docs/features/')
+    expect(navigation).toContain('export const searchDocs')
+    expect(navigation).toContain("kind: 'section'")
+    expect(navigation).toContain("kind: 'feature'")
+    expect(search).toContain('this.results = searchDocs(query)')
+    expect(search).toContain('input.addEventListener')
+    expect(search).toContain('keydown')
+    expect(search).toContain('globalThis.__tachyonTac?.render()')
   })
 
   test('the sitemap lists the feature pages', async () => {

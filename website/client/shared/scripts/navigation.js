@@ -43,6 +43,59 @@ export const features = () =>
 
 export const feature = (id) => features().find((entry) => entry.id === id)
 
+/**
+ * The static documentation search index.
+ *
+ * Amplify publishes the web bundle without the optional Yon server, so the
+ * browser needs the same authored corpus as a fallback when `/api/search` is
+ * unavailable. Keeping the index beside the navigation data also makes it
+ * available offline through the service worker.
+ */
+const searchRows = () => {
+  const rows = []
+  for (const entry of guides()) {
+    const topic = guide(entry.slug)
+    rows.push({ title: entry.title, path: entry.path, kind: 'topic', text: entry.summary })
+    for (const section of topic.sections ?? []) {
+      const anchor = slugify(section.heading)
+      rows.push({
+        title: `${entry.title} · ${section.heading}`,
+        path: `${entry.path}#${anchor}`,
+        kind: 'section',
+        text: [section.body, section.code, ...(section.files ?? []).map((file) => file.code)]
+          .filter(Boolean).join('\n'),
+      })
+    }
+  }
+  for (const entry of features()) {
+    rows.push({
+      title: entry.title,
+      path: entry.path,
+      kind: 'feature',
+      text: [entry.summary, entry.group, ...(entry.files ?? []).map((file) => file.code)]
+        .filter(Boolean).join('\n'),
+    })
+  }
+  return rows
+}
+
+/** Search published documentation without requiring the optional Yon layer. */
+export const searchDocs = (query, maximum = 12) => {
+  const needle = String(query ?? '').trim().toLowerCase()
+  if (needle.length < 2) return []
+  return searchRows()
+    .map((row) => {
+      const title = row.title.toLowerCase()
+      const text = String(row.text ?? '').toLowerCase()
+      const rank = title.includes(needle) ? (title.startsWith(needle) ? 3 : 2) : (text.includes(needle) ? 1 : 0)
+      return { row, rank }
+    })
+    .filter((hit) => hit.rank > 0)
+    .sort((left, right) => right.rank - left.rank || left.row.title.length - right.row.title.length)
+    .slice(0, maximum)
+    .map(({ row }) => ({ title: row.title, path: row.path, kind: row.kind }))
+}
+
 /** The feature groups, each with the features in it. */
 export const groups = () =>
   GROUP_ORDER.map((name) => ({
