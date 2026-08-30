@@ -1022,7 +1022,9 @@ impl ContractDelegate {
         ),
     ];
     let supervisor = supervisor(HandlerSupervisorOptions {
-        default_timeout: Duration::from_secs(2),
+        // Compiled adapters may pay a cold-start cost on a contended CI host;
+        // the explicit hanging relay below still carries its own 250 ms bound.
+        default_timeout: Duration::from_secs(10),
         ..HandlerSupervisorOptions::default()
     });
     for &(extension, contents) in &relay_sources {
