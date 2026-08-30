@@ -357,6 +357,9 @@ async fn disconnecting_a_stream_client_reaps_its_handler_without_stopping_the_se
 
 #[tokio::test]
 async fn a_php_generator_streams_through_the_direct_protocol() {
+    if !available("php") {
+        return;
+    }
     let project = tempfile::tempdir().expect("project");
     write(
         &project.path().join("client/pages/tac.html"),
@@ -975,6 +978,9 @@ async fn an_unrunnable_handler_extension_fails_closed() {
 
 #[tokio::test]
 async fn middleware_can_refuse_a_request_before_it_reaches_a_route() {
+    if !available("php") {
+        return;
+    }
     // Middleware speaks the same protocol a handler does, so it may be written
     // in any language the project can run. 204 means continue; any other
     // status answers the request without reaching the route.
@@ -1045,6 +1051,9 @@ if (str_starts_with($request['route'], '/private') && $token !== 'let-me-in') {
 
 #[tokio::test]
 async fn middleware_can_adjust_a_response_after_it_is_produced() {
+    if !available("php") {
+        return;
+    }
     // The after phase is overwhelmingly used to add headers, so it receives the
     // status and headers and returns 204 to merge its own. A failure there must
     // never discard a response the request already earned.

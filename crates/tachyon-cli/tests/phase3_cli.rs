@@ -549,7 +549,12 @@ fn adversarial_parser_and_component_shapes_fail_through_the_binary() {
     assert!(!output.status.success());
     // Project discovery owns the no-follow capability boundary, so the unsafe
     // component link is rejected before compiler-specific shape validation.
+    #[cfg(unix)]
     assert!(stderr(&output).contains("TY1004"));
+    // Windows cannot create that Unix symlink in this fixture, but the orphan
+    // companion and malformed component shape must still fail closed.
+    #[cfg(windows)]
+    assert!(stderr(&output).contains("TY1401"));
 
     let missing_slot = tempfile::tempdir().expect("missing slot");
     write(

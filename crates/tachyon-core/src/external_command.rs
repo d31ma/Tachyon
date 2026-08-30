@@ -276,6 +276,16 @@ mod tests {
             .is_ok_and(|status| status.success())
     }
 
+    async fn assert_process_gone(pid: u32) {
+        for _attempt in 0..100 {
+            if !process_exists(pid) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("descendant {pid} survived parent exit");
+    }
+
     #[tokio::test]
     async fn successful_parent_cannot_leave_a_descendant_or_unbounded_output() {
         let _serial = TEST_LOCK.lock().await;
@@ -292,10 +302,7 @@ mod tests {
             .expect("child pid")
             .parse::<u32>()
             .expect("numeric pid");
-        assert!(
-            !process_exists(pid),
-            "descendant {pid} survived parent exit"
-        );
+        assert_process_gone(pid).await;
     }
 
     #[tokio::test]
