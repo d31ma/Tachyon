@@ -5,12 +5,15 @@
 // if a route stops linking its stylesheet or the language snippets stop
 // shipping, the page is broken in a way a screenshot review would miss.
 
-import { describe, expect, test } from 'bun:test'
+import { beforeAll, describe, expect, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import { ensureBundle } from './helpers/ensure-bundle.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (relative) => readFile(new URL(relative, new URL('..', import.meta.url)), 'utf8')
+
+beforeAll(ensureBundle)
 
 describe('published output', () => {
   test('every route links its stylesheet and the client runtime', async () => {
