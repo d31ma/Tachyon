@@ -1,0 +1,23 @@
+<!-- What the framework is, in six claims a reader can check.
+     DuVay's landing puts this immediately under the hero, before any code:
+     it is the answer to "what am I looking at", and a reader who does not want
+     it scrolls past six short cards rather than a page of prose. -->
+<section class="section" aria-labelledby="pillars-heading">
+  <div class="section-head--center">
+    <span class="eyebrow">Built to get out of the way</span>
+    <h2 id="pillars-heading" class="section-title">One foundation, every target.</h2>
+    <p class="section-lede mx-auto">
+      The same project serves a browser and installs as an application on five platforms,
+      with no second codebase and no runtime to ship beside it.
+    </p>
+  </div>
+
+  <div class="pillars mt-10">
+    <loop :for="pillar of list()">
+      <article class="pillar">
+        <h3 class="pillar__title">{pillar.title}</h3>
+        <p class="pillar__body">{pillar.body}</p>
+      </article>
+    </loop>
+  </div>
+</section>

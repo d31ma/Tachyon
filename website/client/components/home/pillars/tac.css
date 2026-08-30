@@ -1,0 +1,34 @@
+/* Three across, then two, then one — decided by the space a card needs to stay
+   readable rather than by a device width.
+ *
+ * The floor is `max(17rem, one third of the row)` rather than a plain 17rem:
+ * with only a minimum, `auto-fit` keeps adding columns as the page widens and
+ * six cards land as four-and-two. Making a third of the row the floor caps the
+ * count at three without naming a breakpoint, and the 17rem still wins on a
+ * narrow screen where a third of the row would be unreadable. */
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(17rem, (100% - 2rem) / 3), 1fr));
+  gap: 1rem;
+  /* Every row as tall as its tallest card, so a three-line body does not leave
+     the two cards beside it short. */
+  grid-auto-rows: 1fr;
+}
+
+.pillar {
+  padding: 1.25rem;
+  border: 1px solid var(--w-border, currentColor);
+  border-radius: var(--w-radius-lg, 12px);
+  background: var(--w-surface-container-low, transparent);
+}
+
+.pillar__title {
+  font-weight: 600;
+  margin-bottom: .5rem;
+}
+
+.pillar__body {
+  font-size: .9375rem;
+  opacity: .75;
+  text-wrap: pretty;
+}

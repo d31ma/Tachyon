@@ -1,0 +1,32 @@
+<div class="site-search">
+  <w-btn variant="text" size="sm" class="site-search__trigger" on:click="open()" aria-label="Search documentation">
+    Search <kbd class="ml-2 opacity-60 text-xs">⌘K</kbd>
+  </w-btn>
+
+  <logic :if="showing">
+    <div class="search-scrim" on:click="close()"></div>
+    <div class="search-panel" role="dialog" aria-modal="true" aria-label="Search documentation">
+      <input
+        id="site-search-input"
+        class="search-input"
+        type="search"
+        placeholder="Search the documentation"
+        aria-label="Search documentation"
+        autocomplete="off"
+        on:input="find($event.target.value)"
+        on:keydown="dismiss($event.key)"
+      >
+      <p class="text-sm opacity-70 px-4 py-2" aria-live="polite">{status()}</p>
+      <ul class="search-results" role="listbox">
+        <loop :for="hit of results">
+          <li>
+            <a class="search-hit" :href="hit.path">
+              <span>{hit.title}</span>
+              <span class="text-xs opacity-60">{hit.kind}</span>
+            </a>
+          </li>
+        </loop>
+      </ul>
+    </div>
+  </logic>
+</div>

@@ -1,0 +1,19 @@
+/* Above the title, where they are findable without competing with it. */
+.docs-pagelinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  font-size: .8125rem;
+}
+
+.docs-pagelinks__link {
+  color: inherit;
+  opacity: .6;
+  text-decoration: none;
+}
+
+.docs-pagelinks__link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}

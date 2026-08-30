@@ -1,54 +1,59 @@
-// @ts-check
+import { currentPath, groups, guides } from '/shared/scripts/navigation.js'
 
 export default class {
-  /** @type {Map<string, string>} */
-  searchIndex = new Map()
+  /**
+   * Whether the drawer is showing.
+   *
+   * Only meaningful in the narrow layout, where the navigation has no column
+   * of its own; the toggle that sets it is not rendered at any other width, so
+   * a wide shell simply never reads this.
+   */
+  open = false
 
-  /** @param {HTMLElement} root @param {AbortSignal} signal */
-  async hydrate(root, signal) {
-    const input = root.querySelector('input[type="search"]')
-    const updateActive = () => {
-      const current = location.pathname
-      for (const link of root.querySelectorAll('.docs-sidebar-list a')) {
-        if (!(link instanceof HTMLAnchorElement)) continue
-        const active = new URL(link.href, location.href).pathname === current
-        link.classList.toggle('active', active)
-        if (active) link.setAttribute('aria-current', 'page')
-        else link.removeAttribute('aria-current')
-      }
-    }
-    const filter = () => {
-      const query = input instanceof HTMLInputElement ? input.value.trim().toLowerCase() : ''
-      let visible = 0
-      for (const item of root.querySelectorAll('[data-topic]')) {
-        if (!(item instanceof HTMLElement)) continue
-        const slug = item.getAttribute('data-topic') ?? ''
-        const searchable = this.searchIndex.get(slug) ?? item.textContent?.toLowerCase() ?? ''
-        item.hidden = Boolean(query) && !searchable.includes(query)
-        if (!item.hidden) visible += 1
-      }
-      for (const section of root.querySelectorAll('.docs-sidebar-section')) {
-        if (!(section instanceof HTMLElement)) continue
-        section.hidden = !section.querySelector('[data-topic]:not([hidden])')
-      }
-      const empty = root.querySelector('.docs-no-results')
-      if (empty instanceof HTMLElement) empty.hidden = visible !== 0
-    }
+  toggle() {
+    this.open = !this.open
+  }
 
-    input?.addEventListener('input', filter, { signal })
-    window.addEventListener('tachyon:navigate', updateActive, { signal })
-    window.addEventListener('popstate', updateActive, { signal })
-    updateActive()
+  close() {
+    this.open = false
+  }
 
-    try {
-      const response = await fetch('/shared/data/docs.json', { cache: 'reload', signal })
-      const payload = await response.json()
-      for (const [slug, topic] of Object.entries(payload.topics ?? {})) {
-        this.searchIndex.set(slug, JSON.stringify(topic).toLowerCase())
-      }
-      filter()
-    } catch (error) {
-      if (!signal.aborted) console.warn('Unable to load the documentation search index.', error)
-    }
+  /** Escape closes it, which is what any overlay owes a keyboard. */
+  dismiss(_event, key) {
+    if (key === 'Escape') this.close()
+  }
+
+  /**
+   * The sidebar's sections, each a group of links.
+   *
+   * Guides and features are one navigation rather than two lists stacked on
+   * each other: a reader looking for "Browser storage" should find it in the
+   * same place they found "Routing", and whether the page behind it was
+   * authored as a guide or generated from the catalogue is not their problem.
+   */
+  sections() {
+    const here = currentPath()
+    const sections = [
+      { name: 'Guide', slug: 'guide', links: guides().map(({ title, path }) => ({ title, path })) },
+      ...groups().map((group) => ({
+        name: group.name,
+        slug: group.slug,
+        links: group.features.map(({ title, path }) => ({ title, path })),
+      })),
+    ]
+    const holds = (section) => section.links.some((link) => link.path === here)
+    // Somewhere with no entry of its own — /docs itself, or the catalogue —
+    // opens the guide rather than nothing. Every section shut is a navigation
+    // showing no destinations at all, and on a narrow screen, where the
+    // sidebar sits above the article, it is the first thing the reader meets.
+    const orphan = !sections.some(holds)
+    return sections.map((section, index) => ({
+      ...section,
+      links: section.links.map((link) => ({ ...link, current: link.path === here })),
+      // Open the section holding the current page and leave the rest closed.
+      // A <details> with no `open` collapses, so a reader arriving on one
+      // feature is not handed forty-four links to scroll past.
+      open: orphan ? index === 0 : holds(section),
+    }))
   }
 }

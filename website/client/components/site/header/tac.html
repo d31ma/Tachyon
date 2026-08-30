@@ -1,43 +1,32 @@
 <w-app-bar sticky scroll-behavior="elevate">
-  <w-container size="xl" class="w-row align-center ga-2 px-0 site-header-row">
-    <a href="/" class="w-row align-center ga-2 mr-auto brand-link" aria-label="Tachyon home">
-      <img class="brand-mark" src="/shared/assets/logo.svg" alt="" width="28" height="28" />
-      <span class="brand-name">TACHYON</span>
-      <span class="brand-badge">Tac + Yon</span>
+  <w-container size="xl" class="site-bar w-row align-center ga-2 px-0">
+    <a href="/" class="site-bar__brand w-row align-center ga-2 mr-auto" aria-label="Tachyon home">
+      <img src="/shared/assets/logo.svg" alt="" width="26" height="26" class="block" />
+      <!-- The one deliberate cliff on the site: a wordmark cannot be scaled
+           to nothing, and below ~30rem the bar needs the ~5rem it occupies
+           more than the page needs to be told its own name twice. -->
+      <span class="site-bar__wordmark font-bold tracking-widest text-sm">TACHYON</span>
     </a>
 
-    <nav class="w-row align-center ga-1 only-desktop" aria-label="Primary navigation">
-      <w-btn href="/" variant="text" size="sm">Home</w-btn>
-      <w-btn href="/atlas" variant="text" size="sm">Atlas</w-btn>
+    <!-- Three destinations, all of them present at every width. The strip
+         scrolls rather than dropping items, so nothing is unreachable on a
+         phone the way a `hidden sm:inline` link would be. -->
+    <nav class="site-bar__nav w-row align-center ga-1" aria-label="Primary">
       <w-btn href="/docs" variant="text" size="sm">Docs</w-btn>
+      <!-- A plain anchor: <w-btn href> forwards href to the anchor it renders,
+           but not target or rel, so through the component this opens in-tab. -->
+      <a class="w-btn w-btn--text w-btn--sm" href="https://github.com/d31ma/Tachyon"
+         target="_blank" rel="noopener noreferrer">GitHub</a>
     </nav>
 
-    <w-btn variant="text" size="sm" w-theme-toggle aria-label="Switch color theme">
-      <svg class="theme-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-        <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.75" />
-        <path d="M12 3.5a8.5 8.5 0 0 0 0 17Z" fill="currentColor" />
-      </svg>
-      <span class="w-hide-phone">Theme</span>
-    </w-btn>
-    <w-btn variant="text" size="sm" href="https://github.com/d31ma/Tachyon" target="_blank" rel="noopener" class="w-hide-phone">GitHub</w-btn>
+    <div class="site-bar__actions w-row align-center ga-1">
+      <site-search hydrate="load" />
 
-    <button
-      type="button"
-      class="w-btn w-btn-icon header-burger only-below-desktop"
-      aria-label="Menu"
-      aria-controls="mobile-menu"
-      aria-expanded="false"
-      w-dropdown-trigger
-    >
-      <span class="menu-icon menu-icon-open" aria-hidden="true">☰</span>
-      <span class="menu-icon menu-icon-close" aria-hidden="true">✕</span>
-    </button>
-
-    <nav id="mobile-menu" class="header-mobile-menu only-below-desktop" aria-label="Mobile navigation" w-dropdown>
-      <w-btn href="/" variant="text" class="mobile-menu-link">Home</w-btn>
-      <w-btn href="/atlas" variant="text" class="mobile-menu-link">Atlas</w-btn>
-      <w-btn href="/docs" variant="text" class="mobile-menu-link">Docs</w-btn>
-      <w-btn href="https://github.com/d31ma/Tachyon" target="_blank" rel="noopener" variant="text" class="mobile-menu-link">GitHub</w-btn>
-    </nav>
+    <!-- A glyph rather than <w-icon>: the vendored bundle resolves icons
+         through a registry this site does not install, so a named icon would
+         render as nothing at all. -->
+    <w-btn variant="text" size="sm" w-theme-toggle aria-label="Switch colour theme">◐</w-btn>
+      <w-btn href="/docs/introduction" variant="filled" color="primary" size="sm">Get started</w-btn>
+    </div>
   </w-container>
 </w-app-bar>

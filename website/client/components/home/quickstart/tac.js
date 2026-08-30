@@ -1,54 +1,54 @@
-// @ts-check
-
-const samples = {
-  template: `<section class="hero">
-  <h1>{headline}</h1>
-  <button on:click="refresh()">Refresh</button>
-</section>
-
-<loop :for="post of posts">
-  <product-card :product="post" hydrate="visible" />
-</loop>`,
-  companion: `export default class {
-  headline = "Tac + Yon"
-  visits = 0
-
-  constructor(_props, tac) {
-    tac.onMount(() => {
-      this.visits = Number(sessionStorage.getItem("visits") ?? 0) + 1
-      sessionStorage.setItem("visits", String(this.visits))
-    })
-  }
-}`,
-  yon: `# server/routes/posts/yon.py  ->  /posts
-@Controller
-class PostsController:
-  @staticmethod
-  def GET(request):
-    return {"posts": []}`,
-  polyglot: `// client/components/counter/tachyon-wasm.swift
-var count: Int = 0
-
-func increment() {
-  count += 1
-}
-
-let tac: [String: TacMember] = [
-  "count": .field({ count }, { count = $0 }),
-  "increment": .method(increment),
-]`,
-}
-
-function populateSamples() {
-  for (const code of document.querySelectorAll('[data-sample]')) {
-    const name = /** @type {keyof typeof samples | undefined} */ (code.getAttribute('data-sample') ?? undefined)
-    if (name && samples[name]) code.textContent = samples[name]
-  }
-}
-
 export default class {
-  /** @param {Record<string, unknown>} _props @param {{ onMount(callback: () => void): void }} tac */
-  constructor(_props, tac) {
-    tac.onMount(populateSamples)
+  /** Which step's copy button is showing feedback, and what it says. */
+  copied = ''
+  copiedLabel = 'Copied'
+
+  /**
+   * Called from an interpolation rather than an `on:` handler, so it takes its
+   * argument directly — only a dispatched handler is passed the event first.
+   */
+  label(number) {
+    return this.copied === number ? this.copiedLabel : 'Copy'
+  }
+
+  async copy(_event, number) {
+    const step = this.steps().find((entry) => entry.number === number)
+    if (!step) return
+    this.copied = number
+    try {
+      await navigator.clipboard.writeText(step.command)
+      this.copiedLabel = 'Copied'
+    } catch {
+      // A denied clipboard is the reader's choice rather than a fault.
+      this.copiedLabel = 'Press \u2318C'
+    }
+    await this.tac.render()
+    setTimeout(() => {
+      this.copied = ''
+      void this.tac.render()
+    }, 2000)
+  }
+
+  steps() {
+    return [
+      {
+        number: '01',
+        title: 'Install',
+        command: 'curl -fsSL https://tachyon.del.ma/install.sh | sh',
+        note: 'One binary. No runtime to install first, and no daemon left behind.',
+      },
+      {
+        number: '02',
+        title: 'Scaffold',
+        command: 'ty init my-app && cd my-app',
+        note: 'A page, a component and a route, laid out the way the file-system router reads them.',
+      },
+      {
+        number: '03',
+        title: 'Serve',
+        command: 'ty preview',
+        note: 'Compiles on change and reloads the view without losing the state it was holding.',
+      },
+    ]
   }
 }

@@ -1,0 +1,30 @@
+.docs-toc__heading {
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  opacity: .55;
+  margin-bottom: .5rem;
+}
+
+.docs-toc__list {
+  display: flex;
+  flex-direction: column;
+  gap: .125rem;
+  font-size: .8125rem;
+}
+
+.docs-toc__link {
+  display: block;
+  padding: .25rem 0 .25rem .75rem;
+  border-left: 2px solid var(--w-border, currentColor);
+  color: inherit;
+  opacity: .7;
+  text-decoration: none;
+  text-wrap: pretty;
+}
+
+.docs-toc__link:hover {
+  border-left-color: currentColor;
+  opacity: 1;
+}

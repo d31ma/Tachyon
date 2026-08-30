@@ -1,101 +1,154 @@
-.docs-sidebar-nav {
+/* One navigation for the whole documentation, in collapsible sections.
+   Forty-four links do not belong on screen at once, so a section is a
+   <details>: the one holding the current page is open and the rest are shut
+   until asked for. */
+.docs-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--w-space-1);
+  gap: .125rem;
+  font-size: .875rem;
 }
-
-.docs-sidebar-home {
-  display: block;
-  margin-bottom: var(--w-space-4);
-  padding: var(--w-space-1_5) var(--w-space-3);
-  border-radius: var(--w-radius-md);
-  color: var(--w-text);
-  font-size: var(--w-font-sm);
-  font-weight: var(--w-font-weight-semibold);
-  text-decoration: none;
-  transition: background var(--w-transition-fast), color var(--w-transition-fast);
-}
-
-.docs-sidebar-home:hover {
-  background: var(--w-hover);
-  color: var(--w-primary);
-}
-
-.docs-search {
-  margin: 0 0 var(--w-space-4);
-}
-
-.docs-search input {
-  width: 100%;
-}
-
-.docs-sidebar-section {
-  margin-bottom: var(--w-space-1);
-}
-
-.docs-sidebar-subhead {
-  margin: var(--w-space-4) 0 var(--w-space-1);
-  padding: 0 var(--w-space-3);
-  color: var(--w-text-very-subtle);
-  font-size: var(--w-font-xs);
-  font-weight: var(--w-font-weight-bold);
-  letter-spacing: var(--w-letter-spacing-wide);
-  line-height: 1.4;
-  text-transform: uppercase;
-}
-
-.docs-group-summary {
-  margin: 0 0 var(--w-space-2);
-  padding: 0 var(--w-space-3);
-  color: var(--w-text-very-subtle);
-  font-size: var(--w-font-xs);
-  line-height: 1.4;
-}
-
-.docs-sidebar-list {
+.docs-nav__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .375rem .5rem;
+  border-radius: var(--w-radius-md, 8px);
+  font-weight: 600;
+  cursor: pointer;
+  /* The disclosure triangle is replaced by the chevron below, which can be
+     rotated and coloured with the rest of the row. */
   list-style: none;
-  margin: 0;
-  padding: 0;
 }
 
-.docs-sidebar-list li {
-  margin-bottom: 1px;
+.docs-nav__summary::-webkit-details-marker {
+  display: none;
 }
 
-.docs-sidebar-list a {
+.docs-nav__summary:hover {
+  background: var(--w-hover, rgb(128 128 128 / 8%));
+}
+
+.docs-nav__chevron {
+  opacity: .5;
+  transition: transform .15s ease;
+}
+
+.docs-nav__section[open] > .docs-nav__summary .docs-nav__chevron {
+  transform: rotate(90deg);
+}
+
+/* Scoped to the open state, and this is not a style choice.
+ *
+ * A closed <details> hides its content through the UA's own display rule, and
+ * an author `display` on a direct child overrides it: the list was invisible
+ * but still laid out, so a "collapsed" navigation still put forty-four links
+ * in the tab order and in the accessibility tree. */
+.docs-nav__section[open] > .docs-nav__list {
+  display: flex;
+  flex-direction: column;
+  gap: .0625rem;
+  /* Aligned under the section label rather than indented from the column edge,
+     so the rule reads as the section's own spine. */
+  margin: .125rem 0 .5rem .5rem;
+  padding-left: .5rem;
+  border-left: 1px solid var(--w-border, currentColor);
+}
+
+.docs-nav__section:not([open]) > .docs-nav__list {
+  display: none;
+}
+
+.docs-nav__link {
   display: block;
-  padding: var(--w-space-1_5) var(--w-space-3);
-  border: 1px solid transparent;
-  border-radius: var(--w-radius-md);
-  color: var(--w-text-subtle);
-  font-size: var(--w-font-sm);
-  font-weight: var(--w-font-weight-medium);
-  line-height: 1.4;
+  padding: .3125rem .5rem;
+  border-radius: var(--w-radius-md, 8px);
+  color: inherit;
+  opacity: .75;
   text-decoration: none;
-  transition: background var(--w-transition-normal), color var(--w-transition-normal), border-color var(--w-transition-normal);
+  /* A long feature title wraps rather than widening the column or being cut:
+     the sidebar is a fixed track, and an ellipsis hides the word that tells
+     two similar entries apart. */
+  overflow-wrap: anywhere;
 }
 
-.docs-sidebar-list a:hover {
-  background: var(--w-hover);
-  color: var(--w-text);
+.docs-nav__link:hover {
+  background: var(--w-hover, rgb(128 128 128 / 8%));
+  opacity: 1;
 }
 
-.docs-sidebar-list a[aria-current="page"],
-.docs-sidebar-list a.active {
-  background: var(--w-primary-container);
-  border-color: color-mix(in srgb, var(--w-primary) 20%, transparent);
-  box-shadow: inset 2px 0 0 var(--w-primary);
-  color: var(--w-on-primary-container);
-  font-weight: var(--w-font-weight-semibold);
+.docs-nav__link[aria-current='page'] {
+  background: var(--w-primary-container, rgb(128 128 128 / 12%));
+  color: var(--w-on-primary-container, inherit);
+  font-weight: 600;
+  opacity: 1;
 }
 
-@media (max-width: 1024px) {
-  .docs-sidebar-nav {
-    gap: var(--w-space-3);
+/* ── The narrow-shell drawer ──────────────────────────────────────────────
+ *
+ * Below the width where the shell has a column for it, the navigation is a
+ * drawer rather than a block above the article. In flow it pushed the article
+ * a whole screen down, so every documentation page opened on its own
+ * navigation instead of on what the reader came for.
+ *
+ * The toggle and the scrim are hidden by default and revealed by the narrow
+ * container query, rather than the reverse: the wide layout is the one with no
+ * extra furniture, and it is the one that must not depend on a query matching.
+ */
+.docs-nav-toggle,
+.docs-nav-scrim {
+  display: none;
+}
+
+@container (max-width: 51.999rem) {
+  .docs-nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    /* WCAG 2.5.8: this is the control that reaches the whole documentation. */
+    min-height: 2.75rem;
+    padding: .5rem .875rem;
+    border: 1px solid var(--w-border, currentColor);
+    border-radius: var(--w-radius-md, 8px);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: .875rem;
+    cursor: pointer;
   }
 
-  .docs-sidebar-section {
-    border: 1px solid var(--w-border);
-    padding: var(--w-space-3);
+  .docs-nav-scrim:not([hidden]) {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .docs-nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 41;
+    width: min(20rem, 86vw);
+    padding: 1rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--w-surface, canvas);
+    border-right: 1px solid var(--w-border, currentColor);
+    /* Off-canvas, and out of the tab order with it: a drawer that is closed
+       but still focusable is a list of links a keyboard walks into from
+       nowhere. `visibility` is what removes it; the transform only moves it. */
+    visibility: hidden;
+    transform: translateX(-100%);
+    transition: transform .2s ease, visibility 0s linear .2s;
+  }
+
+  .docs-nav[data-open='true'] {
+    visibility: visible;
+    transform: translateX(0);
+    transition-delay: 0s;
   }
 }

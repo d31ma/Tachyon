@@ -1,0 +1,940 @@
+{
+  "features": [
+    {
+      "id": "routing",
+      "title": "File-system routing",
+      "summary": "A directory is a path. Pages live under client/pages, handlers under server/routes.",
+      "group": "Routing",
+      "files": [
+        {
+          "name": "layout",
+          "code": "client/pages/tac.html            ->  /\nclient/pages/docs/tac.html       ->  /docs\nclient/pages/items/_id/tac.html  ->  /items/:id\nserver/routes/yon.js             ->  /\nserver/routes/products/yon.py    ->  /products"
+        }
+      ]
+    },
+    {
+      "id": "dynamic-segments",
+      "title": "Dynamic route segments",
+      "summary": "A directory beginning with an underscore is a parameter. Handlers receive it in parameters.",
+      "group": "Routing",
+      "files": [
+        {
+          "name": "client/pages/items/_id/tac.html",
+          "code": "<article>\n  <h1>Item {id()}</h1>\n</article>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  // The segment arrives on the page the same way it reaches the handler.\n  id = location.pathname.split('/').pop()\n}"
+        },
+        {
+          "name": "server/routes/items/_id/yon.js",
+          "code": "@Controller\nexport class ItemsController {\n  static GET(request) {\n    return { id: request.parameters.id }\n  }\n}\n"
+        },
+        {
+          "name": "server/routes/items/_id/yon.ts",
+          "code": "@Controller\nexport class ItemsController {\n  static GET(request: { parameters: Record<string, string> }): unknown {\n    return { id: request.parameters.id }\n  }\n}\n"
+        },
+        {
+          "name": "server/routes/items/_id/yon.py",
+          "code": "@Controller\nclass ItemsController:\n    @staticmethod\n    def GET(request):\n        return {\"id\": request[\"parameters\"][\"id\"]}\n"
+        },
+        {
+          "name": "server/routes/items/_id/yon.php",
+          "code": "<?php\n#[Controller]\nclass ItemsController\n{\n    public static function GET(YonRequest $request): YonResponse\n    {\n        return YonResponse::json(json_encode(['id' => $request->parameter('id')]));\n    }\n}\n"
+        },
+        {
+          "name": "server/routes/items/_id/yon.java",
+          "code": "@Controller\nclass ItemsController {\n  static YonResponse GET(YonRequest request) {\n    return YonResponse.json(Json.write(java.util.Map.of(\"id\", request.parameter(\"id\"))));\n  }\n}\n"
+        },
+        {
+          "name": "server/routes/items/_id/yon.kt",
+          "code": "@Controller\nobject ItemsController {\n    @JvmStatic\n    fun GET(request: YonRequest): YonResponse =\n        YonResponse.json(Json.write(mapOf(\"id\" to request.parameter(\"id\"))))\n}\n"
+        },
+        {
+          "name": "server/routes/items/_id/yon.cs",
+          "code": "[Controller]\nclass ItemsController\n{\n    static YonResponse GET(YonRequest request) =>\n        YonResponse.Json(Json.Write(new { id = request.Parameter(\"id\") }));\n}\n"
+        },
+        {
+          "name": "server/routes/items/_id/yon.rs",
+          "code": "#[Controller]\nstruct ItemsController;\n\nimpl ItemsController {\n    fn GET(request: &YonRequest) -> YonResponse {\n        // A dynamic segment reaches a handler the same way in every language\n        // Yon runs, so it is named for what it is rather than how it arrived.\n        YonResponse::json(Json::map([(\"id\", request.parameter(\"id\"))]))\n    }\n}\n"
+        }
+      ],
+      "verify": "yon"
+    },
+    {
+      "id": "interpolation",
+      "title": "Text interpolation",
+      "summary": "Braces interpolate a bounded expression. Authored source never reaches the browser as source.",
+      "group": "Tac views",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<h1>{title}</h1>\n<p>{product.name} costs {product.price}</p>\n<p>{count + 1} · {count > 3 ? 'many' : 'few'}</p>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  title = 'Catalog'\n  count = 6\n  product = { name: 'Anvil', price: '£42.00' }\n}"
+        }
+      ],
+      "verify": "tac"
+    },
+    {
+      "id": "dynamic-attributes",
+      "title": "Dynamic attributes",
+      "summary": "A :-prefixed attribute takes an expression. Interpolation inside a value works when literal text surrounds it.",
+      "group": "Tac views",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<a :href=\"'/docs/' + topic.slug\" :aria-label=\"topic.title\">{topic.title}</a>\n<p class=\"status-{state}\">{message}</p>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  topic = { slug: 'routing', title: 'Routing' }\n  state = 'ready'\n  message = 'Everything is up to date.'\n}"
+        }
+      ],
+      "verify": "tac"
+    },
+    {
+      "id": "conditionals",
+      "title": "Conditionals",
+      "summary": "One spelling: <logic>. A branch chain is :if, :else-if and a bare else flag.",
+      "group": "Tac views",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<logic :if=\"products.length > 0\">\n  <p>In stock</p>\n</logic>\n<logic :else-if=\"restocking\">\n  <p>Back soon</p>\n</logic>\n<logic else>\n  <p>Sold out</p>\n</logic>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  products = []\n  restocking = true\n}"
+        }
+      ],
+      "verify": "tac"
+    },
+    {
+      "id": "iteration",
+      "title": "Iteration",
+      "summary": "A loop binds each item of an iterable with a portable identifier.",
+      "group": "Tac views",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<ul>\n  <loop :for=\"product of products\">\n    <li>{product.name}</li>\n  </loop>\n</ul>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  products = [{ name: 'Anvil' }, { name: 'Rope' }]\n}"
+        }
+      ],
+      "verify": "tac"
+    },
+    {
+      "id": "switch",
+      "title": "Matching a value",
+      "summary": "A switch compares one value against each case; first match wins and <case default> is the fallback. It desugars to a conditional chain.",
+      "group": "Tac views",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<switch :value=\"status\">\n  <case :when=\"'ready'\"><p>Ready</p></case>\n  <case :when=\"'failed'\"><p>Failed</p></case>\n  <case default><p>Unknown</p></case>\n</switch>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  status = 'ready'\n}"
+        }
+      ],
+      "verify": "tac"
+    },
+    {
+      "id": "components",
+      "title": "Components and slots",
+      "summary": "A directory under client/components defines a component. Slots are scoped, and cycles fail before publication.",
+      "group": "Tac views",
+      "files": [
+        {
+          "name": "client/components/product/card/tac.html",
+          "code": "<article class=\"card\">\n  <h3>{name}</h3>\n  <slot />\n</article>"
+        },
+        {
+          "name": "client/pages/tac.html",
+          "code": "<loop :for=\"product of products\">\n  <product-card :name=\"product.name\">\n    <p>Any markup lands in the slot — here, {product.price}.</p>\n  </product-card>\n</loop>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  products = [\n    { id: 'anvil', name: 'Anvil', price: '£42.00' },\n    { id: 'rope', name: 'Rope', price: '£8.00' },\n  ]\n}"
+        }
+      ],
+      "verify": "tac-component"
+    },
+    {
+      "id": "mount",
+      "title": "Mount schedules",
+      "summary": "A component activates on load, idle, visibility, interaction, or never.",
+      "group": "Tac views",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<product-card hydrate=\"load\" />\n<sales-chart hydrate=\"visible\" />\n<heavy-editor hydrate=\"interaction\" />\n<static-note hydrate=\"never\" />"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  // A schedule belongs to a component, not to the page: the page itself is\n  // always mounted, and each component below it waits for what it declared.\n  title = 'Catalog'\n}"
+        }
+      ],
+      "verify": "tac-component"
+    },
+    {
+      "id": "events",
+      "title": "Event bindings",
+      "summary": "on:<event> calls a companion method or assigns a field. $event and bounded dotted paths are available.",
+      "group": "Tac views",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<button on:click=\"increment()\">Add</button>\n<button on:click=\"count += 1\">Add one</button>\n<input on:input=\"label = $event.target.value\">\n<loop :for=\"tab of tabs\">\n  <button on:click=\"select(tab.id)\">{tab.name}</button>\n</loop>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  count = 0\n  label = ''\n  tabs = [{ id: 'a', name: 'A' }]\n\n  increment() { this.count += 1 }\n\n  // A handler is called as handler(event, ...declaredArguments).\n  select(_event, id) { this.selected = id }\n}"
+        }
+      ],
+      "verify": "tac"
+    },
+    {
+      "id": "companions",
+      "title": "Companion classes",
+      "summary": "A tac.js or tac.ts beside a view becomes its instance. A companion is a class: imports above it, everything else inside it, or TY1404. @onMount, @publish and @subscribe are compiled away and applied by the runtime, because no engine implements decorators.",
+      "group": "Tac views",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<h1>{count} in the basket</h1>\n<p>That is {doubled()} at two apiece.</p>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  count = 6\n\n  doubled() { return this.count * 2 }\n\n  @onMount\n  async start() {\n    // Runs once the component subtree exists.\n  }\n}"
+        },
+        {
+          "name": "client/pages/tac.ts",
+          "code": "export default class {\n  count: number = 6\n\n  doubled(): number {\n    return this.count * 2\n  }\n}"
+        },
+        {
+          "name": "decorators",
+          "code": "@onMount, @publish and @subscribe. None reaches the browser: no\nengine implements the proposal, so the compiler removes them and\nrecords what they declared for the runtime to apply.\n\n  tac.js, tac.ts                       all three\n  tac.rs, tac.swift, tac.kt, tac.cs    publishing, as a call\n\nA compiled companion cannot use the syntax — Swift has no arbitrary\nattributes, and inventing a spelling would make it a dialect rather\nthan the language its own compiler accepts. It publishes to the same\nsignal by calling tacPublish instead."
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  total = 0\n\n  // Publishes what it returns. Without a name the member's own name is\n  // the signal; an async method publishes what it resolves to.\n  @publish('cart.total')\n  add() {\n    this.total += 1\n    return this.total\n  }\n\n  @onMount\n  ready() {\n    document.title = 'Cart'\n  }\n}"
+        },
+        {
+          "name": "client/components/live-total/tac.js",
+          "code": "export default class {\n  // Takes the retained value on arrival, and re-renders on each\n  // publication after it.\n  @subscribe('cart.total')\n  seen = 0\n\n  // A method is called with each publication, and not with the retained\n  // one: firing for something published before it existed is a surprise.\n  @subscribe('cart.total')\n  onTotal(value) {\n    console.log('total is now', value)\n  }\n}"
+        }
+      ]
+    },
+    {
+      "id": "styles",
+      "title": "Colocated styles",
+      "summary": "A tac.css beside a view is its stylesheet. Component styles are scoped with CSS @scope, not rewritten selectors.",
+      "group": "Tac views",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<article class=\"card\">\n  <h3>{name}</h3>\n</article>"
+        },
+        {
+          "name": "client/components/product/card/tac.css",
+          "code": ".card {\n  padding: 1rem;\n  border: 1px solid var(--w-border);\n}"
+        },
+        {
+          "name": "client/components/product/card/tac.js",
+          "code": "export default class {\n  // A component's stylesheet is scoped to it, so `.card` here cannot reach\n  // a `.card` anywhere else on the page.\n  name = 'Anvil'\n}"
+        },
+        {
+          "name": "emitted",
+          "code": "@scope ([data-tac-scope=\"product-card\"]) {\n  .card { padding: 1rem; }\n}"
+        }
+      ]
+    },
+    {
+      "id": "persisted",
+      "title": "Persisted fields",
+      "summary": "A $ field is restored from sessionStorage for the tab; $$ from localStorage across tabs. The declared value is a default.",
+      "group": "Browser storage",
+      "files": [
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  $draft = ''\n  $$theme = 'light'\n}"
+        },
+        {
+          "name": "client/pages/tac.html",
+          "code": "<input on:input=\"$draft = $event.target.value\">\n<button on:click=\"$$theme = 'dark'\">Dark</button>\n<p>{$draft}</p>"
+        }
+      ],
+      "verify": "tac"
+    },
+    {
+      "id": "fetch-cache",
+      "title": "Declared read caching",
+      "summary": "Cache policy is declared by path in tac.config.js and enforced by the service worker, so a plain fetch() is cached the same way whoever issued it. A write invalidates the reads it can affect.",
+      "group": "Browser storage",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<button on:click=\"load()\">Refresh</button>\n<ul>\n  <loop :for=\"product of products\">\n    <li>{product.name}</li>\n  </loop>\n</ul>"
+        },
+        {
+          "name": "tac.config.js",
+          "code": "export const cache = [\n  // A catalogue that changes rarely: answer from storage, revalidate later.\n  { path: '/api/products', policy: 'cache-first' },\n  // Anything under a prefix. '*' stops at the query string, so this rule\n  // cannot widen into another route's parameters.\n  { path: '/api/search/*', policy: 'network-first' },\n  // Never stored, and never answered from storage offline.\n  { path: '/api/session', policy: 'no-store' },\n]"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  async load() {\n    // No framework API on the hot path: the worker applies the declared\n    // policy to this request because of its URL, not because of the call.\n    const response = await fetch('/api/products')\n    this.products = await response.json()\n  }\n\n  async save(product) {\n    // A successful write drops the cached reads it can affect — this path\n    // and the collection it belongs to — so the next read is not stale.\n    await fetch('/api/products', { method: 'POST', body: JSON.stringify(product) })\n  }\n}"
+        }
+      ]
+    },
+    {
+      "id": "offline",
+      "title": "Offline assets",
+      "summary": "A generated service worker caches static assets cache-first and navigations network-first. Component modules behind an untaken branch are warmed at idle.",
+      "group": "Browser storage",
+      "files": [
+        {
+          "name": "emitted",
+          "code": "/tachyon-sw.js          cache name carries the build digest\n/.tachyon/register-sw.js  skipped on a loopback host\n\n# A component behind a false branch is precached once the page is idle,\n# so it still renders with the network cut."
+        }
+      ]
+    },
+    {
+      "id": "native-companions",
+      "title": "Polyglot native companions",
+      "summary": "A page’s behaviour on a native target may be Rust, Swift, Kotlin or C#, written as the same shape a JavaScript companion is. Each compiles with its own toolchain for the target it runs on and links into the host, so the platform is in reach. Tachyon generates the member table, because a compiled class has no reflection the page can enumerate it with.",
+      "group": "Polyglot",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<h1>{count} in the basket</h1>\n<p>Answered by {label}, whichever language was compiled for this target.</p>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  // The browser's companion. A native build compiles one of the others for\n  // its target and the page cannot tell which answered.\n  count = 6\n  label = 'JavaScript'\n\n  doubled() { return this.count * 2 }\n}"
+        },
+        {
+          "name": "tac.rs",
+          "code": "pub struct Companion {\n    count: i32,\n    label: String,\n}\n\n// A Rust struct has no inline field defaults, so the value a\n// field starts at lives in the constructor — one struct and one\n// impl, as close to the class the other languages write as Rust\n// gets.\nimpl Companion {\n    pub fn new() -> Self {\n        Self { count: 6, label: String::from(\"Rust\") }\n    }\n\n    fn doubled(&self) -> i32 {\n        self.count * 2\n    }\n}"
+        },
+        {
+          "name": "tac.swift",
+          "code": "final class Companion {\n    var count: Int = 6\n    let label: String = \"Swift\"\n\n    func doubled() -> Int { count * 2 }\n}"
+        },
+        {
+          "name": "tac.kt",
+          "code": "class Companion {\n    var count: Int = 6\n\n    fun doubled(): Int = count * 2\n}"
+        },
+        {
+          "name": "tac.cs",
+          "code": "public class Companion\n{\n    public int Count = 6;\n\n    public int Doubled() => Count * 2;\n}"
+        },
+        {
+          "name": "generated",
+          "code": "A mutable field needs a declared type: the generated setter has to\nconvert an incoming value into something, and only the declaration\nsays what. A read-only field needs none.\n\nRust reads its state from the struct and its behaviour from the\ninherent impl. \"fn new() -> Self\" is the constructor and is not a\nmember; \"impl Default\" is accepted in its place.\n\nSwift, from the class shown here:\n\n    private let tacInstance = Companion()\n    let tac: [String: TacMember] = [\n        \"count\": .field({ tacInstance.count },\n                        { tacInstance.count = $0 as? Int ?? tacInstance.count }),\n        \"doubled\": .method({ _ in tacInstance.doubled() }),\n    ]\n\nDeclaring the table yourself replaces this entirely."
+        }
+      ]
+    },
+    {
+      "id": "handlers",
+      "title": "REST handlers",
+      "summary": "A yon.* file defines an endpoint. An ordinary value becomes a JSON response; an explicit descriptor sets status and headers. The class declares its layer with @Controller, which Tachyon checks against where the file sits.",
+      "group": "Yon server",
+      "files": [
+        {
+          "name": "server/routes/products/yon.js",
+          "code": "@Controller\nexport class ProductsController {\n  static GET() {\n    // An ordinary value becomes a JSON response.\n    return { products: ['anvil'] }\n  }\n\n  static POST(request) {\n    // `body` exists only when one was sent, and holds raw text.\n    const sent = request?.body ? JSON.parse(request.body.data) : {}\n    return {\n      status: 201,\n      headers: { 'content-type': 'application/json' },\n      body: JSON.stringify({ created: sent }),\n    }\n  }\n}\n"
+        },
+        {
+          "name": "server/routes/products/yon.ts",
+          "code": "@Controller\nexport class ProductsController {\n  static GET(): unknown {\n    return { products: ['anvil'] }\n  }\n\n  static POST(request: { body?: { data: string } }): unknown {\n    const sent = request?.body ? JSON.parse(request.body.data) : {}\n    return {\n      status: 201,\n      headers: { 'content-type': 'application/json' },\n      body: JSON.stringify({ created: sent }),\n    }\n  }\n}\n"
+        },
+        {
+          "name": "server/routes/products/yon.py",
+          "code": "import json\n\n\n@Controller\nclass ProductsController:\n    @staticmethod\n    def GET(request):\n        # An ordinary value becomes a JSON response.\n        return {\"products\": [\"anvil\"]}\n\n    @staticmethod\n    def POST(request):\n        # `body` exists only when one was sent, and holds raw text.\n        raw = request.get(\"body\")\n        sent = json.loads(raw[\"data\"]) if raw else {}\n        return {\n            \"status\": 201,\n            \"headers\": {\"content-type\": \"application/json\"},\n            \"body\": json.dumps({\"created\": sent}),\n        }\n"
+        },
+        {
+          "name": "server/routes/products/yon.php",
+          "code": "<?php\n#[Controller]\nclass ProductsController\n{\n    public static function GET(YonRequest $request): YonResponse\n    {\n        return YonResponse::json(json_encode(['products' => ['anvil']]));\n    }\n\n    public static function POST(YonRequest $request): YonResponse\n    {\n        // The body is raw text, so it is decoded rather than assumed.\n        $sent = json_decode($request->body(), true) ?? [];\n        return YonResponse::json(json_encode(['created' => $sent]))->status(201);\n    }\n}\n"
+        },
+        {
+          "name": "server/routes/products/yon.java",
+          "code": "@Controller\nclass ProductsController {\n  static YonResponse GET(YonRequest request) {\n    return YonResponse.json(\n      Json.write(java.util.Map.of(\"products\", java.util.List.of(\"anvil\"))));\n  }\n\n  static YonResponse POST(YonRequest request) {\n    // Json is in scope without an import: a single source file has no\n    // classpath to put a library on, so Tachyon supplies the parser.\n    return YonResponse\n      .json(Json.write(java.util.Map.of(\"created\", request.body())))\n      .status(201);\n  }\n}\n"
+        },
+        {
+          "name": "server/routes/products/yon.kt",
+          "code": "@Controller\nobject ProductsController {\n    @JvmStatic\n    fun GET(request: YonRequest): YonResponse =\n        YonResponse.json(Json.write(mapOf(\"products\" to listOf(\"anvil\"))))\n\n    @JvmStatic\n    fun POST(request: YonRequest): YonResponse =\n        YonResponse\n            .json(Json.write(mapOf(\"created\" to request.body())))\n            .status(201)\n}\n"
+        },
+        {
+          "name": "server/routes/products/yon.cs",
+          "code": "[Controller]\nclass ProductsController\n{\n    static YonResponse GET(YonRequest request) =>\n        // An anonymous object is the readable way to build one. Json is the\n        // same name in every language here; in C# it wraps what is already\n        // in the box.\n        YonResponse.Json(Json.Write(new { products = new[] { \"anvil\", \"rope\" } }));\n\n    static YonResponse POST(YonRequest request) =>\n        YonResponse\n            .Json(Json.Write(new { created = request.Parsed()[\"name\"]?.ToString() }))\n            .Status(201);\n}\n"
+        },
+        {
+          "name": "server/routes/products/yon.rs",
+          "code": "#[Controller]\nstruct ProductsController;\n\nimpl ProductsController {\n    fn GET(_request: &YonRequest) -> YonResponse {\n        // Json is in scope without an import. Rust has none in its standard\n        // library and this compiles with no Cargo, so Tachyon supplies one\n        // rather than leaving a handler to escape a string by hand.\n        YonResponse::json(Json::map([\n            (\"products\", Json::list([\"anvil\", \"rope\"])),\n        ]))\n    }\n\n    fn POST(request: &YonRequest) -> YonResponse {\n        // The body arrives as text and comes back as JSON.\n        let sent = request.json();\n        YonResponse::json(Json::map([(\"created\", sent.get(\"name\").text())]))\n            .status(201)\n    }\n}\n"
+        }
+      ],
+      "verify": "yon"
+    },
+    {
+      "id": "any-language",
+      "title": "Eight server languages",
+      "summary": "A Yon handler declares its layer, so Yon runs the languages whose syntax can carry that declaration: JavaScript, TypeScript, Python, Java, C#, Kotlin, PHP and Rust. Two have a built-in adapter, four are compiled and cached on first use, and none of them says how it is started — Yon knows how to start each of the eight.",
+      "group": "Yon server",
+      "files": [
+        {
+          "name": "server/routes/echo/yon.js",
+          "code": "@Controller\nexport class EchoController {\n  static POST(request) {\n    const sent = request?.body ? JSON.parse(request.body.data) : {}\n    return { echoed: sent }\n  }\n}\n"
+        },
+        {
+          "name": "server/routes/echo/yon.ts",
+          "code": "@Controller\nexport class EchoController {\n  static POST(request: { body?: { data: string } }): unknown {\n    const sent = request?.body ? JSON.parse(request.body.data) : {}\n    return { echoed: sent }\n  }\n}\n"
+        },
+        {
+          "name": "server/routes/echo/yon.py",
+          "code": "import json\n\n\n@Controller\nclass EchoController:\n    @staticmethod\n    def POST(request):\n        raw = request.get(\"body\")\n        return {\"echoed\": json.loads(raw[\"data\"]) if raw else {}}\n"
+        },
+        {
+          "name": "server/routes/echo/yon.php",
+          "code": "<?php\n// No shebang and no envelope. Tachyon appends the protocol runtime after this\n// file, so the handler is a class and its methods — nothing here reads stdin\n// or writes stdout. PHP resolves an attribute lazily, so #[Controller] needs\n// no import.\n#[Controller]\nclass EchoController\n{\n    public static function POST(YonRequest $request): YonResponse\n    {\n        $sent = json_decode($request->body(), true) ?? [];\n        return YonResponse::json(json_encode(['echoed' => $sent]))->status(201);\n    }\n}\n"
+        },
+        {
+          "name": "server/routes/echo/yon.java",
+          "code": "// Launched from source by JEP 330, with no build step and no shebang.\n//\n// Json is in scope without an import. A single source file has no classpath\n// to put a library on, so Tachyon supplies the parser rather than asking for\n// one — and a quote in the data is how a hand-built string becomes a parse\n// error at the other end.\n@Controller\nclass EchoController {\n  static YonResponse POST(YonRequest request) {\n    return YonResponse.json(Json.write(java.util.Map.of(\"echoed\", request.body())));\n  }\n}\n"
+        },
+        {
+          "name": "server/routes/echo/yon.kt",
+          "code": "// Compiled once by kotlinc into .tachyon/handlers/<digest> and run with\n// java -jar, then reused. Change the file and the digest changes with it.\n//\n// Json is in scope without an import: Kotlin's standard library has none, and\n// org.json is on Android's classpath rather than a bare kotlinc one.\n@Controller\nobject EchoController {\n    @JvmStatic\n    fun POST(request: YonRequest): YonResponse =\n        YonResponse.json(Json.write(mapOf(\"echoed\" to request.body())))\n}\n"
+        },
+        {
+          "name": "server/routes/echo/yon.cs",
+          "code": "// Built through a project Tachyon generates: dotnet wants one, and the\n// file-based `dotnet run app.cs` form needs .NET 10.\n[Controller]\nclass EchoController\n{\n    static YonResponse POST(YonRequest request) =>\n        YonResponse.Json(Json.Write(new { echoed = request.Parsed() }));\n}\n"
+        },
+        {
+          "name": "server/routes/echo/yon.rs",
+          "code": "// Compiled by rustc with a proc-macro crate alongside for the attributes: a\n// custom attribute is a procedural macro, and one needs a crate rather than a\n// Cargo manifest.\n#[Controller]\nstruct EchoController;\n\nimpl EchoController {\n    fn POST(request: &YonRequest) -> YonResponse {\n        YonResponse::json(Json::map([(\"echoed\", request.json())]))\n    }\n}\n"
+        },
+        {
+          "name": "resolution",
+          "code": "How a handler is started\n\n  yon.js, yon.ts    a built-in adapter, on a runtime that reads it\n  yon.py            a built-in adapter\n  yon.php           php, with the protocol runtime appended\n  yon.java          JEP 330 single-file source launch\n  yon.rs            rustc, with a proc-macro crate for the attributes\n  yon.kt            kotlinc, run with java -jar\n  yon.cs            a generated project, built with dotnet\n\nNo shebang. Yon runs eight languages and knows how to start each,\nso a handler declares its methods and nothing about its own\nexecution. A shebang was the right answer while Yon ran any\nlanguage — there is no table of every interpreter in the world —\nbut a bounded set is a table, and one Tachyon owns rather than\nevery handler repeating.\n\nWhich JavaScript, though, is the project's to choose:\n\n  TACHYON_JAVASCRIPT_RUNTIME=$(command -v bun) ty start\n  TACHYON_PYTHON_RUNTIME=/usr/bin/python3.13 ty start\n\nIt matters for more than speed. A yon.js or yon.ts that declares\n@Controller needs a runtime that transpiles a decorator: Bun and\nDeno do, and Node — the default — never will.\n\nCompiled handlers are cached under .tachyon/handlers/<source digest>.\n\nGo, Ruby, Perl, C and C++ are not Yon languages: none of them can\ncarry the annotation a handler declares its layer with. They are\nreached through @Relay instead.\n"
+        }
+      ],
+      "verify": "yon-direct"
+    },
+    {
+      "id": "relays",
+      "title": "Relaying to Go, Ruby and the rest",
+      "summary": "Yon runs the eight languages that can declare a layer, which leaves Go, Ruby, Elixir and the rest with no way in. They are still programs, though, and a program that speaks Handler Protocol v1 on standard input and output is exactly what Yon spawns anyway — so @Relay on a method makes it a proxy for one. The command sits on the declaration because it is metadata about the method, not part of its work. A handler written before Yon narrowed runs unchanged.",
+      "group": "Polyglot",
+      "files": [
+        {
+          "name": "server/delegates/report.rb",
+          "code": "# A Ruby program, not a Tachyon handler: Yon does not run\n# Ruby, because Ruby cannot carry a class annotation and a\n# handler declares its layer with one.\n#\n# It does not have to be a handler. It reads one Handler\n# Protocol v1 request on stdin and writes one response on\n# stdout — which is what a Yon handler in any language\n# already did, so one written before Yon narrowed runs here\n# unchanged.\nrequire 'json'\n\nrequest = JSON.parse($stdin.read) rescue {}\nputs JSON.generate({\n  'status' => 200,\n  'headers' => { 'content-type' => ['application/json'] },\n  'body' => JSON.generate({\n    'language' => 'Ruby',\n    'route' => request['route']\n  })\n})\n"
+        },
+        {
+          "name": "relaying",
+          "code": "Relaying to a language Yon does not run\n\n  Yon runs the eight languages that can declare a layer.\n  Everything else is still a program, so @Relay spawns it\n  and speaks the protocol at it. The annotation is written\n  in the language doing the relaying, so nothing has to be\n  installed on the other side.\n\n  Rust        #[Relay(\"ruby\", \"server/delegates/report.rb\")]\n  JavaScript  @Relay('ruby', 'server/delegates/report.rb')\n  TypeScript  @Relay('ruby', 'server/delegates/report.rb')\n  Python      @Relay(\"ruby\", \"server/delegates/report.rb\")\n  Java        @Relay({\"ruby\", \"server/delegates/report.rb\"})\n  Kotlin      @Relay(\"ruby\", \"server/delegates/report.rb\")\n  C#          [Relay(\"ruby\", \"server/delegates/report.rb\")]\n  PHP         #[Relay('ruby', 'server/delegates/report.rb')]\n\n  Four of them carry it out themselves: Rust rewrites the\n  body, and JavaScript, TypeScript and Python return the\n  function that replaces the one it sits on. In Java,\n  Kotlin, C# and PHP an annotation is inert, so the\n  dispatch reads it back and the body those languages\n  oblige you to write is never called.\n\n  The relayed status and headers travel, not only the\n  body. A program that cannot be started answers 502 with\n  the reason, because it is a program on the host and \"it\n  is not installed\" is not otherwise visible.\n\n  For a command not known until the request arrives, call\n  relay(command, request) instead.\n\n  @Delegate stays the layer that owns handed-off work.\n  @Relay is what a method does; @Delegate is where the\n  code lives.\n"
+        },
+        {
+          "name": "server/routes/report/yon.js",
+          "code": "@Controller\nexport class ReportController {\n  static GET(request) { return ReportDelegate.GET(request) }\n}\n\n@Delegate\nclass ReportDelegate {\n  @Relay('ruby', 'server/delegates/report.rb')\n  static GET(_request) { throw new Error('relay body must not run') }\n}\n"
+        },
+        {
+          "name": "server/routes/report/yon.ts",
+          "code": "@Controller\nexport class ReportController {\n  static GET(request: unknown) { return ReportDelegate.GET(request) }\n}\n\n@Delegate\nclass ReportDelegate {\n  @Relay('ruby', 'server/delegates/report.rb')\n  static GET(_request: unknown) { throw new Error('relay body must not run') }\n}\n"
+        },
+        {
+          "name": "server/routes/report/yon.py",
+          "code": "@Controller\nclass ReportController:\n    @staticmethod\n    def GET(request):\n        return ReportDelegate.GET(request)\n\n@Delegate\nclass ReportDelegate:\n    @staticmethod\n    @Relay(\"ruby\", \"server/delegates/report.rb\")\n    def GET(request):\n        raise RuntimeError(\"relay body must not run\")\n"
+        },
+        {
+          "name": "server/routes/report/yon.php",
+          "code": "<?php\n#[Controller]\nclass ReportController\n{\n    public static function GET(YonRequest $request): YonResponse\n    {\n        return ReportDelegate::GET($request);\n    }\n}\n\n#[Delegate]\nclass ReportDelegate\n{\n    #[Relay('ruby', 'server/delegates/report.rb')]\n    public static function GET(YonRequest $request): YonResponse\n    {\n        throw new RuntimeException('relay body must not run');\n    }\n}\n"
+        },
+        {
+          "name": "server/routes/report/yon.java",
+          "code": "@Controller\nclass ReportController {\n  static YonResponse GET(YonRequest request) { return ReportDelegate.GET(request); }\n}\n\n@Delegate\nclass ReportDelegate {\n  @Relay({\"ruby\", \"server/delegates/report.rb\"})\n  static YonResponse GET(YonRequest request) { throw new RuntimeException(\"relay body\"); }\n}\n"
+        },
+        {
+          "name": "server/routes/report/yon.kt",
+          "code": "@Controller\nobject ReportController {\n    @JvmStatic fun GET(request: YonRequest): YonResponse = ReportDelegate.GET(request)\n}\n\n@Delegate\nobject ReportDelegate {\n    @Relay(\"ruby\", \"server/delegates/report.rb\")\n    fun GET(request: YonRequest): YonResponse { throw RuntimeException(\"relay body\") }\n}\n"
+        },
+        {
+          "name": "server/routes/report/yon.cs",
+          "code": "[Controller]\nsealed class ReportController\n{\n    public static YonResponse GET(YonRequest request) => ReportDelegate.GET(request);\n}\n\n[Delegate]\nsealed class ReportDelegate\n{\n    [Relay(\"ruby\", \"server/delegates/report.rb\")]\n    public static YonResponse GET(YonRequest request) { throw new Exception(\"relay body\"); }\n}\n"
+        },
+        {
+          "name": "server/routes/report/yon.rs",
+          "code": "#[Controller]\nstruct ReportController;\n\nimpl ReportController {\n    fn GET(request: &YonRequest) -> YonResponse { ReportDelegate::GET(request) }\n}\n\n#[Delegate]\nstruct ReportDelegate;\n\nimpl ReportDelegate {\n    #[Relay(\"ruby\", \"server/delegates/report.rb\")]\n    fn GET(_request: &YonRequest) -> YonResponse { panic!(\"relay body\") }\n}\n"
+        }
+      ],
+      "verify": "yon-relay"
+    },
+    {
+      "id": "middleware",
+      "title": "Middleware",
+      "summary": "One middleware source at the project root runs before every request and again after the response, so it can refuse a request, and adjust or replace what a handler produced.",
+      "group": "Yon server",
+      "files": [
+        {
+          "name": "middleware.js",
+          "code": "export class Handler {\n  static GET(request) {\n    if (!request.headers.authorization) {\n      return { status: 401, headers: {}, body: 'Unauthorized' }\n    }\n    // 204 continues to the route handler.\n    return { status: 204, headers: {}, body: '' }\n  }\n}"
+        },
+        {
+          "name": "middleware.php",
+          "code": "<?php\n// Middleware speaks the protocol a handler does, so it may be written in any\n// language Yon runs. A 204 continues; any other status answers the request\n// without reaching the route.\nclass Middleware\n{\n    public static function before(array $request): array\n    {\n        $token = $request['headers']['authorization'][0] ?? '';\n        if (str_starts_with($request['route'], '/private') && $token !== 'let-me-in') {\n            return ['status' => 401, 'body' => 'unauthorized'];\n        }\n        return ['status' => 204];\n    }\n}"
+        },
+        {
+          "name": "middleware.py",
+          "code": "import json, sys\n\nrequest = json.loads(sys.stdin.read())\nauthorized = request.get(\"headers\", {}).get(\"authorization\")\n\n# 204 continues to the route handler; anything else answers the request.\nprint(json.dumps(\n    {\"status\": 204, \"headers\": {}, \"body\": \"\"} if authorized\n    else {\"status\": 401, \"headers\": {\"content-type\": \"text/plain\"}, \"body\": \"Unauthorized\"}\n))"
+        },
+        {
+          "name": "languages",
+          "code": "Which languages middleware is written in\n\n  middleware.js   the JavaScript adapter\n  middleware.ts   the same adapter, on a runtime that reads TypeScript\n  middleware.py   the Python adapter\n  middleware.php  php, speaking the protocol itself\n\nNot the compiled four. Middleware answers `before` and `after`\nrather than an HTTP method, and the protocol runtime Tachyon\nappends to a compiled handler dispatches on the method — it would\nfind neither, and write a 405 after whatever the middleware had\nalready written. So middleware in Java, Kotlin, C# or Rust is not\nsupported rather than merely undocumented.\n\nPHP is on this list for the same reason it is excluded from the\nhandler runtime: it speaks the protocol itself, as every handler\ndid before handlers stopped having to.\n"
+        }
+      ]
+    },
+    {
+      "id": "openapi",
+      "title": "Declared route contracts",
+      "group": "Yon server",
+      "summary": "A route declares what it accepts and answers in an OPTIONS.schema.json beside its handler, in CHEX schematics. A request is described the way one arrives — headers, path parameters, body — and CHEX enforces every declared part before the handler runs.",
+      "files": [
+        {
+          "name": "server/routes/secure/_id/OPTIONS.schema.json",
+          "code": "{\n  \"summary\": \"A guarded record\",\n  \"methods\": {\n    \"GET\": {\n      \"request\": {\n        \"headers\": { \"authorization\": \"^Bearer .{8,}$\" },\n        \"parameters\": { \"id\": \"^[0-9]+$\" }\n      },\n      \"ok\": { \"id\": \"^[0-9]+$\", \"seen\": \"^(true|false)$\" }\n    },\n    \"PATCH\": {\n      \"request\": { \"body\": { \"name?\": \"^.{1,80}$\" } },\n      \"ok\": { \"id\": \"^[0-9]+$\" },\n      \"clientError\": { \"error\": \"^.+$\" }\n    }\n  }\n}"
+        },
+        {
+          "name": "enforced",
+          "code": "$ curl -H 'Authorization: Bearer supersecret' /secure/42\n200  {\"id\":\"42\",\"seen\":true}\n\n$ curl -H 'Authorization: Bearer supersecret' /secure/abc\n400  {\"error\":\"RegEx pattern fails for property 'id' …\",\"part\":\"parameters\"}\n\n$ curl /secure/42\n400  {\"error\":\"Property 'authorization' cannot be null …\",\"part\":\"headers\"}\n\n$ curl -H 'Authorization: Bearer supersecret' -H 'X-Whatever: 1' /secure/42\n200  # an undeclared header is not a reason to reject anything\n\n# CHEX is the validator. Responses stay in three buckets — ok (2xx),\n# clientError (4xx), serverError (5xx) — rather than numeric codes:\n# any 2xx must satisfy 'ok', so there is no question of what a status\n# the contract never listed should mean."
+        },
+        {
+          "name": "emitted",
+          "code": "dist/web/api.json             every declared contract, in one document\ndist/web/api-docs/index.html  the explorer: fields, patterns, try-it\n\n$ curl -i -X OPTIONS http://127.0.0.1:8080/items\nHTTP/1.1 200 OK\nallow: GET, HEAD, OPTIONS, POST\n{\"summary\":\"The catalogue of items\",\"methods\":{...}}"
+        }
+      ]
+    },
+    {
+      "id": "realtime",
+      "title": "Streaming handlers",
+      "summary": "A handler that yields is a stream, and @Stream on the method is how the route says so before it is called — the server chooses the streaming path before the handler runs. Tachyon checks the two against each other, so the declaration and the body cannot disagree.",
+      "group": "Yon server",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<ul>\n  <loop :for=\"tick of ticks\">\n    <li>{tick.sku} · {tick.level}</li>\n  </loop>\n</ul>"
+        },
+        {
+          "name": "server/routes/ticks/yon.js",
+          "code": "@Controller\nexport class TicksController {\n  // @Stream is how the route says it answers more than once, before it is\n  // called. The server has to choose the streaming path before the handler\n  // runs, so it cannot wait to see what comes back.\n  //\n  // The body still yields. Tachyon checks the two against each other: a\n  // @Stream that never yields is refused, and so is a yield without one.\n  @Stream\n  static async *GET(request) {\n    for (let level = 3; level > 0; level -= 1) {\n      yield { sku: 'ANVIL-1', level }\n      await new Promise((resume) => setTimeout(resume, 1000))\n    }\n  }\n}\n"
+        },
+        {
+          "name": "server/routes/ticks/yon.py",
+          "code": "import time\n\n\n@Controller\nclass TicksController:\n    @staticmethod\n    @Stream\n    def GET(request):\n        for level in range(3, 0, -1):\n            yield {\"sku\": \"ANVIL-1\", \"level\": level}\n            time.sleep(1)\n"
+        },
+        {
+          "name": "server/routes/ticks/yon.php",
+          "code": "<?php\n// PHP has no adapter: it speaks the protocol itself. A method that yields\n// returns a Generator, and Tachyon writes one length-prefixed frame per value\n// — read by the same reader that reads JavaScript's, which never asked which\n// language wrote them.\n#[Controller]\nclass TicksController\n{\n    #[Stream]\n    public static function GET(YonRequest $request)\n    {\n        foreach (['ANVIL-1' => 3, 'ANVIL-2' => 1] as $sku => $level) {\n            yield ['sku' => $sku, 'level' => $level];\n        }\n    }\n}\n"
+        },
+        {
+          "name": "server/routes/ticks/yon.kt",
+          "code": "// Kotlin's generator is `sequence { yield(…) }`, and a Sequence is what the\n// prelude looks for. Not a Flow: that needs kotlinx-coroutines, which a bare\n// kotlinc has not resolved — the same reason org.json is not on its classpath.\n@Controller\nobject TicksController {\n    @JvmStatic\n    @Stream\n    fun GET(request: YonRequest): Sequence<Map<String, Any>> = sequence {\n        for (level in 3 downTo 1) {\n            yield(mapOf(\"sku\" to \"ANVIL-1\", \"level\" to level))\n        }\n    }\n}\n"
+        },
+        {
+          "name": "server/routes/ticks/yon.cs",
+          "code": "// yield return gives an IEnumerable; the asynchronous spelling gives an\n// IAsyncEnumerable, and a handler that awaits per event is the realistic case\n// for a stream. Both are accepted.\n[Controller]\nclass TicksController\n{\n    [Stream]\n    static async IAsyncEnumerable<object> GET(YonRequest request)\n    {\n        foreach (var sku in new[] { \"ANVIL-1\", \"ANVIL-2\" })\n        {\n            await Task.Delay(1000);\n            yield return new { sku, level = 3 };\n        }\n    }\n}\n"
+        },
+        {
+          "name": "server/routes/ticks/OPTIONS.schema.json",
+          "code": "// The contract describes what a caller receives. It no longer says\n// whether the route streams: that moved onto the method, where the\n// yielding is, so a second file can no longer contradict the code.\n{\n  \"summary\": \"Inventory levels as they change\",\n  \"methods\": {\n    \"GET\": {\n      \"ok\": { \"sku\": \"^[A-Z0-9-]{1,32}$\", \"level\": \"^[0-9]+$\" }\n    }\n  }\n}"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  @onMount\n  subscribe() {\n    // The browser owns reconnection and resends its last event id.\n    const stream = new EventSource('/ticks')\n    stream.addEventListener('message', (event) => {\n      this.levels = [...this.levels, JSON.parse(event.data)]\n    })\n  }\n}"
+        },
+        {
+          "name": "client/pages/tac.ts",
+          "code": "// EventSource cannot send headers, so a stream behind an Authorization\n// header is read with fetch instead. Same route, same events — the\n// parsing is the only thing you take on.\nexport default class {\n  levels: string[] = []\n\n  async watch(): Promise<void> {\n    const response = await fetch('/ticks', {\n      headers: { authorization: `Bearer ${this.token}`, accept: 'text/event-stream' },\n    })\n    const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader()\n    let buffered = ''\n    for (;;) {\n      const { value, done } = await reader.read()\n      if (done) break\n      buffered += value\n      // Events are separated by a blank line; a chunk may hold part of one.\n      const parts = buffered.split('\\n\\n')\n      buffered = parts.pop() ?? ''\n      for (const part of parts) {\n        const data = part.split('\\n').find((line) => line.startsWith('data:'))\n        if (data) this.levels.push(JSON.parse(data.slice(5)))\n      }\n      await this.tac.render()\n    }\n  }\n}"
+        },
+        {
+          "name": "languages",
+          "code": "Which languages a stream is written in\n\n  yon.js, yon.ts   an async generator\n  yon.py           a generator\n  yon.php          a generator, framed by the prelude\n  yon.kt           a Sequence, framed by the prelude\n  yon.cs           an IEnumerable or IAsyncEnumerable, framed\n                   by the prelude\n\nSix of the eight. A stream is a handler that answers more than\nonce, and `yield` is how a handler says so in its own words. The\ntwo built-in adapters hold a generator open across frames, and\nPHP, Kotlin and C# now do the same without one.\n\nJava and Rust are the two left out, and deliberately: neither has\na generator, so `yield` is not what an author would write there.\n@Stream in either is refused with TY2014 rather than accepted and\nquietly ignored, and a route that must stream can be one of the\nsix — or reach the rest through @Relay.\n\nOne thing follows from the annotation: a streaming yon.js needs\nBun or Deno, because Node will never transpile a decorator. Every\nother language needs nothing.\n"
+        }
+      ]
+    },
+    {
+      "id": "stereotypes",
+      "title": "Layer stereotypes",
+      "summary": "A server class declares its layer — @Controller, @Service, @Repository, @Client, @Delegate — and Tachyon checks the declaration against where the file sits, what it reaches, what the class is named, and, for a controller, what it declares. Not dependency injection: a handler is one process per request, so nothing an injector built would outlive the response. What they buy is the architecture written down and enforced.",
+      "group": "Yon server",
+      "files": [
+        {
+          "name": "server/services/orders.js",
+          "code": "@Service\nexport class OrderService {\n  // Owns a decision. May reach a repository, a client or a delegate, and\n  // never a controller.\n  static place(item) {\n    return { placed: item }\n  }\n}\n"
+        },
+        {
+          "name": "server/services/orders.ts",
+          "code": "@Service\nexport class OrderService {\n  static place(item: string): { placed: string } {\n    return { placed: item }\n  }\n}\n"
+        },
+        {
+          "name": "server/services/orders.py",
+          "code": "@Service\nclass OrderService:\n    \"\"\"Owns a decision. May reach a repository, a client or a delegate.\"\"\"\n\n    @staticmethod\n    def place(item):\n        return {\"placed\": item}\n"
+        },
+        {
+          "name": "server/services/orders.php",
+          "code": "<?php\n#[Service]\nclass OrderService\n{\n    public static function place(string $item): array\n    {\n        return ['placed' => $item];\n    }\n}\n"
+        },
+        {
+          "name": "server/services/orders.java",
+          "code": "@Service\n// Owns a decision. May reach a repository, a client or a delegate, and never\n// a controller.\npublic class OrderService {\n  static java.util.Map<String, String> place(String item) {\n    return java.util.Map.of(\"placed\", item);\n  }\n}\n"
+        },
+        {
+          "name": "server/services/orders.kt",
+          "code": "@Service\nobject OrderService {\n    fun place(item: String): Map<String, String> = mapOf(\"placed\" to item)\n}\n"
+        },
+        {
+          "name": "server/services/orders.cs",
+          "code": "[Service]\nclass OrderService\n{\n    public static string Place(string item) => item;\n}\n"
+        },
+        {
+          "name": "server/services/orders.rs",
+          "code": "#[Service]\npub struct OrderService;\n\nimpl OrderService {\n    // Owns a decision. May reach a repository, a client or a delegate, and\n    // never a controller.\n    pub fn place(item: &str) -> String {\n        String::from(item)\n    }\n}\n"
+        },
+        {
+          "name": "refused",
+          "code": "error[TY2008]: 'server/services/orders.py' declares @Repository\n               but is not under server/repositories/.\n\nerror[TY2009]: 'server/repositories/orders.py' is a @Repository\n               and reaches server/services/.\n\nerror[TY2011]: 'server/routes/orders/yon.py' declares @Controller\n               on 'Orders', which does not end in Controller.\n\nerror[TY2012]: 'server/routes/orders/yon.py' declares 'score()'\n               on the controller 'OrdersController'.\n\nA layer may reach a deeper one and never a shallower one.\n\n  @Controller   server/routes         a request in, a response out\n  @Service      server/services       owns a decision\n  @Repository   server/repositories   owns storage\n  @Client       server/clients        owns one outbound call\n  @Delegate     server/delegates      owns work handed elsewhere\n\nThe bottom three are peers, not a stack.\n\nA stereotyped class is named for its layer, because the name is\nvisible at every call site and the annotation only at the\ndeclaration. And a controller declares HTTP methods and nothing\nelse: the dispatch finds the method by name, so a helper beside\nGET is never reached through a route. It reads as working and\nnever runs.\n"
+        },
+        {
+          "name": "languages",
+          "code": "One name in eight languages, in each language’s own bracket:\n\n  Java, Kotlin    @Controller\n  C#              [Controller]\n  PHP, Rust       #[Controller]\n  Python          @Controller\n  JavaScript, TS  @Controller\n\nNot Go or Ruby. Go has no annotation syntax — a struct tag is\nmetadata on a field rather than on a type, and a //go: directive is\na comment. Ruby has none either.\n\nNo import is needed, and each language is given them the way it\ncan take them. The JavaScript and Python adapters put the\nstereotypes in scope before loading the handler. Rust gets a `use`\nprepended, because its attributes are a procedural macro crate\nbuilt and linked alongside. Java, Kotlin and C# declare them in\nthe protocol runtime Tachyon supplies, which for the first two is\nappended after the handler — declaring them in both places is a\nredeclaration error, which is how that was found. PHP resolves an\nattribute lazily and needs no declaration at all.\n"
+        }
+      ]
+    },
+    {
+      "id": "native-targets",
+      "title": "Native targets",
+      "summary": "The same client source becomes a browser application or a desktop and mobile application. One build command can produce several at once: ty bundle --target macos,ios.",
+      "group": "Native",
+      "files": [
+        {
+          "name": "build",
+          "code": "ty bundle --target macos     ->  dist/macos/App.app      SwiftUI / AppKit\nty bundle --target windows   ->  dist/windows/           Win32\nty bundle --target linux     ->  dist/linux/             GTK4\nty bundle --target android   ->  dist/android/*.apk      platform views\nty bundle --target ios       ->  dist/ios/App.app        SwiftUI / UIKit"
+        }
+      ]
+    },
+    {
+      "id": "native-language-reach",
+      "title": "What a companion reaches",
+      "group": "Native",
+      "summary": "A compiled companion is linked into the host process, so the platform’s own SDK is simply there — AppKit, the Android SDK, the .NET base class library. There is no capability vocabulary in between: a tray, a window or a notification belongs to the platform, and a fixed list of verbs could only ever be the subset the framework had got round to.",
+      "files": [
+        {
+          "name": "reach",
+          "code": "client/pages/tac.js     the web platform, on every target\nclient/pages/tac.swift  Foundation, AppKit, UIKit\nclient/pages/tac.kt     the Android SDK\nclient/pages/tac.cs     the .NET base class library\nclient/pages/tac.rs     the Rust standard library, on three desktops\n\nThe host implements one channel and no verbs — companion.invoke:\nthe page asks its companion for a member, and the companion answers. Everything a\nplatform can do is the companion's to reach directly."
+        }
+      ]
+    },
+    {
+      "id": "one-rendering",
+      "title": "One rendering everywhere",
+      "summary": "A native build hosts the application’s own web bundle, so a desktop or mobile app renders exactly what the browser renders. Matching a platform’s own look is a choice you make in your UI layer, with whichever cross-platform kit you already use.",
+      "group": "Native",
+      "files": [
+        {
+          "name": "tac.config.js",
+          "code": "export const application = {\n  name: 'Quarterly report',\n  id: 'com.example.report',\n  version: '1.0.0',\n  // The route the window opens. Everything after that is the\n  // application's own routing, exactly as in the browser.\n  entryRoute: '/',\n}\n"
+        }
+      ],
+      "verify": "tac"
+    },
+    {
+      "id": "companion-publish",
+      "title": "Companions publish to the page",
+      "summary": "The page asks a companion for a member; tacPublish is the other direction. A companion pushes a named value when the platform tells it something, and every @subscribe in the page receives it. Safe to call from any thread — the host hops to the one its web view lives on — and a no-op where no host installed a sink.",
+      "group": "Native",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<p>ticks: {ticks}</p>"
+        },
+        {
+          "name": "client/pages/tac.swift",
+          "code": "Thread.detachNewThread {\n    tacPublish(\"probe.tick\", 1)\n}"
+        },
+        {
+          "name": "client/pages/tac.rs",
+          "code": "std::thread::spawn(|| {\n    tac_publish(\"probe.tick\", TacValue::Int(1));\n});"
+        },
+        {
+          "name": "client/pages/tac.kt",
+          "code": "Thread {\n    tacPublish(\"probe.tick\", 1)\n}.start()"
+        },
+        {
+          "name": "client/pages/tac.cs",
+          "code": "new Thread(() => Tac.Publish(\"probe.tick\", 1)).Start();"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  // Which language published it is not the page's business.\n  @subscribe('probe.tick')\n  ticks = 0\n}"
+        }
+      ]
+    },
+    {
+      "id": "cli",
+      "title": "The ty binary",
+      "summary": "One standalone executable scaffolds, develops, builds and inspects. `ty preview` is the development server for Tac and Yon; `ty start` serves what was published and never rebuilds; `ty handler invoke` runs one handler through the protocol without a server at all.",
+      "group": "Tooling",
+      "files": [
+        {
+          "name": "shell",
+          "code": "ty init my-app --name \"My App\"\nty preview                      # development: Tac, Yon, or both\nty start                        # production: serve what was published\nty bundle                       # dist/web\nty bundle --target macos,ios    # several targets at once\nty bundle --native              # stage the native host only\nty doctor                       # toolchains and handler runtimes\nty handler invoke server/routes/items/yon.py --method GET\nty migrate check                # classify a legacy project\nty cache status | clean\n"
+        }
+      ]
+    },
+    {
+      "id": "config",
+      "title": "Configuration as code",
+      "summary": "Identity, page metadata, shared browser assets and build hooks live in a module, so configuration can compute what a data file could only repeat.",
+      "group": "Tooling",
+      "files": [
+        {
+          "name": "tac.config.js",
+          "code": "const channel = process.env.TAC_CHANNEL ?? 'stable'\nconst ORIGIN = process.env.SITE_ORIGIN ?? 'https://example.com'\n\nexport const application = {\n  name: 'Catalog',\n  id: channel === 'stable' ? 'com.example.catalog' : `com.example.catalog.${channel}`,\n  version: '1.0.0',\n  entryRoute: '/',\n}\n\n// Browser modules and stylesheets every document loads.\nexport const scripts = ['/shared/scripts/imports.js']\nexport const styles = ['/shared/styles/site.css']\n\n// What each route puts in the document head. A tac.html is a view, so\n// this is where a route's title and social tags live.\nexport const metadata = {\n  '/': {\n    title: 'Catalog',\n    description: 'Everything we sell.',\n    canonical: `${ORIGIN}/`,\n    siteName: 'Catalog',\n  },\n}\n\nexport async function postBundle({ targetRoots, target }) {\n  // Runs after a successful build, with the published roots.\n  await writeSitemap(targetRoots.web)\n}"
+        }
+      ]
+    },
+    {
+      "id": "doctor",
+      "title": "Toolchain checks",
+      "summary": "ty doctor answers whether this machine can build this project, reporting only what the project actually uses.",
+      "group": "Tooling",
+      "files": [
+        {
+          "name": "shell",
+          "code": "$ ty doctor\nready     tac.ts companions             node_modules/.bin/tsc    Version 6.0.3\nready     tac.rs companions for macos, windows, linux    rustc    1.97.1\nmissing   yon.js handlers               node                     not on PATH\n        Install Node.js 20 or newer as 'node', or pass --javascript-runtime.\n\n5 of 6 ready"
+        }
+      ]
+    },
+    {
+      "id": "diagnostics",
+      "title": "Stable diagnostics",
+      "summary": "Every failure carries a stable TY code, a bounded message and an actionable help line. A code is a contract: an operator alerting on TY2105 is looking at the machine, and one reading TY2012 is looking at the code.",
+      "group": "Tooling",
+      "files": [
+        {
+          "name": "shell",
+          "code": "error[TY1103]: Control tag '<if>' is not available until Phase 3.\n  --> client/pages/tac.html:21..35\n  help: Use static HTML in the Phase 1 vertical slice.\n\nerror[TY2012]: 'server/routes/orders/yon.py' declares 'score()'\n               on the controller 'OrdersController'.\n  help: A route dispatches on the HTTP method, so a controller answers GET,\n        POST, PUT, PATCH, DELETE, OPTIONS, HEAD or TRACE and nothing else.\n        Move the rest into a service under server/services.\n\nerror[TY2112]: Required Yon JavaScript runtime 'bun' was not found.\n  help: Install Bun or configure YON_JAVASCRIPT_RUNTIME.\n"
+        }
+      ]
+    },
+    {
+      "id": "determinism",
+      "title": "Deterministic builds",
+      "summary": "A repeated build is byte-identical, and an unchanged route is reused against a verified digest. A failed build leaves the last good output in place.",
+      "group": "Tooling",
+      "files": [
+        {
+          "name": "shell",
+          "code": "$ ty bundle\nBuilt 8 routes to dist/web (d4dc3128…) compiled=5 reused=3\n\n$ ty bundle    # nothing changed\nBuilt 8 routes to dist/web (d4dc3128…) compiled=0 reused=8"
+        }
+      ]
+    },
+    {
+      "id": "hot-update",
+      "title": "Semantic hot updates",
+      "summary": "A stylesheet swaps without losing page state, a changed island disposes and reactivates at a compiler boundary, and a failed build keeps the last good page behind a diagnostic overlay.",
+      "group": "Tooling",
+      "files": [
+        {
+          "name": "client/components/counter/tac.html",
+          "code": "<button on:click=\"count += 1\">Counted {count} times</button>"
+        },
+        {
+          "name": "client/components/counter/tac.js",
+          "code": "export default class {\n  count = 0\n\n  // State is carried across a hot update when the component says how.\n  hotState() { return { count: this.count } }\n  restoreHotState(state) { this.count = state.count }\n  hotDispose() { /* release anything the next instance should not inherit */ }\n}"
+        }
+      ]
+    },
+    {
+      "id": "shared",
+      "title": "Shared assets",
+      "summary": "Files under client/shared publish at stable /shared/... URLs with file-count and byte limits; symlinks and non-files are rejected.",
+      "group": "Tooling",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<img src=\"/shared/assets/logo.svg\" alt=\"\" width=\"26\" height=\"26\">\n<p>{docs.order.length} guides, read from the shared data file.</p>"
+        },
+        {
+          "name": "layout",
+          "code": "client/shared/assets/logo.svg    ->  /shared/assets/logo.svg\nclient/shared/data/docs.json    ->  /shared/data/docs.json\nclient/shared/styles/site.css   ->  /shared/styles/site.css"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "import docs from '/shared/data/docs.json' with { type: 'json' }"
+        }
+      ]
+    },
+    {
+      "id": "views",
+      "title": "A view is not a document",
+      "group": "Tac views",
+      "summary": "A tac.html is the page’s content. The compiler writes the document around it, so a doctype, <html>, <head> or <body> in a view is TY1307 — a head authored there is one the emitted document cannot merge with its own.",
+      "files": [
+        {
+          "name": "client/pages/tac.html",
+          "code": "<main aria-label=\"Catalog\">\n  <h1>{title}</h1>\n  <p>A view is the page's content, and starts with it.</p>\n</main>"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  title = 'Catalog'\n}"
+        },
+        {
+          "name": "emitted",
+          "code": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n    <title>Catalog</title>\n    <link rel=\"canonical\" href=\"https://example.com/\">\n    ...\n  </head>\n  <body>...</body>\n</html>\n\nCharset, viewport and lang are always written. Every page repeated them\nidentically, which is not a thing a page should have an opinion about."
+        }
+      ],
+      "verify": "tac"
+    },
+    {
+      "id": "page-metadata",
+      "title": "Page metadata",
+      "group": "Tooling",
+      "summary": "Title, description, canonical and social tags are declared per route in tac.config.js. The module already knows the route list — it is what generates the sitemap — so metadata belongs there rather than repeated in every template.",
+      "files": [
+        {
+          "name": "tac.config.js",
+          "code": "export const metadata = {\n  '/': {\n    title: 'Catalog',\n    description: 'Everything we sell.',\n    canonical: `${ORIGIN}/`,\n    image: `${ORIGIN}/shared/assets/card.png`,\n    siteName: 'Catalog',\n  },\n  '/products': {\n    title: 'Products — Catalog',\n    canonical: `${ORIGIN}/products`,\n  },\n}\n\n// Only what is declared is emitted: a route naming a title and nothing\n// else gets a title and nothing else, not a page of empty social tags."
+        }
+      ]
+    },
+    {
+      "id": "document-assets",
+      "title": "Shared browser assets",
+      "group": "Tooling",
+      "summary": "A browser entry that registers a component library, or a site’s shared stylesheet, belongs to the project rather than to any one page. Declaring them once replaces a tac.js and a tac.css per route whose whole body was an import.",
+      "files": [
+        {
+          "name": "tac.config.js",
+          "code": "export const scripts = ['/shared/scripts/imports.js']\nexport const styles = ['/shared/styles/site.css']"
+        },
+        {
+          "name": "emitted",
+          "code": "Linked into every document, in declaration order, before the\nroute's own stylesheet:\n\n  <link rel=\"stylesheet\" href=\"/shared/styles/site.css\">\n  <script type=\"module\" src=\"/shared/scripts/imports.js\"></script>\n\nA component's tac.css is a different thing and stays where it is:\nit is scoped to that component."
+        }
+      ]
+    },
+    {
+      "id": "environment",
+      "title": "Development, told apart",
+      "group": "Tooling",
+      "summary": "The development server marks every document it serves. A page can hide what a published bundle should not carry, and a published bundle cannot claim to be in development however it is hosted.",
+      "files": [
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  development = document.body.dataset.tachyonEnvironment === 'development'\n}"
+        },
+        {
+          "name": "client/pages/tac.html",
+          "code": "<logic :if=\"development\">\n  <p class=\"debug\">Rendered by: {runtime}</p>\n</logic>"
+        }
+      ],
+      "verify": "tac"
+    },
+    {
+      "id": "companion-matrix",
+      "title": "Which companion answers a target",
+      "group": "Polyglot",
+      "summary": "A companion language compiles for the targets whose toolchain and SDK it belongs to. Building a target no declared companion reaches is TY1010, not a silent omission — an application that starts up and does nothing is a worse answer than a build that refuses.",
+      "files": [
+        {
+          "name": "matrix",
+          "code": "tac.js, tac.ts   web, and every native target\ntac.rs           macos, windows, linux\ntac.swift        macos, ios\ntac.kt           android\ntac.cs           windows\n\nA route may declare several. When more than one reaches the target\nbeing built, the platform's own language wins over Rust, and only\nthe winner is compiled — no two platform languages reach the same\ntarget, so the choice is never a tie broken by declaration order."
+        },
+        {
+          "name": "diagnostic",
+          "code": "error[TY1010]: Route '/' has no companion that runs on android.\n               It declares Swift (macos, ios).\n  help: Add a tac.js or a tac.ts, or a tac.kt to give this route\n        behaviour on android, or build a target the declared\n        companion supports."
+        }
+      ]
+    },
+    {
+      "id": "diagnostics-overlay",
+      "title": "Errors that clear themselves",
+      "group": "Tooling",
+      "summary": "A failed rebuild shows its diagnostics over the open page. The next rebuild that succeeds removes them — the overlay tracks the state of the code, not the history of it, so a fixed error stops being on screen without a reload.",
+      "files": [
+        {
+          "name": "sequence",
+          "code": "1  save a broken view     -> overlay appears, naming the TY code\n2  keep typing            -> overlay updates in place\n3  save a working view    -> overlay is removed, page hot-updates\n\nNo reload at any step. The page that recovers is the page that\nwas open, with its scroll position and focus intact."
+        }
+      ]
+    },
+    {
+      "id": "window-controls",
+      "title": "What a page may do to its window",
+      "summary": "A native window is declared in manifest.json — the file a PWA already ships — and what a page may do to that window is granted there too. Nothing by default. A control that was not granted is not generated into the host, so there is no code to reach rather than a check that refuses.",
+      "group": "Native",
+      "files": [
+        {
+          "name": "manifest.json",
+          "code": "{\n  \"name\": \"Catalog\",\n  \"short_name\": \"Catalog\",\n  \"start_url\": \"/\",\n  \"icons\": [{ \"src\": \"/icon-1024.png\", \"sizes\": \"1024x1024\" }],\n\n  \"tachyon\": {\n    \"id\": \"com.example.catalog\",\n    \"version\": \"1.0.0\",\n    \"window\": {\n      \"width\": 1024,\n      \"height\": 768,\n      \"minWidth\": 640,\n      \"minHeight\": 480,\n      \"controls\": [\"minimize\", \"maximize\", \"close\"]\n    }\n  }\n}"
+        },
+        {
+          "name": "client/pages/tac.js",
+          "code": "export default class {\n  // A granted control is a function; one that was not granted is\n  // undefined. So a page asks what it has rather than calling and\n  // being refused, and the same build runs in a browser — where\n  // tachyonWindow is undefined entirely — without a branch on the\n  // user agent.\n  canMinimize = typeof globalThis.tachyonWindow?.minimize === 'function'\n\n  minimize() {\n    globalThis.tachyonWindow?.minimize()\n  }\n\n  resize() {\n    globalThis.tachyonWindow?.resize({ width: 1280, height: 800 })\n  }\n}\n"
+        },
+        {
+          "name": "client/pages/tac.html",
+          "code": "<main>\n  <h1>Report</h1>\n\n  <!-- A control the manifest did not grant is undefined, so the\n       button is simply not offered rather than offered and refused.\n       In a browser tachyonWindow is undefined entirely and this is\n       the same view, unchanged. -->\n  <logic :if=\"canMinimize\">\n    <button on:click=\"minimize()\">Minimise</button>\n  </logic>\n</main>\n"
+        },
+        {
+          "name": "grants",
+          "code": "What a page may do to its window\n\n  close        dismiss the window\n  fullscreen   toggle full screen\n  maximize     zoom to fill the display\n  minimize     send to the dock or taskbar\n  resize       set width and height\n  title        set the window title\n\nEmpty by default. Nothing is granted unless it is listed, and a\ncontrol that is not listed is not generated into the host at all\n— there is no code to reach, not a check that says no.\n\nElectron hands a privileged process the whole window and trusts\nthe application. Tauri gates each call behind a permission in a\ncapabilities dialect of its own. This is the same default-deny,\ndeclared in the file the application already ships: manifest.json\nis where a PWA already says its name, its icons and where it\nstarts, and a manifest carrying members a browser does not know\nis still a valid manifest.\n\nAn unknown control is refused at build time, naming the six.\n"
+        }
+      ]
+    },
+    {
+      "id": "isolation",
+      "title": "Handler isolation",
+      "summary": "A handler is one bounded process per request by default. A deployment that wants more than process isolation sets YON_ISOLATION=firecracker and each request is handed to a microVM control program instead — the same handler, the same protocol, the same build.",
+      "group": "Yon server",
+      "files": [
+        {
+          "name": "isolation",
+          "code": "How a handler runs\n\n  YON_ISOLATION=process       one supervised child process per\n                              request. The default.\n\n  YON_ISOLATION=firecracker   hand each request to a Firecracker\n                              control program instead.\n\n    YON_FIRECRACKER_DRIVER      the control program to run\n    YON_FIRECRACKER_POOL        how many microVMs to keep\n    YON_FIRECRACKER_VCPUS       vCPUs per microVM\n    YON_FIRECRACKER_MEMORY_MIB  memory per microVM\n    YON_FIRECRACKER_EGRESS      what a handler may reach\n\nRead from the environment rather than a config file, because\nwhich isolation a deployment wants is a property of where it\nruns, not of the source — the same build runs either way.\n\nAn invalid or half-declared policy fails as TY2010 before a\nhandler runs, rather than falling back to something weaker than\nwhat was asked for.\n"
+        }
+      ]
+    },
+    {
+      "id": "serving",
+      "title": "Serving what was published",
+      "summary": "`ty start` serves a built bundle and never rebuilds. Everything that differs between deployments — the interface, the port, which JavaScript runtime runs a handler — is read from the environment, so the artifact staging serves is byte-identical to the one production serves.",
+      "group": "Tooling",
+      "files": [
+        {
+          "name": "environment",
+          "code": "Serving a built bundle\n\n  YON_HOST        interface to bind, or YON_HOSTNAME\n  YON_PORT        TCP port; zero takes an ephemeral one\n  YON_DIST_PATH   where the built bundle is\n\n  TACHYON_JAVASCRIPT_RUNTIME   node, bun or deno\n  TACHYON_PYTHON_RUNTIME       the CPython to use\n  TAC_CACHE_DIR                where the standalone runtime cache lives\n\n`ty start` serves what was published and never rebuilds, so\neverything that varies between deployments is in the environment\nrather than in the artifact. The bundle a staging host serves is\nbyte-identical to the one production serves.\n\nThe runtime variables matter for more than speed: a yon.js or\nyon.ts that declares @Controller needs a runtime that transpiles\na decorator, and Node — the default — never will.\n"
+        }
+      ]
+    },
+    {
+      "id": "project-layout",
+      "title": "What a project looks like",
+      "summary": "One directory tree, two halves. Client routes are directories holding a tac.html; server layers are directories a class declares itself into. Everything else is a convention with no rule attached.",
+      "group": "Tooling",
+      "files": [
+        {
+          "name": "layout",
+          "code": "What `ty init` lays out\n\n  client/\n    pages/        one directory per route, holding a tac.html\n    components/   a two-level path, `<product-card>`\n    shared/       published as-is, imported by both halves\n\n  server/\n    routes/       @Controller — a request in, a response out\n    services/     @Service — owns a decision\n    repositories/ @Repository — owns storage\n    clients/      @Client — owns one outbound call\n    delegates/    @Delegate — owns work handed elsewhere\n    stereotypes/  the annotation declarations, for languages\n                  that need them declared\n    vendor/       third-party code, checked in\n    config/       configuration a handler reads\n    data/         files a handler reads or writes\n\n  manifest.json   name, icons, and the native window\n  tac.config.js   identity, page metadata, build hooks\n\nThe five layer directories are the contract: a class declares\nwhich one it is in, and Tachyon checks the declaration against\nwhere the file sits. The rest are conventions with no rule\nattached — they exist so a project does not have to invent a name\nfor the same thing twice.\n"
+        }
+      ]
+    }
+  ]
+}

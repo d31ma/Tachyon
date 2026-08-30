@@ -1,28 +1,20 @@
 {
-  "name": "tac-h-yon",
+  "name": "tachyon-website",
   "version": "26.35.07",
   "private": true,
   "type": "module",
-  "displayName": "Tachyon",
-  "productName": "Tachyon",
-  "tachyon": {
-    "appName": "Tachyon"
-  },
   "scripts": {
-    "start": "bun run serve",
-    "serve": "ty serve",
     "bundle": "ty bundle",
-    "bundle:watch": "ty serve",
-    "preview": "ty preview",
-    "test": "bun test tests/site.test.js tests/dom/site.dom.test.js tests/seo.test.js",
-    "test:dom": "bun test tests/dom/site.dom.test.js",
-    "test:full": "bun run test"
+    "dev": "ty preview",
+    "styles": "tailwindcss -i client/shared/styles/tailwind.src.css -o client/shared/styles/tailwind.css --minify",
+    "styles:check": "bun run styles && git diff --exit-code -- client/shared/styles/tailwind.css",
+    "seed": "node scripts/seed.mjs",
+    "test": "bun test tests/site.test.js",
+    "verify:snippets": "node scripts/verify-snippets.mjs",
+    "check:responsive": "node scripts/check-responsive.mjs"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.13",
-    "@types/node": "^25.6.2",
-    "happy-dom": "^20.8.9",
-    "typescript": "^6.0.3"
-  },
-  "dependencies": {}
+    "@tailwindcss/cli": "4.3.3",
+    "tailwindcss": "4.3.3"
+  }
 }

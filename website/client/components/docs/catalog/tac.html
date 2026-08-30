@@ -1,0 +1,35 @@
+<div class="docs-page">
+  <main class="docs-article">
+    <docs-pagelinks :source="source()" />
+
+    <h1 class="text-section font-semibold text-balance">Features</h1>
+    <p class="mt-3 text-lede opacity-80 text-pretty">
+      Every feature Tachyon has, each on its own page with the code that proves it.
+      {count()} of them, across routing, views, storage, the server, native targets and the
+      toolchain. Every snippet is compiled by the real toolchain before the site ships — a
+      documented API that does not build is a bug.
+    </p>
+
+    <loop :for="group of list()">
+      <section class="mt-10">
+        <h2 :id="group.slug" class="text-xl font-semibold">{group.name}</h2>
+        <ul class="catalogue mt-4 list-none p-0 m-0">
+          <loop :for="entry of group.features">
+            <li>
+              <a class="catalogue__card" :href="entry.path">
+                <span class="catalogue__title">{entry.title}</span>
+                <span class="catalogue__summary">{entry.summary}</span>
+              </a>
+            </li>
+          </loop>
+        </ul>
+      </section>
+    </loop>
+
+    <docs-pager :path="path()" />
+  </main>
+
+  <aside class="docs-toc" aria-label="On this page">
+    <docs-toc :entries="contents()" />
+  </aside>
+</div>

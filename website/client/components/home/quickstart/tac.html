@@ -1,30 +1,27 @@
-<section class="quickstart" aria-label="Code at a glance">
-  <h2>One convention, every layer</h2>
-  <p class="quickstart-sub">Templates, polyglot companions and backend routes all follow the same file-beside-file shape.</p>
+<section class="section" aria-labelledby="quickstart-heading">
+  <div class="section-head--center">
+    <span class="eyebrow">From nothing to serving</span>
+    <h2 id="quickstart-heading" class="section-title">Start in three commands.</h2>
+    <p class="section-lede mx-auto">
+      The web bundle is written to <code>dist/web/</code>. Add <code>--target macos</code>,
+      <code>windows</code>, <code>linux</code>, <code>android</code> or <code>ios</code> for a
+      native application built from the same source.
+    </p>
+  </div>
 
-  <div class="quickstart-samples">
-    <details open>
-      <summary>Tac template</summary>
-      <pre class="code-block"><code data-sample="template" data-fallback="&lt;section class=&quot;hero&quot;&gt;&#10;  &lt;h1&gt;{headline}&lt;/h1&gt;&#10;  &lt;button on:click=&quot;refresh()&quot;&gt;Refresh&lt;/button&gt;&#10;&lt;/section&gt;&#10;&#10;&lt;loop :for=&quot;post of posts&quot;&gt;&#10;  &lt;product-card :product=&quot;post&quot; hydrate=&quot;visible&quot; /&gt;&#10;&lt;/loop&gt;"></code></pre>
-      <p class="quickstart-note">client/pages/tac.html — interpolation, events, control flow and client-owned rendering in plain HTML.</p>
-    </details>
-
-    <details>
-      <summary>Companion</summary>
-      <pre class="code-block"><code data-sample="companion" data-fallback="export default class {&#10;  headline = &quot;Tac + Yon&quot;&#10;  visits = 0&#10;&#10;  hydrate(root, signal) {&#10;    this.visits = Number(sessionStorage.getItem(&quot;visits&quot;) ?? 0) + 1&#10;    sessionStorage.setItem(&quot;visits&quot;, String(this.visits))&#10;  }&#10;}"></code></pre>
-      <p class="quickstart-note">client/components/hero/tac.js — a plain class with an explicit browser mount hook.</p>
-    </details>
-
-    <details>
-      <summary>Yon route</summary>
-      <pre class="code-block"><code data-sample="yon" data-fallback="# server/routes/posts/yon.py  -&gt;  /posts&#10;@Controller&#10;class PostsController:&#10;  @staticmethod&#10;  def GET(request):&#10;    return {&quot;posts&quot;: []}"></code></pre>
-      <p class="quickstart-note">server/routes/posts/yon.py — @Controller is mandatory; verbs are static methods.</p>
-    </details>
-
-    <details>
-      <summary>Polyglot companion</summary>
-      <pre class="code-block"><code data-sample="polyglot" data-fallback="// client/components/counter/tachyon-wasm.swift&#10;var count: Int = 0&#10;&#10;func increment() {&#10;  count += 1&#10;}&#10;&#10;let tac: [String: TacMember] = [&#10;  &quot;count&quot;: .field({ count }, { count = $0 }),&#10;  &quot;increment&quot;: .method(increment),&#10;]"></code></pre>
-      <p class="quickstart-note">client/components/counter/tac.swift — a portable reactive controller beside its template.</p>
-    </details>
+  <!-- Three steps rather than one block: each command answers a different
+       question, and a reader scanning for the middle one should not have to
+       parse a shell script to find it. -->
+  <div class="grid-auto mt-10" style="--col: 15rem; --grid-gap: var(--gutter)">
+    <loop :for="step of steps()">
+      <div class="quickstart-step panel p-gutter">
+        <p class="stat-value text-2xl">{step.number}</p>
+        <p class="mt-3 font-semibold">{step.title}</p>
+        <pre class="code-block mt-3 text-xs"><code>{step.command}</code><button
+          type="button" class="code-copy" on:click="copy(step.number)"
+          :aria-label="'Copy step ' + step.number">{label(step.number)}</button></pre>
+        <p class="mt-3 text-sm opacity-70 text-pretty">{step.note}</p>
+      </div>
+    </loop>
   </div>
 </section>

@@ -1,0 +1,56 @@
+<!-- One example, in DuVay's shape: a card, the tab strips across the top, and
+     the sources stacked inside it under their own labels.
+
+     Two axes, because an example has two. The platform decides which
+     companions are even possible — Kotlin does not reach a Mac — and the
+     second row picks between the ones that are. Both are strips rather than a
+     stack of every companion, so a reader looking for Swift does not scroll
+     past Rust to reach it.
+
+     What does not tab is the view and the stylesheet: they are the same file
+     on every target, and one example's `{count}` should be visible beside the
+     field that declares it rather than a click away.
+
+     There is no "Show code" disclosure, and that is not an omission: DuVay
+     hides the code because a live preview is sitting above it. Here the code is
+     the example, and a disclosure over it would be a card that shows nothing. -->
+<div class="demo">
+  <logic :if="spans()">
+    <div class="demo-os-tabs" role="tablist" aria-label="Platform">
+      <loop :for="platform of platforms()">
+        <button type="button" class="demo-os-tab" role="tab"
+                :aria-selected="platform.current ? 'true' : 'false'"
+                :tabindex="platform.current ? '0' : '-1'"
+                on:click="choose(platform.id)">{platform.label}</button>
+      </loop>
+    </div>
+  </logic>
+
+  <logic :if="companions().length > 1">
+    <div class="demo-os-tabs demo-os-tabs--companion" role="tablist"
+         :aria-label="axis === 'language' ? 'Language' : 'Companion'">
+      <loop :for="companion of companions()">
+        <button type="button" class="demo-os-tab" role="tab"
+                :aria-selected="companion.current ? 'true' : 'false'"
+                :tabindex="companion.current ? '0' : '-1'"
+                on:click="pick(companion.name)">{companion.label}</button>
+      </loop>
+    </div>
+  </logic>
+
+  <div class="demo-code">
+    <loop :for="file of shown()">
+      <div class="demo-code-col">
+        <p class="demo-code-label">
+          <span class="demo-code-name">{file.name}</span>
+          <logic :if="file.language">
+            <span class="demo-code-language">{file.language}</span>
+          </logic>
+        </p>
+        <pre class="code-block" tabindex="0"><code>{file.code}</code><button
+          type="button" class="code-copy" on:click="copy(file.name)"
+          :aria-label="'Copy ' + file.name">{label(file.name)}</button></pre>
+      </div>
+    </loop>
+  </div>
+</div>

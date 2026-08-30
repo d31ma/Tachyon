@@ -1,0 +1,212 @@
+{
+  "tac": {
+    "files": [
+      {
+        "name": "client/pages/tac.html",
+        "code": "<article class=\"tally\">\n  <h1>{count} in the basket</h1>\n  <p>That is {doubled()} at two apiece.</p>\n  <p class=\"runtime\">Answered by {runtime}.</p>\n</article>"
+      },
+      {
+        "name": "client/pages/tac.css",
+        "code": "/* Scoped to this route by the compiler, so `.tally` here cannot reach a\n   `.tally` anywhere else on the site. */\n.tally {\n  padding: 1rem;\n  border: 1px solid var(--w-border);\n  border-radius: 12px;\n}\n\n.runtime {\n  font-size: .875rem;\n  opacity: .7;\n}"
+      },
+      {
+        "name": "client/pages/tac.js",
+        "code": "export default class {\n  count = 6\n  runtime = 'JavaScript, everywhere'\n\n  doubled() {\n    return this.count * 2\n  }\n}",
+        "note": "Native ES module. No compiler needed, and it runs on every target because every native host is a web view."
+      },
+      {
+        "name": "client/pages/tac.ts",
+        "code": "export default class {\n  count: number = 6\n  runtime: string = 'TypeScript, everywhere'\n\n  doubled(): number {\n    return this.count * 2\n  }\n}",
+        "note": "Emitted by the TypeScript compiler itself, so the semantics are the reference semantics. Same reach as tac.js."
+      },
+      {
+        "name": "client/pages/tac.rs",
+        "code": "pub struct Companion {\n    pub count: i32,\n    pub runtime: &'static str,\n}\n\nimpl Companion {\n    pub fn new() -> Self {\n        Self { count: 6, runtime: \"Rust, linked into the app\" }\n    }\n\n    pub fn doubled(&self) -> i32 {\n        self.count * 2\n    }\n}",
+        "note": "Compiled by rustc and linked into the desktop host — macOS, Windows, Linux. Ordinary Rust, with the platform in reach."
+      },
+      {
+        "name": "client/pages/tac.swift",
+        "code": "final class Companion {\n  var count = 6\n  let runtime = \"Swift, compiled into the app\"\n\n  func doubled() -> Int { count * 2 }\n}",
+        "note": "Compiled by Xcode's own swiftc into the macOS and iOS hosts, so AppKit and UIKit are in reach."
+      },
+      {
+        "name": "client/pages/tac.kt",
+        "code": "class Companion {\n  var count: Int = 6\n  val runtime: String = \"Kotlin, compiled into the APK\"\n\n  fun doubled(): Int = count * 2\n}",
+        "note": "Compiled as Kotlin into the APK by the Android Gradle plugin, so the Android SDK is in reach."
+      },
+      {
+        "name": "client/pages/tac.cs",
+        "code": "public class Companion\n{\n    public int Count = 6;\n    public string Runtime => \"C#, published ahead of time\";\n\n    public int Doubled() => Count * 2;\n}",
+        "note": "Published ahead of time by the .NET SDK as a native library the Win32 host loads, so the Windows SDK is in reach."
+      }
+    ]
+  },
+  "yon": {
+    "entries": [
+      {
+        "id": "javascript",
+        "name": "JavaScript",
+        "note": "No import: the adapter puts the stereotypes in scope before it loads the handler, the same way Tac makes @onMount available to a companion. Decorators need a runtime that transpiles them — Bun or Deno, selected with --javascript-runtime. Node rejects them at parse time and its own documentation says it will not polyfill a Stage 3 proposal.",
+        "files": [
+          {
+            "name": "server/routes/orders/yon.js",
+            "code": "import { OrderService } from '../../services/orders.js'\n\n@Controller\nexport class OrdersController {\n  // A route is thin on purpose: one request in, one call down, one response.\n  static GET() {\n    return { orders: new OrderService().list() }\n  }\n}"
+          },
+          {
+            "name": "server/services/orders.js",
+            "code": "import { OrderRepository } from '../repositories/orders.js'\n\n@Service\nexport class OrderService {\n  // Injected rather than constructed inline, so a test supplies its own\n  // repository without reaching for a module mock.\n  constructor(repository = new OrderRepository()) {\n    this.repository = repository\n  }\n\n  list() {\n    return this.repository.all()\n  }\n}"
+          },
+          {
+            "name": "server/repositories/orders.js",
+            "code": "@Repository\nexport class OrderRepository {\n  // Owns storage and nothing else. A repository, a client and a delegate are\n  // peers: none of them calls another.\n  all() {\n    return [{ sku: 'anvil', level: 4 }]\n  }\n}"
+          }
+        ]
+      },
+      {
+        "id": "typescript",
+        "name": "TypeScript",
+        "note": "No shebang and no envelope: the JavaScript adapter imports a yon.ts the same way it imports a yon.js, so the two are one shape. The runtime has to read TypeScript — Bun and Deno do, Node does not.",
+        "files": [
+          {
+            "name": "server/routes/orders/yon.ts",
+            "code": "@Controller\nexport class OrdersController {\n  // The same shape as a yon.js: a class, static methods named for the HTTP\n  // method, and a return value that becomes the response.\n  static GET(request: YonRequest): { orders: Order[] } {\n    return { orders: OrderService.list() }\n  }\n}"
+          },
+          {
+            "name": "server/services/orders.ts",
+            "code": "import { Service } from '../stereotypes/stereotypes.ts'\nimport { OrderRepository, type Order } from '../repositories/orders.ts'\n\n@Service\nexport class OrderService {\n  constructor(private repository = new OrderRepository()) {}\n\n  list(): Order[] {\n    return this.repository.all()\n  }\n}"
+          },
+          {
+            "name": "server/repositories/orders.ts",
+            "code": "import { Repository } from '../stereotypes/stereotypes.ts'\n\nexport interface Order {\n  sku: string\n  level: number\n}\n\n@Repository\nexport class OrderRepository {\n  all(): Order[] {\n    return [{ sku: 'anvil', level: 4 }]\n  }\n}"
+          }
+        ]
+      },
+      {
+        "id": "python",
+        "name": "Python",
+        "note": "No import: the adapter puts the stereotypes in scope before it loads the handler, the same way Tac makes @onMount available to a companion. A decorator is an ordinary function that returns the class unchanged; this one lives in builtins.",
+        "files": [
+          {
+            "name": "server/routes/orders/yon.py",
+            "code": "from server.services.orders import OrderService\n\n@Controller\nclass OrdersController:\n    @staticmethod\n    def GET(request):\n        return {\"orders\": OrderService().list()}"
+          },
+          {
+            "name": "server/services/orders.py",
+            "code": "from server.repositories.orders import OrderRepository\n\n@Service\nclass OrderService:\n    def __init__(self, repository=None):\n        # Injected rather than constructed inline, so a test supplies its own.\n        self.repository = repository or OrderRepository()\n\n    def list(self):\n        return self.repository.all()"
+          },
+          {
+            "name": "server/repositories/orders.py",
+            "code": "@Repository\nclass OrderRepository:\n    def all(self):\n        return [{\"sku\": \"anvil\", \"level\": 4}]"
+          },
+          {
+            "name": "server/__init__.py",
+            "code": ""
+          },
+          {
+            "name": "server/services/__init__.py",
+            "code": ""
+          },
+          {
+            "name": "server/repositories/__init__.py",
+            "code": ""
+          }
+        ]
+      },
+      {
+        "id": "php",
+        "name": "PHP",
+        "note": "No shebang: Yon appends the protocol runtime after the handler, which is what PHP needs anyway — it strips a shebang only from an entry script, and the handler is the entry script.",
+        "files": [
+          {
+            "name": "server/routes/orders/yon.php",
+            "code": "<?php\n// PHP has no autoloader here, so a layer is required by path. Tachyon appends\n// the protocol runtime after this file, which is what PHP needs anyway: it\n// strips a shebang only from an entry script, and the handler is the entry\n// script.\nrequire_once 'server/services/orders.php';\n\n#[Controller]\nclass OrdersController\n{\n    public static function GET(YonRequest $request): YonResponse\n    {\n        return YonResponse::json(json_encode(['orders' => OrderService::list()]));\n    }\n}"
+          },
+          {
+            "name": "server/services/orders.php",
+            "code": "<?php\nrequire_once 'server/repositories/orders.php';\n\n#[Service]\nclass OrderService\n{\n    public static function list(): array\n    {\n        return OrderRepository::all();\n    }\n}"
+          },
+          {
+            "name": "server/repositories/orders.php",
+            "code": "<?php\n\n#[Repository]\nclass OrderRepository\n{\n    public static function all(): array\n    {\n        return [['sku' => 'anvil', 'level' => 4]];\n    }\n}"
+          }
+        ]
+      },
+      {
+        "id": "java",
+        "name": "Java",
+        "note": "A class and methods, with no main and no imports for the protocol. Java has no JSON in its standard library and a single source file has no classpath to put one on, so Tachyon supplies Json.parse and Json.write in scope — along with the annotations, for the same reason.",
+        "files": [
+          {
+            "name": "server/routes/orders/yon.java",
+            "code": "import java.util.Map;\n\n@Controller\nclass OrdersController {\n    // No main: Tachyon appends the protocol and finds this class by the\n    // annotation on it rather than by its name. A method not declared here\n    // answers 405 without being written.\n    static YonResponse GET(YonRequest request) {\n        return YonResponse.json(Json.write(Map.of(\"id\", request.parameter(\"id\"))));\n    }\n}"
+          },
+          {
+            "name": "server/services/orders.java",
+            "code": "@Service\npublic class OrderService {\n    // Declared and checked today; not yet reachable from a handler, because a\n    // compiled handler is one source file and this is another.\n    static java.util.List<String> list() {\n        return java.util.List.of(\"anvil\");\n    }\n}"
+          },
+          {
+            "name": "server/repositories/orders.java",
+            "code": "@Repository\npublic class OrderRepository {\n  static java.util.List<String> all() {\n    return java.util.List.of(\"anvil\");\n  }\n}"
+          }
+        ]
+      },
+      {
+        "id": "csharp",
+        "name": "C#",
+        "note": "C# spells the usage [Controller] and the declaration ControllerAttribute; the suffix is dropped by the language. Cross-layer imports need the same compile-unit change Java does.",
+        "files": [
+          {
+            "name": "server/routes/orders/yon.cs",
+            "code": "[Controller]\nclass OrdersController\n{\n    // Only the methods this route answers. Every other one is a 405 without\n    // being written, and nothing here reads stdin or writes an envelope: the\n    // protocol runtime is compiled beside this file.\n    //\n    // Json is in scope without naming a namespace, under the same name every\n    // other language here gives it.\n    static YonResponse GET(YonRequest request) =>\n        YonResponse.Json(Json.Write(new { orders = OrderService.List() }));\n\n    static YonResponse POST(YonRequest request) =>\n        YonResponse\n            .Json(Json.Write(new { created = request.Parsed()[\"name\"]?.ToString() }))\n            .Status(201);\n}\n"
+          },
+          {
+            "name": "server/services/orders.cs",
+            "code": "using System.Collections.Generic;\n\n[Service]\nclass OrderService\n{\n    public IReadOnlyList<string> List() => new[] { \"anvil\" };\n}"
+          },
+          {
+            "name": "server/repositories/orders.cs",
+            "code": "using System.Collections.Generic;\n\n[Repository]\nclass OrderRepository\n{\n    public IReadOnlyList<string> All() => new[] { \"anvil\" };\n}"
+          }
+        ]
+      },
+      {
+        "id": "kotlin",
+        "name": "Kotlin",
+        "note": "An annotation class is three words in Kotlin. As with Java and C#, kotlinc builds one file, so the layers below are declared and checked but not yet importable.",
+        "files": [
+          {
+            "name": "server/routes/orders/yon.kt",
+            "code": "@Controller\nobject OrdersController {\n    fun get(): String = \"\"\"{\"orders\":[]}\"\"\"\n}\n\nfun main() {\n    generateSequence(::readLine).joinToString(\"\\n\")\n    print(\"\"\"{\"status\":200,\"headers\":{\"content-type\":[\"application/json\"]},\"body\":\"{\\\\\"orders\\\\\":[]}\"}\"\"\")\n}"
+          },
+          {
+            "name": "server/services/orders.kt",
+            "code": "@Service\nclass OrderService(private val repository: OrderRepository = OrderRepository()) {\n    fun list(): List<String> = repository.all()\n}"
+          },
+          {
+            "name": "server/repositories/orders.kt",
+            "code": "@Repository\nclass OrderRepository {\n    fun all(): List<String> = listOf(\"anvil\")\n}"
+          }
+        ]
+      },
+      {
+        "id": "rust",
+        "name": "Rust",
+        "note": "A struct and an impl — the same shape as the service and the repository below it, and the same shape a yon.js has. Reading standard input, dispatching on the method and writing the response envelope is Tachyon’s half, appended after the file. A method the handler does not declare answers 405 on its own.",
+        "files": [
+          {
+            "name": "server/routes/orders/yon.rs",
+            "code": "#[Controller]\nstruct OrdersController;\n\nimpl OrdersController {\n    // Only the methods this route answers. Every other one is a 405 without\n    // being written: the appended runtime supplies a default for each.\n    //\n    // Json is in scope without an import. Rust has none in its standard\n    // library and this compiles with no Cargo, so Tachyon supplies one rather\n    // than leaving a handler to escape a string by hand.\n    fn GET(request: &YonRequest) -> YonResponse {\n        YonResponse::json(Json::map([(\"id\", request.parameter(\"id\"))]))\n    }\n\n    fn POST(request: &YonRequest) -> YonResponse {\n        YonResponse::json(Json::map([(\"echoed\", request.json())])).status(201)\n    }\n}\n"
+          },
+          {
+            "name": "server/services/orders.rs",
+            "code": "#[Service]\npub struct OrderService;\n\nimpl OrderService {\n    // The same shape as the handler above: an attribute, a type, an impl.\n    pub fn list() -> Vec<&'static str> {\n        OrderRepository::all()\n    }\n}"
+          },
+          {
+            "name": "server/repositories/orders.rs",
+            "code": "#[Repository]\npub struct OrderRepository;\n\nimpl OrderRepository {\n    pub fn all() -> Vec<&'static str> {\n        vec![\"anvil\"]\n    }\n}"
+          }
+        ]
+      }
+    ]
+  }
+}

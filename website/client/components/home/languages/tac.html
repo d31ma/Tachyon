@@ -1,0 +1,51 @@
+<section id="languages" class="section" aria-labelledby="languages-heading">
+  <div class="section-head--center">
+    <span class="eyebrow">Show me the code</span>
+    <h2 id="languages-heading" class="section-title">One project, eight server languages.</h2>
+    <p class="section-lede mx-auto">
+      A Tac component's behaviour and a Yon route's handler are ordinary files beside the
+      thing they belong to, each compiled or run by its language's real toolchain. A Tac
+      companion reaches its platform; a Yon handler declares its layer.
+    </p>
+  </div>
+
+  <!-- Which half of the framework. Above the card rather than in it: it
+       chooses what the card is showing, not which of its files. -->
+  <div class="w-row ga-2 mt-8 flex-wrap justify-center" role="group" aria-label="Framework layer">
+    <w-btn :variant="layer === 'tac' ? 'filled' : 'outlined'" size="sm"
+           :aria-pressed="layer === 'tac' ? 'true' : 'false'"
+           on:click="pickLayer('tac')">Tac · browser and native</w-btn>
+    <w-btn :variant="layer === 'yon' ? 'filled' : 'outlined'" size="sm"
+           :aria-pressed="layer === 'yon' ? 'true' : 'false'"
+           on:click="pickLayer('yon')">Yon · server handlers</w-btn>
+  </div>
+
+  <p class="mt-4 text-sm opacity-70 max-w-[72ch] mx-auto text-center text-pretty" aria-live="polite">{summary()}</p>
+
+  <!-- Both cards are rendered, and the layer toggle hides one.
+       Not a conditional, deliberately. A component property is assigned once,
+       when the instance is created, and two <docs-snippet> elements in
+       mutually exclusive <logic> branches share a single instance — so the one
+       that rendered first kept its files and the toggle changed nothing but
+       the label. Rendering both means each is created once with the files it
+       keeps, and there is nothing left to reassign.
+
+       `hidden` rather than a class: it takes the card out of the accessibility
+       tree and the tab order too, which display:none alone would not
+       guarantee for a reader who never sees it. -->
+  <div :hidden="layer !== 'tac'">
+    <!-- Tac is one route across every target: the same view and stylesheet,
+         and the companion the platform strip selects. The very same component
+         the documentation uses, so what a reader learns on one page holds on
+         both. -->
+    <docs-snippet :files="suite()" hydrate="load" />
+  </div>
+
+  <div :hidden="layer !== 'yon'">
+    <!-- Yon is a different shape: no view beside it and no platform axis,
+         because a handler runs on the server wherever the application was
+         built for. Every language's suite goes in at once and the card groups
+         them, for the same assign-once reason. -->
+    <docs-snippet :files="handlers()" axis="language" hydrate="load" />
+  </div>
+</section>

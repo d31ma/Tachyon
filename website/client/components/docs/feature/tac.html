@@ -1,0 +1,35 @@
+<!-- One feature, one page, one URL. The explorer this replaces could show only
+     the feature you had clicked and could not be linked to, so every one of
+     these was unreachable from a search result. -->
+<div class="docs-page">
+  <main class="docs-article">
+    <docs-pagelinks :source="source()" />
+
+    <logic :if="entry().group">
+      <p class="feature-group">
+        <a :href="groupAnchor()">{entry().group}</a>
+      </p>
+    </logic>
+    <h1 class="text-section font-semibold text-balance">{entry().title}</h1>
+    <p class="mt-3 text-lede opacity-80 text-pretty">{entry().summary}</p>
+
+    <logic :if="files().length">
+      <div class="mt-6">
+        <docs-snippet :files="files()" hydrate="load" />
+      </div>
+    </logic>
+
+    <logic :if="entry().verify">
+      <p class="mt-4 text-sm opacity-60 text-pretty">
+        Verified by <code>{entry().verify}</code>.
+      </p>
+    </logic>
+
+    <docs-pager :path="path()" />
+  </main>
+
+  <!-- No contents list: a feature page is a title, a paragraph and its code,
+       which is one screen. A list of one entry is a link to the top of the
+       screen the reader is already looking at. -->
+  <aside class="docs-toc" aria-hidden="true"></aside>
+</div>

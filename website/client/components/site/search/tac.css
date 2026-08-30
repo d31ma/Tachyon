@@ -1,0 +1,64 @@
+.search-scrim {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--w-text) 45%, transparent);
+  z-index: 60;
+}
+
+.search-panel {
+  position: fixed;
+  z-index: 61;
+  top: 10vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(40rem, calc(100vw - 2rem));
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--w-surface);
+  border: 1px solid var(--w-border, color-mix(in srgb, var(--w-text) 14%, transparent));
+  border-radius: var(--w-radius-xl);
+  box-shadow: 0 24px 60px color-mix(in srgb, var(--w-text) 22%, transparent);
+}
+
+.search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 1rem 1.25rem;
+  border: 0;
+  border-bottom: 1px solid var(--w-border, color-mix(in srgb, var(--w-text) 14%, transparent));
+  background: transparent;
+  color: var(--w-text);
+  font: inherit;
+  font-size: 1.0625rem;
+}
+
+.search-input:focus { outline: none; }
+
+.search-results { list-style: none; margin: 0; padding: 0 0 0.5rem; }
+
+.search-hit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.625rem 1.25rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.search-hit:hover,
+.search-hit:focus-visible { background: var(--w-surface-container-high); }
+
+/* The palette opens with ⌘K, so its trigger is worth bar space exactly where
+   there is a keyboard to press. Keyed to the pointer rather than to a width:
+   a 1024px tablet has the room and still has no ⌘ key, and a narrow desktop
+   window has the key and not much room. */
+.site-search__trigger {
+  display: none;
+}
+
+@media (pointer: fine) {
+  .site-search__trigger {
+    display: inline-flex;
+  }
+}

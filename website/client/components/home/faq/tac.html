@@ -1,0 +1,16 @@
+<section class="section" aria-labelledby="faq-heading">
+  <div class="section-head--center">
+    <span class="eyebrow">Frequently asked</span>
+    <h2 id="faq-heading" class="section-title">The questions that decide it.</h2>
+  </div>
+
+  <!-- DuVay's expansion panels already do the disclosure, the animation and
+       the roving focus, so this is markup rather than a component. -->
+  <w-expansion-panels single class="mt-10 mx-auto max-w-[52rem]">
+    <loop :for="entry of entries()">
+      <w-expansion-panel :header="entry.question">
+        <p class="text-pretty opacity-85">{entry.answer}</p>
+      </w-expansion-panel>
+    </loop>
+  </w-expansion-panels>
+</section>

@@ -1,35 +1,16 @@
 {
-  "name": "Tachyon — full-stack ty framework",
+  "name": "Tachyon",
   "short_name": "Tachyon",
-  "description": "A polyglot, file-system-routed full-stack framework where strict HTML becomes reactive browser DOM or native platform controls.",
-  "id": "/",
+  "description": "A polyglot, file-system-routed full-stack framework shipped as one binary.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "any",
-  "background_color": "#f8faf9",
-  "theme_color": "#f8faf9",
+  "background_color": "#07090d",
+  "theme_color": "#22d3ee",
   "icons": [
-    {
-      "src": "/shared/assets/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/shared/assets/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    },
-    {
-      "src": "/shared/assets/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/shared/assets/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
-    }
+    { "src": "/shared/assets/logo-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/shared/assets/logo-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/shared/assets/logo-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" },
+    { "src": "/shared/assets/logo.svg", "sizes": "any", "type": "image/svg+xml" }
   ]
 }
