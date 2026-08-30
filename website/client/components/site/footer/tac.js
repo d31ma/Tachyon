@@ -6,7 +6,7 @@ export default class {
         links: [
           { label: 'Introduction', href: '/docs/introduction' },
           { label: 'Routing', href: '/docs/routing' },
-          { label: 'Tac views', href: '/docs/tac' },
+          { label: 'Tac views', href: '/docs/templates' },
           { label: 'Yon handlers', href: '/docs/yon' },
         ],
       },
@@ -14,8 +14,8 @@ export default class {
         title: 'Explore',
         links: [
           { label: 'Every feature', href: '/docs/features' },
-          { label: 'Languages', href: '/docs/languages' },
-          { label: 'Build targets', href: '/docs/targets' },
+          { label: 'Languages', href: '/docs/polyglot' },
+          { label: 'Build targets', href: '/docs/devices' },
         ],
       },
       {
