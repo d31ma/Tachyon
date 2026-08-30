@@ -6,8 +6,12 @@
 mod unix {
     use serde_json::Value;
     use std::fs;
-    use std::io::{BufRead as _, BufReader, Read as _, Write as _};
-    use std::net::{TcpListener, TcpStream};
+    use std::io::{BufRead as _, BufReader};
+    #[cfg(target_os = "macos")]
+    use std::io::{Read as _, Write as _};
+    use std::net::TcpListener;
+    #[cfg(target_os = "macos")]
+    use std::net::TcpStream;
     use std::process::{Child, Command, Stdio};
     use std::sync::Mutex;
     use std::sync::mpsc::{self, Receiver};
@@ -276,6 +280,7 @@ mod unix {
         );
     }
 
+    #[cfg(target_os = "macos")]
     fn ready_address(receiver: &Receiver<String>) -> String {
         let ready = receiver
             .recv_timeout(Duration::from_secs(10))
@@ -289,6 +294,7 @@ mod unix {
             .to_owned()
     }
 
+    #[cfg(target_os = "macos")]
     fn probe(address: &str) {
         let mut stream = TcpStream::connect(address).expect("server should accept a probe");
         stream
