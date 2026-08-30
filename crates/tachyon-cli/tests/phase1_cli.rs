@@ -178,10 +178,27 @@ fn stop(child: &mut Child) {
 }
 
 const MAX_REQUEST_ATTEMPTS: usize = 3;
+const MAX_CONNECT_ATTEMPTS: usize = 20;
+
+fn connect(socket: &str) -> TcpStream {
+    for attempt in 1..=MAX_CONNECT_ATTEMPTS {
+        match TcpStream::connect(socket) {
+            Ok(connection) => return connection,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ConnectionRefused
+                    && attempt < MAX_CONNECT_ATTEMPTS =>
+            {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Err(error) => panic!("server should accept connections: {error}"),
+        }
+    }
+    unreachable!("the final connection attempt returns or panics")
+}
 
 fn request(socket: &str, request: &[u8]) -> String {
     for attempt in 1..=MAX_REQUEST_ATTEMPTS {
-        let mut connection = TcpStream::connect(socket).expect("server should accept connections");
+        let mut connection = connect(socket);
         connection
             .write_all(request)
             .expect("request should be sent");
@@ -588,7 +605,7 @@ fn development_server_builds_and_serves_with_defensive_headers() {
     let mut child = ty()
         .arg("serve")
         .arg(&project)
-        .args(["--port", "0"])
+        .args(["--port", "0", "--no-watch"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
