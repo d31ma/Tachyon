@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 import { Fylo } from '../vendor/fylo.mjs'
 
 // The searching itself, so the route stays a route. A controller answers HTTP

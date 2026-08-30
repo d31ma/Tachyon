@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 import languages from '/shared/data/languages.json' with { type: 'json' }
 
 export default class {

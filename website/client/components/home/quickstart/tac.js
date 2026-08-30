@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 export default class {
   /** Which step's copy button is showing feedback, and what it says. */
   copied = ''

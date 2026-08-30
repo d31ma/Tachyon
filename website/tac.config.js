@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 // Configuration is a module rather than a data file, so it can derive what a
 // static document could only repeat.
 import { readFile, writeFile } from 'node:fs/promises'

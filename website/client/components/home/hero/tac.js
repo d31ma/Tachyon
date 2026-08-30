@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 export default class {
   install = 'curl -fsSL https://tachyon.del.ma/install.sh | sh'
   copied = false

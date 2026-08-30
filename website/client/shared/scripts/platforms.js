@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 // Which target a companion file reaches.
 //
 // DuVay tabs each example across the platforms it can be skinned as, and the

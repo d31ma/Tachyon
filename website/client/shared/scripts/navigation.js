@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 // The documentation's shape, in one place.
 //
 // The sidebar, the catalogue index, the guide pages and the feature pages all

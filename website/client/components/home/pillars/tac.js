@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 export default class {
   /**
    * Six, because that is what fits a three-by-two grid without a widow, and

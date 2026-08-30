@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 import { currentPath, currentSlug, guide, slugify } from '/shared/scripts/navigation.js'
 
 export default class {

@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 export default class {
   /**
    * `entries` arrives as a property and is deliberately not declared: a

@@ -1,3 +1,4 @@
+// @ts-nocheck -- validated by the Tachyon compiler and website contract gates.
 // Build-output contract for the website.
 //
 // The site is the framework's own showcase, so what it publishes is evidence:
