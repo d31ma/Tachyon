@@ -17,10 +17,10 @@ export default class {
     } catch {
       this.copied = false
     }
-    await this.tac.render()
+    await globalThis.__tachyonTac?.render()
     setTimeout(() => {
       this.copied = false
-      void this.tac.render()
+      void globalThis.__tachyonTac?.render()
     }, 2000)
   }
 }

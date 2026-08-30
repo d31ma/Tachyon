@@ -131,9 +131,9 @@ export default class {
       // A companion chosen under the old platform may not reach the new one,
       // so the selection falls back to the first that does.
       this.companion = ''
-      void this.tac.render()
+      void globalThis.__tachyonTac?.render()
     })
-    void this.tac.render()
+    void globalThis.__tachyonTac?.render()
   }
 
   async copy(_event, name) {
@@ -150,10 +150,10 @@ export default class {
       // anything at all.
       this.copiedLabel = 'Press ⌘C'
     }
-    await this.tac.render()
+    await globalThis.__tachyonTac?.render()
     setTimeout(() => {
       this.copied = ''
-      void this.tac.render()
+      void globalThis.__tachyonTac?.render()
     }, 2000)
   }
 }

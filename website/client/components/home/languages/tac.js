@@ -35,10 +35,10 @@ export default class {
       // button says what to press instead of failing silently.
       this.copyLabel = 'Press \u2318C'
     }
-    await this.tac.render()
+    await globalThis.__tachyonTac?.render()
     setTimeout(() => {
       this.copyLabel = 'Copy'
-      void this.tac.render()
+      void globalThis.__tachyonTac?.render()
     }, 2000)
   }
 

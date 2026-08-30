@@ -45,6 +45,20 @@ describe('published output', () => {
     expect(source).toContain('tailwindcss/utilities.css')
     expect(source).not.toContain('"tailwindcss"')
   })
+
+  test('interactive components use the current client render hook', async () => {
+    for (const component of [
+      'home/hero',
+      'home/quickstart',
+      'home/languages',
+      'docs/snippet',
+      'site/search',
+    ]) {
+      const source = await read(`client/components/${component}/tac.js`)
+      expect(source).not.toContain('this.tac.render')
+      expect(source).toContain('globalThis.__tachyonTac?.render()')
+    }
+  })
 })
 
 describe('language coverage', () => {
