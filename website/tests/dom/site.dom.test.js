@@ -187,6 +187,18 @@ describe('homepage render plan', () => {
 })
 
 describe('atlas render plans', () => {
+    test('keeps realtime messages readable and sidebar links touch-friendly on mobile', async () => {
+        const realtimeStyles = await read('client/components/panel/realtime/tac.css')
+        const sidebarStyles = await read('client/components/atlas/sidebar/tac.css')
+
+        expect(realtimeStyles).toContain('min-width: 0')
+        expect(realtimeStyles).toContain('white-space: pre-wrap')
+        expect(realtimeStyles).toContain('overflow-wrap: anywhere')
+        expect(sidebarStyles).toContain('@media (max-width: 760px)')
+        expect(sidebarStyles).toContain('min-height: 44px')
+        expect(sidebarStyles).toContain('align-items: center')
+    })
+
     test('use a docs-style shell with a section sidebar on every page', () => {
         for (const page of [atlas, ...Object.values(atlasSections)]) {
             expect(page.nodes.some((node) => hasClass(node, 'atlas-shell'))).toBe(true)

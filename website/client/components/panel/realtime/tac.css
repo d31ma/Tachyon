@@ -58,6 +58,9 @@
   list-style: none;
   display: grid;
   gap: 0.5rem;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .rt-messages li {
