@@ -11,6 +11,15 @@
 // Everything is package-private. Java allows one public type per file and
 // names the file after it, so five public types would have to be five files.
 
+// Java source-file launch mode executes the first top-level class. Keep this
+// launcher first even though the protocol implementation and authored
+// controller are declared later in the compilation unit.
+final class YonLauncher {
+    public static void main(String[] args) throws java.io.IOException {
+        Yon.main(args);
+    }
+}
+
 // The stereotypes, declared here because a single source file has no
 // classpath to find them on. SOURCE retention: Tachyon reads them before the
 // compiler runs, and nothing reads them back.

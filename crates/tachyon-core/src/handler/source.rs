@@ -2303,11 +2303,77 @@ fn stereotype_prelude(extension: &str) -> &'static str {
     }
 }
 
-/// Stages a copy of a handler with the protocol appended after it.
+/// Returns the byte offset after Java package/import declarations and trivia.
 ///
-/// For a language whose handler is run rather than compiled by
-/// `compile_handler`, which does the same thing on its way to an artefact.
-/// Cached on the source digest, so an unchanged handler is staged once.
+/// Source-file launch mode executes the first top-level class. Tachyon's
+/// launcher therefore has to precede authored types, while package and import
+/// declarations must remain at the beginning of the compilation unit.
+fn java_preamble_end(source: &str) -> usize {
+    let bytes = source.as_bytes();
+    let mut at = 0;
+    loop {
+        loop {
+            while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+                at += 1;
+            }
+            if bytes.get(at..at + 2) == Some(b"//") {
+                at += 2;
+                while bytes.get(at).is_some_and(|byte| *byte != b'\n') {
+                    at += 1;
+                }
+                continue;
+            }
+            if bytes.get(at..at + 2) == Some(b"/*") {
+                at += 2;
+                while at < bytes.len() && bytes.get(at..at + 2) != Some(b"*/") {
+                    at += 1;
+                }
+                at = (at + 2).min(bytes.len());
+                continue;
+            }
+            break;
+        }
+
+        let declaration = [b"package".as_slice(), b"import".as_slice()]
+            .into_iter()
+            .find(|keyword| {
+                bytes.get(at..at + keyword.len()) == Some(*keyword)
+                    && bytes
+                        .get(at + keyword.len())
+                        .is_some_and(u8::is_ascii_whitespace)
+            });
+        if declaration.is_none() {
+            return at;
+        }
+        while bytes.get(at).is_some_and(|byte| *byte != b';') {
+            at += 1;
+        }
+        if at == bytes.len() {
+            return at;
+        }
+        at += 1;
+    }
+}
+
+fn java_runtime_source(contents: &str, protocol: &str) -> String {
+    let preamble_end = java_preamble_end(contents);
+    let mut combined = String::with_capacity(contents.len() + protocol.len() + 2);
+    combined.push_str(&contents[..preamble_end]);
+    if !combined.is_empty() && !combined.ends_with('\n') {
+        combined.push('\n');
+    }
+    combined.push_str(protocol);
+    if !combined.ends_with('\n') {
+        combined.push('\n');
+    }
+    combined.push_str(&contents[preamble_end..]);
+    combined
+}
+
+/// Stages a Java handler with Tachyon's source-file launcher before its types.
+///
+/// Cached on the complete staged source, so an unchanged handler is staged
+/// once and a protocol change cannot reuse an obsolete runtime.
 fn stage_with_prelude(
     bytes: &[u8],
     portable: &str,
@@ -2317,24 +2383,22 @@ fn stage_with_prelude(
     let contents =
         materialize_compiled_relays(extension, &String::from_utf8_lossy(bytes), portable)?;
     let protocol = protocol_prelude(extension, &contents);
-    // Keyed on the handler *and* the protocol appended to it. Hashing only the
-    // handler meant a changed prelude reused a copy built from the old one,
-    // which is a stale artefact that looks like a cache hit.
-    let mut keyed = contents.as_bytes().to_vec();
-    keyed.extend_from_slice(protocol.as_bytes());
-    let digest = crate::compiler::hex_digest(Sha256::digest(&keyed));
-    // JEP 330 finds the entry class by the file's name, not by its position,
-    // so the staged copy has to be named after it. The digest goes in the
-    // directory instead: a Java class name cannot begin with a digit or hold a
-    // hyphen, which is what a digest-named file would have given it.
+    let combined = java_runtime_source(&contents, &protocol);
+    let digest = crate::compiler::hex_digest(Sha256::digest(combined.as_bytes()));
+    // The digest goes in the directory so the staged source keeps a stable,
+    // human-readable name for diagnostics.
     let cache_directory = PathBuf::from(&digest);
     let staged = cache_directory.join(format!("Yon.{extension}"));
-    let mut combined = contents.as_bytes().to_vec();
-    combined.push(b'\n');
-    combined.extend_from_slice(protocol.as_bytes());
     let workspace = RuntimeWorkspace::new(portable)?;
     let runtime = workspace.path().join(format!("Yon.{extension}"));
-    stage_and_copy(cache, &staged, &combined, &runtime, &digest, portable)?;
+    stage_and_copy(
+        cache,
+        &staged,
+        combined.as_bytes(),
+        &runtime,
+        &digest,
+        portable,
+    )?;
     Ok(PreparedCommand {
         interpreter: vec![String::from("java"), runtime.to_string_lossy().into_owned()],
         workspace,
@@ -2684,7 +2748,8 @@ mod tests {
     use super::super::cache::{CacheDirectory, CacheLock, OwnedCacheEntry};
     use super::{
         HandlerLanguage, HandlerSource, bounded_compiler_output_with_limits, compiled_digest,
-        csharp_digest, materialize_compiled_relays, valid_csharp_cache, validate_relay_placement,
+        csharp_digest, java_runtime_source, materialize_compiled_relays, valid_csharp_cache,
+        validate_relay_placement,
     };
     #[cfg(unix)]
     use super::{RUST_STEREOTYPE_CRATE, stereotype_crate};
@@ -2727,6 +2792,19 @@ mod tests {
             CacheDirectory::open_test_root(parent).expect("cache capability"),
             relative,
         )
+    }
+
+    #[test]
+    fn java_runtime_keeps_declarations_first_and_launcher_before_authored_types() {
+        let authored = "/* license */\npackage example;\nimport java.util.Map;\n\nclass Helper {}\n@Controller\nclass OrdersController {}\n";
+        let protocol = "final class YonLauncher { public static void main(String[] args) {} }\n";
+        let staged = java_runtime_source(authored, protocol);
+
+        let package = staged.find("package example;").expect("package");
+        let import = staged.find("import java.util.Map;").expect("import");
+        let launcher = staged.find("final class YonLauncher").expect("launcher");
+        let helper = staged.find("class Helper").expect("authored helper");
+        assert!(package < import && import < launcher && launcher < helper);
     }
 
     fn acquire_cache_lock(path: &Path, portable: &str) -> Result<CacheLock, crate::Failure> {

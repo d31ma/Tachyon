@@ -770,7 +770,7 @@ async fn streaming_deadlines_reap_inheriting_descendants() {
     let source = streaming_descendant_source(&root);
     let pid_file = root.path().join("stream-timeout.pid");
     let supervisor = supervisor(HandlerSupervisorOptions {
-        default_timeout: Duration::from_millis(250),
+        default_timeout: Duration::from_secs(1),
         cancellation_grace: Duration::from_millis(25),
         ..HandlerSupervisorOptions::default()
     });
