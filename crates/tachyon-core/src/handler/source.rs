@@ -2410,7 +2410,7 @@ fn stage_with_prelude(
 /// Tachyon's own, not the project's: a handler should not have to ship the
 /// half of the protocol Tachyon owns, and `server/lib/tachyon.php` was that
 /// half living in every project that wrote a PHP handler.
-fn php_ini_path(path: &Path) -> String {
+fn php_cli_path(path: &Path) -> String {
     #[cfg(windows)]
     {
         // PHP parses `-d` values as INI syntax. Forward slashes preserve an
@@ -2461,8 +2461,9 @@ fn prepare_php(
         interpreter: vec![
             String::from("php"),
             String::from("-d"),
-            format!("auto_append_file={}", php_ini_path(&runtime_copy)),
-            handler_copy.to_string_lossy().into_owned(),
+            format!("auto_append_file={}", php_cli_path(&runtime_copy)),
+            String::from("-f"),
+            php_cli_path(&handler_copy),
         ],
         workspace,
     })
@@ -3517,9 +3518,9 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn php_ini_paths_use_unambiguous_windows_separators() {
+    fn php_cli_paths_use_unambiguous_windows_separators() {
         assert_eq!(
-            super::php_ini_path(Path::new(r"C:\runtime\yon-runtime.php")),
+            super::php_cli_path(Path::new(r"C:\runtime\yon-runtime.php")),
             "C:/runtime/yon-runtime.php"
         );
     }
