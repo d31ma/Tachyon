@@ -282,6 +282,8 @@ static void tachyon_scheme_request(WebKitURISchemeRequest *request, gpointer dat
   WebKitURISchemeResponse *response = webkit_uri_scheme_response_new(stream, info.st_size);
   webkit_uri_scheme_response_set_content_type(response, tachyon_content_type(relative));
   SoupMessageHeaders *headers = soup_message_headers_new(SOUP_MESSAGE_HEADERS_RESPONSE);
+  /* WebKit's stylesheet nosniff check reads the HTTP header, not mimeType. */
+  soup_message_headers_append(headers, "Content-Type", tachyon_content_type(relative));
   soup_message_headers_append(headers, "Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https:; frame-src 'none'; object-src 'none'; base-uri 'self'");
   soup_message_headers_append(headers, "X-Content-Type-Options", "nosniff");
   webkit_uri_scheme_response_set_http_headers(response, headers);

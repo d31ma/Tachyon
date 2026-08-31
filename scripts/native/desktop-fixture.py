@@ -53,8 +53,11 @@ export default class {{
     this.count = {number};
     this.status = 'Native {language} ' + await this.doubled();
     this.platformStatus = await this.processId() > 0 ? 'OS ready' : 'OS failed';
+    const stylesheet = await fetch('/shared/native-gate.css', {{ signal: AbortSignal.timeout(5000) }});
+    const stylesheetType = stylesheet.headers.get('content-type')?.split(';')[0].trim();
     const style = getComputedStyle(document.body).getPropertyValue('--native-gate').trim();
-    this.styleStatus = style === 'ready' ? 'Styles ready' : 'Styles failed';
+    this.styleStatus = stylesheet.ok && stylesheetType === 'text/css' && style === 'ready'
+      ? 'Styles ready' : 'Styles failed';
     let routeRejected = false;
     try {{
       const rejected = JSON.parse(await globalThis.__tachyonNativeHostCall(

@@ -913,6 +913,8 @@ static HRESULT STDMETHODCALLTYPE controller_invoke(
   ICoreWebView2_add_NavigationStarting(g_webview, (ICoreWebView2NavigationStartingEventHandler *)&g_navigation_handler, &token);
   ICoreWebView2_add_FrameNavigationStarting(g_webview, (ICoreWebView2NavigationStartingEventHandler *)&g_navigation_handler, &token);
   ICoreWebView2_add_NewWindowRequested(g_webview, (ICoreWebView2NewWindowRequestedEventHandler *)&g_new_window_handler, &token);
+  /* WebView2 folder mappings bypass WebResourceRequested. This responder must
+     own the origin so root and dynamic routes resolve to compiled documents. */
   ICoreWebView2_AddWebResourceRequestedFilter(g_webview, L"https://tachyon.local/*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
   ICoreWebView2_add_WebResourceRequested(g_webview, (ICoreWebView2WebResourceRequestedEventHandler *)&g_resource_handler, &token);
 
@@ -925,15 +927,6 @@ static HRESULT STDMETHODCALLTYPE controller_invoke(
   if (separator == NULL) return E_FAIL;
   *separator = L'\0';
   if (wcscat_s(g_resource_root, MAX_PATH, L"\\resources\\WebBundle") != 0) return E_FAIL;
-  /* ICoreWebView2_3's published interface identifier; using a local constant
-     avoids relying on a C++ __uuidof extension in this C17 host. */
-  const IID webview3_iid = {0xa0d6df20,0x3b92,0x416d,{0xaa,0x0c,0x43,0x7a,0x9c,0x72,0x78,0x57}};
-  ICoreWebView2_3 *mapped = NULL;
-  if (FAILED(ICoreWebView2_QueryInterface(g_webview, &webview3_iid, (void **)&mapped)) || mapped == NULL) return E_NOINTERFACE;
-  HRESULT mapping = ICoreWebView2_3_SetVirtualHostNameToFolderMapping(mapped, L"tachyon.local", g_resource_root, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY);
-  ICoreWebView2_3_Release(mapped);
-  if (FAILED(mapping)) return mapping;
-
   /* Injected before the bundle's own scripts, the same shim every host uses,
      with the Windows half of the bridge appended. */
   size_t script_size = strlen(TACHYON_NATIVE_SHIM) + 2048;
@@ -1122,13 +1115,25 @@ mod tests {
         // Nothing lowers the view into a generated control table any more.
         assert!(!source.contains("TACHYON_ITEMS"));
         assert!(!source.contains("tachyon_create_controls"));
-        assert!(source.contains("SetVirtualHostNameToFolderMapping"));
         assert!(source.contains("ICoreWebView2WebMessageReceivedEventArgs_get_Source"));
         assert!(source.contains("tachyon_payload_route_matches"));
         assert!(source.contains("TachyonRustCompanion.dll"));
         assert!(source.contains("CoInitializeEx"));
         assert!(!source.contains("file:///"));
         assert!(!source.contains("char script[8192]"));
+    }
+
+    #[test]
+    fn bundle_requests_reach_the_canonical_route_responder() {
+        let source = c_source(&application(), &index(), &[]);
+        // A virtual-folder mapping bypasses WebResourceRequested entirely:
+        // `/` becomes a directory, and dynamic paths never reach the resolver.
+        assert!(!source.contains("SetVirtualHostNameToFolderMapping"));
+        assert!(source.contains("ICoreWebView2_AddWebResourceRequestedFilter"));
+        assert!(source.contains("ICoreWebView2_add_WebResourceRequested"));
+        assert!(source.contains("tachyon_bundle_path(path, relative, sizeof(relative))"));
+        assert!(source.contains("ICoreWebView2WebResourceRequestedEventArgs_put_Response"));
+        assert!(source.contains("Content-Security-Policy: default-src 'self'"));
     }
 
     #[test]
