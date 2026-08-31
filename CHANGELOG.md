@@ -8,6 +8,8 @@ independent major versions.
 
 ## [Unreleased]
 
+## [26.36.01] - 2026-08-31
+
 ### Added
 
 - Reconcile the newer local feature inventory with the released Rust engine:
@@ -49,6 +51,9 @@ independent major versions.
   viewport metadata. Bound nested empty loops and cancel stale component mounts.
 - Preserve per-route native companion state, reject mismatched route/origin
   bridge requests and package Android `_id` dynamic route directories.
+- Serve Linux native stylesheets with their HTTP content type and route
+  Windows WebView2 resources through the canonical local responder, including
+  dynamic pages and their native companions.
 - Scope compiled-controller endpoint and stream discovery to the controller,
   excluding colocated helper types. Execute published layered examples against
   all eight server runtimes and report unexecuted snippets separately.
@@ -65,7 +70,8 @@ independent major versions.
 - Existing version tags and assets remain unchanged. See
   [the reconciliation inventory](docs/RECONCILIATION.md) and
   [client migration guide](docs/CLIENT_RUNTIME_MIGRATION.md) for acceptance
-  evidence and compatibility decisions. This candidate is not yet published.
+  evidence and compatibility decisions. The release workflow verifies the
+  restored features in downloaded executables before publication.
 
 ## [26.35.07] - 2026-08-30
 

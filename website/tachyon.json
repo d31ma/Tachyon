@@ -2,7 +2,7 @@
   "application": {
     "name": "Tachyon",
     "id": "ma.del.tachyon.website",
-    "version": "26.35.07",
+    "version": "26.36.01",
     "entry_route": "/"
   }
 }
