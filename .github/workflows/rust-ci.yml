@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
@@ -55,7 +55,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal --component clippy,rustfmt && rustup default 1.97.1
@@ -116,7 +116,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
@@ -134,7 +134,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
@@ -197,7 +197,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
@@ -269,7 +269,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build the pinned Linux execution image
         run: docker build -f scripts/linux/Dockerfile -t tachyon-linux-gate:${{ env.RUST_TOOLCHAIN }} scripts/linux
@@ -291,7 +291,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
@@ -320,7 +320,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
@@ -417,7 +417,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
@@ -466,7 +466,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install the pinned nightly toolchain
         run: rustup toolchain install nightly-2026-07-20 --profile minimal --component rust-src
@@ -499,7 +499,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install the pinned nightly toolchain
         run: rustup toolchain install nightly-2026-07-20 --profile minimal --component rust-src
@@ -542,7 +542,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
@@ -559,7 +559,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
@@ -600,7 +600,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
@@ -629,7 +629,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal --component llvm-tools-preview && rustup default 1.97.1
