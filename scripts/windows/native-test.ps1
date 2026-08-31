@@ -90,6 +90,42 @@ function Write-NativeFailureDiagnostics($process, $window, [string] $log) {
     Write-UiaFailureDiagnostics $window
 }
 
+function Stop-NativeProcesses($process) {
+    if ($null -eq $process) { return }
+    # The host can exit before its WebView releases the private profile files.
+    # Capture only its browser children while parentage is still observable.
+    $browsers = @(Get-CimInstance Win32_Process -Filter (
+        "ParentProcessId = $($process.Id) AND Name = 'msedgewebview2.exe'") -OperationTimeoutSec 2 |
+        Select-Object -First 16 |
+        ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue })
+    $owned = @($process) + $browsers
+    if (-not $process.HasExited) { $process.CloseMainWindow() | Out-Null }
+    $grace = [DateTime]::UtcNow.AddSeconds(5)
+    foreach ($ownedProcess in $owned) {
+        $wait = [Math]::Max(0, [int]($grace - [DateTime]::UtcNow).TotalMilliseconds)
+        if (-not $ownedProcess.WaitForExit($wait)) {
+            # Windows PowerShell/.NET Framework has no Process.Kill(bool).
+            & taskkill /PID $ownedProcess.Id /T /F | Out-Null
+        }
+    }
+    $until = [DateTime]::UtcNow.AddSeconds(5)
+    foreach ($ownedProcess in $owned) {
+        $wait = [Math]::Max(0, [int]($until - [DateTime]::UtcNow).TotalMilliseconds)
+        if (-not $ownedProcess.WaitForExit($wait)) { throw 'owned native process cleanup timed out' }
+    }
+}
+
+function Remove-NativeFixture([string] $fixture) {
+    $until = [DateTime]::UtcNow.AddSeconds(5)
+    while (Test-Path -LiteralPath $fixture) {
+        try { Remove-Item -LiteralPath $fixture -Recurse -Force; return }
+        catch [System.IO.IOException] {
+            if ([DateTime]::UtcNow -ge $until) { throw }
+            Start-Sleep -Milliseconds 200
+        }
+    }
+}
+
 Enable-Msvc
 Enable-WebViewSdk
 $fixture = Join-Path $env:TEMP ("ty-windows-native-" + [guid]::NewGuid().ToString('N'))
@@ -98,6 +134,7 @@ $app = Join-Path $out 'NativeGate'
 $log = Join-Path $env:LOCALAPPDATA 'Tachyon\dev.tachyon.desktop-gate.jsonl'
 $process = $null
 $window = $null
+$gateFailure = $null
 
 try {
     python scripts/native/desktop-fixture.py $fixture windows
@@ -196,16 +233,14 @@ catch {
     throw $gateFailure
 }
 finally {
-    if ($null -ne $process -and -not $process.HasExited) {
-        $process.CloseMainWindow() | Out-Null
-        if (-not $process.WaitForExit(5000)) {
-            # Windows PowerShell uses .NET Framework, whose Process has no
-            # Kill(bool) overload. Terminate the owned WebView process tree.
-            & taskkill /PID $process.Id /T /F | Out-Null
-            if (-not $process.WaitForExit(5000)) { Write-Warning 'native process cleanup timed out' }
-        }
+    try {
+        Stop-NativeProcesses $process
+        Remove-NativeFixture $fixture
     }
-    if (Test-Path $fixture) { Remove-Item -Recurse -Force $fixture }
+    catch {
+        if ($null -eq $gateFailure) { throw }
+        Write-Warning "Native cleanup also failed: $($_.Exception.Message)"
+    }
 }
 
 if (-not (Test-Path $log)) { throw 'native lifecycle log was not produced' }

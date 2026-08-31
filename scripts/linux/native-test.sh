@@ -36,8 +36,10 @@ export XDG_STATE_HOME="$FIXTURE/state"
 export XDG_DATA_HOME="$FIXTURE/data"
 export GDK_BACKEND=x11
 export GTK_A11Y=atspi
-export WEBKIT_DISABLE_COMPOSITING_MODE=1
-export WEBKIT_DISABLE_DMABUF_RENDERER=1
+# Document transitions still need WebKit's compositor on headless Xvfb.
+# Use Mesa software rendering and shared-memory buffers, not disabled backing stores.
+export LIBGL_ALWAYS_SOFTWARE=1
+export WEBKIT_DMABUF_RENDERER_FORCE_SHM=1
 export APP
 timeout 150s xvfb-run --auto-servernum --server-args='-screen 0 1024x1400x24' \
   dbus-run-session -- bash -c '
