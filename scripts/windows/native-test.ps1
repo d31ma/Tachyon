@@ -37,6 +37,59 @@ function Enable-WebViewSdk {
     $env:TAC_WEBVIEW2_SDK = $directory
 }
 
+function Write-UiaFailureDiagnostics($window) {
+    if ($null -eq $window) {
+        Write-Host 'UIA: no top-level window was found for the owned native process'
+        return
+    }
+    # Inspect only the fixture's selected window, never the whole desktop.
+    # Cap traversal and output so diagnostics do not become another UI gate.
+    $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+    $queue = [System.Collections.Queue]::new()
+    $queue.Enqueue($window)
+    $remaining = 64
+    $until = [DateTime]::UtcNow.AddSeconds(3)
+    while ($queue.Count -gt 0 -and $remaining -gt 0 -and [DateTime]::UtcNow -lt $until) {
+        $element = $queue.Dequeue()
+        $current = $element.Current
+        $name = ($current.Name -replace '[\r\n\t]', ' ')
+        if ($name.Length -gt 160) { $name = $name.Substring(0, 160) + '...' }
+        Write-Host ("UIA: type={0}; name={1}; class={2}; pid={3}; offscreen={4}" -f
+            $current.ControlType.ProgrammaticName, $name, $current.ClassName,
+            $current.ProcessId, $current.IsOffscreen)
+        $remaining--
+        $child = $walker.GetFirstChild($element)
+        while ($null -ne $child -and $queue.Count -lt $remaining -and [DateTime]::UtcNow -lt $until) {
+            $queue.Enqueue($child)
+            $child = $walker.GetNextSibling($child)
+        }
+    }
+    Write-Host ("UIA diagnostic traversal ended: nodes={0}; queued={1}" -f (64 - $remaining), $queue.Count)
+}
+
+function Write-NativeFailureDiagnostics($process, $window, [string] $log) {
+    Write-Host 'Windows native failure diagnostics (before owned-process cleanup):'
+    if (Test-Path $log) {
+        Write-Host 'Native lifecycle log (last 32 records):'
+        Get-Content -LiteralPath $log -Tail 32 | ForEach-Object { Write-Host $_ }
+    } else {
+        Write-Host 'Native lifecycle log: absent'
+    }
+    if ($null -ne $process) {
+        $process.Refresh()
+        Write-Host ("Owned process: pid={0}; exited={1}" -f $process.Id, $process.HasExited)
+        if ($process.HasExited) {
+            Write-Host ("Owned process exit code: {0}" -f $process.ExitCode)
+        } else {
+            Write-Host ("Owned window: handle={0}; responding={1}" -f $process.MainWindowHandle, $process.Responding)
+            Get-CimInstance Win32_Process -Filter "ParentProcessId = $($process.Id)" -OperationTimeoutSec 2 |
+                Select-Object -First 16 Name, ProcessId, ParentProcessId |
+                Format-Table -AutoSize | Out-String | Write-Host
+        }
+    }
+    Write-UiaFailureDiagnostics $window
+}
+
 Enable-Msvc
 Enable-WebViewSdk
 $fixture = Join-Path $env:TEMP ("ty-windows-native-" + [guid]::NewGuid().ToString('N'))
@@ -44,6 +97,7 @@ $out = Join-Path $fixture 'dist\windows'
 $app = Join-Path $out 'NativeGate'
 $log = Join-Path $env:LOCALAPPDATA 'Tachyon\dev.tachyon.desktop-gate.jsonl'
 $process = $null
+$window = $null
 
 try {
     python scripts/native/desktop-fixture.py $fixture windows
@@ -83,7 +137,6 @@ try {
     $desktop = [System.Windows.Automation.AutomationElement]::RootElement
     $process = Start-Process -FilePath (Join-Path $app 'bin\NativeGate.exe') -PassThru
     $deadline = [DateTime]::UtcNow.AddSeconds(120)
-    $window = $null
 
     function Find-Control([string] $name) {
         if ($null -eq $script:window) {
@@ -135,6 +188,12 @@ try {
     Invoke-Control 'Leave app'
     Start-Sleep -Milliseconds 500
     Expect-Controls @('Root route', 'Root count 7', 'Verify native Root')
+}
+catch {
+    $gateFailure = $_
+    try { Write-NativeFailureDiagnostics $process $window $log }
+    catch { Write-Warning "Native failure diagnostics were incomplete: $($_.Exception.Message)" }
+    throw $gateFailure
 }
 finally {
     if ($null -ne $process -and -not $process.HasExited) {

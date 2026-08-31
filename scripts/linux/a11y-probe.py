@@ -39,7 +39,9 @@ def snapshot(root):
         result.add(node.get_name())
         text = node.get_text_iface()
         if text is not None:
-            result.add(text.get_text(0, min(text.get_character_count(), 512)))
+            # Accessible.get_text() shadows the Text interface's range method.
+            end = min(Atspi.Text.get_character_count(text), 512)
+            result.add(Atspi.Text.get_text(text, 0, end))
     return result
 
 

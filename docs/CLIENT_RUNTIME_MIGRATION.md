@@ -216,6 +216,13 @@ bridge is restricted to the packaged local application, not remote pages or
 subframes. Its protocol carries the compiler's canonical route for every
 `init`, `get`, `set`, or `call` operation.
 
+The former fixed JavaScript host verbs (`host.on`, `shortcuts.register`, and
+`contentSurface.open/state`) are not compatibility APIs of this architecture.
+Move those operations into a target-native companion using the platform SDK,
+and deliver native events with companion publication and `this.tac.subscribe`.
+The separate `tachyonWindow` API covers only the application's declared window
+controls; it is not a replacement registry for arbitrary device capabilities.
+
 Native methods are asynchronous in the browser. Use `{await method()}` in a
 template or await the returned Promise in authored code. Initialization reads
 field values but never calls methods to discover their return values. Field
@@ -270,8 +277,9 @@ TAC_BIN=/absolute/path/to/ty bash scripts/compat/verify-ledger.sh
 ```
 
 Browser gates require Node, Playwright Chromium, and (for the HTTPS offline
-case) OpenSSL. The desktop native companion gate requires the host packaging
-toolchain, Rust, and Python 3; it compiles two routes with the selected binary
+case) OpenSSL. The desktop native companion gate requires Rust and Python 3,
+but not a GUI SDK: it stages two routes with the selected binary, compiles
+the emitted Rust companion with the host toolchain,
 and executes the generated ABI, including native OS access and publication.
 Platform UI gates remain separate: cross-compiling an archive is not native
 interaction evidence. Historical ADR/evidence documents describe older

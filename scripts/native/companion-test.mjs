@@ -38,7 +38,9 @@ impl Companion {
 }
 `);
   }
-  run(binary, ['build', project, '--target', target]);
+  // This gate executes the emitted companion ABI. Full host packaging and
+  // WebView SDK qualification belong to the separate platform UI gates.
+  run(binary, ['bundle', project, '--native', '--target', target]);
   const staged = path.join(project, 'dist', target, 'project', 'companion.rs');
   assert.ok(existsSync(staged), 'ty must emit a native companion compilation unit');
   const suffix = process.platform === 'win32' ? '.dll' : process.platform === 'darwin' ? '.dylib' : '.so';
