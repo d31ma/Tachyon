@@ -1280,6 +1280,23 @@ if (($request['operation'] ?? '') === 'middleware.after') {
 }
 
 #[cfg(unix)]
+async fn completed_worker_marker(path: &Path) -> String {
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            match fs::read_to_string(path) {
+                Ok(contents) if contents.ends_with('\n') => break contents,
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => panic!("cannot read owned worker marker: {error}"),
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("captured one-second worker schedule executed")
+}
+
+#[cfg(unix)]
 #[tokio::test]
 async fn startup_uses_one_owned_snapshot_for_build_middleware_and_scheduled_workers() {
     let workspace = tempfile::tempdir().expect("workspace");
@@ -1297,10 +1314,11 @@ async fn startup_uses_one_owned_snapshot_for_build_middleware_and_scheduled_work
         &authored.join("middleware.py"),
         "@Controller\nclass StartupController:\n    @staticmethod\n    def GET(request):\n        return {\"status\": 204, \"headers\": {\"x-startup-snapshot\": [\"owned\"]}, \"body\": \"\"}\n",
     );
+    // Expose the interval between file creation and the completed worker write.
     write(
         &authored.join("server/workers/heartbeat.py"),
         &format!(
-            "from pathlib import Path\n@Controller\nclass HeartbeatController:\n    @staticmethod\n    def POST(request):\n        with Path({owned_marker:?}).open('a', encoding='utf-8') as marker:\n            marker.write('owned\\n')\n        return {{\"status\": 204, \"headers\": {{}}, \"body\": \"\"}}\n"
+            "from pathlib import Path\nimport time\n@Controller\nclass HeartbeatController:\n    @staticmethod\n    def POST(request):\n        with Path({owned_marker:?}).open('a', encoding='utf-8') as marker:\n            time.sleep(0.15)\n            marker.write('owned\\n')\n        return {{\"status\": 204, \"headers\": {{}}, \"body\": \"\"}}\n"
         ),
     );
     write(
@@ -1360,17 +1378,8 @@ async fn startup_uses_one_owned_snapshot_for_build_middleware_and_scheduled_work
         "{response}"
     );
 
-    tokio::time::timeout(Duration::from_secs(8), async {
-        while !owned_marker.exists() {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .expect("captured one-second worker schedule executed");
-    assert_eq!(
-        fs::read_to_string(&owned_marker).expect("owned marker"),
-        "owned\n"
-    );
+    let marker = completed_worker_marker(&owned_marker).await;
+    assert_eq!(marker, "owned\n");
     assert!(!planted_marker.exists(), "planted worker source executed");
 
     let _stopped = stop.send(());
