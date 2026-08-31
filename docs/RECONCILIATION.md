@@ -65,7 +65,9 @@ branches remain permanent references.
 Local functional qualification is complete. Publication is still pending;
 this document is not a release sign-off.
 
-Observed on the reconciliation working tree (2026-08-31 UTC):
+The following records the initial local qualification on 2026-08-31 UTC.
+The subsequent integration qualification below supersedes its outstanding
+Linux/Windows checks and local binary identity.
 
 - The complete canonical Rust gate passes: formatting, all-target/all-feature
   checking, warning-denying Clippy, 449 tests across 16 suites, warning-denying
@@ -128,6 +130,39 @@ replacement for the immutable published release. The canonical and coverage
 gates independently built the same source tree. Local detailed reports are
 retained under ignored `target/`; published artifacts need fresh evidence.
 
+## Integration qualification (2026-08-31 UTC)
+
+PR [179](https://github.com/d31ma/Tachyon/pull/179) merged into main at
+`8a3016f5079bd45c6e56c85d3f40c235a9b1b0f9`. Its final head
+`8a6e86bd11bc7e43065ecd2f0633d57f6180dbe5` passed all 18 jobs in
+[the complete CI run](https://github.com/d31ma/Tachyon/actions/runs/33359303631).
+This includes actual Linux GTK4 and Windows WebView2 navigation, native calls,
+stylesheets and cleanup; macOS/iOS and Android UI; website typing; Rust gates
+on all three desktop systems; compatibility, coverage, fuzzing and sanitizers.
+No review conversations or open issues remained at the merge check.
+
+The final local canonical gate passes 450 tests across 16 suites with no
+failures or ignored tests, plus formatting, check, Clippy, rustdoc and dependency
+policy. Production-source coverage passes the unchanged 80% floors: 86.51%
+lines, 85.85% functions and 86.95% regions. The final frozen development CLI has
+SHA-256 `d04a19eed574449cc1671adc8f391254864413f9d7ff63f176fcda34fd9414d9`.
+That CLI includes Linux content-type and Windows local-response routing fixes;
+the later CI corrections affect test harnesses only.
+
+The Linux headless gate retains WebKit compositing with Mesa software rendering
+and shared-memory buffers. Windows cleanup waits for owned WebView processes
+under bounded deadlines. The scheduled-worker snapshot test waits for a
+completed marker write instead of file creation; a deliberately delayed write
+reproduces the original race. Existing behavioral assertions and deadlines are
+retained. These are not platform exclusions or waived CI gates.
+
+Release `26.36.01` is prepared from this merged main and requires a new
+immutable tag.
+Publication, downloaded-artifact verification, matched website deployment and
+installed-CLI verification remain required; integration CI alone does not
+establish those outcomes. The separate cybersecurity-review waiver below
+remains explicit and does not change automated release qualification.
+
 ## Review disposition and operational limits
 
 - Codebase Steward and focused native/website UX reviews passed. The final
@@ -151,7 +186,7 @@ retained under ignored `target/`; published artifacts need fresh evidence.
 
 The release workflow now runs schema, native ABI, and template/CLI gates on
 the downloaded staged executables, plus storage/runtime browser gates on the
-downloaded Linux executable. Current-head PR checks (including Linux/Windows
+downloaded Linux executable. Current-head release PR checks (including Linux/Windows
 native GUI), review feedback, a new immutable version and publication evidence
 are still required. Record the release SHA, artifact digests, matching website
 deployment and installed CLI before claiming completion.
