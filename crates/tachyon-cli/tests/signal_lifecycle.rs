@@ -196,6 +196,28 @@ mod unix {
     }
 
     #[test]
+    fn production_start_uses_the_shared_signal_lifecycle() {
+        let _serial = serialize_process_test();
+        let project = project();
+        let bundled = Command::new(env!("CARGO_BIN_EXE_ty"))
+            .arg("bundle")
+            .arg(project.path())
+            .output()
+            .expect("bundle command should run");
+        assert!(
+            bundled.status.success(),
+            "{}",
+            String::from_utf8_lossy(&bundled.stderr)
+        );
+        let mut command = Command::new(env!("CARGO_BIN_EXE_ty"));
+        command
+            .arg("start")
+            .arg(project.path())
+            .args(["--host", "127.0.0.1", "--port", "0"]);
+        assert_command_shutdown(command, "start", "Tachyon production server ready");
+    }
+
+    #[test]
     fn preview_uses_the_shared_signal_lifecycle() {
         let _serial = serialize_process_test();
         let project = project();
@@ -223,6 +245,7 @@ mod unix {
         let project = project();
         let mut command = Command::new(env!("CARGO_BIN_EXE_ty"));
         command.arg("preview").arg(project.path()).args([
+            "--static",
             "--watch",
             "--host",
             "127.0.0.1",

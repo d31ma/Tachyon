@@ -38,9 +38,9 @@ fn assert_contract(name: &str, instance: &serde_json::Value) {
 /// Writes the shared cross-platform fixture exercising every Phase 5 adapter.
 fn write_phase5_project(project: &Path, name: &str, id: &str) {
     write(
-        &project.join("tachyon.json"),
+        &project.join("tac.config.js"),
         &format!(
-            r#"{{"application":{{"name":"{name}","id":"{id}","version":"0.1.0","entry_route":"/"}}}}"#
+            "export const application = {{\n  name: '{name}',\n  id: '{id}',\n  version: '0.1.0',\n  entryRoute: '/',\n}}\n"
         ),
     );
     write(
@@ -61,39 +61,23 @@ fn write_phase5_project(project: &Path, name: &str, id: &str) {
 /// Asserts the platform-neutral staging every Phase 5 target must publish.
 #[cfg(target_os = "macos")]
 fn assert_common_staging(root: &Path, target: &str) {
-    assert!(root.join("capability-manifest.json").is_file());
     assert!(root.join("artifact-manifest.json").is_file());
     assert!(root.join("native-index.json").is_file());
     assert!(root.join("web/index.html").is_file());
 
-    let native: serde_json::Value =
-        serde_json::from_slice(&fs::read(root.join("native-ui/root.json")).expect("Native UI"))
-            .expect("Native UI JSON");
-    assert_eq!(native["contract_version"], 1);
-    assert_eq!(native["target"], target);
-    assert_contract("native-ui", &native);
+    let index: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("native-index.json")).expect("route index"))
+            .expect("route index JSON");
+    assert_eq!(index["contract_version"], 2, "{target}");
+    assert_eq!(index["entry_route"], "/", "{target}");
+    assert_eq!(index["entry_document"], "index.html", "{target}");
 
-    let text = serde_json::to_string(&native).expect("Native UI text");
-    for adapter in [
-        "text.heading1",
-        "control.button",
-        "control.text_field",
-        "content.output",
-        "control.disclosure",
-    ] {
-        assert!(text.contains(adapter), "{target} is missing {adapter}");
-    }
-    assert!(text.contains(r#""kind":"web_surface""#));
-    assert!(text.contains(r#""bridge":"none""#));
-    assert!(text.contains("Increase count"));
-
-    let capability: serde_json::Value = serde_json::from_slice(
-        &fs::read(root.join("capability-manifest.json")).expect("capability manifest"),
-    )
-    .expect("capability JSON");
-    assert_eq!(capability["default_policy"], "deny");
-    assert_eq!(capability["remote_content_bridge"], false);
-    assert_contract("capability-manifest", &capability);
+    let host: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("tachyon.host.json")).expect("host descriptor"))
+            .expect("host descriptor JSON");
+    assert_eq!(host["target"], target);
+    // One rendering, described once: there is no adapter table to advertise.
+    assert_eq!(host["renderMode"], "bundle");
 
     let artifact: serde_json::Value = serde_json::from_slice(
         &fs::read(root.join("artifact-manifest.json")).expect("artifact manifest"),
@@ -135,7 +119,7 @@ fn every_native_target_publishes_under_its_own_directory() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn ios_bundle_is_launchable_accessible_and_subtree_hybrid() {
+fn ios_bundle_is_launchable_and_hosts_the_application_web_bundle() {
     let project = tempfile::tempdir().expect("project");
     write_phase5_project(project.path(), "PhaseFive", "dev.tachyon.phase-five");
 
@@ -150,7 +134,7 @@ fn ios_bundle_is_launchable_accessible_and_subtree_hybrid() {
     assert!(bundle.join("PhaseFive").is_file(), "missing executable");
     assert!(bundle.join("Info.plist").is_file());
     assert!(bundle.join("NativeIndex.json").is_file());
-    assert!(bundle.join("NativeUI/root.json").is_file());
+    assert!(bundle.join("WebBundle/index.html").is_file());
     assert!(bundle.join("_CodeSignature").is_dir(), "bundle is unsigned");
     assert!(root.join("project/TachyonHost.swift").is_file());
     assert_common_staging(&root, "ios");
@@ -165,30 +149,23 @@ fn ios_bundle_is_launchable_accessible_and_subtree_hybrid() {
     )
     .expect("artifact JSON");
     assert_eq!(artifact["target"]["os"], "ios");
-    assert_eq!(artifact["target"]["abi"], "swiftui-simulator");
+    assert_eq!(artifact["target"]["abi"], "wkwebview-simulator");
 
     let swift = fs::read_to_string(root.join("project/TachyonHost.swift")).expect("Swift host");
     assert!(swift.contains("import UIKit"));
     assert!(!swift.contains("import AppKit"));
-    assert!(!swift.contains("WKScriptMessageHandler"));
-
-    // The fallback subtree stays isolated while its native siblings remain native.
-    let surfaces = fs::read_dir(root.join("web-surfaces"))
-        .expect("WebSurfaces")
-        .collect::<Result<Vec<_>, _>>()
-        .expect("WebSurface entries");
-    assert_eq!(surfaces.len(), 1);
-    let fallback =
-        fs::read_to_string(surfaces[0].path().join("index.html")).expect("fallback document");
-    assert!(fallback.contains("Chart fallback"));
-    assert!(fallback.contains("default-src 'none'"));
+    // The page reaches the host through one bridge, which is the whole native
+    // surface an application gets.
+    assert!(swift.contains("WKScriptMessageHandlerWithReply"));
+    assert!(swift.contains("tachyon-app://bundle/"));
 }
 
 #[cfg(target_os = "macos")]
 #[test]
-fn ios_and_macos_share_one_semantic_native_view() {
-    // Both Apple targets must lower the same HTML to the same adapters,
-    // identities, and accessible names; only the platform tag differs.
+fn ios_and_macos_host_the_same_bundle() {
+    // Both Apple targets host the application's own bundle, so the route index
+    // they publish is identical: there is no per-platform lowering left to
+    // diverge.
     let project = tempfile::tempdir().expect("project");
     write_phase5_project(project.path(), "Parity", "dev.tachyon.parity");
     for target in ["macos", "ios"] {
@@ -206,46 +183,35 @@ fn ios_and_macos_share_one_semantic_native_view() {
                     .path()
                     .join("dist")
                     .join(target)
-                    .join("native-ui/root.json"),
+                    .join("native-index.json"),
             )
-            .expect("Native UI"),
+            .expect("route index"),
         )
-        .expect("Native UI JSON")
+        .expect("route index JSON")
     };
-    let macos = read("macos");
-    let ios = read("ios");
-    assert_eq!(macos["target"], "macos");
-    assert_eq!(ios["target"], "ios");
-
-    // Only the platform tag and the human-readable fallback reason may differ.
-    let macos_text = serde_json::to_string(&macos).expect("macOS text");
-    let ios_text = serde_json::to_string(&ios).expect("iOS text");
-    assert!(macos_text.contains("has no macOS native adapter"));
-    assert!(ios_text.contains("has no iOS native adapter"));
-    assert_eq!(
-        macos_text
-            .replace(r#""target":"macos""#, r#""target":"*""#)
-            .replace("has no macOS native adapter", "has no * native adapter"),
-        ios_text
-            .replace(r#""target":"ios""#, r#""target":"*""#)
-            .replace("has no iOS native adapter", "has no * native adapter"),
-        "Apple targets diverged beyond their platform names"
-    );
+    assert_eq!(read("macos"), read("ios"));
 }
 
 #[test]
-fn native_targets_reject_invalid_views_before_running_any_toolchain() {
-    // Planning failures must be identical across platforms and must never
-    // reach a platform toolchain.
+fn native_targets_reject_an_unreachable_entry_route_before_any_toolchain() {
+    // The view is no longer lowered, so there is nothing in it left to reject.
+    // An entry route with no document still leaves a host nothing to open, and
+    // every platform must say so identically without reaching a toolchain.
     for target in ["macos", "ios", "linux", "windows", "android"] {
         let project = tempfile::tempdir().expect("project");
         write(
-            &project.path().join("tachyon.json"),
-            r#"{"application":{"name":"Invalid","id":"dev.tachyon.invalid","version":"0.1.0","entry_route":"/"}}"#,
+            &project.path().join("tac.config.js"),
+            r#"export const application = {
+  name: "Invalid",
+  id: "dev.tachyon.invalid",
+  version: "0.1.0",
+  entryRoute: "/nowhere",
+}
+"#,
         );
         write(
             &project.path().join("client/pages/tac.html"),
-            r#"<main><button aria-label="Broken" data-tachyon-action="increment:missing">Broken</button></main>"#,
+            r#"<main aria-label="Home"><h1>Home</h1></main>"#,
         );
         let output = run(ty().arg("build").arg(project.path()).args([
             "--target",
@@ -253,8 +219,11 @@ fn native_targets_reject_invalid_views_before_running_any_toolchain() {
             "--diagnostic-format",
             "json",
         ]));
-        assert!(!output.status.success(), "{target} accepted invalid state");
+        assert!(
+            !output.status.success(),
+            "{target} accepted an unreachable entry route"
+        );
         let text = stderr(&output);
-        assert!(text.contains("TY1603"), "{target} diagnostic was {text}");
+        assert!(text.contains("TY1601"), "{target} diagnostic was {text}");
     }
 }

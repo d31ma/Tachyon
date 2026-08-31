@@ -26,6 +26,7 @@
         { "$ref": "#/$defs/text" },
         { "$ref": "#/$defs/conditional" },
         { "$ref": "#/$defs/iteration" },
+        { "$ref": "#/$defs/counted_iteration" },
         { "$ref": "#/$defs/component" }
       ]
     },
@@ -93,6 +94,20 @@
         "iterable": { "$ref": "#/$defs/expression" },
         "body": { "$ref": "#/$defs/children" },
         "empty": { "$ref": "#/$defs/children" }
+      }
+    },
+    "counted_iteration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "binding", "from", "comparison", "to", "step", "body"],
+      "properties": {
+        "kind": { "const": "counted_iteration" },
+        "binding": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$" },
+        "from": { "$ref": "#/$defs/expression" },
+        "comparison": { "enum": ["lt", "le", "gt", "ge"] },
+        "to": { "$ref": "#/$defs/expression" },
+        "step": { "$ref": "#/$defs/expression" },
+        "body": { "$ref": "#/$defs/children" }
       }
     },
     "component": {

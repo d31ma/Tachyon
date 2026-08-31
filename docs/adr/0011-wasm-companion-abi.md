@@ -2,8 +2,9 @@
 
 ## Status
 
-Accepted, and amended below for toolchains that emit only WasmGC. Implements
-the route recorded in `PARITY_LEDGER.md` for polyglot browser companions.
+Superseded by [ADR 0019](0019-companions-compile-for-their-target.md). The text
+below records the historical WebAssembly contract; it is not the current
+companion build or runtime contract.
 
 ## Context
 

@@ -36,6 +36,11 @@ jobs:
       - name: Reject an in-tree legacy runtime or legacy entry point
         run: cargo test --locked -p tachyon-contracts --test repository_policy
 
+      - name: Check native gate shell entry points
+        run: |
+          bash -n scripts/android/native-test.sh
+          bash -n scripts/linux/native-test.sh
+
   native:
     name: Native Rust gate (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -76,6 +81,9 @@ jobs:
       - name: Show toolchain
         run: rustc --version --verbose && cargo --version --verbose && node --version && python --version
 
+      - name: Install checksum-pinned CHEX for real schema contracts
+        run: node scripts/ci/install-chex.mjs "${{ runner.temp }}/tachyon-chex"
+
       - name: Check formatting
         run: cargo fmt --check
 
@@ -87,6 +95,11 @@ jobs:
 
       - name: Run unit and Phase 4 real-process acceptance tests
         run: cargo test --workspace --all-targets --all-features --locked
+
+      - name: Execute target-native companion behavior through the built CLI
+        run: node scripts/native/companion-test.mjs
+        env:
+          TAC_BIN: ${{ github.workspace }}/target/debug/ty${{ runner.os == 'Windows' && '.exe' || '' }}
 
       - name: Smoke-test the release binary
         run: cargo run --release --locked --bin ty -- --version
@@ -161,11 +174,18 @@ jobs:
       - name: Run the real-browser Tac expression contract
         run: bun run test:rust-client
 
-      - name: Probe the wasm companion ABI
+      - name: Run restored browser persistence and runtime contracts
         run: |
-          rustup target add wasm32-unknown-unknown
-          bun run test:wasm-abi
-          bun run test:wasm-companion
+          bun run test:rust-storage
+          bun run test:rust-runtime
+
+      - name: Install checksum-pinned CHEX
+        run: node scripts/ci/install-chex.mjs "${{ runner.temp }}/tachyon-chex"
+
+      - name: Exercise schema validation through the compiled CLI
+        run: node scripts/schema-contract-smoke.mjs
+        env:
+          TAC_BIN: ${{ github.workspace }}/target/release/ty
 
       - name: Verify every claim in the parity ledger
         run: bash scripts/compat/verify-ledger.sh
@@ -187,54 +207,17 @@ jobs:
         with:
           bun-version: 1.3.14
 
-      - name: Install exact Dart toolchain
-        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
-        with:
-          sdk: 3.6.0
-
-      - name: Install exact .NET toolchain
+      - name: Install exact .NET toolchain for target-native companions
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: 10.0.302
 
-      - name: Install the .NET WebAssembly workload
-        run: dotnet workload install wasm-tools-net9 --skip-manifest-update
-
-      - name: Install exact Kotlin WebAssembly toolchain
-        run: |
-          set -euo pipefail
-          compiler="${RUNNER_TEMP}/kotlin-compiler.zip"
-          curl --fail --location --silent --show-error \
-            --output "${compiler}" \
-            https://github.com/JetBrains/kotlin/releases/download/v2.1.10/kotlin-compiler-2.1.10.zip
-          printf '%s  %s\n' \
-            c6e9e2636889828e19c8811d5ab890862538c89dc2a3101956dfee3c2a8ba6b1 \
-            "${compiler}" | shasum -a 256 --check
-          unzip -q "${compiler}" -d "${RUNNER_TEMP}/kotlin"
-          echo "${RUNNER_TEMP}/kotlin/kotlinc/bin" >> "${GITHUB_PATH}"
-          stdlib="${RUNNER_TEMP}/kotlin-stdlib-wasm-js-2.1.10.klib"
-          curl --fail --location --silent --show-error \
-            --output "${stdlib}" \
-            https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-wasm-js/2.1.10/kotlin-stdlib-wasm-js-2.1.10.klib
-          printf '%s  %s\n' \
-            db9ab6772a2d3af9121d570a058cc64cf36893e1c089726b799b4d1252184ca2 \
-            "${stdlib}" | shasum -a 256 --check
-          echo "TAC_KOTLIN_WASM_STDLIB=${stdlib}" >> "${GITHUB_ENV}"
-
-      - name: Install exact Swift WebAssembly toolchain
-        run: |
-          set -euo pipefail
-          swift_pkg="${RUNNER_TEMP}/swift-6.3.3-RELEASE-osx.pkg"
-          curl --fail --location --silent --show-error \
-            --output "${swift_pkg}" \
-            https://download.swift.org/swift-6.3.3-release/xcode/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE-osx.pkg
-          pkgutil --check-signature "${swift_pkg}" \
-            | grep -F 'Developer ID Installer: Swift Open Source (V9AUD2URP3)'
-          installer -pkg "${swift_pkg}" -target CurrentUserHomeDirectory
-          xcrun --toolchain swift swiftc --version | grep -F 'Swift version 6.3.3'
-          xcrun --toolchain swift swift sdk install \
-            https://download.swift.org/swift-6.3.3-release/wasm-sdk/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE_wasm.artifactbundle.tar.gz \
-            --checksum cabfa08b73bb8ac783927ecd15fa386e99d0c139c5f232445067bcf58379cae7
+      - name: Install PHP for published Yon examples
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: none
 
       - name: Install locked browser dependencies
         run: |
@@ -242,10 +225,21 @@ jobs:
           bun install --cwd website --frozen-lockfile
           bunx playwright install chromium
 
-      - name: Build the Phase 4 CLI
+      - name: Install checksum-pinned Kotlin compiler for published Yon examples
         run: |
-          rustup target add wasm32-unknown-unknown
-          cargo build --locked --bin ty
+          set -euo pipefail
+          compiler="${RUNNER_TEMP}/kotlin-compiler.zip"
+          curl --fail --location --silent --show-error --max-time 120 \
+            --output "${compiler}" \
+            https://github.com/JetBrains/kotlin/releases/download/v2.1.10/kotlin-compiler-2.1.10.zip
+          printf '%s  %s\n' \
+            c6e9e2636889828e19c8811d5ab890862538c89dc2a3101956dfee3c2a8ba6b1 \
+            "${compiler}" | shasum -a 256 --check
+          unzip -q "${compiler}" -d "${RUNNER_TEMP}/kotlin"
+          echo "${RUNNER_TEMP}/kotlin/kotlinc/bin" >> "${GITHUB_PATH}"
+
+      - name: Build the Phase 4 CLI
+        run: cargo build --locked --bin ty
 
       - name: Verify every website compiler is ready
         run: ./target/debug/ty doctor website
@@ -253,8 +247,20 @@ jobs:
       - name: Run the migrated website acceptance suite
         run: bun run test:website
 
+      - name: Execute published snippets with all eight server toolchains required
+        run: node website/scripts/verify-snippets.mjs
+        env:
+          TAC_BIN: ${{ github.workspace }}/target/debug/ty
+          TAC_SNIPPETS_REQUIRE_TOOLCHAINS: '1'
+
+      - name: Verify website typing through custom elements on desktop and mobile
+        run: bun run test:website-browser
+
       - name: Run native launch, accessibility, lifecycle, and visual parity gate
         run: bun run test:rust-macos
+
+      - name: Execute Swift and WKWebView behavior in an isolated iOS simulator
+        run: node scripts/ios/native-test.mjs
 
   linux-native:
     name: Phase 5 Linux GTK4 native gate
@@ -279,7 +285,7 @@ jobs:
           ./scripts/linux/native-test.sh
 
   windows-native:
-    name: Phase 5 Windows Win32 native gate
+    name: Windows WebView2 native gate
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -290,8 +296,10 @@ jobs:
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
 
-      - name: Show the platform C toolchain
-        run: gcc --version
+      - name: Install native companion .NET toolchain
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 10.0.302
 
       - name: Build, launch, and drive the generated application
         # The UIAutomationClient managed proxies are a .NET Framework surface.
@@ -316,6 +324,14 @@ jobs:
 
       - name: Install exact Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal && rustup default 1.97.1
+
+      - name: Install Bun for native WebView acceptance
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install locked native UI probe dependencies
+        run: bun install --frozen-lockfile
 
       - name: Select the runner's preinstalled JDK and Gradle
         run: |

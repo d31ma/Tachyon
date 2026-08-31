@@ -17,7 +17,9 @@ export default class {
   open() {
     this.showing = true
     // The input only exists once the dialog has rendered.
-    setTimeout(() => this.bindInput(), 0)
+    setTimeout(() => {
+      if (this.showing) document.getElementById('site-search-input')?.focus()
+    }, 0)
   }
 
   close() {
@@ -26,6 +28,12 @@ export default class {
     this.results = []
     this.term = ''
     this.searching = false
+    // Wait for the event's render to finish: the trigger is recreated when
+    // the focused dialog is removed, so retaining the old button won't work.
+    setTimeout(async () => {
+      await globalThis.__tachyonTac?.render()
+      if (!this.showing) document.querySelector('.site-search__trigger button')?.focus()
+    }, 0)
   }
 
   dismiss(_event, key) {
@@ -33,21 +41,6 @@ export default class {
       this.close()
       void globalThis.__tachyonTac?.render()
     }
-  }
-
-  /**
-   * Keep keystrokes outside Tachyon's auto-rendering event bridge. Replacing
-   * the input after each native `input` event would drop focus mid-query.
-   */
-  bindInput() {
-    const input = document.getElementById('site-search-input')
-    if (!input) return
-    input.focus()
-    input.setSelectionRange?.(this.term.length, this.term.length)
-    if (input.dataset.searchBound) return
-    input.dataset.searchBound = 'true'
-    input.addEventListener('input', (event) => this.find(event, event.target?.value))
-    input.addEventListener('keydown', (event) => this.dismiss(event, event.key))
   }
 
   status() {
@@ -59,7 +52,7 @@ export default class {
   }
 
   find(_event, value) {
-    this.term = String(value ?? '').trim()
+    this.term = String(value ?? '')
     clearTimeout(this.timer)
     this.searching = this.term.length >= 2
     const query = this.term
@@ -68,7 +61,6 @@ export default class {
       this.results = searchDocs(query)
       this.searching = false
       await globalThis.__tachyonTac?.render()
-      setTimeout(() => this.bindInput(), 0)
     }, 120)
   }
 

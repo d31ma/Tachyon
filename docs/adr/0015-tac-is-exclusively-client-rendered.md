@@ -47,10 +47,10 @@ lifecycle hook.
 Yon is outside the rendering pipeline. It dispatches REST endpoints and passes
 their validated HTTP responses through unchanged; see ADR 0016.
 
-Native targets lower authored Tac declarations into Native UI/View IR. They
-must not obtain Tac structure by asking the web compiler to SSR it. Unsupported
-native subtrees may still become isolated WebSurfaces under the native fallback
-contract.
+Native targets run the same client render plan in platform web views; see
+[ADR 0018](0018-native-hosts-run-the-platform-javascript-engine.md). They must
+not obtain Tac structure by asking the web compiler to SSR it. Target-native
+page companions supply platform behavior under ADR 0019.
 
 ## Consequences
 

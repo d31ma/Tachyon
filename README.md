@@ -2,9 +2,9 @@
 
 Tachyon is a polyglot, file-system-routed full-stack framework. Application
 developers author standards-based HTML; Tachyon compiles Tac into client-rendered
-web applications and dispatches Yon REST endpoints, or produces native-first applications for macOS, iOS, Android, Linux, and
-Windows. Unsupported safe native subtrees fall back to isolated local web
-surfaces while supported siblings remain native.
+web applications and dispatches Yon REST endpoints, or packages those views in
+native web-view hosts for macOS, iOS, Android, Linux, and Windows. Target-native
+page companions provide access to the platform's own SDKs.
 
 `Tac` is the view and interaction layer. `Yon` is the server route and handler
 layer. Both use the standalone `ty` executable.
@@ -24,8 +24,8 @@ layer. Both use the standalone `ty` executable.
   loops, components, and slots. Tac has no SSR mode.
 - Yon handlers return HTTP status, headers, and bodies. Tachyon does not render
   Yon templates or execute handlers during a build.
-- JavaScript, TypeScript, Rust, Dart, Kotlin, Swift, and C# can implement Tac
-  component behavior.
+- JavaScript and TypeScript implement browser component behavior; Swift,
+  Kotlin, C#, and Rust provide target-specific native page behavior.
 - Yon runs JavaScript, TypeScript, Python, Java, C#, Kotlin, PHP, and Rust.
   Every server layer declares its mandatory stereotype; existing programs in
   other languages stay behind an explicit `@Delegate` + `@Relay` boundary.
@@ -149,9 +149,11 @@ and never reach a browser or native renderer as unknown elements.
 </else>
 ```
 
-`logic`, `loop`, `switch`, and `case` remain accepted compatibility spellings;
-the normative grammar and expression limits are in
-[docs/PHASE_3_SPEC.md](docs/PHASE_3_SPEC.md).
+`logic` and `loop` are the canonical conditional and iteration tags; the
+`if`/`else`/`for` spellings above remain accepted. Counted loops also work:
+`<loop :for="let i = 0; i < 3; i++">{i}</loop>`. Comparisons, step direction,
+and iteration limits are validated. See
+[the client runtime migration guide](docs/CLIENT_RUNTIME_MIGRATION.md).
 
 ### Components, slots, and browser mounting
 
@@ -167,12 +169,17 @@ is accepted as a mount-scheduling spelling; it does not enable SSR.
 <counter-panel hydrate="interaction"></counter-panel>
 ```
 
-JavaScript and TypeScript companions are ordinary modules. Rust, Dart, Kotlin,
-Swift, and C# component companions compile with their real language toolchains
-to the versioned WebAssembly ABI in
-[ADR 0011](docs/adr/0011-wasm-companion-abi.md). Run `ty doctor` to probe the
-capabilities required by the current project rather than merely checking that
-a compiler executable exists.
+Browser components use JavaScript or TypeScript modules. Page companions may
+add Swift on Apple targets, Kotlin on Android, C# on Windows, or Rust on desktop
+targets; those compile into the native host, not WebAssembly. Keep a JS/TS page
+companion for a web build. `ty doctor` reports the required toolchains.
+
+Every page/component instance receives `this.tac` for rendering, safe opt-in
+response caching, asset precaching, and document-local publish/subscribe.
+`$field` persists per tab and `$$field` across sessions; neither is secure
+storage. `@onMount`, `@publish`, and `@subscribe` are compiled into lifecycle
+metadata. See [the API and migration guide](docs/CLIENT_RUNTIME_MIGRATION.md)
+for cache privacy rules, bounds, cleanup, and native asynchronous calls.
 
 The released page-state convention remains accepted. A plain page-level
 `<script>` may contain only `let`, `const`, or `var` declarations whose values
@@ -341,45 +348,40 @@ ty bundle --target windows
 ty bundle --target all
 ```
 
-Non-web targets are always native-first; there is no application-wide render
-mode flag. The compiler lowers supported HTML and explicit semantic roles to
-platform controls. An unsupported safe subtree becomes an isolated local
-WebSurface. Native-capable parents and siblings stay native.
+Non-web targets host the same compiled Tac HTML/CSS/JavaScript in a platform
+web view. There is no render-mode flag or native-control approximation of the
+document. Target-native companions provide OS access through a route-scoped
+`companion.invoke` bridge, available only to the packaged local application.
 
 | Target | Host | Output |
 | --- | --- | --- |
 | Web | bootstrap HTML, client render plans, CSS, modules, service worker | `dist/web/` |
-| macOS | SwiftUI/AppKit | `dist/macos/*.app` |
-| iOS | SwiftUI/UIKit | `dist/ios/*.app` |
-| Android | Android platform views | `dist/android/*/*.apk` |
+| macOS | AppKit/WKWebView | `dist/macos/*.app` |
+| iOS | UIKit/WKWebView | `dist/ios/*.app` |
+| Android | Android WebView | `dist/android/*/*.apk` |
 | Linux | GTK4/WebKitGTK | `dist/linux/` |
-| Windows | Win32 common controls | `dist/windows/` |
+| Windows | Win32/WebView2 | `dist/windows/` |
 
-Application authors still write HTML. Standard semantics map automatically;
-custom elements opt into a native meaning through explicit roles:
+Application authors still write semantic HTML and accessible custom elements:
 
 ```html
 <design-button role="button" aria-label="Save">Save</design-button>
 <design-app-bar role="banner" aria-label="Primary navigation">...</design-app-bar>
 ```
 
-An unknown role or unmapped element remains a WebSurface if the subtree is
-safe. Tac components and control tags are resolved first, so they are never
-treated as unknown platform elements. Same-origin links inside a local
-WebSurface hand navigation back to the native route stack; remote surfaces are
-HTTPS-only, host-pinned, bridge-free, and receive no native capabilities.
+HTML and custom elements render through the platform browser engine. Roles
+remain accessibility semantics, not adapter selectors. The packaged bundle
+owns navigation; remote pages must never receive the application bridge.
 
-Native application identity and the entry route are configured in
-`tachyon.json`:
+Native application identity and the entry route can be configured in
+`tac.config.js` (legacy `tachyon.json` remains accepted):
 
-```json
-{
-  "application": {
-    "name": "Catalog",
-    "id": "com.example.catalog",
-    "version": "1.0.0",
-    "entry_route": "/"
-  }
+```javascript
+export const application = {
+  name: 'Catalog',
+  id: 'com.example.catalog',
+  version: '1.0.0',
+  entryRoute: '/',
 }
 ```
 
@@ -425,8 +427,8 @@ lands exactly at `dist/web`, `dist/macos`, `dist/ios`, `dist/android`,
 `dist/linux`, and `dist/windows`. `TAC_DIST_PATH` selects another output root.
 Existing automation may also use `TAC_BUNDLE_TARGET`, `TAC_PREVIEW_TARGET`,
 `TAC_TARGET`, `YON_HOST`, `YON_HOSTNAME`, `YON_PORT`, and `YON_SKIP_BUNDLE`.
-`TAC_RENDER_MODE` and `--render-mode` are rejected because native-first
-subtree planning is unconditional.
+`TAC_RENDER_MODE` and `--render-mode` are rejected: native hosts run the same
+Tac document in their platform web view and do not select a rendering mode.
 
 The public command names from the latest standalone binary remain accepted.
 Internal qualification commands such as `doctor`, `migrate`, and
@@ -485,9 +487,12 @@ Node.js is used by default with Bun as a fallback. Set
 
 ## Security boundary
 
-Tachyon defaults to loopback networking, escaped interpolation, deny-by-default
-native capabilities, no shell execution, no WebSurface bridge, strict local
-asset schemes, and bounded external input. Threats and residual risks are
+Tachyon defaults to loopback networking, escaped interpolation, no shell
+dispatch for framework-owned tool invocations, strict local asset schemes,
+and bounded external input. The native bridge is reserved for the packaged
+local document, never remote content or subframes. Native companion code runs
+with host-process OS privileges; it is not a sandbox or a fixed allowlist of
+device APIs. Threats and residual risks are
 documented in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 In the default process mode, handler children still run with the developer

@@ -51,20 +51,18 @@
     <w-app-bar role="banner" aria-label="Primary navigation">Tachyon Native</w-app-bar>
     <main aria-label="Phase Four evidence">
       <h1>Native rendering</h1>
-      <p>Supported siblings stay in SwiftUI around one isolated web subtree.</p>
+      <p>The platform WebView renders the same bundled application as the browser.</p>
       <button
         aria-label="Increase count"
-        data-tachyon-action="increment:count"
+        on:click="count += 1"
       >Increase count</button>
       <output
         aria-label="Current count"
-        data-tachyon-bind="count"
-        data-tachyon-state="0"
-      >0</output>
+      >{count}</output>
       <input
         aria-label="Customer name"
-        data-tachyon-bind="customer"
-        data-tachyon-state=""
+        :value="customer"
+        on:input="customer = $event.target.value"
         placeholder="Customer name"
       >
       <details aria-label="Implementation details">
@@ -72,10 +70,10 @@
         <p>Disclosure content is native.</p>
       </details>
       <fancy-chart aria-label="Sales chart">
-        <strong>WebSurface chart</strong>
-        <p>Only this unsupported custom-element subtree uses WebKit.</p>
+        <strong>Bundled chart</strong>
+        <p>Custom elements and ordinary controls share the platform WebView.</p>
       </fancy-chart>
-      <footer>Native footer after the WebSurface.</footer>
+      <footer>Platform WebView with local-only native bridge.</footer>
     </main>
   </body>
 </html>

@@ -71,7 +71,57 @@ const SPECULATION_RULES: &str = r#"<script type="speculationrules" data-tachyon-
 const SERVICE_WORKER: &str = r"const VERSION = '__VERSION__'
 const CACHE = 'tachyon-static-' + VERSION
 const PREFIX = 'tachyon-static-'
-const STATIC = /\.(?:avif|css|gif|ico|jpe?g|js|json|mjs|mp3|mp4|ogg|otf|png|svg|ttf|wasm|webm|webp|woff2?)$/i
+// Policies the project declared by path in tac.config.js, compiled to anchored
+// expressions at build time so the worker needs no glob parser.
+const RULES = (__CACHE_RULES__).map((rule) => ({ ...rule, match: new RegExp(rule.pattern) }))
+// Only byte-verified build outputs may bootstrap anonymously from a browser's
+// ordinary document/module requests. An extension is not a privacy boundary.
+const ASSETS = __PUBLIC_ASSETS__
+const MAX_ENTRIES = 256
+const MAX_BYTES = 32 * 1024 * 1024
+const MAX_AGE = 24 * 60 * 60 * 1000
+let writes = Promise.resolve()
+let pendingWrites = 0
+
+const bounded = async (work) => {
+  let timer
+  try { return await Promise.race([work, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('cache unavailable')), 2000) })]) }
+  finally { clearTimeout(timer) }
+}
+const publicResponse = (response) => response && response.ok && !response.redirected
+  && response.type !== 'opaque' && response.type !== 'opaqueredirect'
+  && !/(?:^|,)\s*(?:private|no-store)\b/i.test(response.headers.get('cache-control') || '')
+  && !response.headers.has('vary')
+
+async function bodyBytes(response, limit) {
+  const reader = response.body?.getReader()
+  if (!reader) return new Uint8Array()
+  const chunks = []
+  let length = 0
+  const deadline = Date.now() + 2000
+  try {
+    while (true) {
+      if (Date.now() >= deadline) throw new Error('cache body deadline')
+      const { value, done } = await bounded(reader.read())
+      if (done) break
+      length += value.byteLength
+      if (length > limit) throw new Error('cache body limit')
+      chunks.push(value)
+    }
+  } finally { void reader.cancel().catch(() => {}) }
+  const bytes = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+  return bytes
+}
+async function matchesAsset(bytes, asset) {
+  if (bytes.byteLength !== asset.bytes) return false
+  const digest = await bounded(crypto.subtle.digest('SHA-256', bytes))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('') === asset.sha256
+}
+async function evict(request) {
+  try { const cache = await bounded(caches.open(CACHE)); await bounded(cache.delete(request)) } catch {}
+}
 
 self.addEventListener('install', (event) => { event.waitUntil(self.skipWaiting()) })
 
@@ -86,35 +136,109 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const request = event.request
-  if (request.method !== 'GET') return
   const url = new URL(request.url)
   // Cross-origin requests and the live-reload channel are left alone.
   if (url.origin !== self.location.origin) return
   if (url.pathname.startsWith('/.tachyon/live-reload') || url.pathname === '/.tachyon/hot') return
-  // A navigation stays network-first so a deployment is picked up at once,
-  // with the cache as the offline fallback. A versioned static asset cannot
-  // change under its own URL, so it is served cache-first.
-  const cacheFirst = STATIC.test(url.pathname) && request.mode !== 'navigate'
-  event.respondWith(cacheFirst ? fromCache(request) : fromNetwork(request))
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    event.respondWith(writeThrough(request, url))
+    return
+  }
+
+  if (request.method === 'HEAD') return
+
+  const rule = RULES.find((candidate) => candidate.match.test(url.pathname))
+  const asset = !url.search && Object.hasOwn(ASSETS, url.pathname) ? ASSETS[url.pathname] : null
+  // This decision precedes lookup as CacheStorage does not key by credentials.
+  if (request.cache === 'no-store' || request.headers.has('authorization')
+      || request.headers.has('range') || rule?.policy === 'no-store'
+      || (!asset && (!rule || request.credentials !== 'omit'))) {
+    event.respondWith((async () => { await evict(request); return fetch(request) })())
+    return
+  }
+  const cacheFirst = rule ? rule.policy === 'cache-first' : request.mode !== 'navigate'
+  event.respondWith(cacheFirst ? fromCache(request, asset) : fromNetwork(request, asset))
 })
 
-async function fromCache(request) {
-  const cache = await caches.open(CACHE)
-  return (await cache.match(request)) || fromNetwork(request)
+async function writeThrough(request, url) {
+  const response = await fetch(request)
+  if (!response.ok) return response
+  try {
+    const cache = await bounded(caches.open(CACHE))
+    for (const entry of await bounded(cache.keys())) {
+      const path = new URL(entry.url).pathname
+      if (path === url.pathname || url.pathname.startsWith(path + '/')) await bounded(cache.delete(entry))
+    }
+  } catch {}
+  return response
 }
 
-async function fromNetwork(request) {
-  const cache = await caches.open(CACHE)
+async function cacheRead(request, asset) {
   try {
-    const response = await fetch(request)
-    if (response.ok && response.type === 'basic') await cache.put(request, response.clone())
+    const cache = await bounded(caches.open(CACHE))
+    const response = await bounded(cache.match(request))
+    if (!response) return null
+    const created = Number(response.headers.get('x-tachyon-cached-at'))
+    if (!publicResponse(response) || (!asset && (!created || Date.now() - created > MAX_AGE))) {
+      await bounded(cache.delete(request)); return null
+    }
+    if (asset && !await matchesAsset(await bodyBytes(response.clone(), 4 * 1024 * 1024), asset)) {
+      await bounded(cache.delete(request)); return null
+    }
     return response
-  }
-  catch (error) {
-    const cached = await cache.match(request)
+  } catch { return null }
+}
+
+async function cacheWrite(request, response, asset) {
+  if (!publicResponse(response)) { await evict(request); return }
+  if (pendingWrites >= 16) return
+  pendingWrites += 1
+  try {
+    const bytes = await bodyBytes(response.clone(), asset ? 4 * 1024 * 1024 : 256 * 1024)
+    if (asset && !await matchesAsset(bytes, asset)) { await evict(request); return }
+    const headers = new Headers(response.headers)
+    headers.delete('content-encoding')
+    headers.set('content-length', String(bytes.byteLength))
+    headers.set('x-tachyon-cache-bytes', String(bytes.byteLength))
+    headers.set('x-tachyon-cached-at', String(Date.now()))
+    const stored = new Response(bytes, { status: response.status, statusText: response.statusText, headers })
+    writes = writes.catch(() => {}).then(async () => {
+      const cache = await bounded(caches.open(CACHE))
+      const entries = await bounded(cache.keys())
+      let size = bytes.byteLength
+      for (const entry of entries) {
+        const existing = await bounded(cache.match(entry))
+        const known = ASSETS[new URL(entry.url).pathname]
+        // Runtime-prewarmed build assets have a known size even without metadata.
+        size += Number(existing?.headers.get('x-tachyon-cache-bytes')) || known?.bytes || MAX_BYTES
+      }
+      if (entries.length >= MAX_ENTRIES || size > MAX_BYTES)
+        for (const entry of entries) await bounded(cache.delete(entry))
+      await bounded(cache.put(request, stored))
+    })
+    await writes
+  } catch { await evict(request) }
+  finally { pendingWrites -= 1 }
+}
+
+async function fromCache(request, asset) {
+  return (await cacheRead(request, asset)) || fromNetwork(request, asset)
+}
+
+async function fromNetwork(request, asset) {
+  let response
+  try {
+    response = await fetch(new Request(request, { cache: 'no-store', ...(asset ? { credentials: 'omit' } : {}) }))
+  } catch (error) {
+    if (request.signal.aborted) throw error
+    const cached = await cacheRead(request, asset)
     if (cached) return cached
     throw error
   }
+  // Optional storage must never hold a successful network response indefinitely.
+  await bounded(cacheWrite(request, response, asset)).catch(() => {})
+  return response
 }
 ";
 
@@ -129,7 +253,7 @@ const loopback = host === 'localhost'
   || /^127(?:\.\d{1,3}){3}$/.test(host)
 
 if ('serviceWorker' in navigator) {
-  if (loopback)
+  if (loopback || typeof globalThis.__tachyonNativeHostCall === 'function')
     navigator.serviceWorker.getRegistrations()
       .then((registrations) => registrations.forEach((registration) => registration.unregister()))
       .catch(() => {})
@@ -276,11 +400,39 @@ impl WebCompiler {
         project: &Project,
         options: &BuildOptions,
     ) -> Result<BuildResult, Failure> {
+        Self::build_project_with_target(project, options, None).await
+    }
+
+    pub(crate) async fn build_project_for_native(
+        project: &Project,
+        options: &BuildOptions,
+        target: tachyon_contracts::NativeTarget,
+    ) -> Result<BuildResult, Failure> {
+        Self::build_project_with_target(project, options, Some(target)).await
+    }
+
+    #[allow(clippy::too_many_lines)]
+    async fn build_project_with_target(
+        project: &Project,
+        options: &BuildOptions,
+        native_target: Option<tachyon_contracts::NativeTarget>,
+    ) -> Result<BuildResult, Failure> {
         let output_directory = resolve_output_path(project.root(), &options.output_directory)?;
         let snapshot_root = project.snapshot_root();
         let components = ComponentRegistry::discover(snapshot_root)?;
         let component_styles = collect_component_styles(&components)?;
         let build_config_digest = build_config_digest(snapshot_root)?;
+        // Read once per build and baked into the worker, so the policy a page
+        // gets is the policy that was reviewed rather than one fetched later.
+        let cache_rules = crate::native::cache_rules(snapshot_root).await?;
+        let cache_rules_literal = serde_json::to_string(&cache_rules).map_err(|error| {
+            Failure::one(diagnostic(
+                1502,
+                format!("Cannot serialise the declared cache rules: {error}"),
+                Some(String::from("Report this as a Tachyon bug.")),
+                None,
+            ))
+        })?;
         let component_names = components.names();
         let mut programs = BTreeMap::new();
         let mut diagnostics = Vec::new();
@@ -288,6 +440,8 @@ impl WebCompiler {
             let (Some(bytes), Some(source)) = (route.view_bytes(), route.source_path()) else {
                 continue;
             };
+
+            validate_companion_target(route, native_target)?;
 
             let template_source = read_template_source(bytes, source)?;
             let (template_source, inline_state) =
@@ -339,6 +493,15 @@ impl WebCompiler {
         let mut files = Vec::new();
         let mut next_state = BuildState::default();
         let manifest = project.route_graph().manifest();
+        let page_metadata = crate::native::page_metadata(snapshot_root).await?;
+        // Declared once and loaded by every document, rather than imported by
+        // a companion per route whose whole body was that import.
+        let browser_scripts = crate::native::browser_scripts(snapshot_root).await?;
+        let browser_styles = crate::native::browser_styles(snapshot_root).await?;
+        // One declaration behind the favicon, the install prompt and the
+        // native application icon: they were always the same artwork.
+        let manifest_head = crate::native::manifest_head(snapshot_root)?;
+
         let mut all_islands = BTreeSet::new();
         let mut compiled_routes = 0;
         let mut reused_routes = 0;
@@ -367,7 +530,24 @@ impl WebCompiler {
                 companion_digest.update([0]);
             }
             for companion in route.companions() {
-                let source = companion.bytes().to_vec();
+                // Native source is compiled by its platform host, never emitted
+                // into a browser-accessible bundle.
+                if matches!(companion.kind, CompanionKind::Native(_)) {
+                    continue;
+                }
+                let authored = companion.bytes().to_vec();
+                let source = if matches!(
+                    companion.kind,
+                    CompanionKind::ClientModule | CompanionKind::TypeScriptModule
+                ) {
+                    prepare_component_script(
+                        authored,
+                        &route_program.inline_state,
+                        &companion.source_path,
+                    )?
+                } else {
+                    authored
+                };
                 // A TypeScript companion is emitted through the TypeScript
                 // compiler itself, so its semantics are the reference
                 // semantics rather than a reimplementation of them.
@@ -388,15 +568,6 @@ impl WebCompiler {
                     &snapshot_root.join(&companion.source_path),
                     bytes,
                 );
-                let bytes = if !route_program.inline_state.trim().is_empty()
-                    && matches!(
-                        companion.kind,
-                        CompanionKind::ClientModule | CompanionKind::TypeScriptModule
-                    ) {
-                    transform_page_module(bytes, &route_program.inline_state)
-                } else {
-                    bytes
-                };
                 let relative = route_directory.join(companion.kind.output_name());
                 companion_digest.update(portable_path(&relative).as_bytes());
                 companion_digest.update([0]);
@@ -441,6 +612,7 @@ impl WebCompiler {
                         .has_page_module
                         .then_some(module_href.as_str()),
                     &render_scope,
+                    route.route(),
                 )?;
                 let rendered_html = rendered.html;
                 let source_map = rendered.source_map;
@@ -473,13 +645,53 @@ impl WebCompiler {
                 // instant loads, view transitions for smooth ones. Both
                 // degrade silently where unsupported.
                 let mut html = rendered_html;
+                // What a `tac.html` no longer carries: the head is written
+                // here, from the route's entry in the configuration module.
+                if let Some(declared) = page_metadata.get(route.route()) {
+                    html = inject_before(&html, "</head>", &render_page_metadata(declared));
+                    if let Some(lang) = &declared.lang {
+                        html = html.replacen(
+                            "<html lang=\"en\">",
+                            &format!("<html lang=\"{}\">", html_attribute_escape(lang)),
+                            1,
+                        );
+                    }
+                }
+                if !manifest_head.is_empty() {
+                    html = inject_before(&html, "</head>", &manifest_head);
+                }
+                for source in &browser_styles {
+                    html = inject_before(
+                        &html,
+                        "</head>",
+                        &format!(
+                            r#"<link rel="stylesheet" href="{}" data-tachyon-runtime>"#,
+                            html_attribute_escape(source)
+                        ),
+                    );
+                }
+                for source in &browser_scripts {
+                    html = inject_before(
+                        &html,
+                        "</head>",
+                        &format!(
+                            r#"<script type="module" src="{}" data-tachyon-runtime></script>"#,
+                            html_attribute_escape(source)
+                        ),
+                    );
+                }
                 html = inject_before(&html, "</head>", NAVIGATION_LINK);
                 if !component_styles.is_empty() {
                     html = inject_before(&html, "</head>", COMPONENT_STYLE_LINK);
                 }
                 html = inject_before(&html, "</head>", SPECULATION_RULES);
                 html = inject_before(&html, "</body>", SERVICE_WORKER_LINK);
-                for (companion, (relative, _)) in route.companions().iter().zip(&companion_files) {
+                for (companion, (relative, _)) in route
+                    .companions()
+                    .iter()
+                    .filter(|companion| !matches!(companion.kind, CompanionKind::Native(_)))
+                    .zip(&companion_files)
+                {
                     let href = format!("/{}", portable_path(relative));
                     html = match companion.kind {
                         CompanionKind::Style => inject_before(
@@ -489,7 +701,9 @@ impl WebCompiler {
                                 r#"<link rel="stylesheet" href="{href}" data-tachyon-runtime>"#
                             ),
                         ),
-                        CompanionKind::ClientModule | CompanionKind::TypeScriptModule => html,
+                        CompanionKind::ClientModule
+                        | CompanionKind::TypeScriptModule
+                        | CompanionKind::Native(_) => html,
                     };
                 }
                 let html_bytes = html.into_bytes();
@@ -515,6 +729,20 @@ impl WebCompiler {
         }
 
         files.extend(collect_shared_assets(snapshot_root)?);
+        // Published under the media type's own name, which is what a browser
+        // expects behind `rel="manifest"`.
+        let manifest_source = snapshot_root.join(crate::native::MANIFEST_NAME);
+        if manifest_source.is_file() {
+            let bytes = fs::read(&manifest_source).map_err(|error| {
+                Failure::one(diagnostic(
+                    1201,
+                    format!("Cannot read {}: {error}", crate::native::MANIFEST_NAME),
+                    Some(String::from("Keep the manifest a readable regular file.")),
+                    None,
+                ))
+            })?;
+            files.push((PathBuf::from(crate::native::MANIFEST_OUTPUT), bytes));
+        }
 
         files.push((
             PathBuf::from(".tachyon/navigation.css"),
@@ -547,15 +775,6 @@ impl WebCompiler {
                     None,
                 )));
             };
-            if let Some(source) = component.wasm_path() {
-                for (suffix, bytes) in crate::wasm::compile(snapshot_root, source, name).await? {
-                    files.push((
-                        PathBuf::from(format!(".tachyon/components/{name}{suffix}")),
-                        bytes,
-                    ));
-                }
-                continue;
-            }
             let Some(source) = component.script_path() else {
                 return Err(Failure::one(diagnostic(
                     1405,
@@ -566,7 +785,11 @@ impl WebCompiler {
             };
             // A TypeScript component companion goes through the
             // TypeScript compiler, the same route a page companion takes.
-            let authored = output_io(fs::read(source), source)?;
+            let authored = prepare_component_script(
+                output_io(fs::read(source), source)?,
+                "",
+                &portable_path(source),
+            )?;
             let bytes = if source.extension().is_some_and(|value| value == "ts") {
                 let portable = portable_path(source.strip_prefix(snapshot_root).unwrap_or(source));
                 transpile_typescript(snapshot_root, source, &portable, &authored).await?
@@ -595,6 +818,7 @@ impl WebCompiler {
             PathBuf::from("route-manifest.json"),
             pretty_json(&manifest, "Route Manifest v1")?,
         ));
+        files.extend(crate::handler::api_reference_files(project.route_graph())?);
         files.push((
             PathBuf::from(".tachyon/register-sw.js"),
             SERVICE_WORKER_REGISTRATION.as_bytes().to_vec(),
@@ -602,9 +826,14 @@ impl WebCompiler {
         // Digested over the generated output, so the worker's bytes change
         // exactly when the output does and repeated builds stay identical.
         let version = build_version(&files, build_config_digest.as_deref());
+        let public_assets = service_worker_assets(&files)?;
         files.push((
             PathBuf::from("tachyon-sw.js"),
-            SERVICE_WORKER.replace("__VERSION__", &version).into_bytes(),
+            SERVICE_WORKER
+                .replace("__VERSION__", &version)
+                .replace("__CACHE_RULES__", &cache_rules_literal)
+                .replace("__PUBLIC_ASSETS__", &public_assets)
+                .into_bytes(),
         ));
         files.push((
             PathBuf::from(".tachyon/build-state.json"),
@@ -670,6 +899,43 @@ struct RouteBuildState {
     input_sha: String,
     artifacts: BTreeMap<String, String>,
     islands: BTreeSet<String>,
+}
+
+fn validate_companion_target(
+    route: &crate::RouteNode,
+    target: Option<tachyon_contracts::NativeTarget>,
+) -> Result<(), Failure> {
+    let languages = route
+        .companions()
+        .iter()
+        .filter_map(|companion| {
+            if let CompanionKind::Native(language) = companion.kind {
+                Some(language)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let browser = route.companions().iter().any(|companion| {
+        matches!(
+            companion.kind,
+            CompanionKind::ClientModule | CompanionKind::TypeScriptModule
+        )
+    });
+    if languages.is_empty()
+        || browser
+        || target.is_some_and(|target| {
+            crate::project::NativeCompanion::most_specific(&languages, target).is_some()
+        })
+    {
+        return Ok(());
+    }
+    Err(crate::project::unreachable_companion(
+        route.route(),
+        &languages,
+        target.map_or("the web", crate::native_target_directory),
+        target,
+    ))
 }
 
 fn load_build_state(output: &Path) -> Option<BuildState> {
@@ -1043,38 +1309,158 @@ fn parse_javascript_literal(source: &str) -> Option<serde_json::Value> {
     serde_json::from_str(source).ok()
 }
 
+/// One decorator the compiler applies at build time.
+struct Decorated {
+    /// The member it decorates.
+    member: String,
+    /// The signal it publishes to or subscribes from.
+    signal: String,
+    /// `method` or `field`, which decides how the runtime applies it.
+    kind: &'static str,
+}
+
+/// Reads the argument of a decorator line, if it was called with one.
+///
+/// `@publish` and `@publish('cart.total')` are both valid; without a name the
+/// member's own name is the signal.
+fn decorator_argument(line: &str) -> Option<String> {
+    let open = line.find('(')?;
+    let close = line.rfind(')')?;
+    let inner = line.get(open + 1..close)?.trim();
+    let quote = inner.chars().next()?;
+    if !matches!(quote, '\'' | '"') || !inner.ends_with(quote) || inner.len() < 3 {
+        return None;
+    }
+    let name = inner.get(1..inner.len() - 1)?;
+    (name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '$'))
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '$'))
+        && name.len() <= 128)
+        .then(|| String::from(name))
+}
+
+/// Records a decorator against the member on the line that follows it.
+fn decorated_member(line: &str, argument: Option<String>) -> Option<Decorated> {
+    let mut signature = line.trim();
+    while let Some(rest) = ["public ", "readonly ", "async "]
+        .iter()
+        .find_map(|prefix| signature.strip_prefix(prefix))
+    {
+        signature = rest.trim_start();
+    }
+    if ["static ", "private ", "protected "]
+        .iter()
+        .any(|prefix| signature.starts_with(prefix))
+    {
+        return None;
+    }
+    let head = signature
+        .split(['(', '=', ';', ' ', ':', '?', '!'])
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if !valid_page_field(head) {
+        return None;
+    }
+    if matches!(head, "constructor" | "tac" | "__proto__" | "prototype") {
+        return None;
+    }
+    // A method is followed by its parameter list; anything else is a field.
+    let kind = if signature[head.len()..].trim_start().starts_with('(') {
+        "method"
+    } else {
+        "field"
+    };
+    Some(Decorated {
+        member: String::from(head),
+        signal: argument.unwrap_or_else(|| String::from(head)),
+        kind,
+    })
+}
+
+/// Serialises one decorator list for the class the runtime reads it from.
+fn decorator_metadata(name: &str, entries: &[Decorated]) -> String {
+    if entries.is_empty() {
+        return String::new();
+    }
+    let items = entries
+        .iter()
+        .map(|entry| {
+            format!(
+                "[{}, {}, {}]",
+                serde_json::to_string(&entry.member).unwrap_or_default(),
+                serde_json::to_string(&entry.signal).unwrap_or_default(),
+                serde_json::to_string(entry.kind).unwrap_or_default(),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("\n  static {name} = [{items}];")
+}
+
 fn transform_page_module(bytes: Vec<u8>, inline_state: &str) -> Vec<u8> {
     let source = match String::from_utf8(bytes) {
         Ok(source) => source,
         Err(error) => return error.into_bytes(),
     };
     let mut output = String::with_capacity(source.len() + inline_state.len() + 128);
-    let mut on_mount = false;
     let mut mount_methods = Vec::new();
-    for line in source.lines() {
-        if line.trim() == "@onMount" {
-            on_mount = true;
+    let mut published = Vec::new();
+    let mut subscribed = Vec::new();
+    // What the previous line asked for, waiting for the member it decorates.
+    let mut pending = Vec::new();
+    let mask = crate::lexical::code_mask("js", &source);
+    let mut offset = 0;
+    for line in source.split_inclusive('\n') {
+        let trimmed = line.trim();
+        let executable = mask
+            .code
+            .get(offset + line.len() - line.trim_start().len())
+            .copied()
+            .unwrap_or(false);
+        offset += line.len();
+        // No browser implements the decorator proposal, so one that reached a
+        // page would be a syntax error rather than a feature. They are read
+        // here and compiled into metadata the runtime applies.
+        let decorator = executable
+            .then(|| {
+                ["onMount", "publish", "subscribe"]
+                    .into_iter()
+                    .find(|name| {
+                        trimmed
+                            .strip_prefix('@')
+                            .and_then(|rest| rest.strip_prefix(*name))
+                            .is_some_and(|rest| rest.is_empty() || rest.starts_with('('))
+                    })
+            })
+            .flatten();
+        if let Some(decorator) = decorator {
+            pending.push((decorator, decorator_argument(trimmed)));
             continue;
         }
-        if on_mount {
-            let signature = line.trim().strip_prefix("async ").unwrap_or(line.trim());
-            if let Some((name, _)) = signature.split_once('(')
-                && valid_page_field(name.trim())
-            {
-                mount_methods.push(name.trim());
+        if executable && !trimmed.is_empty() {
+            for (decorator, argument) in pending.drain(..) {
+                if let Some(entry) = decorated_member(line, argument) {
+                    match decorator {
+                        "onMount" => mount_methods.push(entry.member),
+                        "publish" => published.push(entry),
+                        _ => subscribed.push(entry),
+                    }
+                }
             }
-            on_mount = false;
         }
-        output.push_str(line);
+        output.push_str(line.trim_end_matches('\n'));
         output.push('\n');
     }
-    let Some(class_start) = output.find("export default class") else {
+    let output_mask = crate::lexical::code_mask("js", &output);
+    let Some(open) = default_class_open(&output, &output_mask.code) else {
         return output.into_bytes();
     };
-    let Some(open_relative) = output[class_start..].find('{') else {
-        return output.into_bytes();
-    };
-    let insertion = class_start + open_relative + 1;
+    let insertion = open + 1;
     let fields = inline_state
         .split([';', '\n'])
         .filter_map(|statement| {
@@ -1092,9 +1478,197 @@ fn transform_page_module(bytes: Vec<u8>, inline_state: &str) -> Vec<u8> {
     let methods = serde_json::to_string(&mount_methods).unwrap_or_else(|_| String::from("[]"));
     output.insert_str(
         insertion,
-        &format!("\n  static __tachyonOnMount = {methods};{fields}"),
+        &format!(
+            "\n  static __tachyonOnMount = {methods};{}{}{fields}",
+            decorator_metadata("__tachyonPublish", &published),
+            decorator_metadata("__tachyonSubscribe", &subscribed),
+        ),
     );
     output.into_bytes()
+}
+
+fn prepare_component_script(
+    bytes: Vec<u8>,
+    inline_state: &str,
+    source_path: &str,
+) -> Result<Vec<u8>, Failure> {
+    let source = std::str::from_utf8(&bytes).map_err(|_| decorator_failure(source_path))?;
+    let mask = crate::lexical::code_mask("js", source);
+    let mut pending = false;
+    let mut mount_pending = false;
+    let mut has_decorators = source.match_indices('@').any(|(at, _)| {
+        mask.code.get(at) == Some(&true)
+            && ["@onMount", "@publish", "@subscribe"]
+                .iter()
+                .any(|name| source[at..].starts_with(name))
+    });
+    let mut offset = 0;
+    for line in source.split_inclusive('\n') {
+        let trimmed = line.trim();
+        let executable = mask
+            .code
+            .get(offset + line.len() - line.trim_start().len())
+            .copied()
+            .unwrap_or(false);
+        offset += line.len();
+        if !executable || trimmed.is_empty() {
+            continue;
+        }
+        if let Some(name) = ["onMount", "publish", "subscribe"]
+            .iter()
+            .find(|name| trimmed.starts_with(&format!("@{name}")))
+        {
+            let suffix = trimmed
+                .strip_prefix(&format!("@{name}"))
+                .unwrap_or_default();
+            if !suffix.is_empty()
+                && (*name == "onMount"
+                    || !suffix.ends_with(')')
+                    || decorator_argument(trimmed).is_none())
+            {
+                return Err(decorator_failure(source_path));
+            }
+            pending = true;
+            mount_pending |= *name == "onMount";
+            has_decorators = true;
+        } else if pending {
+            if decorated_member(trimmed, None)
+                .is_none_or(|entry| mount_pending && entry.kind != "method")
+            {
+                return Err(decorator_failure(source_path));
+            }
+            pending = false;
+            mount_pending = false;
+        }
+    }
+    if pending {
+        return Err(decorator_failure(source_path));
+    }
+    if !has_decorators && inline_state.trim().is_empty() {
+        return Ok(bytes);
+    }
+    if has_decorators {
+        validate_decorator_scope(source, &mask.code, source_path)?;
+    }
+    Ok(transform_page_module(bytes, inline_state))
+}
+
+fn default_class_open(source: &str, mask: &[bool]) -> Option<usize> {
+    let start = source
+        .match_indices("export default class")
+        .find_map(|(at, _)| (mask.get(at) == Some(&true)).then_some(at))?;
+    source
+        .as_bytes()
+        .iter()
+        .enumerate()
+        .skip(start)
+        .find_map(|(at, byte)| (*byte == b'{' && mask.get(at) == Some(&true)).then_some(at))
+}
+
+fn validate_decorator_scope(source: &str, mask: &[bool], source_path: &str) -> Result<(), Failure> {
+    let open = default_class_open(source, mask).ok_or_else(|| decorator_failure(source_path))?;
+    let mut depth = 0_usize;
+    let mut finished = false;
+    for (at, byte) in source.bytes().enumerate() {
+        if mask.get(at) != Some(&true) {
+            continue;
+        }
+        if at >= open && !finished {
+            if byte == b'{' {
+                depth = depth.saturating_add(1);
+            } else if byte == b'}' {
+                depth = depth.saturating_sub(1);
+            }
+            finished = depth == 0;
+        }
+        if byte != b'@'
+            || !["@onMount", "@publish", "@subscribe"]
+                .iter()
+                .any(|name| source[at..].starts_with(name))
+        {
+            continue;
+        }
+        let line = source[..at]
+            .rsplit_once('\n')
+            .map_or(&source[..at], |(_, line)| line);
+        if at < open || finished || depth != 1 || !line.trim().is_empty() {
+            return Err(decorator_failure(source_path));
+        }
+    }
+    Ok(())
+}
+
+fn decorator_failure(source_path: &str) -> Failure {
+    Failure::one(diagnostic(
+        1306,
+        "Invalid Tac lifecycle or signal decorator.",
+        Some(String::from(
+            "Use @onMount on an instance method, or @publish/@subscribe with an optional quoted signal name on an instance field or method; place each decorator on its own line.",
+        )),
+        source_span(source_path, 0, 0),
+    ))
+}
+
+/// Renders one route's declared metadata into head elements.
+///
+/// Only what was declared: a project that names a title and nothing else gets
+/// a title and nothing else, rather than a page of empty social tags.
+fn render_page_metadata(declared: &crate::native::PageMetadata) -> String {
+    use std::fmt::Write as _;
+
+    let mut head = String::new();
+    if let Some(title) = &declared.title {
+        let title = html_attribute_escape(title);
+        let _ = write!(
+            head,
+            "<title>{title}</title>\
+             <meta property=\"og:title\" content=\"{title}\">\
+             <meta name=\"twitter:title\" content=\"{title}\">"
+        );
+    }
+    if let Some(description) = &declared.description {
+        let description = html_attribute_escape(description);
+        let _ = write!(
+            head,
+            "<meta name=\"description\" content=\"{description}\">\
+             <meta property=\"og:description\" content=\"{description}\">\
+             <meta name=\"twitter:description\" content=\"{description}\">"
+        );
+    }
+    if let Some(canonical) = &declared.canonical {
+        let canonical = html_attribute_escape(canonical);
+        let _ = write!(
+            head,
+            "<link rel=\"canonical\" href=\"{canonical}\">\
+             <meta property=\"og:url\" content=\"{canonical}\">"
+        );
+    }
+    if let Some(image) = &declared.image {
+        let image = html_attribute_escape(image);
+        let _ = write!(
+            head,
+            "<meta property=\"og:image\" content=\"{image}\">\
+             <meta name=\"twitter:card\" content=\"summary_large_image\">"
+        );
+    }
+    if let Some(site) = &declared.site_name {
+        let site = html_attribute_escape(site);
+        let _ = write!(
+            head,
+            "<meta property=\"og:site_name\" content=\"{site}\">\
+             <meta property=\"og:type\" content=\"website\">"
+        );
+    }
+    head
+}
+
+/// Escapes a configured value for an HTML attribute or text node.
+pub(crate) fn html_attribute_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn shared_asset_failure(path: &Path, detail: &str) -> Failure {
@@ -1182,6 +1756,9 @@ fn build_version(files: &[(PathBuf, Vec<u8>)], build_config_digest: Option<&str>
     ordered.sort_by(|left, right| left.0.cmp(&right.0));
 
     let mut hasher = Sha256::new();
+    // A security-only worker upgrade must also retire the previous cache.
+    hasher.update(SERVICE_WORKER.as_bytes());
+    hasher.update(SERVICE_WORKER_REGISTRATION.as_bytes());
     if let Some(digest) = build_config_digest {
         hasher.update(b"tac.config.js\0");
         hasher.update(digest.as_bytes());
@@ -1196,6 +1773,32 @@ fn build_version(files: &[(PathBuf, Vec<u8>)], build_config_digest: Option<&str>
         .get(..16)
         .unwrap_or("0")
         .to_owned()
+}
+
+fn service_worker_assets(files: &[(PathBuf, Vec<u8>)]) -> Result<String, Failure> {
+    let mut assets = BTreeMap::new();
+    for (path, bytes) in files {
+        if bytes.len() > 4 * 1_048_576 {
+            continue;
+        }
+        let path = format!("/{}", portable_path(path));
+        let asset = serde_json::json!({ "sha256": sha256_bytes(bytes), "bytes": bytes.len() });
+        assets.insert(path.clone(), asset.clone());
+        if let Some(directory) = path.strip_suffix("index.html") {
+            assets.insert(directory.to_owned(), asset.clone());
+            if directory != "/" {
+                assets.insert(directory.trim_end_matches('/').to_owned(), asset);
+            }
+        }
+    }
+    serde_json::to_string(&assets).map_err(|_| {
+        Failure::one(diagnostic(
+            1201,
+            "Cannot encode public asset fingerprints.",
+            None,
+            None,
+        ))
+    })
 }
 
 fn sha256_bytes(bytes: &[u8]) -> String {
@@ -1567,28 +2170,39 @@ fn typescript_error(source: &str, detail: &str) -> Failure {
 }
 
 fn build_config_digest(project_root: &Path) -> Result<Option<String>, Failure> {
-    let path = project_root.join("tac.config.js");
-    let Ok(metadata) = fs::symlink_metadata(&path) else {
+    let config = crate::native::config_module_path(project_root)?;
+    let manifest = project_root.join(crate::native::MANIFEST_NAME);
+    let mut inputs = Vec::new();
+    if let Some(path) = config {
+        inputs.push(path);
+    }
+    if output_io(manifest.try_exists(), &manifest)? {
+        inputs.push(manifest);
+    }
+    if inputs.is_empty() {
         return Ok(None);
-    };
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return Err(Failure::one(diagnostic(
-            1201,
-            "tac.config.js must be a regular, non-symlinked file.",
-            None,
-            None,
-        )));
     }
-    if metadata.len() > MAX_BUILD_CONFIG_BYTES {
-        return Err(Failure::one(diagnostic(
-            1201,
-            "tac.config.js exceeds the 1 MiB limit.",
-            None,
-            None,
-        )));
+    let mut digest_input = Vec::new();
+    for path in inputs {
+        let metadata = output_io(fs::symlink_metadata(&path), &path)?;
+        if metadata.file_type().is_symlink()
+            || !metadata.is_file()
+            || metadata.len() > MAX_BUILD_CONFIG_BYTES
+        {
+            return Err(Failure::one(diagnostic(
+                1201,
+                "Build configuration and manifest must be regular non-symlinked files no larger than 1 MiB.",
+                None,
+                None,
+            )));
+        }
+        let bytes = output_io(fs::read(&path), &path)?;
+        digest_input.extend_from_slice(path.file_name().unwrap_or_default().as_encoded_bytes());
+        digest_input.push(0);
+        digest_input.extend_from_slice(&bytes);
+        digest_input.push(0);
     }
-    let bytes = output_io(fs::read(&path), &path)?;
-    Ok(Some(sha256_bytes(&bytes)))
+    Ok(Some(sha256_bytes(&digest_input)))
 }
 
 async fn run_post_bundle_hook(
@@ -1596,16 +2210,22 @@ async fn run_post_bundle_hook(
     stage: &Path,
     target: &str,
 ) -> Result<(), Failure> {
-    let config = project_root.join("tac.config.js");
-    if !config.is_file() {
+    let Some(config) = crate::native::config_module_path(project_root)? else {
         return Ok(());
-    }
+    };
     let configured = std::env::var_os("TAC_JAVASCRIPT_RUNTIME").map(PathBuf::from);
     let programs = configured
         .into_iter()
         .chain([PathBuf::from("node"), PathBuf::from("bun")]);
     for program in programs {
         let mut command = tokio::process::Command::new(&program);
+        if config
+            .extension()
+            .is_some_and(|extension| extension == "ts")
+            && program.file_stem().is_some_and(|name| name == "node")
+        {
+            command.arg("--experimental-strip-types");
+        }
         command
             .args(["--input-type=module", "--eval", POST_BUNDLE_RUNNER])
             .current_dir(project_root)
@@ -1781,6 +2401,92 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn signal_decorators_lower_without_inline_state_and_preserve_lexical_decoys() {
+        let source = br"const note = `
+@publish('not-real')
+export default class Fake { }
+`;
+export default class Counter {
+  @publish('counter')
+  // The field also persists.
+  $value = 2;
+  @subscribe('counter')
+  seen = 0;
+  @publish
+  @onMount
+  async ready() { return 3; }
+}
+";
+        let output =
+            super::prepare_component_script(source.to_vec(), "", "tac.js").expect("decorators");
+        let text = String::from_utf8(output).expect("UTF-8");
+        assert!(
+            text.contains("@publish('not-real')"),
+            "string decoy preserved"
+        );
+        assert!(text.contains("[\"$value\", \"counter\", \"field\"]"));
+        assert!(text.contains("[\"ready\", \"ready\", \"method\"]"));
+        assert!(text.contains("static __tachyonOnMount = [\"ready\"]"));
+        assert!(text.contains("[\"seen\", \"counter\", \"field\"]"));
+        assert!(!text.contains("@subscribe('counter')"));
+    }
+
+    #[test]
+    fn invalid_signal_decorators_fail_before_emission() {
+        for decorated in [
+            "@publish(untrusted)",
+            "@publish('bad space')",
+            "@publish('.invalid-leading-dot')",
+            "@subscribe('-invalid-leading-hyphen')",
+            "@subscribe('x'",
+            "@onMount('x')",
+            "@publish('')",
+        ] {
+            let source = format!("export default class {{\n{decorated}\nvalue = 0;\n}}");
+            assert!(
+                super::prepare_component_script(source.into_bytes(), "", "tac.js").is_err(),
+                "{decorated}"
+            );
+        }
+        for member in ["static value = 0", "constructor() {}", "tac = 0"] {
+            let source = format!("export default class {{\n@publish\n{member}\n}}");
+            assert!(
+                super::prepare_component_script(source.into_bytes(), "", "tac.js").is_err(),
+                "{member}"
+            );
+        }
+        assert!(
+            super::prepare_component_script(
+                b"export default class {\n@onMount\nfield = 0\n}".to_vec(),
+                "",
+                "tac.js"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn signal_decorators_are_emitted_for_component_and_page_companions() {
+        let root = tempfile::tempdir().expect("project");
+        let pages = root.path().join("client/pages");
+        let component = root.path().join("client/components/signal/panel");
+        fs::create_dir_all(&pages).expect("pages");
+        fs::create_dir_all(&component).expect("component");
+        fs::write(pages.join("tac.html"), "<signal-panel hydrate=\"load\" />").expect("view");
+        fs::write(component.join("tac.html"), "<p>{seen}</p>").expect("view");
+        let source = "export default class {\n@subscribe('counter')\nseen = 0;\n}";
+        fs::write(pages.join("tac.js"), source).expect("page module");
+        fs::write(component.join("tac.js"), source).expect("component module");
+        WebCompiler::build(root.path(), &BuildOptions::default()).expect("build");
+        for name in ["client.js", ".tachyon/components/signal-panel.js"] {
+            let output =
+                fs::read_to_string(root.path().join("dist").join(name)).expect("emitted module");
+            assert!(output.contains("static __tachyonSubscribe"), "{name}");
+            assert!(!output.contains("@subscribe"), "{name}");
+        }
+    }
+
+    #[test]
     fn failed_build_preserves_the_previous_output() {
         let root = tempfile::tempdir().expect("project");
         let source = root.path().join("client/pages/tac.html");
@@ -1873,10 +2579,7 @@ mod tests {
                 .exists()
         );
         assert!(runtime.contains("const renderNodes = async"));
-        assert!(
-            runtime.contains("has: (_, name) => fields.has(name) || methods.has(name)"),
-            "Wasm owners must expose their declared members to expression lookup"
-        );
+        assert!(!runtime.contains("WebAssembly.instantiate"));
         assert!(runtime.contains("globalThis.__tc_rerender = render"));
     }
 

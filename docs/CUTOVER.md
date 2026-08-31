@@ -1,5 +1,23 @@
 # Cutover Gate Status
 
+## Current reconciliation gate (2026-08-30)
+
+The earlier cutover below is a historical record. Release v26.35.07 completed
+the real [Stable Release run 33301688118](https://github.com/d31ma/Tachyon/actions/runs/33301688118);
+its downloadable artifacts were checksum- and provenance-verified during the
+reconciliation audit. The original provenance condition is therefore no
+longer waiting for its first release.
+
+That does not qualify the newer native architecture. The reconciliation in
+[`RECONCILIATION.md`](RECONCILIATION.md) must pass fresh browser, schema,
+native-host, security, and downloaded-artifact behavior gates before a new
+immutable version is published. Historical widget and WebAssembly results
+cannot be substituted for the ADR 0018/0019 host and companion gates. Human
+security review remains optional; automated exact-head qualification remains
+mandatory. Current status: **reconciliation in progress, not release-ready**.
+
+## Historical cutover assessment (2026-08-01)
+
 The cutover gate in [`PROJECT_PLAN.md`](PROJECT_PLAN.md) lists six conditions
 that must all hold before the Rust implementation becomes Tachyon's default.
 

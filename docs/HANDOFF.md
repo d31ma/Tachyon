@@ -1,5 +1,15 @@
 # Handoff — Tachyon Rust Rewrite
 
+> Current reconciliation override (2026-08-30): this document's phase and
+> machine-specific notes are historical. Work on `codex/reconcile-local-features`
+> in the user's selected workspace; never switch repositories based on the old
+> path below. Keep Cargo output outside Dropbox with `CARGO_TARGET_DIR`.
+> ADRs 0018/0019 replace native widget planning and WebAssembly companions.
+> Browser components use JS/TS; page companions compile for native targets.
+> Do not install obsolete Wasm toolchains. See `RECONCILIATION.md` for the
+> current inventory and outstanding qualification. The first signed/attested
+> release has already occurred; new behavior still needs a new immutable release.
+
 > Current architecture override (2026-08-10): ADR 0015 makes Tac exclusively
 > client-rendered. Historical SSR-island notes below describe superseded
 > evidence and must not be used as implementation authority. ADR 0016 makes

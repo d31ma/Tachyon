@@ -8,7 +8,7 @@
 use crate::Failure;
 use crate::template::TemplateFrontend;
 use std::collections::BTreeSet;
-use tachyon_contracts::{HandlerResponse, NativeTarget, NativeUi};
+use tachyon_contracts::{HandlerResponse, NativeTarget};
 
 /// Compiles one template source exactly as the web compiler does.
 ///
@@ -30,11 +30,11 @@ pub fn decode_response_frame(bytes: &[u8], request_id: &str) -> Result<HandlerRe
     crate::handler::frame::response_frame(bytes, request_id)
 }
 
-/// Plans one resolved document into Native UI v1 for the given target.
+/// Validates the bounded web frontend consumed by every native host.
 ///
 /// # Errors
 ///
 /// Returns the same planning diagnostics a native build would return.
-pub fn plan_native(target: NativeTarget, html: &str) -> Result<NativeUi, Failure> {
+pub fn plan_native(target: NativeTarget, html: &str) -> Result<(), Failure> {
     crate::native::plan_for_fuzzing(target, html)
 }

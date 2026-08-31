@@ -63,6 +63,164 @@ async fn get(port: u16, path: &str) -> String {
     .await
 }
 
+fn chex_available() -> bool {
+    let program = std::env::var_os("TAC_CHEX_BINARY").unwrap_or_else(|| "chex".into());
+    std::process::Command::new(program)
+        .arg("--help")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+#[tokio::test]
+async fn chex_enforces_captured_request_contracts_before_handler_dispatch() {
+    if !chex_available() {
+        eprintln!(
+            "CHEX integration requires the CHEX executable; external-boundary unit tests remain active."
+        );
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    write_project(root.path());
+    let declaration = root
+        .path()
+        .join("server/routes/items/_id/OPTIONS.schema.json");
+    write(
+        &declaration,
+        r#"{"summary":"Items","methods":{"GET":{"request":{"parameters":{"id":"^[0-9]+$"}},"ok":{"id":"^[0-9]+$"}},"POST":{"request":{"headers":{"authorization":"^Bearer .+$"},"parameters":{"id":"^[0-9]+$"},"body":{"name":"^.{1,10}$","note?":"^.*$"}}}}}"#,
+    );
+    let captured = tachyon_core::ProjectDiscovery::discover(root.path()).expect("captured project");
+    // Discovery owns the contract; later authored-path changes cannot disable it.
+    write(&declaration, r#"{"methods":{"POST":{}}}"#);
+    let server = DevServer::bind_project(
+        &captured,
+        &DevServerOptions {
+            port: 0,
+            ..DevServerOptions::default()
+        },
+    )
+    .await
+    .expect("CHEX preflight and bind");
+    let port = server.address().port();
+    let (stop, shutdown) = tokio::sync::oneshot::channel();
+    let running = tokio::spawn(server.run_until(async {
+        let _ = shutdown.await;
+    }));
+    assert_chex_request_outcomes(port).await;
+    let options = request(
+        port,
+        "OPTIONS /items/7 HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+    )
+    .await;
+    assert!(
+        options.contains("200 OK") && options.contains("Items") && options.contains("allow:"),
+        "{options}"
+    );
+    let api = get(port, "/api.json").await;
+    assert!(
+        api.contains("/items/_id") && api.contains("authorization"),
+        "{api}"
+    );
+    let viewer = get(port, "/api-docs/").await;
+    assert!(
+        viewer.contains("200 OK") && viewer.contains("API reference"),
+        "{viewer}"
+    );
+    stop.send(()).expect("stop");
+    running.await.expect("server task").expect("shutdown");
+}
+
+async fn assert_chex_request_outcomes(port: u16) {
+    for (path, body, header, expected, part) in [
+        ("/items/7", r#"{"name":"Ada"}"#, "Bearer safe", "200 OK", ""),
+        (
+            "/items/7",
+            r#"{"name":"longer than ten"}"#,
+            "Bearer safe",
+            "400 Bad Request",
+            "body",
+        ),
+        (
+            "/items/7",
+            r#"{"name":"Ada","extra":1}"#,
+            "Bearer safe",
+            "400 Bad Request",
+            "body",
+        ),
+        (
+            "/items/7",
+            "not json",
+            "Bearer safe",
+            "400 Bad Request",
+            "body",
+        ),
+        ("/items/7", "[]", "Bearer safe", "400 Bad Request", "body"),
+        (
+            "/items/wrong",
+            r#"{"name":"Ada"}"#,
+            "Bearer safe",
+            "400 Bad Request",
+            "parameters",
+        ),
+        (
+            "/items/7",
+            r#"{"name":"Ada"}"#,
+            "PRIVATE_SECRET_TOKEN",
+            "400 Bad Request",
+            "headers",
+        ),
+    ] {
+        let response = request(port, &format!("POST {path} HTTP/1.1\r\nHost: localhost\r\nAuthorization: {header}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())).await;
+        assert!(response.contains(expected), "{response}");
+        if !part.is_empty() {
+            assert!(
+                response.contains(&format!("\"part\":\"{part}\"")),
+                "{response}"
+            );
+            assert!(
+                !response.contains("PRIVATE_SECRET_TOKEN"),
+                "validator messages cannot expose headers"
+            );
+            assert!(
+                !response.contains("created"),
+                "rejected input reached handler"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn chex_rejects_invalid_definitions_before_publishing_output() {
+    if !chex_available() {
+        return;
+    }
+    for schema in [r#"{"name":"([broken"}"#, r#"{"name":5}"#, r#"{"name":[]}"#] {
+        let root = tempfile::tempdir().expect("project");
+        write_project(root.path());
+        write(
+            &root
+                .path()
+                .join("server/routes/items/_id/OPTIONS.schema.json"),
+            &format!(r#"{{"methods":{{"POST":{{"request":{{"body":{schema}}}}}}}}}"#),
+        );
+        let failure = DevServer::bind(
+            root.path(),
+            &DevServerOptions {
+                port: 0,
+                ..DevServerOptions::default()
+            },
+        )
+        .await
+        .expect_err("invalid CHEX definition");
+        assert!(failure.to_string().contains("TY2006"), "{failure}");
+        assert!(
+            !root.path().join("dist/web").exists(),
+            "invalid contract published output"
+        );
+    }
+}
+
 async fn read_until(stream: &mut TcpStream, needle: &str) -> String {
     let mut received = Vec::new();
     tokio::time::timeout(Duration::from_secs(30), async {
@@ -1122,6 +1280,23 @@ if (($request['operation'] ?? '') === 'middleware.after') {
 }
 
 #[cfg(unix)]
+async fn completed_worker_marker(path: &Path) -> String {
+    tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            match fs::read_to_string(path) {
+                Ok(contents) if contents.ends_with('\n') => break contents,
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => panic!("cannot read owned worker marker: {error}"),
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("captured one-second worker schedule executed")
+}
+
+#[cfg(unix)]
 #[tokio::test]
 async fn startup_uses_one_owned_snapshot_for_build_middleware_and_scheduled_workers() {
     let workspace = tempfile::tempdir().expect("workspace");
@@ -1139,10 +1314,11 @@ async fn startup_uses_one_owned_snapshot_for_build_middleware_and_scheduled_work
         &authored.join("middleware.py"),
         "@Controller\nclass StartupController:\n    @staticmethod\n    def GET(request):\n        return {\"status\": 204, \"headers\": {\"x-startup-snapshot\": [\"owned\"]}, \"body\": \"\"}\n",
     );
+    // Expose the interval between file creation and the completed worker write.
     write(
         &authored.join("server/workers/heartbeat.py"),
         &format!(
-            "from pathlib import Path\n@Controller\nclass HeartbeatController:\n    @staticmethod\n    def POST(request):\n        with Path({owned_marker:?}).open('a', encoding='utf-8') as marker:\n            marker.write('owned\\n')\n        return {{\"status\": 204, \"headers\": {{}}, \"body\": \"\"}}\n"
+            "from pathlib import Path\nimport time\n@Controller\nclass HeartbeatController:\n    @staticmethod\n    def POST(request):\n        with Path({owned_marker:?}).open('a', encoding='utf-8') as marker:\n            time.sleep(0.15)\n            marker.write('owned\\n')\n        return {{\"status\": 204, \"headers\": {{}}, \"body\": \"\"}}\n"
         ),
     );
     write(
@@ -1202,17 +1378,8 @@ async fn startup_uses_one_owned_snapshot_for_build_middleware_and_scheduled_work
         "{response}"
     );
 
-    tokio::time::timeout(Duration::from_secs(8), async {
-        while !owned_marker.exists() {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-    })
-    .await
-    .expect("captured one-second worker schedule executed");
-    assert_eq!(
-        fs::read_to_string(&owned_marker).expect("owned marker"),
-        "owned\n"
-    );
+    let marker = completed_worker_marker(&owned_marker).await;
+    assert_eq!(marker, "owned\n");
     assert!(!planted_marker.exists(), "planted worker source executed");
 
     let _stopped = stop.send(());

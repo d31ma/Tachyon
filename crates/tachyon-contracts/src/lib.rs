@@ -29,7 +29,7 @@ pub struct Contract {
 }
 
 /// All public contracts. Registry order is stable and alphabetical.
-pub const CONTRACTS: [Contract; 9] = [
+pub const CONTRACTS: [Contract; 10] = [
     Contract {
         name: "artifact-manifest",
         id: "https://tachyon.del.ma/schema/artifact-manifest/v1",
@@ -69,6 +69,14 @@ pub const CONTRACTS: [Contract; 9] = [
         schema: include_str!("../../../api/hot-update/v1/schema.json"),
         valid_example: include_str!("../../../api/hot-update/v1/examples/valid.json"),
         invalid_example: include_str!("../../../api/hot-update/v1/examples/invalid.json"),
+    },
+    Contract {
+        name: "native-host",
+        id: "https://tachyon.del.ma/schema/native-host/v3",
+        major_version: 3,
+        schema: include_str!("../../../api/native-host/v3/schema.json"),
+        valid_example: include_str!("../../../api/native-host/v3/examples/valid.json"),
+        invalid_example: include_str!("../../../api/native-host/v3/examples/invalid.json"),
     },
     Contract {
         name: "native-ui",
@@ -224,6 +232,21 @@ pub enum ViewNode {
         /// Nodes emitted when the iterable is empty.
         empty: Vec<Self>,
     },
+    /// A bounded client-owned counted loop.
+    CountedIteration {
+        /// Local counter name.
+        binding: String,
+        /// Initial counter expression.
+        from: String,
+        /// Comparison defining the direction of traversal.
+        comparison: CountedComparison,
+        /// Limit expression.
+        to: String,
+        /// Positive finite step magnitude expression.
+        step: String,
+        /// Nodes emitted on each iteration.
+        body: Vec<Self>,
+    },
     /// A registered Tac component invocation.
     Component {
         /// Canonical component name.
@@ -233,6 +256,28 @@ pub enum ViewNode {
         /// Invocation children supplied to the component slot.
         children: Vec<Self>,
     },
+}
+
+/// The comparison and direction of a counted loop.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CountedComparison {
+    /// Strictly below the upper limit.
+    Lt,
+    /// At or below the upper limit.
+    Le,
+    /// Strictly above the lower limit.
+    Gt,
+    /// At or above the lower limit.
+    Ge,
+}
+
+impl CountedComparison {
+    /// Returns whether the counter increases toward the limit.
+    #[must_use]
+    pub const fn ascending(self) -> bool {
+        matches!(self, Self::Lt | Self::Le)
+    }
 }
 
 /// View Source Map v1.
@@ -494,13 +539,18 @@ pub struct ArtifactContractVersions {
     /// Artifact Manifest major version.
     pub artifact_manifest: u8,
     /// Capability Manifest major version.
-    pub capability_manifest: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_manifest: Option<u8>,
     /// Diagnostics major version.
     pub diagnostics: u8,
     /// Handler Protocol major version.
     pub handler_protocol: u8,
     /// Native UI major version.
-    pub native_ui: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ui: Option<u8>,
+    /// Native Host descriptor major version, absent on historical artifacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_host: Option<u8>,
     /// Route Manifest major version.
     pub route_manifest: u8,
     /// View IR major version.
@@ -511,10 +561,11 @@ impl Default for ArtifactContractVersions {
     fn default() -> Self {
         Self {
             artifact_manifest: 1,
-            capability_manifest: 1,
+            capability_manifest: None,
             diagnostics: 1,
             handler_protocol: 1,
-            native_ui: 1,
+            native_ui: None,
+            native_host: Some(3),
             route_manifest: 1,
             view_ir: 1,
         }
@@ -1082,7 +1133,13 @@ mod tests {
             }],
         };
         let artifact_value = serde_json::to_value(artifact)?;
-        assert_eq!(artifact_value["contracts"]["native_ui"], 1);
+        assert_eq!(artifact_value["contracts"]["native_host"], 3);
+        assert!(artifact_value["contracts"].get("native_ui").is_none());
+        assert!(
+            artifact_value["contracts"]
+                .get("capability_manifest")
+                .is_none()
+        );
         assert_eq!(artifact_value["target"]["os"], "macos");
         Ok(())
     }

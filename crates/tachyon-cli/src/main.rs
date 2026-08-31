@@ -63,7 +63,7 @@ impl BuildTarget {
     about = "Tachyon CLI",
     disable_version_flag = true,
     disable_help_subcommand = true,
-    help_template = "ty {version} — Tachyon CLI\n\nUsage: ty <command> [options]\n\nCommands:\n  init [name]        Scaffold a new Tachyon app\n  serve              Run the server (dev or production)\n  bundle             Build client + native artifacts\n  native-bundle      Generate the native host only\n  preview            Preview a built bundle\n  cache [status|clean] Inspect or clear standalone runtime cache\n\nRun 'ty <command> --help' for command-specific options.\n"
+    help_template = "ty {version} — Tachyon CLI\n\nUsage: ty <command> [options]\n\nCommands:\n  init [name]        Scaffold a new Tachyon app\n  preview            Development server: Tac, Yon, or both\n  start              Serve a built bundle with Yon in production\n  bundle             Build client + native artifacts\n  bundle --native    Stage the native host without packaging\n  serve              Compatibility development-server command\n  cache [status|clean] Inspect or clear standalone runtime cache\n\nRun 'ty <command> --help' for command-specific options.\n"
 )]
 struct Cli {
     /// Print the Tachyon product version.
@@ -107,9 +107,12 @@ enum Command {
         /// Rebuild when project sources change.
         #[arg(long, visible_alias = "bundle-watch")]
         watch: bool,
-        /// Packaging target; non-web targets always use native-first rendering.
+        /// Packaging target; native targets host the client-rendered bundle.
         #[arg(long, visible_alias = "targets", value_enum, value_delimiter = ',', num_args = 1..)]
         target: Vec<BuildTarget>,
+        /// Stage one native host without invoking the platform packager.
+        #[arg(long)]
+        native: bool,
         /// Compatibility switch; native hosts are always generated now.
         #[arg(long, hide = true)]
         skip_native_host: bool,
@@ -125,7 +128,7 @@ enum Command {
         /// Stage native source and resources without invoking the platform packager.
         #[arg(long, hide = true)]
         skip_package: bool,
-        /// Deprecated render-mode switch; native-first rendering is unconditional.
+        /// Deprecated render-mode switch; rendering is fixed by the target contract.
         #[arg(long, hide = true)]
         render_mode: Option<String>,
     },
@@ -141,7 +144,7 @@ enum Command {
         /// Disable verified incremental route reuse.
         #[arg(long)]
         no_incremental: bool,
-        /// Packaging target; non-web targets always use native-first rendering.
+        /// Packaging target; native targets host the client-rendered bundle.
         #[arg(long, value_enum, default_value_t = BuildTarget::Web)]
         target: BuildTarget,
     },
@@ -160,7 +163,7 @@ enum Command {
         /// Native packaging target.
         #[arg(long, visible_alias = "targets", value_enum, value_delimiter = ',', num_args = 1..)]
         target: Vec<BuildTarget>,
-        /// Deprecated render-mode switch; native-first rendering is unconditional.
+        /// Deprecated render-mode switch; rendering is fixed by the target contract.
         #[arg(long, hide = true)]
         render_mode: Option<String>,
     },
@@ -192,7 +195,25 @@ enum Command {
         #[arg(long, hide = true)]
         bundle_watch: bool,
     },
-    /// Preview a built bundle.
+    /// Serve an existing bundle and supervised Yon handlers without rebuilding.
+    Start {
+        /// Tachyon project root.
+        #[arg(default_value = ".")]
+        project: PathBuf,
+        /// Interface address.
+        #[arg(long, visible_alias = "hostname")]
+        host: Option<String>,
+        /// TCP port; zero requests an ephemeral port.
+        #[arg(long)]
+        port: Option<u16>,
+        /// Explicitly permit exposure beyond the local machine.
+        #[arg(long)]
+        allow_non_loopback: bool,
+        /// Project-relative existing output directory.
+        #[arg(long)]
+        out_dir: Option<PathBuf>,
+    },
+    /// Run the Tac/Yon development server, or preview an existing static bundle.
     #[command(display_order = 5)]
     Preview {
         /// Tachyon project root.
@@ -210,6 +231,9 @@ enum Command {
         /// Project-relative output directory.
         #[arg(long, default_value = "dist")]
         out_dir: PathBuf,
+        /// Preview existing static files only, without building or running Yon.
+        #[arg(long = "static")]
+        static_only: bool,
         /// Rebuild the selected target when sources change.
         #[arg(long, visible_alias = "bundle-watch")]
         watch: bool,
@@ -410,6 +434,7 @@ async fn execute(command: &Command) -> Result<(), Failure> {
         } => execute_build(project, out_dir, *no_incremental, *target).await,
         Command::NativeBundle { .. } => execute_native_bundle_command(command).await,
         Command::Dev { .. } => execute_dev_command(command).await,
+        Command::Start { .. } => execute_start_command(command).await,
         Command::Preview { .. } => execute_preview_command(command).await,
         Command::Doctor { project, json } => execute_doctor(project, *json),
         Command::Cache { command } => execute_cache(command.as_ref()),
@@ -438,6 +463,7 @@ async fn execute_bundle_command(command: &Command) -> Result<(), Failure> {
         no_incremental,
         watch,
         target,
+        native,
         skip_initial_build,
         render_mode,
         skip_package,
@@ -450,8 +476,15 @@ async fn execute_bundle_command(command: &Command) -> Result<(), Failure> {
     let targets = resolve_targets(
         target,
         &["TAC_BUNDLE_TARGET", "TAC_TARGET"],
-        Some(BuildTarget::Web),
+        if *native {
+            None
+        } else {
+            Some(BuildTarget::Web)
+        },
     )?;
+    if *native {
+        require_one_native_target(&targets, "bundle --native")?;
+    }
     let output = bundle_output(out_dir.as_deref(), &targets);
     let options = BundleExecution {
         no_incremental: *no_incremental,
@@ -461,7 +494,7 @@ async fn execute_bundle_command(command: &Command) -> Result<(), Failure> {
         } else {
             InitialBuild::Run
         },
-        package: !*skip_package,
+        package: !*skip_package && !*native,
     };
     execute_bundle(project, &output, &targets, options).await
 }
@@ -514,8 +547,43 @@ async fn execute_dev_command(command: &Command) -> Result<(), Failure> {
         port,
         *allow_non_loopback,
         &output,
-        *no_watch || production,
-        *no_bundle || truthy_environment("YON_SKIP_BUNDLE") || production,
+        ServingPolicy {
+            watch: !(*no_watch || production),
+            build: !(*no_bundle || truthy_environment("YON_SKIP_BUNDLE") || production),
+            command: LongRunningCommand::Serve,
+        },
+    )
+    .await
+}
+
+async fn execute_start_command(command: &Command) -> Result<(), Failure> {
+    let Command::Start {
+        project,
+        host,
+        port,
+        allow_non_loopback,
+        out_dir,
+    } = command
+    else {
+        unreachable!();
+    };
+    let host = resolve_host(host.as_deref(), &["YON_HOST", "YON_HOSTNAME", "HOST"])?;
+    let port = resolve_port(*port, &["YON_PORT", "PORT"], 8080)?;
+    let output = out_dir
+        .clone()
+        .or_else(|| environment_path("TAC_DIST_PATH"))
+        .unwrap_or_else(|| PathBuf::from("dist/web"));
+    execute_serve(
+        project,
+        host,
+        port,
+        *allow_non_loopback,
+        &output,
+        ServingPolicy {
+            watch: false,
+            build: false,
+            command: LongRunningCommand::Start,
+        },
     )
     .await
 }
@@ -527,6 +595,7 @@ async fn execute_preview_command(command: &Command) -> Result<(), Failure> {
         port,
         allow_non_loopback,
         out_dir,
+        static_only,
         watch,
         target,
         ..
@@ -543,6 +612,26 @@ async fn execute_preview_command(command: &Command) -> Result<(), Failure> {
         Some(BuildTarget::Web),
     )?;
     let target = require_one_target(&targets, "preview")?;
+    if target == BuildTarget::Web && !static_only {
+        let output = if out_dir == Path::new("dist") {
+            environment_path("TAC_DIST_PATH").unwrap_or_else(|| PathBuf::from("dist/web"))
+        } else {
+            out_dir.clone()
+        };
+        return execute_serve(
+            project,
+            host,
+            port,
+            *allow_non_loopback,
+            &output,
+            ServingPolicy {
+                watch: true,
+                build: true,
+                command: LongRunningCommand::Preview,
+            },
+        )
+        .await;
+    }
     execute_preview(
         project,
         host,
@@ -569,14 +658,20 @@ enum InitialBuild {
     Skip,
 }
 
+#[derive(Clone, Copy)]
+struct ServingPolicy {
+    watch: bool,
+    build: bool,
+    command: LongRunningCommand,
+}
+
 async fn execute_serve(
     project: &Path,
     host: IpAddr,
     port: u16,
     allow_non_loopback: bool,
     out_dir: &Path,
-    no_watch: bool,
-    no_bundle: bool,
+    policy: ServingPolicy,
 ) -> Result<(), Failure> {
     tachyon_core::cache::ensure_runtime()?;
     let server = DevServer::bind(
@@ -586,14 +681,19 @@ async fn execute_serve(
             port,
             allow_non_loopback,
             output_directory: out_dir.to_path_buf(),
-            watch: !no_watch,
-            build: !no_bundle,
+            watch: policy.watch,
+            build: policy.build,
         },
     )
     .await?;
-    let shutdown = ShutdownSignals::install(LongRunningCommand::Serve);
-    println!("Tachyon server ready at http://{}/", server.address());
-    if !no_watch {
+    let shutdown = ShutdownSignals::install(policy.command);
+    let label = match policy.command {
+        LongRunningCommand::Preview => "Tachyon preview ready",
+        LongRunningCommand::Start => "Tachyon production server ready",
+        _ => "Tachyon server ready",
+    };
+    println!("{label} at http://{}/", server.address());
+    if policy.watch {
         println!("Watching sources; open pages receive semantic hot updates.");
     }
     let _flush_result = std::io::stdout().flush();
@@ -859,7 +959,7 @@ fn reject_render_mode(explicit: Option<&str>) -> Result<(), Failure> {
         return Err(cli_failure(
             1001,
             "--render-mode and TAC_RENDER_MODE have been removed.",
-            "Non-web targets are always native-first and use local WebView boundaries only for unmapped HTML and Web Components.",
+            "Native targets always host the client-rendered bundle in the platform web view; use target-native page companions for platform behavior (ADR 0019).",
         ));
     }
     Ok(())
@@ -1008,6 +1108,9 @@ fn source_fingerprint(project: &Path) -> u64 {
     pending.extend([
         project.join("tachyon.json"),
         project.join("tac.config.js"),
+        project.join("tac.config.mjs"),
+        project.join("tac.config.ts"),
+        project.join("manifest.json"),
         project.join("package.json"),
     ]);
     while let Some(current) = pending.pop() {
@@ -1165,11 +1268,9 @@ async fn execute_native_build(
     )
     .await?;
     println!(
-        "Built {} app with {} routes (native_nodes={} web_surfaces={}) to {} ({})",
+        "Built {} app hosting {} routes to {} ({})",
         native_target_directory(native),
         result.route_count(),
-        result.native_node_count(),
-        result.web_surface_count(),
         result.application_bundle().display(),
         result.sha256()
     );
@@ -1249,6 +1350,13 @@ async fn execute_handler(command: &HandlerCommand) -> Result<(), Failure> {
             python_runtime,
         } => {
             let source = HandlerSource::discover(project, source)?;
+            if source.streams_method(HttpMethod::from(*method)) {
+                return Err(cli_failure(
+                    2006,
+                    "handler invoke cannot represent a multi-frame @Stream response.",
+                    "Use ty preview or ty start and request this method over HTTP/SSE.",
+                ));
+            }
             let environment = EnvironmentPolicy::from_names(allow_environment.clone())?;
             let mut runtimes = HandlerRuntimePrograms {
                 javascript: javascript_runtime.clone(),

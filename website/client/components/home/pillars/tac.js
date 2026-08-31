@@ -23,7 +23,7 @@ export default class {
     },
     {
       title: 'Native companions',
-      body: 'A page can be answered by Swift, Kotlin, C# or Rust, each compiled for its target and linked into the host — not bridged.',
+      body: 'Swift, Kotlin, C# or Rust page companions compile for their target and link into the host. The WebView calls their members through a route-scoped bridge.',
     },
     {
       title: 'Standards first',

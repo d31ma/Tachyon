@@ -9,7 +9,7 @@
     "styles": "tailwindcss -i client/shared/styles/tailwind.src.css -o client/shared/styles/tailwind.css --minify",
     "styles:check": "bun run styles && git diff --exit-code -- client/shared/styles/tailwind.css",
     "seed": "node scripts/seed.mjs",
-    "test": "bun test tests/site.test.js",
+    "test": "bun test tests/site.test.js tests/client-examples.test.js",
     "verify:snippets": "node scripts/verify-snippets.mjs",
     "check:responsive": "node scripts/check-responsive.mjs"
   },

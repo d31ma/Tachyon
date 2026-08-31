@@ -147,17 +147,17 @@ private func typeText(_ value: String, into element: AXUIElement, processID: pid
     selectAllDown.postToPid(processID)
     selectAllUp.postToPid(processID)
 
-    var characters = Array(value.utf16)
-    textDown.keyboardSetUnicodeString(
-        stringLength: characters.count,
-        unicodeString: &characters
-    )
-    textUp.keyboardSetUnicodeString(
-        stringLength: characters.count,
-        unicodeString: &characters
-    )
-    textDown.postToPid(processID)
-    textUp.postToPid(processID)
+    for character in value {
+        var characters = Array(String(character).utf16)
+        textDown.keyboardSetUnicodeString(stringLength: characters.count, unicodeString: &characters)
+        textUp.keyboardSetUnicodeString(stringLength: characters.count, unicodeString: &characters)
+        textDown.postToPid(processID)
+        textUp.postToPid(processID)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.08))
+        guard boolAttribute(element, kAXFocusedAttribute) == true else {
+            throw ProbeError.focusFailed("Customer name after reactive input", .failure)
+        }
+    }
 }
 
 private func run() throws {
@@ -186,6 +186,9 @@ private func run() throws {
         }
         try press(button, name: "Increase count")
         interactions.append("increment")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        // A reactive render can replace DOM-backed accessibility objects.
+        elements = collect(window)
 
         guard let textField = elements.first(where: {
             matches($0, identifier: "n_000008", label: "Customer name", role: kAXTextFieldRole)
@@ -194,7 +197,7 @@ private func run() throws {
         }
         try typeText("Ada", into: textField, processID: application.processIdentifier)
         interactions.append("input")
-        Thread.sleep(forTimeInterval: 0.15)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
 
         elements = collect(window)
         guard let disclosure = elements.first(where: {
@@ -202,7 +205,14 @@ private func run() throws {
         }) else {
             throw ProbeError.controlNotFound("Implementation details")
         }
-        try press(disclosure, name: "Implementation details")
+        let focus = AXUIElementSetAttributeValue(disclosure, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        guard focus == .success else { throw ProbeError.focusFailed("Implementation details", focus) }
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 49, keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: 49, keyDown: false) else {
+            throw ProbeError.keyboardFailed
+        }
+        down.postToPid(application.processIdentifier)
+        up.postToPid(application.processIdentifier)
         interactions.append("disclosure")
         RunLoop.current.run(until: Date().addingTimeInterval(0.35))
     }

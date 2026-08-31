@@ -308,3 +308,23 @@ export class RootController {
         assert_eq!(returned, method);
     }
 }
+
+#[test]
+fn single_response_invocation_rejects_streams_with_an_actionable_diagnostic() {
+    let project = tempfile::tempdir().expect("project");
+    write(
+        &project.path().join("server/routes/yon.js"),
+        "@Controller\nexport class RootController {\n @Stream\n static *GET() { yield {ready:true}; }\n}",
+    );
+    let output = run(ty()
+        .args(["handler", "invoke", "server/routes/yon.js"])
+        .arg("--project")
+        .arg(project.path()));
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("TY2006"));
+    assert!(stderr(&output).contains("ty preview"));
+    assert!(
+        output.stdout.is_empty(),
+        "must not silently emit only the first frame"
+    );
+}

@@ -22,3 +22,5 @@ implementation choices belong in code review, not an ADR.
 - [15. Tac Is Exclusively Client Rendered](0015-tac-is-exclusively-client-rendered.md)
 - [16. Yon Is REST Endpoints Only](0016-yon-is-rest-endpoints-only.md)
 - [17. Mandatory Yon Layers, Relay, and Streaming](0017-mandatory-yon-layers-relay-and-streaming.md)
+- [18. Native Hosts Run the Platform's Web Engine](0018-native-hosts-run-the-platform-javascript-engine.md)
+- [19. Companions Compile for Their Target](0019-companions-compile-for-their-target.md)

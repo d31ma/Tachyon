@@ -67,7 +67,7 @@ fn released_aliases_environment_and_removed_render_mode_are_compatible() {
         .arg(&by_environment)
         .args(["--render-mode", "native"]));
     assert!(!rendered.status.success());
-    assert!(stderr(&rendered).contains("always native-first"));
+    assert!(stderr(&rendered).contains("platform web view"));
 }
 
 #[test]
@@ -99,6 +99,70 @@ fn target_environment_and_native_command_cardinality_match_the_released_cli() {
     let all = run(ty().arg("preview").arg(&project).args(["--target", "all"]));
     assert!(!all.status.success());
     assert!(stderr(&all).contains("requires exactly one target"));
+
+    for arguments in [vec!["--native"], vec!["--native", "--target", "web"]] {
+        let native = run(ty().arg("bundle").arg(&project).args(arguments));
+        assert!(!native.status.success());
+        assert!(stderr(&native).contains("requires"));
+    }
+}
+
+#[test]
+fn preview_builds_a_fresh_bundle_but_start_preserves_the_published_bundle() {
+    let project = tempfile::tempdir().expect("project");
+    let view = project.path().join("client/pages/tac.html");
+    write(&view, "<main>Fresh preview behavior</main>");
+    for (command, expected) in [
+        ("preview", "Fresh preview behavior"),
+        ("start", "Fresh preview behavior"),
+    ] {
+        if command == "start" {
+            write(
+                &view,
+                "<main>Unpublished source must not replace production</main>",
+            );
+        }
+        let mut child = ty()
+            .arg(command)
+            .arg(project.path())
+            .args(["--host", "127.0.0.1", "--port", "0"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("server");
+        let pipe = child.stdout.take().expect("readiness pipe");
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(pipe).lines().map_while(Result::ok) {
+                if line.contains(" ready at http://") {
+                    let _ = sender.send(line);
+                    break;
+                }
+            }
+        });
+        let ready = receiver.recv_timeout(Duration::from_secs(20));
+        if ready.is_err() {
+            stop(&mut child);
+        }
+        let ready = ready.expect("readiness within deadline");
+        let address = ready
+            .split_whitespace()
+            .find(|part| part.starts_with("http://"))
+            .expect("address")
+            .trim_start_matches("http://")
+            .trim_end_matches('/');
+        let response = request(
+            address,
+            b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        );
+        stop(&mut child);
+        assert!(response.contains(expected), "{command}: {response}");
+        assert!(
+            !response.contains("Unpublished source"),
+            "start rebuilt production"
+        );
+        assert!(project.path().join("dist/web/index.html").is_file());
+    }
 }
 
 #[test]
@@ -383,14 +447,7 @@ fn released_command_surface_and_web_bundle_path_remain_compatible() {
     let help = run(ty().arg("help"));
     assert!(help.status.success(), "{}", stderr(&help));
     let help = stdout(&help);
-    for command in [
-        "init",
-        "serve",
-        "bundle",
-        "native-bundle",
-        "preview",
-        "cache",
-    ] {
+    for command in ["init", "serve", "bundle", "start", "preview", "cache"] {
         assert!(help.contains(command), "missing {command}: {help}");
     }
     for internal in ["doctor", "handler", "migrate"] {
@@ -403,7 +460,7 @@ fn released_command_surface_and_web_bundle_path_remain_compatible() {
 }
 
 #[test]
-fn preview_serves_the_published_web_bundle_without_recompiling_sources() {
+fn static_preview_serves_the_published_web_bundle_without_recompiling_sources() {
     let workspace = tempfile::tempdir().expect("workspace should be created");
     let project = workspace.path().join("previewed");
     let initialized = run(ty().arg("init").arg(&project).args(["--name", "Published"]));
@@ -419,7 +476,7 @@ fn preview_serves_the_published_web_bundle_without_recompiling_sources() {
     let mut child = ty()
         .arg("preview")
         .arg(&project)
-        .args(["--port", "0"])
+        .args(["--static", "--port", "0"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -570,7 +627,7 @@ fn yon_html_and_unsupported_companions_fail_without_replacing_output() {
     );
     let companion = run(ty().arg("build").arg(project.path()));
     assert!(!companion.status.success());
-    assert!(stderr(&companion).contains("TY1008"));
+    assert!(stderr(&companion).contains("TY1010"));
     assert_eq!(published, files_below(&project.path().join("dist")));
 }
 

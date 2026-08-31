@@ -490,6 +490,27 @@ impl HandlerSource {
         self.language
     }
 
+    /// Whether the captured handler declares the requested method as a stream.
+    ///
+    /// This inspects the owned discovery snapshot, never a reopened source path.
+    #[must_use]
+    pub fn streams_method(&self, method: tachyon_contracts::HttpMethod) -> bool {
+        use tachyon_contracts::HttpMethod;
+        let name = match method {
+            HttpMethod::Delete => "DELETE",
+            HttpMethod::Get => "GET",
+            HttpMethod::Head => "HEAD",
+            HttpMethod::Options => "OPTIONS",
+            HttpMethod::Patch => "PATCH",
+            HttpMethod::Post => "POST",
+            HttpMethod::Put => "PUT",
+        };
+        std::str::from_utf8(&self.source_bytes).is_ok_and(|contents| {
+            crate::stereotype::streaming_methods(Path::new(&self.relative_path), contents)
+                .contains(name)
+        })
+    }
+
     /// Returns the Tachyon-owned runtime or compiled-artifact command.
     #[must_use]
     pub fn interpreter(&self) -> &[String] {

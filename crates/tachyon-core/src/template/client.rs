@@ -41,6 +41,7 @@ impl<'a> ClientViewRenderer<'a> {
         output_path: &str,
         module: Option<&str>,
         initial_state: &Scope,
+        route: &str,
     ) -> Result<ClientRenderedView, Failure> {
         let mut encoder = Encoder {
             components: self.components,
@@ -51,6 +52,7 @@ impl<'a> ClientViewRenderer<'a> {
         };
         let plan = json!({
             "schemaVersion": 1,
+            "route": route,
             "document": program.is_document,
             "module": module,
             "state": initial_state,
@@ -73,7 +75,8 @@ impl<'a> ClientViewRenderer<'a> {
             // spell an end tag, even when authored text contains one.
             .replace('<', "\\u003c");
         let html = format!(
-            "<!doctype html><html><head><meta charset=\"utf-8\">\
+            "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+             <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
              <script id=\"tachyon-view\" type=\"application/json\" data-tachyon-runtime>{plan}</script>\
              <script type=\"module\" src=\"/.tachyon/tac-client.js\" data-tachyon-runtime></script>\
              </head><body><noscript>Tac requires JavaScript to render this view.</noscript></body></html>"
@@ -155,6 +158,22 @@ impl Encoder<'_> {
                 "iterable": expression_value(iterable)?,
                 "children": self.nodes(children)?,
             })),
+            TemplateNodeKind::CountedIteration {
+                binding,
+                from,
+                comparison,
+                to,
+                step,
+                children,
+            } => Ok(json!({
+                "k": "counted",
+                "binding": binding,
+                "from": expression_value(from)?,
+                "comparison": comparison,
+                "to": expression_value(to)?,
+                "step": expression_value(step)?,
+                "children": self.nodes(children)?,
+            })),
             TemplateNodeKind::Switch { value, children } => Ok(json!({
                 "k": "switch",
                 "value": expression_value(value)?,
@@ -213,21 +232,7 @@ impl Encoder<'_> {
         if active {
             self.used_components.insert(String::from(name));
         }
-        let (module, wasm) = if active {
-            if let Some(source) = component.wasm_path() {
-                (
-                    None,
-                    Some(format!(
-                        "/.tachyon/components/{name}{}",
-                        crate::wasm::asset_suffix(source)
-                    )),
-                )
-            } else {
-                (Some(format!("/.tachyon/components/{name}.js")), None)
-            }
-        } else {
-            (None, None)
-        };
+        let module = active.then(|| format!("/.tachyon/components/{name}.js"));
         let encoded_properties = self.attributes(properties)?;
         self.component_owner_depth += usize::from(active);
         let template = self.nodes(&component.program().nodes);
@@ -242,7 +247,6 @@ impl Encoder<'_> {
             // spelling, but this is a client mount policy, never hydration.
             "mount": policy.map(HydrationPolicy::name),
             "module": module,
-            "wasm": wasm,
             "scope": component.style_path().is_some(),
             "template": template,
             "slot": slot,

@@ -8,6 +8,65 @@ independent major versions.
 
 ## [Unreleased]
 
+### Added
+
+- Reconcile the newer local feature inventory with the released Rust engine:
+  retained publish/subscribe, persistence decorators, bounded browser helpers,
+  counted loops, manifest/configuration capture and target-native companions.
+- Validate captured request body/header/parameter contracts with bounded CHEX
+  execution and publish deterministic API schemas and an interactive reference.
+- Restore development `preview`, immutable-bundle production `start`, and
+  single-target `bundle --native` while retaining existing command aliases.
+- Run behavioral schema, companion ABI, compiler, browser and website gates
+  against the actual downloaded release executables before publication.
+
+### Changed
+
+- Native targets render the bundled Tac application through WKWebView,
+  WebView2, WebKitGTK or Android WebView. Native Host contract v3 replaces the
+  obsolete widget-tree metadata. Page companions compile for their native OS;
+  browser WebAssembly companions are superseded (ADRs 0018 and 0019).
+- Fetch persistence is explicit, credential-free and bounded. Service-worker
+  caching excludes authenticated/private responses and verifies packaged
+  static bytes. Native hosts retire obsolete service workers.
+- Android pins AndroidX WebKit 1.14.0 for a frame-aware asynchronous bridge
+  without a legacy fallback; pending calls and worker admission are bounded.
+- Keep normal JavaScript module helpers and all released process supervision,
+  source snapshot, routing, environment namespace and atomic build guarantees.
+
+### Fixed
+
+- Preserve input focus, caret, selection and the connected editing node during
+  reactive updates, including inputs without IDs and custom-element slots.
+  Website search no longer moves the caret to the end after result updates.
+- Preserve later native field edits when earlier asynchronous replies arrive.
+  `Range`/`If-Range` requests bypass persistent response caching, and partial
+  `206`/`Content-Range` responses cannot become complete-response cache hits.
+- Share bounded Foundation JSON parsing and canonical request serialization
+  across Apple hosts and Swift companions, replacing the handwritten value
+  scanner and rejecting duplicate root keys before dispatch.
+- Decode HTML entities once, strip a leading UTF-8 BOM and supply mobile
+  viewport metadata. Bound nested empty loops and cancel stale component mounts.
+- Preserve per-route native companion state, reject mismatched route/origin
+  bridge requests and package Android `_id` dynamic route directories.
+- Scope compiled-controller endpoint and stream discovery to the controller,
+  excluding colocated helper types. Execute published layered examples against
+  all eight server runtimes and report unexecuted snippets separately.
+
+### Migration notes
+
+- Native companions are trusted OS-privileged application code, not sandboxed
+  WebAssembly plugins. Automatic native member discovery supports fields and
+  zero-argument methods; parameterized methods need explicit member tables.
+- Native-call timeouts stop waiting, not native execution or completed
+  mutations. Keep companions responsive; a hung companion may require relaunch.
+  Android runtimes without the required WebView messaging feature report an
+  unavailable bridge instead of falling back to a legacy interface.
+- Existing version tags and assets remain unchanged. See
+  [the reconciliation inventory](docs/RECONCILIATION.md) and
+  [client migration guide](docs/CLIENT_RUNTIME_MIGRATION.md) for acceptance
+  evidence and compatibility decisions. This candidate is not yet published.
+
 ## [26.35.07] - 2026-08-30
 
 ### Added

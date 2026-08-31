@@ -2,6 +2,13 @@
 
 Start with:
 
+For the current feature reconciliation, read
+[`RECONCILIATION.md`](RECONCILIATION.md) and ADRs
+[0018](adr/0018-native-hosts-run-the-platform-javascript-engine.md) and
+[0019](adr/0019-companions-compile-for-their-target.md). Phase evidence below
+records historical milestones; widget-planner and WebAssembly results do not
+qualify the new native hosts.
+
 1. [`../CONTEXT.md`](../CONTEXT.md) for product language and invariants.
 2. [`PROJECT_PLAN.md`](PROJECT_PLAN.md) for delivery phases and exit gates.
 3. [`PHASE_1_SPEC.md`](PHASE_1_SPEC.md) and

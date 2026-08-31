@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "files": [
+    "scripts/ci/install-chex.mjs",
+    "scripts/native/apple-protocol-test.mjs",
+    "scripts/release/server-probe.mjs",
+    "scripts/release/feature-smoke.mjs",
+    "scripts/schema-contract-smoke.mjs",
+    "scripts/website-browser-test.mjs",
+    "website/scripts/verify-snippets.mjs"
+  ]
+}

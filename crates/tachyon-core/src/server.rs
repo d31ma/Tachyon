@@ -250,6 +250,8 @@ fn sse_frame(update: &HotUpdate, payload: &str) -> String {
 struct DispatchRoute {
     route: String,
     handler: HandlerSource,
+    contract: Option<Arc<crate::handler::RouteContract>>,
+    request_schemas: Arc<std::collections::BTreeMap<String, StagedRequest>>,
     /// Upper-case HTTP methods declared with `@Stream` in the handler source.
     streaming: Arc<std::collections::BTreeSet<String>>,
 }
@@ -1107,6 +1109,9 @@ impl DevServer {
     ) -> Result<Self, Failure> {
         let requirements = RuntimeRequirements::from_sources(project.invocation_sources());
         supervisor.preflight(&requirements).await?;
+        // Captured schemas and the selected validator must be ready before
+        // output publication, socket binding, or background-task admission.
+        let (routes, page_routes) = discover_dispatch_routes(project).await?;
         let (build, output_directory) = prepare_dev_output(project, options).await?;
         let listener = match TcpListener::bind(SocketAddr::new(options.host, options.port)).await {
             Ok(listener) => listener,
@@ -1133,7 +1138,6 @@ impl DevServer {
                 )));
             }
         };
-        let (routes, page_routes) = discover_dispatch_routes(project);
         let middleware = project.middleware().cloned().map(Arc::new);
 
         let hot_updates =
@@ -1324,7 +1328,9 @@ fn validate_dev_exposure(options: &DevServerOptions) -> Result<(), Failure> {
     )))
 }
 
-fn discover_dispatch_routes(project: &crate::Project) -> (Vec<DispatchRoute>, Vec<String>) {
+async fn discover_dispatch_routes(
+    project: &crate::Project,
+) -> Result<(Vec<DispatchRoute>, Vec<String>), Failure> {
     let page_routes = project
         .route_graph()
         .routes()
@@ -1333,7 +1339,12 @@ fn discover_dispatch_routes(project: &crate::Project) -> (Vec<DispatchRoute>, Ve
         .map(|route| String::from(route.route()))
         .collect();
     let mut routes = Vec::new();
+    let validator = crate::handler::ChexValidator::from_environment();
+    let startup_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     for route in project.route_graph().routes() {
+        let request_schemas = Arc::new(
+            stage_request_contracts(route.contract(), &validator, startup_deadline).await?,
+        );
         for handler in route.handlers() {
             let source_path = Path::new(handler.source_path());
             let streaming = std::str::from_utf8(handler.source().source_bytes())
@@ -1342,11 +1353,138 @@ fn discover_dispatch_routes(project: &crate::Project) -> (Vec<DispatchRoute>, Ve
             routes.push(DispatchRoute {
                 route: String::from(route.route()),
                 handler: handler.source().clone(),
+                contract: route.contract().cloned().map(Arc::new),
+                request_schemas: Arc::clone(&request_schemas),
                 streaming: Arc::new(streaming),
             });
         }
     }
-    (routes, page_routes)
+    Ok((routes, page_routes))
+}
+
+#[derive(Clone, Debug, Default)]
+struct StagedRequest {
+    headers: Option<crate::handler::ChexSchema>,
+    parameters: Option<crate::handler::ChexSchema>,
+    body: Option<crate::handler::ChexSchema>,
+}
+
+async fn stage_request_contracts(
+    contract: Option<&crate::handler::RouteContract>,
+    validator: &crate::handler::ChexValidator,
+    deadline: tokio::time::Instant,
+) -> Result<std::collections::BTreeMap<String, StagedRequest>, Failure> {
+    let mut staged = std::collections::BTreeMap::new();
+    let Some(contract) = contract else {
+        return Ok(staged);
+    };
+    for (name, method) in &contract.methods {
+        let Some(request) = &method.request else {
+            continue;
+        };
+        let stage = |schema: &Option<serde_json::Value>| {
+            schema
+                .as_ref()
+                .map(|schema| crate::handler::ChexSchema::stage(validator, schema))
+                .transpose()
+        };
+        let request = StagedRequest {
+            headers: stage(&request.headers)?,
+            parameters: stage(&request.parameters)?,
+            body: stage(&request.body)?,
+        };
+        for schema in [&request.headers, &request.parameters, &request.body]
+            .into_iter()
+            .flatten()
+        {
+            schema.preflight(deadline).await?;
+        }
+        staged.insert(name.clone(), request);
+    }
+    Ok(staged)
+}
+
+async fn enforce_request_contract(
+    entry: &DispatchRoute,
+    method: HttpMethod,
+    parameters: &std::collections::BTreeMap<String, String>,
+    headers: &axum::http::HeaderMap,
+    body: &[u8],
+) -> Option<Response<Body>> {
+    let name = format!("{method:?}").to_ascii_uppercase();
+    let staged = entry.request_schemas.get(&name).or_else(|| {
+        (method == HttpMethod::Head)
+            .then(|| entry.request_schemas.get("GET"))
+            .flatten()
+    })?;
+    let deadline = tokio::time::Instant::now() + crate::handler::VALIDATION_TIMEOUT;
+    if let Some(schema) = &staged.parameters {
+        let bytes = serde_json::to_vec(parameters).unwrap_or_default();
+        if let Some(response) =
+            schema_response(&schema.validate_until(&bytes, deadline).await, "parameters")
+        {
+            return Some(response);
+        }
+    }
+    if let Some(schema) = &staged.headers {
+        let mut offered = std::collections::BTreeMap::new();
+        for name in schema.field_names() {
+            let values = headers.get_all(name.as_str());
+            if values.iter().count() > 1 {
+                return schema_response(&Ok(crate::handler::ChexVerdict::Invalid), "headers");
+            }
+            if let Some(value) = values.iter().next().and_then(|value| value.to_str().ok()) {
+                offered.insert(name, value);
+            }
+        }
+        let bytes = serde_json::to_vec(&offered).unwrap_or_default();
+        if let Some(response) =
+            schema_response(&schema.validate_until(&bytes, deadline).await, "headers")
+        {
+            return Some(response);
+        }
+    }
+    if let Some(schema) = &staged.body {
+        return schema_response(&schema.validate_until(body, deadline).await, "body");
+    }
+    None
+}
+
+fn schema_response(
+    result: &Result<crate::handler::ChexVerdict, Failure>,
+    part: &str,
+) -> Option<Response<Body>> {
+    match result {
+        Ok(crate::handler::ChexVerdict::Valid) => None,
+        Ok(crate::handler::ChexVerdict::Invalid) => Some(
+            Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header(CONTENT_TYPE, "application/json; charset=utf-8")
+                .body(Body::from(serde_json::json!({"error":"The request does not satisfy its declared schema.","part":part}).to_string()))
+                .unwrap_or_else(|_| text_response(StatusCode::BAD_REQUEST, "Invalid request.")),
+        ),
+        Err(_) => Some(text_response(StatusCode::SERVICE_UNAVAILABLE, "The declared request schema cannot be validated.")),
+    }
+}
+
+fn contract_response(contract: &crate::handler::RouteContract) -> Response<Body> {
+    let allow = contract
+        .methods()
+        .iter()
+        .map(|method| format!("{method:?}").to_ascii_uppercase())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "application/json; charset=utf-8")
+        .header("allow", allow)
+        .body(Body::from(serde_json::to_vec(contract).unwrap_or_default()))
+        .unwrap_or_else(|_| {
+            text_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Cannot serve the route contract.",
+            )
+        })
 }
 
 /// Serves one generator-backed handler as server-sent events.
@@ -1534,6 +1672,19 @@ async fn dispatch(State(state): State<Dispatch>, request: Request<Body>) -> Resp
     .await
 }
 
+fn live_script_response() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "text/javascript; charset=utf-8")
+        .body(Body::from(LIVE_RELOAD_CLIENT))
+        .unwrap_or_else(|_| {
+            text_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Cannot serve the client.",
+            )
+        })
+}
+
 /// Serves one request, before the after phase runs.
 async fn serve(state: &Dispatch, request: Request<Body>) -> Response<Body> {
     let path = request.uri().path().to_owned();
@@ -1555,16 +1706,7 @@ async fn serve(state: &Dispatch, request: Request<Body>) -> Response<Body> {
         return subscribe_topic(state, topic, &request);
     }
     if path == LIVE_SCRIPT_ENDPOINT && state.watch {
-        return Response::builder()
-            .status(StatusCode::OK)
-            .header(CONTENT_TYPE, "text/javascript; charset=utf-8")
-            .body(Body::from(LIVE_RELOAD_CLIENT))
-            .unwrap_or_else(|_| {
-                text_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Cannot serve the client.",
-                )
-            });
+        return live_script_response();
     }
     if path == LIVE_ENDPOINT || path == HOT_ENDPOINT || path == LIVE_SCRIPT_ENDPOINT {
         return text_response(StatusCode::NOT_FOUND, "Not found.");
@@ -1585,12 +1727,32 @@ async fn serve(state: &Dispatch, request: Request<Body>) -> Response<Body> {
     let Some(method) = protocol_method(request.method()) else {
         return text_response(StatusCode::METHOD_NOT_ALLOWED, "Unsupported method.");
     };
+    if method == HttpMethod::Options
+        && let Some(contract) = &entry.contract
+    {
+        return contract_response(contract);
+    }
 
     let (parts, body) = request.into_parts();
 
     let Ok(collected) = axum::body::to_bytes(body, MAX_REQUEST_BODY_BYTES).await else {
         return text_response(StatusCode::PAYLOAD_TOO_LARGE, "Request body is too large.");
     };
+
+    let validation = enforce_request_contract(
+        entry,
+        method,
+        &matched.parameters,
+        &parts.headers,
+        &collected,
+    );
+    let rejection = tokio::select! {
+        response = validation => response,
+        () = state.cancellation.cancelled() => Some(text_response(StatusCode::SERVICE_UNAVAILABLE, "The server is stopping.")),
+    };
+    if let Some(response) = rejection {
+        return response;
+    }
 
     // A TTID is time-sortable and unique across restarts, so request ids stay
     // correlatable in logs where a per-process counter would repeat itself.
@@ -1627,7 +1789,15 @@ async fn serve(state: &Dispatch, request: Request<Body>) -> Response<Body> {
         return stream_handler_events(state, entry, protocol_request);
     }
 
-    match invoke_request_handler(state, &entry.handler, &protocol_request).await {
+    dispatch_handler_response(state, &entry.handler, &protocol_request).await
+}
+
+async fn dispatch_handler_response(
+    state: &Dispatch,
+    handler: &HandlerSource,
+    protocol_request: &HandlerRequest,
+) -> Response<Body> {
+    match invoke_request_handler(state, handler, protocol_request).await {
         Ok(response) => handler_response(response),
         // A handler failure is an application fault, never a crash of the
         // server. Internal process diagnostics may contain authored stdout or
@@ -1638,7 +1808,7 @@ async fn serve(state: &Dispatch, request: Request<Body>) -> Response<Body> {
                 invocation_failure_event(
                     "handler",
                     &protocol_request.request_id,
-                    source_runtime_family(&entry.handler),
+                    source_runtime_family(handler),
                     &failure,
                 )
             );

@@ -229,8 +229,8 @@ fn count(findings: &[MigrationFinding], status: MigrationStatus) -> usize {
 /// Evidence, gathered while scanning, for divergences no single file names.
 #[derive(Default)]
 struct ProjectSignals {
-    /// A source names the generated specification or its docs client.
-    openapi: bool,
+    /// Recognized API endpoint paths explicitly named by project sources.
+    api_paths: BTreeSet<&'static str>,
     /// A source reaches for telemetry.
     telemetry: bool,
     /// The project ships a client module, so it has state to lose.
@@ -240,7 +240,19 @@ struct ProjectSignals {
 impl ProjectSignals {
     /// Records what one source reveals about the project as a whole.
     fn observe(&mut self, source: &str) {
-        self.openapi |= source.contains("openapi.json") || source.contains("/api-docs");
+        for token in source.split(|character: char| {
+            character.is_whitespace() || matches!(character, '\'' | '"' | '`' | '<' | '>')
+        }) {
+            let path = token.split(['?', '#']).next().unwrap_or_default();
+            let endpoint = match path {
+                "/openapi.json" => Some("/openapi.json"),
+                "/api-docs" | "/api-docs/" | "/api-docs/index.html" => Some("/api-docs"),
+                _ => None,
+            };
+            if let Some(endpoint) = endpoint {
+                self.api_paths.insert(endpoint);
+            }
+        }
         self.telemetry |= source.contains("telemetry") || source.contains("Telemetry");
     }
 
@@ -263,15 +275,27 @@ impl ProjectSignals {
             action: Some(String::from(action)),
         };
         let mut project = Vec::new();
-        if self.openapi {
+        if self.api_paths.contains("/openapi.json") {
             project.push(note(
                 "server.openapi",
                 MigrationStatus::Unsupported,
-                "This project names the specification the legacy server generates, but \
-                 /openapi.json and /api-docs do not exist here.",
+                "This project names the legacy /openapi.json endpoint, which is not generated. \
+                 The current /api-docs viewer describes route contracts; it is not OpenAPI-compatible.",
                 "Generate a specification outside Tachyon, or keep the legacy server \
                  for those endpoints.",
             ));
+        }
+        if self.api_paths.contains("/api-docs") {
+            project.push(MigrationFinding {
+                source: String::from("(project)"),
+                feature: String::from("server.api_docs"),
+                status: MigrationStatus::Supported,
+                detail: String::from(
+                    "The /api-docs viewer and api.json are generated when routes declare OPTIONS.schema.json contracts. \
+                     This route-contract reference is not OpenAPI-compatible.",
+                ),
+                action: None,
+            });
         }
         if self.telemetry {
             project.push(note(
@@ -307,21 +331,6 @@ fn classify_file(
     let Some(mut finding) = classify_name(relative, name) else {
         return Ok(());
     };
-    if finding.feature == "companion.polyglot"
-        && finding.status == MigrationStatus::Changed
-        && name.rsplit_once('.').is_some_and(|(_, extension)| {
-            root.join(relative)
-                .with_file_name(format!("tachyon-wasm.{extension}"))
-                .is_file()
-        })
-    {
-        finding.status = MigrationStatus::Supported;
-        finding.detail = String::from(
-            "The legacy tac.<language> companion is paired with a tachyon-wasm.<language> \
-             source for the real compiler, so the same project builds under both implementations.",
-        );
-        finding.action = None;
-    }
     if name == ".tachyonrc"
         && fs::read_to_string(root.join(relative))
             .ok()
@@ -347,17 +356,23 @@ fn classify_file(
             migration_failure(&format!("Cannot read {what} '{relative}': {error}"))
         })
     };
-    if name.starts_with("yon.")
-        && crate::stereotype::is_annotated_language(Path::new(relative))
-        && crate::stereotype::declared_class(Path::new(relative), &read("handler")?).is_none()
+    if matches!(
+        finding.feature.as_str(),
+        "handler.supervised" | "handler.dependency"
+    ) && crate::stereotype::is_annotated_language(Path::new(relative))
+        && let Err(failure) = crate::stereotype::check(Path::new(relative), &read("handler")?)
+        && let Some(diagnostic) = failure.diagnostics().first()
     {
         finding.status = MigrationStatus::Changed;
-        finding.detail = String::from(
-            "Every Yon layer source now requires the stereotype implied by its directory.",
-        );
-        finding.action = Some(String::from(
-            "Attach @Controller, @Service, @Repository, @Client or @Delegate to the layer class, and use the matching class-name suffix.",
-        ));
+        finding.detail.clone_from(&diagnostic.message);
+        let mut action = diagnostic.help.clone().unwrap_or_else(|| {
+            String::from("Declare the stereotype matching this server layer and preserve its dependency direction.")
+        });
+        if let Some(existing) = finding.action {
+            action.push(' ');
+            action.push_str(&existing);
+        }
+        finding.action = Some(action);
     }
     findings.push(finding);
     if name == "tac.html" {
@@ -372,10 +387,9 @@ fn classify_file(
     // Handlers and middleware are where a legacy project reaches for the
     // server-provided surfaces, so they are read for evidence even though
     // their classification does not depend on their contents.
-    if matches!(
-        name,
-        "yon.js" | "yon.py" | "yon.ts" | "middleware.js" | "middleware.ts"
-    ) {
+    if (name.starts_with("yon.") || name.starts_with("middleware."))
+        && crate::stereotype::is_annotated_language(Path::new(name))
+    {
         signals.observe(&read("handler")?);
     }
     Ok(())
@@ -384,6 +398,7 @@ fn classify_file(
 /// Reports whether a file is a handler in a language with no built-in adapter.
 fn is_other_language_handler(name: &str) -> bool {
     name.starts_with("yon.")
+        && !crate::stereotype::is_annotated_language(Path::new(name))
         && !matches!(
             Path::new(name)
                 .extension()
@@ -414,12 +429,33 @@ fn classify_route_schema(relative: &str) -> MigrationFinding {
     MigrationFinding {
         source: String::from(relative),
         feature: String::from("server.route_schema"),
-        status: MigrationStatus::Unsupported,
+        status: MigrationStatus::Changed,
         detail: String::from(
-            "The Rust runtime does not discover or enforce legacy OPTIONS.schema.json request and response schemas.",
+            "OPTIONS.schema.json declares method request headers, parameters and body validated by CHEX; response buckets are documentation only.",
         ),
         action: Some(String::from(
-            "Validate the request and response in the handler or at the deployment boundary, or keep the legacy server for this route contract.",
+            "Declare methods with request.headers, request.parameters and request.body; install CHEX or set TAC_CHEX_BINARY. Migrate numeric response schemas to ok, clientError and serverError documentation buckets; retain any required response validation in the handler.",
+        )),
+    }
+}
+
+fn classify_native_companion(
+    relative: &str,
+    language: crate::project::NativeCompanion,
+) -> MigrationFinding {
+    MigrationFinding {
+        source: String::from(relative),
+        feature: String::from("companion.polyglot"),
+        status: MigrationStatus::Changed,
+        detail: format!(
+            "This {} page companion compiles natively for {} instead of running in the browser.",
+            language.label(),
+            language.target_names(),
+        ),
+        action: Some(String::from(
+            "Migrate legacy subset-transpiler code to the language's real compiler and native member contract. \
+             Select a supported native target; provide tac.js or tac.ts for browser behavior and targets \
+             this companion cannot reach. See ADR 0019.",
         )),
     }
 }
@@ -435,6 +471,12 @@ fn classify_name(relative: &str, name: &str) -> Option<MigrationFinding> {
             action: action.map(String::from),
         })
     };
+    if relative.starts_with("client/pages/")
+        && let Some(crate::project::CompanionKind::Native(language)) =
+            crate::project::companion_kind(name)
+    {
+        return Some(classify_native_companion(relative, language));
+    }
     match name {
         "tac.html" => finding(
             "view.tac",
@@ -450,12 +492,16 @@ fn classify_name(relative: &str, name: &str) -> Option<MigrationFinding> {
                 "Move application views to client/pages/**/tac.html, or return an explicit text/html response from a yon.* handler.",
             ),
         ),
-        "yon.js" | "yon.py" => finding(
-            "handler.supervised",
-            MigrationStatus::Supported,
-            "JavaScript and Python handlers run under Handler Protocol v1.",
-            None,
-        ),
+        _ if name.starts_with("yon.")
+            && crate::stereotype::is_annotated_language(Path::new(name)) =>
+        {
+            finding(
+                "handler.supervised",
+                MigrationStatus::Supported,
+                "This framework-owned Yon language runs under Handler Protocol v1 with its required runtime or compiler and matching layer stereotype.",
+                None,
+            )
+        }
         _ if is_other_language_handler(name) => Some(classify_other_language_handler(relative)),
         "tac.js" | "tac.ts" => finding(
             "companion.controller",
@@ -464,31 +510,26 @@ fn classify_name(relative: &str, name: &str) -> Option<MigrationFinding> {
              TypeScript compiler, which must be version 6 or newer.",
             None,
         ),
-        // A component companion in one of these languages is compiled to
-        // WebAssembly by the language's own compiler, so the language is
-        // supported and the file is not: a legacy companion was written for a
-        // subset transpiler and declares nothing about its members.
-        "tac.rs" | "tac.kt" | "tac.swift" | "tac.cs" | "tac.dart"
-            if relative.contains("components/") =>
+        "tac.rs" | "tac.kt" | "tac.swift" | "tac.cs" | "tac.dart" | "tac.py"
+            if relative.starts_with("client/components/") =>
         {
             finding(
                 "companion.polyglot",
-                MigrationStatus::Changed,
-                "A component companion in this language is compiled to WebAssembly \
-                 by the language's own compiler, not by a subset transpiler, so it \
-                 must be the language as the compiler defines it.",
+                MigrationStatus::Unsupported,
+                "Browser components support JavaScript and TypeScript only; compiled WebAssembly companions were removed.",
                 Some(
-                    "Rewrite the companion as ordinary code in its language and \
-                     declare the members the island may reach in tac. See ADR 0011.",
+                    "Use tac.js or tac.ts for the browser component. Move supported native-language logic \
+                     to a page companion under client/pages, or server logic to Yon. See ADR 0019.",
                 ),
             )
         }
         "tac.py" | "tac.rs" | "tac.kt" | "tac.swift" | "tac.cs" | "tac.dart" => finding(
             "companion.polyglot",
             MigrationStatus::Unsupported,
-            "A page renders before any companion runs, so a page companion is \
-             JavaScript or TypeScript. Python has no browser target at all.",
-            Some("Move the logic into a Yon handler or an island component."),
+            "This companion has no supported target at this location. Python and Dart are not native companion languages.",
+            Some(
+                "Use tac.js or tac.ts for browser behavior, a supported native page language under client/pages, or a Yon handler for server logic. See ADR 0019.",
+            ),
         ),
         "tac.css" | "yon.css" => finding(
             "companion.style",
@@ -543,13 +584,11 @@ fn classify_by_location(relative: &str, name: &str) -> Option<MigrationFinding> 
             action: None,
         })
     };
-    if name == "openapi.json" || relative.contains("api-docs") {
+    if name == "openapi.json" {
         return finding(
             "server.openapi",
-            "The legacy /openapi.json and /api-docs endpoints are out of scope for \
-             this implementation.",
-            "Keep the legacy server for those endpoints, or generate a \
-             specification outside Tachyon.",
+            "The legacy /openapi.json specification is not generated; the current /api-docs route-contract viewer is not OpenAPI-compatible.",
+            "Generate or serve the OpenAPI specification outside Tachyon. Use OPTIONS.schema.json for the current route-contract viewer.",
         );
     }
     if relative.starts_with("server/workers/") {
@@ -560,16 +599,42 @@ fn classify_by_location(relative: &str, name: &str) -> Option<MigrationFinding> 
         );
     }
     if relative.starts_with("server/repositories/") || relative.starts_with("server/services/") {
-        // These are ordinary modules imported by handlers. They only matter
-        // because handler adapters cannot import application dependencies.
-        return finding(
-            "handler.dependency",
-            "A handler runs as its own process and does not import application \
-             modules.",
-            "Inline the logic into the handler.",
-        );
+        return classify_layer_dependency(relative);
     }
     None
+}
+
+fn classify_layer_dependency(relative: &str) -> Option<MigrationFinding> {
+    let extension = Path::new(relative)
+        .extension()?
+        .to_str()?
+        .to_ascii_lowercase();
+    let (status, detail, action) = match extension.as_str() {
+        "js" | "ts" | "py" | "php" => (
+            MigrationStatus::Supported,
+            "Same-language imports use the captured server source snapshot under process isolation. \
+             Declare the matching layer stereotype and preserve dependency direction; external packages \
+             and files outside the snapshot are not automatically bundled.",
+            None,
+        ),
+        "java" | "kt" | "cs" | "rs" => (
+            MigrationStatus::Changed,
+            "Compiled Yon adapters use a single-source build; separate service and repository files \
+             are not automatically added to that compilation.",
+            Some(
+                "Colocate helper types in the controller's yon.<language> source, preserving their layer stereotypes and dependency direction; do not assume cross-file or external-package compilation.",
+            ),
+        ),
+        // Data assets are captured too; a filename does not make them code.
+        _ => return None,
+    };
+    Some(MigrationFinding {
+        source: String::from(relative),
+        feature: String::from("handler.dependency"),
+        status,
+        detail: String::from(detail),
+        action: action.map(String::from),
+    })
 }
 
 /// Classifies constructs used inside one view source.
@@ -594,7 +659,7 @@ fn classify_view(relative: &str, source: &str, findings: &mut Vec<MigrationFindi
         push(
             "view.control_tags",
             MigrationStatus::Supported,
-            "Control tags are validated by the compiler and rendered by the owning Tac client or Yon server runtime.",
+            "Control tags are validated by the compiler and rendered exclusively by the Tac client. Yon is REST-only and never renders a view.",
             None,
         );
     }
@@ -638,9 +703,11 @@ fn classify_view(relative: &str, source: &str, findings: &mut Vec<MigrationFindi
         push(
             "view.remote_frame",
             MigrationStatus::Changed,
-            "An iframe becomes a bridge-free WebSurface in native builds and \
-             requires an accessible name and an HTTPS source.",
-            Some("Add aria-label and an https:// src."),
+            "An iframe remains browser content inside the platform web view on native targets. \
+             Subframes and remote content never receive the native bridge, and host policies may block frames.",
+            Some(
+                "Review each target's content and navigation policies before relying on embedded frames. Keep native operations in a trusted page companion, not an iframe.",
+            ),
         );
     }
 }
@@ -768,6 +835,104 @@ mod tests {
         assert!(report.is_clean(), "{}", report.to_text());
         assert_eq!(report.unsupported, 0);
         assert!(report.supported >= 2);
+    }
+
+    #[test]
+    fn all_owned_yon_languages_are_supervised_without_interpreter_migration() {
+        for extension in crate::stereotype::ANNOTATED_LANGUAGES {
+            let root = tempfile::tempdir().expect("project");
+            let source = format!("server/routes/orders/yon.{extension}");
+            write(
+                &root.path().join(&source),
+                &layer_source(extension, "Controller"),
+            );
+            let report = MigrationAnalysis::check(root.path()).expect("report");
+            let handler = report
+                .findings
+                .iter()
+                .find(|finding| finding.source == source)
+                .expect("handler");
+            assert_eq!(handler.feature, "handler.supervised", "{extension}");
+            assert_eq!(handler.status, MigrationStatus::Supported, "{extension}");
+            assert!(handler.detail.contains("Handler Protocol v1"));
+            assert!(handler.action.is_none(), "{handler:?}");
+        }
+    }
+
+    fn layer_source(extension: &str, layer: &str) -> String {
+        match extension {
+            "cs" => format!("[{layer}]\nclass Orders{layer} {{}}"),
+            "php" => format!("<?php\n#[{layer}]\nclass Orders{layer} {{}}"),
+            "rs" => format!("#[{layer}]\nstruct Orders{layer};"),
+            "py" => format!("@{layer}\nclass Orders{layer}:\n    pass\n"),
+            _ => format!("@{layer}\nclass Orders{layer} {{}}"),
+        }
+    }
+
+    #[test]
+    fn interpreted_layer_modules_remain_importable_from_the_captured_project() {
+        for extension in ["js", "ts", "py", "php"] {
+            let root = tempfile::tempdir().expect("project");
+            for (directory, layer) in [("services", "Service"), ("repositories", "Repository")] {
+                write(
+                    &root
+                        .path()
+                        .join(format!("server/{directory}/orders.{extension}")),
+                    &layer_source(extension, layer),
+                );
+            }
+            let report = MigrationAnalysis::check(root.path()).expect("report");
+            assert_eq!(report.findings.len(), 2);
+            for finding in &report.findings {
+                assert_eq!(finding.status, MigrationStatus::Supported, "{finding:?}");
+                assert!(finding.detail.contains("snapshot"));
+                assert!(finding.detail.contains("imports"));
+                assert!(!finding.detail.contains("does not import"));
+            }
+        }
+    }
+
+    #[test]
+    fn compiled_layer_files_require_colocation_not_automatic_cross_file_compilation() {
+        for extension in ["java", "kt", "cs", "rs"] {
+            let root = tempfile::tempdir().expect("project");
+            for (directory, layer) in [("services", "Service"), ("repositories", "Repository")] {
+                write(
+                    &root
+                        .path()
+                        .join(format!("server/{directory}/orders.{extension}")),
+                    &layer_source(extension, layer),
+                );
+            }
+            let report = MigrationAnalysis::check(root.path()).expect("report");
+            for finding in &report.findings {
+                assert_eq!(finding.status, MigrationStatus::Changed, "{finding:?}");
+                assert!(finding.detail.contains("single-source"));
+                assert!(
+                    finding.action.as_deref().is_some_and(
+                        |action| action.contains("Colocate") && action.contains("yon.")
+                    )
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_modules_still_require_the_matching_stereotype() {
+        let root = tempfile::tempdir().expect("project");
+        write(
+            &root.path().join("server/services/orders.js"),
+            "export class OrdersService {}",
+        );
+        let report = MigrationAnalysis::check(root.path()).expect("report");
+        let finding = report.findings.first().expect("layer finding");
+        assert_eq!(finding.status, MigrationStatus::Changed);
+        assert!(
+            finding
+                .action
+                .as_deref()
+                .is_some_and(|action| action.contains("@Service"))
+        );
     }
 
     #[test]
@@ -942,7 +1107,7 @@ mod tests {
         write(&loud.path().join("client/pages/tac.html"), "<main>x</main>");
         write(
             &loud.path().join("server/routes/yon.js"),
-            "import { telemetry } from 'x'\n@Controller\nexport class HomeController {}\n// openapi.json",
+            "import { telemetry } from 'x'\n@Controller\nexport class HomeController {}\nfetch('/openapi.json')",
         );
         let report = MigrationAnalysis::check(loud.path()).expect("report");
         let named: Vec<&str> = report
@@ -953,6 +1118,69 @@ mod tests {
             .collect();
         assert!(named.contains(&"server.openapi"), "{named:?}");
         assert!(named.contains(&"server.telemetry"), "{named:?}");
+    }
+
+    #[test]
+    fn generated_api_viewer_references_are_not_legacy_openapi_dependencies() {
+        for endpoint in ["/api-docs", "/api-docs/", "/api-docs/index.html?mode=read"] {
+            let root = tempfile::tempdir().expect("project");
+            write(
+                &root.path().join("client/pages/tac.html"),
+                &format!("<a href=\"{endpoint}\">API reference</a>"),
+            );
+            let report = MigrationAnalysis::check(root.path()).expect("report");
+            let viewer = report
+                .findings
+                .iter()
+                .find(|finding| finding.feature == "server.api_docs")
+                .expect("generated viewer finding");
+            assert_eq!(viewer.status, MigrationStatus::Supported);
+            assert!(viewer.detail.contains("OPTIONS.schema.json"));
+            assert!(viewer.detail.contains("not OpenAPI"));
+            assert!(
+                !report
+                    .findings
+                    .iter()
+                    .any(|finding| finding.feature == "server.openapi")
+            );
+        }
+    }
+
+    #[test]
+    fn api_path_detection_distinguishes_endpoints_from_unrelated_names() {
+        let root = tempfile::tempdir().expect("project");
+        write(
+            &root.path().join("client/pages/tac.html"),
+            "<a href=\"/api-docs-theme.css\">Theme</a><a href=\"/openapi.json.backup\">Backup</a>",
+        );
+        write(
+            &root.path().join("client/shared/api-docs-theme.css"),
+            "a {}",
+        );
+        let report = MigrationAnalysis::check(root.path()).expect("report");
+        assert!(!report.findings.iter().any(|finding| matches!(
+            finding.feature.as_str(),
+            "server.openapi" | "server.api_docs"
+        )));
+
+        write(
+            &root.path().join("client/pages/tac.html"),
+            "<a href=\"/api-docs/\">API</a><a href=\"/openapi.json?download=1\">OpenAPI</a>",
+        );
+        let report = MigrationAnalysis::check(root.path()).expect("report");
+        let legacy = report
+            .findings
+            .iter()
+            .find(|finding| finding.feature == "server.openapi")
+            .expect("legacy endpoint");
+        assert_eq!(legacy.status, MigrationStatus::Unsupported);
+        assert!(legacy.detail.contains("not OpenAPI"));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.feature == "server.api_docs")
+        );
     }
 
     #[test]
@@ -979,7 +1207,7 @@ mod tests {
         for expected in [
             "companion.controller",
             "companion.polyglot",
-            "handler.other_language",
+            "handler.supervised",
             "server.middleware",
             "server.worker",
             "config.workers",
@@ -1028,6 +1256,38 @@ mod tests {
     }
 
     #[test]
+    fn view_migration_describes_client_rendering_and_host_frame_restrictions() {
+        let root = tempfile::tempdir().expect("project");
+        write(
+            &root.path().join("client/pages/tac.html"),
+            "<main><if :if=\"true\">Ready</if><iframe src=\"https://example.test\" title=\"External\"></iframe></main>",
+        );
+        let report = MigrationAnalysis::check(root.path()).expect("report");
+        let controls = report
+            .findings
+            .iter()
+            .find(|finding| finding.feature == "view.control_tags")
+            .expect("controls");
+        assert!(controls.detail.contains("client"));
+        assert!(controls.detail.contains("REST-only"));
+        assert!(!controls.detail.contains("Yon server runtime"));
+        let frame = report
+            .findings
+            .iter()
+            .find(|finding| finding.feature == "view.remote_frame")
+            .expect("frame");
+        assert!(frame.detail.contains("platform web view"));
+        assert!(frame.detail.contains("native bridge"));
+        assert!(
+            frame
+                .action
+                .as_deref()
+                .is_some_and(|action| action.contains("content") && action.contains("navigation"))
+        );
+        assert!(!frame.detail.contains("WebSurface"));
+    }
+
+    #[test]
     fn generated_and_vendored_directories_are_never_analyzed() {
         let root = tempfile::tempdir().expect("project");
         write(&root.path().join("client/pages/tac.html"), "<main>x</main>");
@@ -1039,12 +1299,8 @@ mod tests {
     }
 
     #[test]
-    fn companions_that_fail_the_build_are_never_reported_as_supported() {
-        // Regression: a companion the compiler rejects must never be reported
-        // as supported, which would tell a maintainer their project migrates
-        // cleanly when it will not build. css, js, and ts are now emitted and
-        // are asserted elsewhere; these remain unsupported.
-        for companion in ["tac.py", "tac.rs", "tac.kt", "tac.swift"] {
+    fn page_languages_without_a_native_target_remain_unsupported() {
+        for companion in ["tac.py", "tac.dart"] {
             let root = tempfile::tempdir().expect("project");
             write(&root.path().join("client/pages/tac.html"), "<main>x</main>");
             write(&root.path().join("client/pages").join(companion), "x");
@@ -1065,7 +1321,36 @@ mod tests {
     }
 
     #[test]
-    fn legacy_route_schemas_are_reported_as_unsupported() {
+    fn native_page_companions_name_their_targets_and_browser_migration() {
+        for (companion, targets) in [
+            ("tac.rs", "macos, windows, linux"),
+            ("tac.swift", "macos, ios"),
+            ("tac.kt", "android"),
+            ("tac.cs", "windows"),
+        ] {
+            let root = tempfile::tempdir().expect("project");
+            write(&root.path().join("client/pages/tac.html"), "<main>x</main>");
+            write(
+                &root.path().join("client/pages").join(companion),
+                "legacy source",
+            );
+            let report = MigrationAnalysis::check(root.path()).expect("report");
+            let finding = report
+                .findings
+                .iter()
+                .find(|finding| finding.source.ends_with(companion))
+                .expect("native companion");
+            assert_eq!(finding.status, MigrationStatus::Changed, "{companion}");
+            assert!(finding.detail.contains(targets), "{finding:?}");
+            let action = finding.action.as_deref().expect("migration");
+            for guidance in ["compiler", "tac.js", "tac.ts", "ADR 0019"] {
+                assert!(action.contains(guidance), "{finding:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_route_schemas_require_explicit_contract_migration() {
         let root = tempfile::tempdir().expect("project");
         write(
             &root.path().join("server/routes/users/OPTIONS.schema.json"),
@@ -1077,20 +1362,25 @@ mod tests {
             .iter()
             .find(|finding| finding.feature == "server.route_schema")
             .expect("route schema finding");
-        assert_eq!(finding.status, MigrationStatus::Unsupported);
+        assert_eq!(finding.status, MigrationStatus::Changed);
         assert!(
             finding
                 .action
                 .as_ref()
-                .is_some_and(|action| action.contains("Validate"))
+                .is_some_and(|action| action.contains("TAC_CHEX_BINARY"))
         );
     }
 
     #[test]
-    fn a_component_companion_in_a_wasm_language_is_a_rewrite_rather_than_a_wall() {
-        // The language is supported and the legacy file is not: it was written
-        // for a subset transpiler, and the real compiler will reject it.
-        for companion in ["tac.rs", "tac.kt", "tac.swift", "tac.cs", "tac.dart"] {
+    fn compiled_browser_components_require_javascript_or_typescript() {
+        for companion in [
+            "tac.rs",
+            "tac.kt",
+            "tac.swift",
+            "tac.cs",
+            "tac.dart",
+            "tac.py",
+        ] {
             let root = tempfile::tempdir().expect("project");
             let component = root.path().join("client/components/panel");
             write(&component.join("tac.html"), "<div>x</div>");
@@ -1101,19 +1391,19 @@ mod tests {
                 .iter()
                 .find(|finding| finding.source.ends_with(companion))
                 .unwrap_or_else(|| panic!("{companion} was not classified"));
-            assert_eq!(finding.status, MigrationStatus::Changed, "{companion}");
+            assert_eq!(finding.status, MigrationStatus::Unsupported, "{companion}");
             assert!(
                 finding
                     .action
                     .as_ref()
-                    .is_some_and(|action| action.contains("declare")),
+                    .is_some_and(|action| action.contains("tac.js") && action.contains("tac.ts")),
                 "{companion} does not say what to rewrite"
             );
         }
     }
 
     #[test]
-    fn a_real_compiler_sidecar_makes_a_legacy_polyglot_component_dual_buildable() {
+    fn a_removed_wasm_sidecar_never_makes_a_component_supported() {
         let root = tempfile::tempdir().expect("project");
         let component = root.path().join("client/components/panel");
         write(&component.join("tac.html"), "<div>x</div>");
@@ -1129,8 +1419,13 @@ mod tests {
             .iter()
             .find(|finding| finding.source.ends_with("tac.rs"))
             .expect("legacy companion finding");
-        assert_eq!(finding.status, MigrationStatus::Supported);
-        assert!(finding.action.is_none());
+        assert_eq!(finding.status, MigrationStatus::Unsupported);
+        assert!(
+            finding
+                .action
+                .as_deref()
+                .is_some_and(|action| action.contains("ADR 0019"))
+        );
     }
 
     #[test]

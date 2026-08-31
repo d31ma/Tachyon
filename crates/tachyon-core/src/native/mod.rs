@@ -5,19 +5,29 @@ mod host;
 mod ios;
 mod linux;
 mod macos;
-mod planner;
+mod registry;
+mod routes;
+mod rust;
 mod windows;
 
 pub use compiler::{
     NativeBuildOptions, NativeBuildResult, NativeCompiler, native_target_directory,
 };
+pub(crate) use config::{
+    MANIFEST_NAME, MANIFEST_OUTPUT, PageMetadata, browser_scripts, browser_styles, cache_rules,
+    config_module_path, manifest_head, page_metadata,
+};
 
-/// Plans one resolved document for fuzzing. Not a stable API.
+/// Uses the same bounded frontend all native bundle builds consume.
 #[cfg(feature = "fuzzing")]
 pub(crate) fn plan_for_fuzzing(
-    target: tachyon_contracts::NativeTarget,
+    _target: tachyon_contracts::NativeTarget,
     html: &str,
-) -> Result<tachyon_contracts::NativeUi, crate::Failure> {
-    planner::NativePlanner::plan(target, "/", "fuzz/tac.html", html, "")
-        .map(|planned| planned.native_ui)
+) -> Result<(), crate::Failure> {
+    crate::template::TemplateFrontend::compile(
+        html,
+        "fuzz/tac.html",
+        &std::collections::BTreeSet::new(),
+    )
+    .map(|_| ())
 }

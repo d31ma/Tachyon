@@ -3,8 +3,7 @@
 //! Each platform generator receives a fully staged resource tree and owns only
 //! its host source, bundle layout, and toolchain invocation.
 
-use super::config::NativeApplication;
-use super::planner::{NativeRouteIndex, PlannedNativeRoute};
+use super::routes::NativeRouteIndex;
 use crate::Failure;
 use crate::external_command::run as supervise_tool;
 use crate::failure::diagnostic;
@@ -13,38 +12,66 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
-use tachyon_contracts::CapabilityManifest;
 use tokio::process::Command;
 
 /// Upper bound on any generated host source file.
 pub(super) const MAX_HOST_SOURCE_BYTES: usize = 4 * 1_024 * 1_024;
 const MAX_TOOL_OUTPUT_BYTES: usize = 64 * 1_024;
-const NATIVE_SURFACE_RUNTIME: &str = r"try {
-  const requestedRoute = new URL(location.href).searchParams.get('tachyon-route')
-  if (requestedRoute?.startsWith('/') && !requestedRoute.includes('..') && !requestedRoute.startsWith('//')) {
-    history.replaceState(history.state, '', requestedRoute)
-  }
-} catch {}
-try {
-  const theme = localStorage.getItem('w-theme')
-  if (theme) document.documentElement.setAttribute('w-theme', theme)
-  addEventListener('storage', (event) => {
-    if (event.key === 'w-theme') {
-      document.documentElement.setAttribute('w-theme', event.newValue || 'light')
-    }
-  })
-} catch {}
-document.body.dataset.platform = 'native'
-addEventListener('click', (event) => {
-  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-  const target = event.composedPath().find((node) => node instanceof Element && node.hasAttribute('href'))
-  if (!(target instanceof Element) || target instanceof HTMLAnchorElement || target instanceof HTMLAreaElement) return
-  const href = target.getAttribute('href')
-  if (!href) return
-  event.preventDefault()
-  location.assign(new URL(href, location.href).href)
+/// Injected into the hosted bundle before its own scripts run.
+///
+/// Two jobs, and deliberately no more. It tells the page it is running
+/// natively, so an application can style or behave differently without
+/// sniffing a user agent. And it carries the channel between page and
+/// compiled companion, in both directions.
+///
+/// There is no capability vocabulary here any more. A tray, a window, a
+/// notification — those are the platform's, and a companion written in the
+/// platform's own language already has them. A fixed list of verbs in the
+/// middle could only ever be the subset Tachyon had got round to
+/// implementing, in three hosts, for every platform at once.
+///
+/// The publish stub queues rather than delivers. A companion may publish from
+/// a thread of its own at any moment, including before the page's modules have
+/// run, and this file is what runs first: without the queue that value is lost
+/// to a race nothing in the application can see.
+pub(super) const NATIVE_SHIM: &str = r"globalThis.__tachyonCompanionQueue = []
+globalThis.__tachyonCompanionPublish = (signal) => {
+  const queue = globalThis.__tachyonCompanionQueue
+  if (queue.length === 128) queue.shift()
+  queue.push(signal)
+}
+globalThis.__tachyonNativeHostCall = (capability, payload) =>
+  globalThis.webkit?.messageHandlers?.tachyon
+    ? globalThis.webkit.messageHandlers.tachyon.postMessage({ capability, payload })
+    : globalThis.__tachyonHostPost?.(capability, payload)
+globalThis.tachyonWindow = Object.fromEntries(
+  __WINDOW_CONTROLS__.map((name) => [
+    name,
+    (payload = {}) => globalThis.__tachyonNativeHostCall('window.' + name, JSON.stringify(payload)),
+  ]),
+)
+addEventListener('DOMContentLoaded', () => {
+  if (document.body) document.body.dataset.platform = 'native'
 })
 ";
+
+/// Builds the shim for one application, with the controls it was granted.
+///
+/// The list is baked in rather than probed, so `tachyonWindow.minimize` is
+/// either a function or `undefined` — a page can ask what it has without
+/// calling anything and being refused. Electron hands a privileged process
+/// the whole window; Tauri gates each call behind a permission in a separate
+/// capabilities file. This is the same default-deny, declared in the manifest
+/// the application already ships.
+pub(super) fn native_shim(window: &super::config::WindowConfiguration) -> String {
+    let granted = window
+        .controls
+        .iter()
+        .map(|control| format!("'{control}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    NATIVE_SHIM.replace("__WINDOW_CONTROLS__", &format!("[{granted}]"))
+}
 
 /// Evidence returned by one platform host generator.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -60,22 +87,14 @@ pub(super) struct GeneratedHost {
 /// Writes the platform-neutral resource tree used by every native host.
 ///
 /// The stage receives inspectable top-level copies and the platform bundle
-/// receives the canonical `NativeIndex.json`, `NativeUI/`, `WebSurfaces/`,
-/// `WebBundle/`, and `CapabilityManifest.json` names.
+/// receives the canonical `NativeIndex.json` and `WebBundle/` names.
 pub(super) fn stage_application(
-    application: &NativeApplication,
-    routes: &[PlannedNativeRoute],
     index: &NativeRouteIndex,
     web_bundle: &Path,
     stage: &Path,
     resources: &Path,
 ) -> Result<(), Failure> {
-    for directory in [
-        &stage.join("native-ui"),
-        &stage.join("web-surfaces"),
-        &stage.join("web"),
-        &resources.to_path_buf(),
-    ] {
+    for directory in [&stage.join("web"), &resources.to_path_buf()] {
         native_io(fs::create_dir_all(directory), directory)?;
     }
 
@@ -83,43 +102,13 @@ pub(super) fn stage_application(
     write(&stage.join("native-index.json"), &index_bytes)?;
     write(&resources.join("NativeIndex.json"), &index_bytes)?;
 
-    for route in routes {
-        let bytes = pretty_json(&route.native_ui, "Native UI v1")?;
-        write(
-            &stage
-                .join("native-ui")
-                .join(format!("{}.json", route.document_key)),
-            &bytes,
-        )?;
-        write(
-            &resources
-                .join("NativeUI")
-                .join(format!("{}.json", route.document_key)),
-            &bytes,
-        )?;
-        for surface in &route.web_surfaces {
-            write(
-                &stage
-                    .join("web-surfaces")
-                    .join(&surface.id)
-                    .join("index.html"),
-                surface.document.as_bytes(),
-            )?;
-            write(
-                &resources
-                    .join("WebSurfaces")
-                    .join(&surface.id)
-                    .join("index.html"),
-                surface.document.as_bytes(),
-            )?;
-        }
-    }
-
+    // The application's own web bundle is what the host loads. It is the same
+    // bundle the browser gets, which is the point: one build, one rendering,
+    // and no per-platform approximation of it.
     copy_tree(web_bundle, &stage.join("web"))?;
     copy_tree(web_bundle, &resources.join("WebBundle"))?;
-    // Android's asset packager drops dot-prefixed directories. Publish the
-    // generated runtime under a visible native-only alias on every platform
-    // so one WebSurface contract works consistently across hosts.
+    // Android's asset packager drops dot-prefixed directories, so the
+    // generated runtime is published under a visible alias on every platform.
     let hidden_runtime = web_bundle.join(".tachyon");
     if hidden_runtime.is_dir() {
         copy_tree(&hidden_runtime, &stage.join("web/tachyon-runtime"))?;
@@ -128,22 +117,7 @@ pub(super) fn stage_application(
             &resources.join("WebBundle/tachyon-runtime"),
         )?;
     }
-    write(
-        &stage.join("web/tachyon-runtime/native-surface.js"),
-        NATIVE_SURFACE_RUNTIME.as_bytes(),
-    )?;
-    write(
-        &resources.join("WebBundle/tachyon-runtime/native-surface.js"),
-        NATIVE_SURFACE_RUNTIME.as_bytes(),
-    )?;
 
-    let capability = CapabilityManifest::deny_all(application.application_id.clone());
-    let capability_bytes = pretty_json(&capability, "Capability Manifest v1")?;
-    write(&stage.join("capability-manifest.json"), &capability_bytes)?;
-    write(
-        &resources.join("CapabilityManifest.json"),
-        &capability_bytes,
-    )?;
     Ok(())
 }
 
@@ -326,9 +300,7 @@ pub(super) fn c_string_escape(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        NATIVE_SURFACE_RUNTIME, c_string_escape, first_line, quoted_string_escape, xml_escape,
-    };
+    use super::{NATIVE_SHIM, c_string_escape, first_line, quoted_string_escape, xml_escape};
 
     #[test]
     fn generated_literals_are_escaped_without_changing_plain_names() {
@@ -350,10 +322,10 @@ mod tests {
     }
 
     #[test]
-    fn native_surface_preserves_links_on_unknown_custom_elements() {
-        assert!(NATIVE_SURFACE_RUNTIME.contains("event.composedPath()"));
-        assert!(NATIVE_SURFACE_RUNTIME.contains("node.hasAttribute('href')"));
-        assert!(NATIVE_SURFACE_RUNTIME.contains("location.assign"));
-        assert!(NATIVE_SURFACE_RUNTIME.contains("target instanceof HTMLAnchorElement"));
+    fn the_shim_gives_the_page_one_bridge_and_says_where_it_is_running() {
+        assert!(NATIVE_SHIM.contains("__tachyonNativeHostCall"));
+        assert!(NATIVE_SHIM.contains("messageHandlers.tachyon"));
+        assert!(NATIVE_SHIM.contains("__tachyonHostPost"));
+        assert!(NATIVE_SHIM.contains("dataset.platform = 'native'"));
     }
 }

@@ -174,6 +174,9 @@ fn is_source_path(path: &Path) -> bool {
             .is_some_and(|name| {
                 name == "tachyon.json"
                     || name == "tac.config.js"
+                    || name == "tac.config.mjs"
+                    || name == "tac.config.ts"
+                    || name == "manifest.json"
                     || name == ".tachyonrc"
                     || name.starts_with("middleware.")
             }),
@@ -204,20 +207,7 @@ fn island_boundary(path: &str) -> Option<String> {
     let (directory, file) = relative.rsplit_once('/')?;
     if !matches!(
         file,
-        "tac.js"
-            | "tac.ts"
-            | "tac.rs"
-            | "tac.dart"
-            | "tac.kt"
-            | "tac.swift"
-            | "tac.cs"
-            | "tachyon-island.js"
-            | "tachyon-island.ts"
-            | "tachyon-wasm.rs"
-            | "tachyon-wasm.dart"
-            | "tachyon-wasm.kt"
-            | "tachyon-wasm.swift"
-            | "tachyon-wasm.cs"
+        "tac.js" | "tac.ts" | "tachyon-island.js" | "tachyon-island.ts"
     ) {
         return None;
     }
@@ -287,6 +277,52 @@ mod tests {
             changes(&["client/components/product/card/tac.html"]).action(),
             SourceAction::Reload
         );
+    }
+
+    #[test]
+    fn only_browser_companions_receive_component_hot_updates() {
+        for name in ["tac.js", "tac.ts", "tachyon-island.js", "tachyon-island.ts"] {
+            assert_eq!(
+                changes(&[&format!("client/components/card/{name}")]).action(),
+                SourceAction::Island {
+                    boundaries: vec![String::from("card")]
+                }
+            );
+        }
+        for name in [
+            "tac.rs",
+            "tac.kt",
+            "tac.swift",
+            "tac.cs",
+            "tac.dart",
+            "tachyon-wasm.rs",
+            "tachyon-wasm.kt",
+            "tachyon-wasm.swift",
+            "tachyon-wasm.cs",
+            "tachyon-wasm.dart",
+        ] {
+            for directory in ["client/components/card", "client/pages"] {
+                let changed = changes(&[&format!("{directory}/{name}")]);
+                assert!(!changed.is_empty(), "{directory}/{name}");
+                assert_eq!(changed.action(), SourceAction::Reload, "{directory}/{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_supported_root_configuration_invalidates_the_dev_build() {
+        for name in [
+            "tachyon.json",
+            "tac.config.js",
+            "tac.config.mjs",
+            "tac.config.ts",
+            "manifest.json",
+            ".tachyonrc",
+        ] {
+            let changed = changes(&[name]);
+            assert_eq!(changed.paths(), vec![String::from(name)]);
+            assert_eq!(changed.action(), SourceAction::Reload);
+        }
     }
 
     #[test]

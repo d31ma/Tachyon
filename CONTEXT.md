@@ -102,9 +102,9 @@ Engineering phases 0–7 are implemented. The current Rust data path:
    modules, shared assets, a service worker, and Route Manifest v1;
 5. dispatches exact and dynamic HTTP routes, before/after middleware, workers,
    and durable SSE topic logs from a loopback-safe development server;
-6. plans Native UI v1 for macOS, iOS, Android, Linux, and Windows, using
-   explicit semantic adapters and the smallest safe local WebSurface fallback;
-7. compiles the generated host with the selected platform toolchain and
+6. stages the same client-rendered bundle for macOS, iOS, Android, Linux, and
+   Windows web-view hosts, selecting target-native page companions per route;
+7. compiles the generated host and selected companions with platform toolchains and
    publishes capability and artifact manifests atomically; and
 8. verifies compatibility, recovery, performance, supply-chain, and release
    lifecycle behavior through executable gates.

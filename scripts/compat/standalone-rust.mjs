@@ -6,9 +6,10 @@ import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { withServer } from '../release/server-probe.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const ty = process.env.TAC_BIN ?? path.join(repo, process.env.CARGO_TARGET_DIR ?? 'target', 'debug', process.platform === 'win32' ? 'ty.exe' : 'ty');
@@ -112,12 +113,14 @@ try {
 `);
   await writeFile(path.join(project, 'client/pages/tac.js'), `
 export default class {
-  required = ['shortcuts.register', 'contentSurface.open']
+  required = ['page.state', 'mount.lifecycle']
   events = []
+  @onMount
+  initialize() { this.events = ['mounted'] }
 }
 `);
   await run(['bundle', '--target', 'web'], { cwd: project });
-  preview = spawn(ty, ['preview', '--port', '18778'], {
+  preview = spawn(ty, ['preview', '--static', '--port', '18778'], {
     cwd: project,
     env: environment,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -126,60 +129,47 @@ export default class {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
   await page.goto('http://127.0.0.1:18778/');
+  await page.getByText('Count: 0', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Add' }).click();
   await assert.doesNotReject(() => page.getByText('Count: 1', { exact: true }).waitFor());
-  await assert.doesNotReject(() => page.getByText('Required: shortcuts.register|contentSurface.open', { exact: true }).waitFor());
-  await browser.close();
-  browser = undefined;
+  await page.getByText('Required: page.state|mount.lifecycle', { exact: true }).waitFor();
+  await page.getByText('Events: mounted', { exact: true }).waitFor();
   await stop(preview);
   preview = undefined;
 
-  await writeFile(path.join(project, 'client/pages/tac.js'), `
-export default class {
-  required = ['shortcuts.register', 'contentSurface.open']
-  events = []
-  @onMount
-  async initialize() {
-    host.on('shortcut.activated', ({ id }) => this.events.push(id))
-    await shortcuts.register({ id: 'example.toggle', accelerator: 'Primary+Shift+S', replace: true })
-    await contentSurface.open({ id: 'docs', url: 'https://example.com' })
-  }
-}
-`);
   const nativeTarget = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
-  await run(['bundle', '--target', nativeTarget, '--skip-package'], { cwd: project });
+  await run(['bundle', '--native', '--target', nativeTarget], { cwd: project });
   const nativeRoot = path.join(project, 'dist', nativeTarget);
   assert.equal(await exists(path.join(nativeRoot, 'tachyon.host.json')), true);
   const hostManifest = JSON.parse(await readFile(path.join(nativeRoot, 'tachyon.host.json'), 'utf8'));
-  assert.equal(hostManifest.renderMode, 'native');
-  assert.equal(hostManifest.hasWebViewFallbacks, false);
+  assert.equal(hostManifest.schemaVersion, 3);
+  assert.equal(hostManifest.renderMode, 'bundle');
+  assert.equal(hostManifest.target, nativeTarget);
+  assert.equal(hostManifest.entryRoute, '/');
+  assert.deepEqual(hostManifest.hostCapabilities, ['companion.invoke']);
 
-  const calls = [];
-  globalThis.__tachyonNativeHostCall = (capability, payload) => {
-    const data = JSON.parse(payload || '{}');
-    calls.push({ capability, payload: data });
-    let value = {};
-    if (capability === 'contentSurface.open') value = { pending: true };
-    else if (capability === 'contentSurface.state') value = { id: data.id, open: true };
-    return JSON.stringify({ ok: true, value });
-  };
-  const controller = await readFile(path.join(nativeRoot, 'Resources', 'tachyon.native-controller.js'), 'utf8');
-  new Function(controller)();
-  const initial = await globalThis.__tachyonNativeUI.render();
-  const findButton = (node) => node?.tag === 'button' ? node : (node?.children ?? []).map(findButton).find(Boolean);
-  const button = findButton(initial.root);
-  assert.ok(button?.id);
-  const updated = await globalThis.__tachyonNativeUI.dispatch({ elementId: button.id, type: 'click' });
-  const eventSnapshot = await globalThis.__tachyonNativeUI.emit({ event: 'shortcut.activated', payload: { id: 'example.toggle' } });
-  assert.match(JSON.stringify(initial), /Count: 0/);
-  assert.match(JSON.stringify(initial), /shortcuts\.register\|contentSurface\.open/);
-  assert.match(JSON.stringify(updated), /Count: 1/);
-  assert.match(JSON.stringify(eventSnapshot), /Events: example\.toggle/);
-  assert.deepEqual(
-    calls.map((entry) => entry.capability),
-    ['shortcuts.register', 'contentSurface.open', 'contentSurface.state'],
-  );
-  process.stdout.write(`PASS: released standalone workflow matches Rust ty (${nativeTarget})\n`);
+  // ADR 0018 retired the separate widget controller. Exercise the emitted
+  // native document in Chromium; actual WebView transport has platform gates.
+  await withServer(ty, ['preview', project, '--static', '--out-dir', path.join(nativeRoot, 'web'), '--port', '0'], async request => {
+    const response = await request('/');
+    assert.equal(response.status, 200);
+    await page.goto(response.url);
+    await page.getByText('Count: 0', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Add' }).click();
+    await page.getByText('Count: 1', { exact: true }).waitFor();
+    await page.getByText('Required: page.state|mount.lifecycle', { exact: true }).waitFor();
+    await page.getByText('Events: mounted', { exact: true }).waitFor();
+  });
+
+  // OS access and host publication now belong to real compiled companions,
+  // not mocked shortcut/content-surface verbs in the retired controller.
+  const nativeAbi = spawnSync(process.execPath, [path.join(repo, 'scripts/native/companion-test.mjs')], {
+    cwd: repo, env: { ...environment, TAC_BIN: ty }, encoding: 'utf8',
+    timeout: 300_000, maxBuffer: 2 * 1024 * 1024,
+  });
+  assert.equal(nativeAbi.status, 0, `Native companion ABI failed: ${nativeAbi.error || nativeAbi.stderr || nativeAbi.stdout}`);
+  process.stdout.write(nativeAbi.stdout);
+  process.stdout.write(`PASS: standalone scaffold, server, web/native-bundle rendering and native ABI (${nativeTarget})\n`);
 } finally {
   if (browser) await browser.close();
   await stop(preview);
