@@ -7,7 +7,6 @@ class VersionsController
         return YonResponse::json(json_encode([
             'language' => 'PHP',
             'version' => PHP_VERSION,
-            'tachyon' => '26.31.06',
         ]));
     }
 }

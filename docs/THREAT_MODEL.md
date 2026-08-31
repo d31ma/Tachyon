@@ -13,8 +13,8 @@ reuse the handler-stream `error`/`TY2107` contract or include raw log content.
 
 This model covers project discovery, HTML and companion parsing, compiler
 inputs and outputs, route manifests, handler processes, development and
-production servers, generated web artifacts, native hosts, WebSurface
-fallbacks, capability bridges, caches, installers, update channels, release
+production servers, generated web artifacts, native web-view hosts,
+capability bridges, caches, installers, update channels, release
 artifacts, and CI.
 
 It is a living model. Every vertical slice updates concrete data flows,
@@ -42,8 +42,8 @@ trust boundaries, abuse cases, and validation evidence.
 6. Handler processes or a trusted Firecracker control program to environment,
    filesystem, network, microVM, and host resources.
 7. View IR to web and native code generators.
-8. Native UI to an isolated WebSurface subtree.
-9. WebSurface content to the native capability bridge.
+8. Staged application bundle to the platform's local-origin web view.
+9. Main-frame local content to the route-scoped native capability bridge.
 10. Generated platform projects to external mobile and desktop toolchains.
 11. Installer and updater to release archives and the local filesystem.
 12. CI jobs to third-party actions, registries, caches, and release identities.
@@ -57,7 +57,7 @@ trust boundaries, abuse cases, and validation evidence.
 | Path traversal or output overwrite | project-relative canonical paths, symlink checks, staging directories, atomic publication, explicit output root |
 | Compiler resource exhaustion | byte, node, depth, recursion, expansion, diagnostic, and time budgets |
 | Template injection | structural parsing, typed bindings, context-aware escaping, no implicit eval |
-| Malicious custom tags | resolve control tags at compile time; adapter allowlists; isolated local WebSurface fallback |
+| Malicious custom tags | bounded client render plans; no eval; compiler-owned AST; restrictive CSP |
 | Route-context confusion | deterministic contributors, duplicate-key error, stable manifest, no last-writer-wins |
 | Shell or argument injection | direct process spawning, fixed argv boundaries, no shell interpolation |
 | Handler denial of service | bounded frames, deadlines, cancellation, concurrency limits, process memory/CPU policy, forced termination |
@@ -66,8 +66,8 @@ trust boundaries, abuse cases, and validation evidence.
 | False Firecracker assurance | absolute regular non-symlinked and non-group/world-writable control-program path; bounded policy arguments; hardware-isolation claims require separate driver and host evidence |
 | Environment secret disclosure | allowlisted environment, redacted diagnostics, secret-canary tests |
 | SSRF and unrestricted egress | deny-by-default network capability, normalized origin allowlists, DNS/redirect revalidation, response limits |
-| Native bridge escalation | explicit capability manifest, per-call validation, local content only, remote bridge always disabled |
-| WebSurface origin confusion | isolated storage/origin, local bundle identity, no ambient navigation privilege |
+| Native bridge escalation | declared capabilities; bounded per-route registry; operation/member/payload checks; trusted main-frame local origin only |
+| Native origin confusion | canonical bundle resource mapping; frame and navigation guards; no remote bridge; no arbitrary file URLs |
 | Cache poisoning or path replacement | versioned cache keys include compiler, contract, target, config, and source digests; non-following directory capabilities; identity-checked cleanup; verified atomic writes; private runtime copies |
 | Malicious archive | bounded extraction, path and symlink validation, explicit manifest, digest verification |
 | Supply-chain compromise | locked dependencies, advisory/license/source policy, pinned actions, minimal release permissions, SBOM, provenance, signatures |
@@ -75,7 +75,47 @@ trust boundaries, abuse cases, and validation evidence.
 | Diagnostic data leakage | allowlisted structured fields, bounded snippets, no secrets or full environment dumps |
 | Development hot-update injection or stale execution | versioned typed messages, JSON serialization, text-only diagnostic rendering, same-origin generated modules, compiler-owned island boundaries, last-good output, and reload on ambiguity |
 
-## Security Invariants
+## Reconciled request and browser boundaries
+
+The following describes implemented controls. These documentation updates
+are not a new assessment or signoff; the separate cybersecurity review for
+this reconciliation was waived by the user.
+
+- CHEX validates immutable captured schemas against private request files;
+  request bodies and authorization headers never enter argv or public errors.
+  Admission and execution share a deadline, concurrency is capped, and invalid
+  schema/tool startup fails before publication or socket readiness.
+- Browser response persistence is opt-in for same-origin credential-omitted
+  GET/HEAD requests. Authorization, cookie-bearing requests, private/no-store
+  responses, oversized bodies, and unsupported Vary responses bypass storage.
+  `Range`/`If-Range` requests bypass both cache lookup and persistence, including
+  offline fallback. `206` responses and responses with `Content-Range` are
+  excluded on both writes and reads of existing cache records.
+  Browser storage is not a secret store; $/$$ fields must not contain secrets.
+- Pub/sub and retained messages are bounded, detached on abort/unmount/HMR,
+  and do not acquire native authority merely by sharing a topic name.
+- Native companions are application-trusted code with host privileges, not
+  sandboxed plugins. Origin and route checks constrain who can invoke them;
+  they cannot make malicious compiled application code safe.
+- Android pins AndroidX WebKit `1.14.0` and uses its frame-aware asynchronous
+  message listener and document-bound reply proxy. There is no legacy
+  JavaScript-interface fallback; unsupported WebView runtimes report bridge
+  unavailability. Document calls are capped at 128 with ten-second deadlines;
+  one worker admits at most 128 queued requests. Navigation retires pending
+  replies and stale queued work; destruction shuts down the worker.
+- Apple hosts and Swift companions share Foundation JSON decoding and
+  canonical request serialization instead of the handwritten value scanner.
+  A byte-level guard enforces 64 KiB and 64-level limits and rejects duplicate
+  root keys before decoding. Dispatch uses the same canonical payload that
+  the host validated.
+- Native field snapshots use per-field revisions so delayed replies cannot
+  overwrite newer edits. Native-call timeout limits browser waiting, not
+  preemption or rollback of already-running companion code. Companions must
+  remain responsive; recovery from hung native work may require relaunch.
+- Historical native and WASM evidence later in this document is superseded
+  by ADRs 0018/0019 and must be requalified for this release.
+
+## Invariants enforced across both architectures
 
 - Invalid or ambiguous security configuration fails closed.
 - Remote content receives no native bridge.

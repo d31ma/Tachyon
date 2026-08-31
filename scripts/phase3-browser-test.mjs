@@ -4,11 +4,12 @@ import { once } from 'node:events'
 import { createInterface } from 'node:readline'
 import { chromium } from 'playwright'
 
-const binary = process.platform === 'win32' ? 'target/debug/ty.exe' : 'target/debug/ty'
+const binary = process.env.TAC_BIN ?? (process.platform === 'win32' ? 'target/debug/ty.exe' : 'target/debug/ty')
 const fixture = 'crates/tachyon-cli/tests/fixtures/phase3-browser'
 const build = spawnSync(binary, ['build', fixture, '--no-incremental'], {
   encoding: 'utf8',
   stdio: 'pipe',
+  timeout: 120000,
 })
 assert.equal(build.status, 0, build.stderr)
 

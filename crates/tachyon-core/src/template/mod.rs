@@ -11,6 +11,6 @@ pub(crate) use context::client_route_context;
 pub(crate) use expression::Scope;
 pub(crate) use frontend::TemplateFrontend;
 pub(crate) use model::{
-    AttributeValue, EventArgument, HydrationPolicy, TemplateAttribute, TemplateNode,
-    TemplateNodeKind, TemplateProgram, TextPart, is_trivia,
+    AttributeValue, HydrationPolicy, TemplateAttribute, TemplateNode, TemplateNodeKind,
+    TemplateProgram, TextPart, is_trivia,
 };

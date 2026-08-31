@@ -63,6 +63,14 @@ pub(crate) enum TemplateNodeKind {
         iterable: Expression,
         children: Vec<TemplateNode>,
     },
+    CountedIteration {
+        binding: String,
+        from: Expression,
+        comparison: tachyon_contracts::CountedComparison,
+        to: Expression,
+        step: Expression,
+        children: Vec<TemplateNode>,
+    },
     /// `<switch :value>`, desugared into a conditional chain after parsing.
     Switch {
         value: Expression,
@@ -88,6 +96,7 @@ impl TemplateNodeKind {
             Self::Element { children, .. }
             | Self::Conditional { children, .. }
             | Self::Iteration { children, .. }
+            | Self::CountedIteration { children, .. }
             | Self::Switch { children, .. }
             | Self::Case { children, .. }
             | Self::Component { children, .. } => Some(children),
@@ -306,6 +315,21 @@ fn lower_node(node: &TemplateNode) -> Option<ViewNode> {
                 children: lower_siblings(children),
             })
         }
+        TemplateNodeKind::CountedIteration {
+            binding,
+            from,
+            comparison,
+            to,
+            step,
+            children,
+        } => Some(ViewNode::CountedIteration {
+            binding: binding.clone(),
+            from: String::from(from.source()),
+            comparison: *comparison,
+            to: String::from(to.source()),
+            step: String::from(step.source()),
+            body: lower_siblings(children),
+        }),
         TemplateNodeKind::Slot => Some(ViewNode::Element {
             tag: String::from("slot"),
             attributes: BTreeMap::new(),

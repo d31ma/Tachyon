@@ -28,24 +28,57 @@ declare global {
     target: string;
   }
 
-  const Tac: abstract new (...args: any[]) => object;
+  interface TacFetchOptions {
+    /** Persistent caching requires same-origin reads with credentials: 'omit'. */
+    cache?: 'cache-first' | 'network-first' | 'reload' | 'no-store';
+    key?: string;
+    invalidateKeys?: string[];
+    invalidatePrefixes?: string[];
+  }
+  interface TacSubscriptionOptions {
+    immediate?: boolean;
+    signal?: AbortSignal;
+  }
+  interface TacRuntime {
+    fetch(input: RequestInfo | URL, init?: RequestInit, options?: TacFetchOptions): Promise<Response>;
+    invalidate(keys?: string[], prefixes?: string[]): Promise<void>;
+    precache(urls: string[]): Promise<void>;
+    clearAssetCache(): Promise<void>;
+    publish<T>(name: string, value: T, options?: { retain?: boolean }): void;
+    subscribe<T>(name: string, listener: (value: T) => void | Promise<void>, options?: TacSubscriptionOptions): () => void;
+    retained<T = unknown>(name: string): T | undefined;
+    render(): Promise<void>;
+  }
+  interface TacComponent {
+    readonly tac: TacRuntime;
+  }
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
+  const Tac: abstract new (...args: any[]) => TacComponent;
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const env: (name: string) => PropertyDecorator;
   const onMount: MethodDecorator;
-  const publish: (topic: string, value: unknown) => Promise<unknown>;
-  const subscribe: (topic: string, listener: (value: unknown) => void | Promise<void>) => () => void;
+  const publish: PropertyDecorator & MethodDecorator & ((topic?: string) => PropertyDecorator & MethodDecorator);
+  const subscribe: PropertyDecorator & MethodDecorator & ((topic?: string) => PropertyDecorator & MethodDecorator);
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const platform: TacPlatformContext['platform'];
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const environment: TacPlatformContext['environment'];
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const os: TacPlatformContext['os'];
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const target: TacPlatformContext['target'];
 
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const app: {
     isAvailable(): boolean;
     info(): Promise<Record<string, unknown>>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const clipboard: {
     readText(): Promise<string>;
     writeText(text: string): Promise<unknown>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const fileSystem: {
     readText(path: string): Promise<{ path: string; text: string }>;
     writeText(path: string, text: string): Promise<{ path: string; bytes: number; written: boolean }>;
@@ -55,30 +88,38 @@ declare global {
     remove(path: string): Promise<{ path: string; removed: boolean }>;
     paths(): Promise<{ appData: string; cache: string; documents?: string }>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const shell: {
     exec(command: string, args?: string[], cwd?: string): Promise<{ command: string; args: string[]; exitCode: number; stdout: string; stderr: string }>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const browser: {
     open(url: string): Promise<{ opened: boolean }>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const share: {
     text(text: string, title?: string): Promise<{ shared: boolean }>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const haptics: {
     impact(): Promise<{ impacted: boolean }>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const filePicker: {
     openText(): Promise<{ name: string; text: string }>;
     saveText(name: string, text: string): Promise<{ name: string; saved: boolean }>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const secrets: {
     get(key: string): Promise<string | null>;
     set(key: string, value: string): Promise<void>;
     delete(key: string): Promise<void>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const auth: {
     verifyUser(reason: string): Promise<{ verified: boolean; method: 'biometric' | 'device-credential' }>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const geolocation: {
     current(options?: PositionOptions): Promise<{
       latitude: number;
@@ -91,9 +132,11 @@ declare global {
       timestamp: number;
     }>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const notifications: {
     show(title: string, options?: NotificationOptions): Promise<{ shown: boolean }>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const media: {
     getUserMedia(constraints: MediaStreamConstraints): Promise<MediaStream>;
   };
@@ -105,10 +148,12 @@ declare global {
   interface TachyonShortcutListResult {
     shortcuts: TachyonShortcut[];
   }
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const host: {
     invoke<T = unknown>(operation: string, payload?: unknown): Promise<T>;
     on<T = unknown>(event: string, handler: (payload: T) => void): () => void;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const shortcuts: {
     register(options: { id: string; accelerator: string; replace?: boolean }): Promise<TachyonShortcutListResult & { shortcut: TachyonShortcut }>;
     unregister(id: string): Promise<TachyonShortcutListResult & { unregistered: boolean }>;
@@ -123,6 +168,7 @@ declare global {
     clickThrough?: boolean;
     captureProtection?: boolean;
   }
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const appWindow: {
     state(): Promise<TachyonAppWindowState>;
     setAlwaysOnTop(enabled: boolean): Promise<TachyonAppWindowState | { updated: true }>;
@@ -141,6 +187,7 @@ declare global {
     canGoBack?: boolean;
     canGoForward?: boolean;
   }
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const contentSurface: {
     open(options: { id: string; url: string; persistentSession?: boolean }): Promise<TachyonContentSurfaceState>;
     navigate(id: string, url: string): Promise<TachyonContentSurfaceState>;
@@ -165,11 +212,13 @@ declare global {
     clipboard: boolean;
     path: string;
   }
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const screenCapture: {
     state(): Promise<{ supported: boolean; permission: 'granted' | 'prompt' | 'denied' | 'unsupported'; format: 'png'; destinations: Array<'clipboard' | 'file' | 'both'> }>;
     listWindows(options?: { visibleOnly?: boolean; excludeCurrentApp?: boolean }): Promise<{ windows: TachyonCaptureWindow[]; permission: 'granted' | 'prompt' | 'unsupported' }>;
     captureWindow(options: { windowId: string; destination: 'clipboard' | 'file' | 'both'; format?: 'png' }): Promise<TachyonCaptureResult>;
   };
+  /** @deprecated Historical declaration only; the current runtime does not install this global. Use this.tac or an application-owned native companion. */
   const capabilities: {
     supports(capability: string): boolean;
     state(capability: string): Promise<'granted' | 'denied' | 'prompt' | 'unsupported'>;

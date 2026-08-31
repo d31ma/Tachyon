@@ -13,7 +13,9 @@ import { ensureBundle } from './helpers/ensure-bundle.js'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const read = (relative) => readFile(new URL(relative, new URL('..', import.meta.url)), 'utf8')
 
-beforeAll(ensureBundle)
+// This hook runs the real compiler, whose bounded toolchain work can exceed
+// Bun's five-second default on a clean CI checkout.
+beforeAll(ensureBundle, 120_000)
 
 describe('published output', () => {
   test('every route links its stylesheet and the client runtime', async () => {
@@ -93,13 +95,19 @@ describe('language coverage', () => {
       expect(file.code.length).toBeGreaterThan(20)
       expect(file.name).toMatch(/\/tac\.[a-z]+$/)
     }
-    // Each Yon language is a layered suite: a controller, and the layers it
-    // declares beneath itself.
+    // Interpreted handlers can import separate layer files. Compiled handlers
+    // currently compile one source, with their helper classes colocated there.
     for (const entry of languages.yon.entries) {
       const names = entry.files.map((file) => file.name)
       expect(names.some((name) => name.startsWith('server/routes/'))).toBe(true)
-      expect(names.some((name) => name.startsWith('server/services/'))).toBe(true)
-      expect(names.some((name) => name.startsWith('server/repositories/'))).toBe(true)
+      if (['java', 'csharp', 'kotlin', 'rust'].includes(entry.id)) {
+        expect(names).toHaveLength(1)
+        expect(entry.files[0].code).toMatch(/(?:@|\[)Service\b/)
+        expect(entry.files[0].code).toMatch(/(?:@|\[)Repository\b/)
+      } else {
+        expect(names.some((name) => name.startsWith('server/services/'))).toBe(true)
+        expect(names.some((name) => name.startsWith('server/repositories/'))).toBe(true)
+      }
     }
   })
 
@@ -246,7 +254,7 @@ describe('feature catalogue', () => {
                          'TY1010', 'yon.js', 'yon.py',
                          'yon.php', 'yon.kt', 'yon.java', 'middleware', 'EventSource', 'async *GET',
                          'companion.invoke', 'entryRoute', 'ty doctor',
-                         'ty start', 'TY1307', 'TY1404',
+                          'ty start', 'TY1307', 'module constants',
                          'ty migrate check', 'postBundle', 'hotState', 'OPTIONS.schema.json']) {
       expect(text).toContain(probe)
     }
@@ -448,6 +456,7 @@ describe('documentation structure', () => {
     const seed = await read('scripts/seed.mjs')
     const navigation = await read('client/shared/scripts/navigation.js')
     const search = await read('client/components/site/search/tac.js')
+    const searchTemplate = await read('client/components/site/search/tac.html')
     expect(seed).toContain('features.json')
     expect(seed).toContain("kind: 'feature'")
     expect(seed).toContain('/docs/features/')
@@ -455,7 +464,7 @@ describe('documentation structure', () => {
     expect(navigation).toContain("kind: 'section'")
     expect(navigation).toContain("kind: 'feature'")
     expect(search).toContain('this.results = searchDocs(query)')
-    expect(search).toContain('input.addEventListener')
+    expect(searchTemplate).toContain('on:input="find($event.target.value)"')
     expect(search).toContain('keydown')
     expect(search).toContain('globalThis.__tachyonTac?.render()')
   })

@@ -10,8 +10,9 @@
     "bun": ">=1.3.0"
   },
   "scripts": {
-    "typecheck": "tsc -p jsconfig.json --noEmit",
+    "typecheck": "tsc -p jsconfig.json --noEmit && tsc -p jsconfig.release.json --noEmit",
     "test:website": "bun --cwd website test",
+    "test:website-browser": "node scripts/website-browser-test.mjs",
     "test:rust-browser": "node scripts/phase3-browser-test.mjs",
     "test:rust-hmr": "node scripts/hot-update-browser-test.mjs",
     "test:rust-macos": "node scripts/phase4-macos-test.mjs",
@@ -20,8 +21,9 @@
     "test:rust-events": "node scripts/events-browser-test.mjs",
     "test:rust-offline": "node scripts/service-worker-browser-test.mjs",
     "test:rust-client": "node scripts/island-expression-test.mjs",
-    "test:wasm-abi": "node scripts/wasm/abi-probe.mjs",
-    "test:wasm-companion": "node scripts/wasm/companion-browser-test.mjs"
+    "test:rust-runtime": "node scripts/runtime-browser-test.mjs",
+    "test:rust-storage": "node scripts/storage-browser-test.mjs",
+    "test:native-companion": "node scripts/native/companion-test.mjs"
   },
   "keywords": [
     "tachyon",

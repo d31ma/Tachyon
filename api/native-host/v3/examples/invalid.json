@@ -1,0 +1,1 @@
+{"schemaVersion":3,"target":"macos","appName":"Example","appId":"dev.example.app","version":"1.0.0","renderMode":"remote","entryRoute":"/","entryDocument":"index.html","platformApiVersion":1,"bridgeVersion":3,"companions":[],"windowControls":[],"hostCapabilities":["companion.invoke","remote.execute"]}

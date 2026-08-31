@@ -93,6 +93,7 @@ pub struct RouteNode {
     view: Option<ViewSource>,
     handlers: Vec<HandlerNode>,
     companions: Vec<CompanionSource>,
+    contract: Option<crate::handler::RouteContract>,
 }
 
 /// A colocated asset compiled alongside a view.
@@ -116,6 +117,169 @@ pub enum CompanionKind {
     ClientModule,
     /// A `TypeScript` client module transpiled before emission.
     TypeScriptModule,
+    /// A target-native companion linked into the platform host.
+    Native(NativeCompanion),
+}
+
+/// A companion language that compiles into a native host.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeCompanion {
+    /// Every native target: linked into each host through the C ABI.
+    Rust,
+    /// The Apple targets, compiled by `swiftc` into the host binary.
+    Swift,
+    /// Android, compiled by the Kotlin plugin into the APK.
+    Kotlin,
+    /// Windows, published ahead of time as a library the host loads.
+    CSharp,
+}
+
+/// The diagnostic for a route no declared companion can answer on a target.
+///
+/// Shared by the web build and every native one, because the rule is the same
+/// on all of them: a route whose behaviour lives in a language this target
+/// cannot compile has no behaviour here at all, and an application that starts
+/// up and does nothing is a worse answer than a build that refuses.
+pub(crate) fn unreachable_companion(
+    route: &str,
+    declared: &[NativeCompanion],
+    target_name: &str,
+    target: Option<tachyon_contracts::NativeTarget>,
+) -> crate::Failure {
+    let listed = declared
+        .iter()
+        .map(|language| format!("{} ({})", language.label(), language.target_names()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    // Naming the language that *does* reach this target is the actionable
+    // half: "add a tac.rs" is no help to someone who already has one.
+    let reaching = target.map_or_else(Vec::new, |target| {
+        NativeCompanion::ALL
+            .iter()
+            .filter(|language| language.supports(target))
+            .map(|language| format!("a {}", language.source_name()))
+            .collect::<Vec<_>>()
+    });
+    let native = if reaching.is_empty() {
+        String::new()
+    } else {
+        format!(", or {}", reaching.join(" or "))
+    };
+    crate::Failure::one(crate::failure::diagnostic(
+        1010,
+        format!(
+            "Route '{route}' has no companion that runs on {target_name}. It declares {listed}."
+        ),
+        Some(format!(
+            "A companion language compiles for the targets whose toolchain and SDK it \
+             belongs to. Add a tac.js or a tac.ts{native} to give this route behaviour \
+             on {target_name}, or build a target the declared companion supports.",
+        )),
+        None,
+    ))
+}
+
+impl NativeCompanion {
+    /// Every companion language, so a diagnostic can search the matrix.
+    pub const ALL: [Self; 4] = [Self::Rust, Self::Swift, Self::Kotlin, Self::CSharp];
+
+    /// The targets this language can be compiled for.
+    ///
+    /// This is the whole matrix, and it is deliberately narrow. A language is
+    /// listed for a target when that target's own toolchain compiles it and
+    /// its own SDK is what the companion then reaches. Swift is not listed for
+    /// Android because there is no Android Swift SDK to reach; C# is not
+    /// listed for macOS for the same reason. Rust is listed for the three
+    /// desktops because each host can link a C ABI, which is what a Rust
+    /// staticlib exposes; Android and iOS would each need a build system in
+    /// service of a language that is not the language of either platform.
+    ///
+    /// Nothing is listed for the web. A web companion is `tac.js` or
+    /// `tac.ts` — the browser's own languages, needing no compiler and no
+    /// bridge.
+    #[must_use]
+    pub const fn targets(self) -> &'static [tachyon_contracts::NativeTarget] {
+        use tachyon_contracts::NativeTarget::{Android, Ios, Linux, Macos, Windows};
+        match self {
+            Self::Rust => &[Macos, Windows, Linux],
+            Self::Swift => &[Macos, Ios],
+            Self::Kotlin => &[Android],
+            Self::CSharp => &[Windows],
+        }
+    }
+
+    /// Whether this language compiles for one target.
+    #[must_use]
+    pub fn supports(self, target: tachyon_contracts::NativeTarget) -> bool {
+        self.targets().contains(&target)
+    }
+
+    /// How specific this language is for one target; lower wins.
+    ///
+    /// A route may declare more than one companion that reaches the target
+    /// being built — `tac.swift` and `tac.rs` both reach macOS — and exactly
+    /// one of them can answer the page. Rust is the generalist: it reaches
+    /// three desktops through a C ABI any host can call. The others are each
+    /// the platform's own language, reaching the SDK the host is written
+    /// against. So the specialist wins, and a project mixing them gets the
+    /// answer it would have written by hand.
+    ///
+    /// `None` when the language does not reach the target at all.
+    #[must_use]
+    pub fn specificity(self, target: tachyon_contracts::NativeTarget) -> Option<u8> {
+        if !self.supports(target) {
+            return None;
+        }
+        Some(u8::from(self == Self::Rust))
+    }
+
+    /// Picks the one companion that answers a target, out of those declared.
+    ///
+    /// The matrix guarantees this is unambiguous: no two platform languages
+    /// reach the same target, so `specificity` orders them totally.
+    #[must_use]
+    pub fn most_specific(
+        declared: &[Self],
+        target: tachyon_contracts::NativeTarget,
+    ) -> Option<Self> {
+        declared
+            .iter()
+            .filter_map(|language| Some((language.specificity(target)?, *language)))
+            .min_by_key(|(rank, _)| *rank)
+            .map(|(_, language)| language)
+    }
+
+    /// Returns the source file name a companion of this language is written in.
+    #[must_use]
+    pub const fn source_name(self) -> &'static str {
+        match self {
+            Self::Rust => "tac.rs",
+            Self::Swift => "tac.swift",
+            Self::Kotlin => "tac.kt",
+            Self::CSharp => "tac.cs",
+        }
+    }
+
+    /// The name a diagnostic calls this language.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Rust => "Rust",
+            Self::Swift => "Swift",
+            Self::Kotlin => "Kotlin",
+            Self::CSharp => "C#",
+        }
+    }
+
+    /// The targets this language names, for a diagnostic.
+    #[must_use]
+    pub fn target_names(self) -> String {
+        self.targets()
+            .iter()
+            .map(|target| crate::native_target_directory(*target))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 impl CompanionKind {
@@ -125,6 +289,8 @@ impl CompanionKind {
         match self {
             Self::Style => "style.css",
             Self::ClientModule | Self::TypeScriptModule => "client.js",
+            // A native companion is compiled, not published beside the view.
+            Self::Native(_) => "companion",
         }
     }
 }
@@ -136,6 +302,12 @@ impl CompanionSource {
 }
 
 impl RouteNode {
+    /// Returns the declared request contract captured during discovery.
+    #[must_use]
+    pub fn contract(&self) -> Option<&crate::handler::RouteContract> {
+        self.contract.as_ref()
+    }
+
     /// Returns the canonical URL route.
     #[must_use]
     pub fn route(&self) -> &str {
@@ -260,7 +432,9 @@ impl RouteGraph {
                 } else {
                     RouteKind::Api
                 },
-                methods: if route.handlers.is_empty() {
+                methods: if let Some(contract) = &route.contract {
+                    contract.methods()
+                } else if route.handlers.is_empty() {
                     vec![HttpMethod::Get, HttpMethod::Head]
                 } else {
                     vec![
@@ -412,6 +586,9 @@ impl ProjectDiscovery {
         let configs = [
             "package.json",
             "tac.config.js",
+            "tac.config.mjs",
+            "tac.config.ts",
+            "manifest.json",
             "tachyon.json",
             ".tachyonrc",
         ]
@@ -570,7 +747,26 @@ impl ProjectDiscovery {
             )));
         }
 
-        let route_graph = build_route_graph(views, handlers, companions)?;
+        let mut route_graph = build_route_graph(views, handlers, companions)?;
+        for route in &mut route_graph.routes {
+            let Some(handler) = route.handlers.first() else {
+                continue;
+            };
+            let Some(parent) = Path::new(&handler.source_path).parent() else {
+                continue;
+            };
+            let contract_path = parent.join(crate::handler::CONTRACT_FILE);
+            if let Some(file) = server_files
+                .iter()
+                .find(|file| file.relative == contract_path)
+            {
+                let portable = contract_path.to_string_lossy().replace('\\', "/");
+                route.contract = Some(crate::handler::RouteContract::from_bytes(
+                    &portable,
+                    &file.bytes,
+                )?);
+            }
+        }
         Ok(Project {
             root: canonical_root,
             route_graph,
@@ -1132,7 +1328,7 @@ fn inspect_source_file(
             1008,
             format!("Companion source '{path}' has no available adapter."),
             Some(String::from(
-                "Supported Tac companions are tac.css, tac.js, and tac.ts.",
+                "Supported Tac companions are tac.css, tac.js, tac.ts, tac.rs, tac.swift, tac.kt, and tac.cs.",
             )),
             source_span(&path, 0, name.len()),
         ));
@@ -1242,11 +1438,15 @@ fn invalid_route(relative: &Path) -> Failure {
 }
 
 /// Returns the companion kind for a colocated file name, if one applies.
-fn companion_kind(name: &str) -> Option<CompanionKind> {
+pub(crate) fn companion_kind(name: &str) -> Option<CompanionKind> {
     match name {
         "tac.css" => Some(CompanionKind::Style),
         "tac.js" => Some(CompanionKind::ClientModule),
         "tac.ts" => Some(CompanionKind::TypeScriptModule),
+        "tac.rs" => Some(CompanionKind::Native(NativeCompanion::Rust)),
+        "tac.swift" => Some(CompanionKind::Native(NativeCompanion::Swift)),
+        "tac.kt" => Some(CompanionKind::Native(NativeCompanion::Kotlin)),
+        "tac.cs" => Some(CompanionKind::Native(NativeCompanion::CSharp)),
         _ => None,
     }
 }
@@ -1272,6 +1472,7 @@ fn build_route_graph(
             view: None,
             handlers: Vec::new(),
             companions: Vec::new(),
+            contract: None,
         });
         if let Some(existing) = &node.view {
             return Err(Failure::one(diagnostic(
@@ -1294,6 +1495,7 @@ fn build_route_graph(
                 view: None,
                 handlers: Vec::new(),
                 companions: Vec::new(),
+                contract: None,
             })
             .handlers
             .push(handler);
@@ -1306,6 +1508,7 @@ fn build_route_graph(
                 view: None,
                 handlers: Vec::new(),
                 companions: Vec::new(),
+                contract: None,
             })
             .companions
             .push(companion);

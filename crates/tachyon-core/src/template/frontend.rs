@@ -39,6 +39,7 @@ impl TemplateFrontend {
         source_path: &str,
         components: &BTreeSet<String>,
     ) -> Result<TemplateProgram, Failure> {
+        let source = source.strip_prefix('\u{feff}').unwrap_or(source);
         if source.trim().is_empty() {
             return Err(Failure::one(template_diagnostic(
                 1301,
@@ -663,6 +664,7 @@ fn children_mut(kind: &mut TemplateNodeKind) -> Option<&mut Vec<TemplateNode>> {
         TemplateNodeKind::Element { children, .. }
         | TemplateNodeKind::Conditional { children, .. }
         | TemplateNodeKind::Iteration { children, .. }
+        | TemplateNodeKind::CountedIteration { children, .. }
         | TemplateNodeKind::Switch { children, .. }
         | TemplateNodeKind::Case { children, .. }
         | TemplateNodeKind::Component { children, .. } => Some(children),
@@ -776,6 +778,15 @@ fn iteration(
             "Iteration declaration must use a dynamic control attribute.",
         ));
     };
+    if declaration.contains(';') {
+        return counted_iteration(
+            &declaration,
+            attribute.range.start,
+            source_path,
+            range,
+            attributes,
+        );
+    }
     let separator = if attribute_name == "for" {
         " of "
     } else {
@@ -788,7 +799,13 @@ fn iteration(
             "Iteration must use 'binding of expression' or 'binding in expression'.",
         ));
     };
-    if !valid_binding(binding.trim()) {
+    let binding = binding.trim();
+    let binding = binding
+        .strip_prefix("const ")
+        .or_else(|| binding.strip_prefix("let "))
+        .unwrap_or(binding)
+        .trim();
+    if !valid_binding(binding) {
         return Err(control_failure(
             source_path,
             range,
@@ -806,6 +823,146 @@ fn iteration(
         iterable,
         children: Vec::new(),
     })
+}
+
+fn counted_iteration(
+    declaration: &str,
+    start: usize,
+    source_path: &str,
+    range: SourceRange,
+    attributes: &BTreeMap<String, TemplateAttribute>,
+) -> Result<TemplateNodeKind, Failure> {
+    let clauses: Vec<_> = declaration.split(';').map(str::trim).collect();
+    let [init, test, update] = clauses.as_slice() else {
+        return Err(control_failure(
+            source_path,
+            range,
+            "A counted loop is 'let i = start; i < limit; i++'.",
+        ));
+    };
+    let (binding, from) = counted_initialization(init, source_path, range)?;
+    let (comparison, to) = counted_comparison(test, binding, source_path, range)?;
+    let step = counted_step(update, binding, comparison, source_path, range)?;
+    reject_attributes(attributes, source_path, range, "iteration")?;
+    Ok(TemplateNodeKind::CountedIteration {
+        binding: String::from(binding),
+        from: Expression::parse(from, source_path, start)?,
+        comparison,
+        to: Expression::parse(to, source_path, start)?,
+        step: Expression::parse(step, source_path, start)?,
+        children: Vec::new(),
+    })
+}
+
+fn counted_initialization<'a>(
+    init: &'a str,
+    source_path: &str,
+    range: SourceRange,
+) -> Result<(&'a str, &'a str), Failure> {
+    let Some(("let", rest)) = init.split_once(char::is_whitespace) else {
+        return Err(control_failure(
+            source_path,
+            range,
+            "A counted loop must declare its counter with 'let'.",
+        ));
+    };
+    let Some((binding, from)) = rest.split_once('=') else {
+        return Err(control_failure(
+            source_path,
+            range,
+            "A counted loop needs 'let i = start'.",
+        ));
+    };
+    let binding = binding.trim();
+    if !valid_binding(binding) {
+        return Err(control_failure(
+            source_path,
+            range,
+            "Counted loop counter is not a portable identifier.",
+        ));
+    }
+    Ok((binding, from.trim()))
+}
+
+fn counted_comparison<'a>(
+    test: &'a str,
+    binding: &str,
+    source_path: &str,
+    range: SourceRange,
+) -> Result<(tachyon_contracts::CountedComparison, &'a str), Failure> {
+    use tachyon_contracts::CountedComparison as Comparison;
+    for (operator, comparison) in [
+        ("<=", Comparison::Le),
+        (">=", Comparison::Ge),
+        ("<", Comparison::Lt),
+        (">", Comparison::Gt),
+    ] {
+        if let Some((subject, limit)) = test.split_once(operator) {
+            if subject.trim() != binding {
+                return Err(control_failure(
+                    source_path,
+                    range,
+                    "A counted loop must test its own counter.",
+                ));
+            }
+            return Ok((comparison, limit.trim()));
+        }
+    }
+    Err(control_failure(
+        source_path,
+        range,
+        "A counted loop tests its counter with <, <=, > or >=.",
+    ))
+}
+
+fn counted_step<'a>(
+    update: &'a str,
+    binding: &str,
+    comparison: tachyon_contracts::CountedComparison,
+    source_path: &str,
+    range: SourceRange,
+) -> Result<&'a str, Failure> {
+    let Some((counter, magnitude, ascending)) = split_counted_update(update) else {
+        return Err(control_failure(
+            source_path,
+            range,
+            "A counted loop advances with i++, i--, i += step or i -= step.",
+        ));
+    };
+    if counter.trim() != binding || ascending != comparison.ascending() {
+        return Err(control_failure(
+            source_path,
+            range,
+            "A counted loop must advance its own counter toward its limit.",
+        ));
+    }
+    let magnitude = magnitude.trim();
+    if magnitude.starts_with('-')
+        || magnitude
+            .parse::<f64>()
+            .is_ok_and(|value| !value.is_finite() || value <= 0.0)
+    {
+        return Err(control_failure(
+            source_path,
+            range,
+            "A counted loop step must be a positive finite magnitude.",
+        ));
+    }
+    Ok(magnitude)
+}
+
+fn split_counted_update(update: &str) -> Option<(&str, &str, bool)> {
+    for (operator, ascending) in [("++", true), ("--", false)] {
+        if let Some(counter) = update.strip_suffix(operator) {
+            return Some((counter, "1", ascending));
+        }
+    }
+    for (operator, ascending) in [("+=", true), ("-=", false)] {
+        if let Some((counter, magnitude)) = update.split_once(operator) {
+            return Some((counter, magnitude, ascending));
+        }
+    }
+    None
 }
 
 fn take_hydrate(
@@ -913,6 +1070,23 @@ fn validate_conditionals(
     }
 }
 
+/// Decode literal HTML content once, using the tokenizer's complete entity table.
+/// Escaping markup delimiters keeps this operation in the data state; decoded
+/// characters become text nodes, never new template syntax or HTML elements.
+fn decode_text_references(value: &str) -> String {
+    if !value.contains('&') {
+        return String::from(value);
+    }
+    let escaped = value.replace('<', "&lt;");
+    let mut result = String::with_capacity(value.len());
+    for token in Tokenizer::new(escaped.as_str()) {
+        if let Ok(Token::String(text)) = token {
+            result.push_str(&String::from_utf8_lossy(&text.value));
+        }
+    }
+    result
+}
+
 fn text_parts(
     value: &str,
     source_path: &str,
@@ -930,7 +1104,7 @@ fn text_parts(
         {
             if literal_start < current {
                 parts.push(TextPart::Literal(
-                    String::from(&value[literal_start..current]),
+                    decode_text_references(&value[literal_start..current]),
                     SourceRange {
                         start: source_start + literal_start,
                         end: source_start + current,
@@ -958,7 +1132,7 @@ fn text_parts(
         }
         if literal_start < current {
             parts.push(TextPart::Literal(
-                String::from(&value[literal_start..current]),
+                decode_text_references(&value[literal_start..current]),
                 SourceRange {
                     start: source_start + literal_start,
                     end: source_start + current,
@@ -1005,7 +1179,7 @@ fn text_parts(
     }
     if literal_start < value.len() {
         parts.push(TextPart::Literal(
-            String::from(&value[literal_start..]),
+            decode_text_references(&value[literal_start..]),
             SourceRange {
                 start: source_start + literal_start,
                 end: source_start + value.len(),

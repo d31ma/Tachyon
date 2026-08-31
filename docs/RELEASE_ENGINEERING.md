@@ -4,7 +4,7 @@
 
 Engineering phases 0–7 implement the compiler, supervised server boundary,
 view semantics and islands, five native host families, migration tooling, and
-enterprise qualification automation. Product release candidate `26.35.07`
+enterprise qualification automation. The product release identity
 is recorded in `VERSION`; the internal Cargo package identity remains
 `0.0.0-phase4` so package metadata cannot be mistaken for the public product
 version.
@@ -18,15 +18,14 @@ internal Cargo version.
 
 ## Branch Model
 
-- `main` remains the released implementation until the cutover pull request is
-  approved and merged.
-- `codex/stable-rust-rewrite` is the cutover release-candidate branch.
-- Production fixes continue on `main` and are periodically merged into the
-  rewrite branch to refresh compatibility evidence.
-- Rust work lands as small vertical-slice pull requests targeting the rewrite
-  branch.
-- The rewrite branch is never force-pushed.
-- Cutover uses a reviewed pull request; history is not rewritten.
+- The Rust cutover is complete; `main` is the default integration branch.
+- Feature and fix branches use `codex/*` and land through reviewed pull
+  requests targeting the current default branch.
+- Release branches use `release/<UTC-CalVer>` and start from the updated
+  remote default branch after implementation has landed. Keep them forever.
+- Preserve historical rewrite and local-recovery branches for comparison.
+  Do not wholesale replace main with a recovered source tree.
+- Never force-push release history or move an existing version tag.
 
 ## Release Inputs
 
@@ -43,7 +42,7 @@ Every release is derived from:
 
 ## Required Artifacts
 
-Each target archive eventually contains:
+Each target archive contains:
 
 - `ty` or `ty.exe`;
 - license and third-party notices;
@@ -71,7 +70,10 @@ The Rust release workflow is tag-driven and never creates its own tag. It:
    Windows x64;
 10. verifies every checksum, GitHub provenance attestation, and Sigstore
     signature;
-11. exercises each raw binary and the real fail-closed installer;
+11. exercises each raw binary and the real fail-closed installer, including
+    schema contracts, native companion ABI, client plans and production start;
+    the downloaded Linux binary also runs browser/storage and website typing
+    gates against its own emitted runtime;
 12. makes the release public only after every verification succeeds.
 
 The workflow never creates or moves a tag and never overwrites a release
@@ -79,6 +81,11 @@ asset. A verification failure leaves a non-public draft for investigation.
 
 Cross-building may supplement the matrix but never substitutes for native
 promotion evidence.
+
+The local feature reconciliation inventory is [RECONCILIATION.md](RECONCILIATION.md).
+Its acceptance gates must pass on the actual staged download, not just a local
+developer executable. Existing `v26.35.07` assets remain immutable; restored
+features and the input-focus fix require a new qualified version.
 
 ## Failure Policy
 

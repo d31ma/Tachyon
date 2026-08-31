@@ -11,6 +11,8 @@ use tokio::sync::oneshot;
 pub(crate) enum LongRunningCommand {
     /// The development server, including its `dev` compatibility alias.
     Serve,
+    /// The production server, which never rebuilds published output.
+    Start,
     /// The bundle preview server.
     Preview,
     /// A bundle command waiting for source changes.
@@ -21,6 +23,7 @@ impl LongRunningCommand {
     const fn as_str(self) -> &'static str {
         match self {
             Self::Serve => "serve",
+            Self::Start => "start",
             Self::Preview => "preview",
             Self::BundleWatch => "bundle.watch",
         }

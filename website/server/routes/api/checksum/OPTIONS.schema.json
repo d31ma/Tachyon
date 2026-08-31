@@ -2,11 +2,11 @@
   "summary": "What the PHP handler reports about its own runtime",
   "methods": {
     "GET": {
-      "summary": "The interpreter this route's shebang started, and its version",
+      "summary": "The framework-owned PHP runtime, its version, and the matched route",
       "ok": {
         "language": "^.{1,40}$",
         "version": "^[0-9][0-9A-Za-z.+-]{0,30}$",
-        "startedBy": "^#!.{1,80}$"
+        "route": "^/.*$"
       }
     }
   }

@@ -204,7 +204,7 @@
     {
       "id": "companions",
       "title": "Companion classes",
-      "summary": "A tac.js or tac.ts beside a view becomes its instance. A companion is a class: imports above it, everything else inside it, or TY1404. @onMount, @publish and @subscribe are compiled away and applied by the runtime, because no engine implements decorators.",
+      "summary": "A tac.js or tac.ts beside a view becomes its instance. Imports, module constants and helpers remain valid around the exported class. Tachyon lowers its @onMount, @publish and @subscribe annotations at build time; each annotation belongs on its own line above an instance member.",
       "group": "Tac views",
       "files": [
         {
@@ -213,7 +213,7 @@
         },
         {
           "name": "client/pages/tac.js",
-          "code": "export default class {\n  count = 6\n\n  doubled() { return this.count * 2 }\n\n  @onMount\n  async start() {\n    // Runs once the component subtree exists.\n  }\n}"
+          "code": "export default class {\n  count = 6\n\n  doubled() { return this.count * 2 }\n\n  @onMount\n  async start() {\n    // Runtime helpers and persisted fields are ready.\n    // Page initialization precedes its first render.\n  }\n}"
         },
         {
           "name": "client/pages/tac.ts",
@@ -221,7 +221,7 @@
         },
         {
           "name": "decorators",
-          "code": "@onMount, @publish and @subscribe. None reaches the browser: no\nengine implements the proposal, so the compiler removes them and\nrecords what they declared for the runtime to apply.\n\n  tac.js, tac.ts                       all three\n  tac.rs, tac.swift, tac.kt, tac.cs    publishing, as a call\n\nA compiled companion cannot use the syntax — Swift has no arbitrary\nattributes, and inventing a spelling would make it a dialect rather\nthan the language its own compiler accepts. It publishes to the same\nsignal by calling tacPublish instead."
+          "code": "@onMount, @publish and @subscribe are Tachyon compile-time annotations.\nThe compiler removes them and records metadata for the runtime.\nWrite each on its own line; signal annotations accept an optional\nquoted name, not an options object.\n\n  tac.js, tac.ts                       all three\n  tac.rs, tac.swift, tac.kt, tac.cs    publishing through their prelude\n\nNative companions use their language's publishing function instead:\ntac_publish in Rust, tacPublish in Swift/Kotlin, Tac.Publish in C#."
         },
         {
           "name": "client/pages/tac.js",
@@ -277,7 +277,7 @@
     {
       "id": "fetch-cache",
       "title": "Declared read caching",
-      "summary": "Cache policy is declared by path in tac.config.js and enforced by the service worker, so a plain fetch() is cached the same way whoever issued it. A write invalidates the reads it can affect.",
+      "summary": "tac.config.js declares service-worker policies for public reads by path. API caching requires credentials: 'omit', no Authorization header and a cacheable response; private, no-store and Vary responses are excluded. This worker cache is separate from the bounded IndexedDB cache offered by this.tac.fetch. A successful write invalidates affected worker reads.",
       "group": "Browser storage",
       "files": [
         {
@@ -286,18 +286,18 @@
         },
         {
           "name": "tac.config.js",
-          "code": "export const cache = [\n  // A catalogue that changes rarely: answer from storage, revalidate later.\n  { path: '/api/products', policy: 'cache-first' },\n  // Anything under a prefix. '*' stops at the query string, so this rule\n  // cannot widen into another route's parameters.\n  { path: '/api/search/*', policy: 'network-first' },\n  // Never stored, and never answered from storage offline.\n  { path: '/api/session', policy: 'no-store' },\n]"
+          "code": "export const cache = [\n  // A public catalogue: a cache hit answers without revalidation.\n  { path: '/api/products', policy: 'cache-first' },\n  // Rules match the URL pathname, not its query string.\n  { path: '/api/search/*', policy: 'network-first' },\n  // Never stored, and never answered from storage offline.\n  { path: '/api/session', policy: 'no-store' },\n]"
         },
         {
           "name": "client/pages/tac.js",
-          "code": "export default class {\n  async load() {\n    // No framework API on the hot path: the worker applies the declared\n    // policy to this request because of its URL, not because of the call.\n    const response = await fetch('/api/products')\n    this.products = await response.json()\n  }\n\n  async save(product) {\n    // A successful write drops the cached reads it can affect — this path\n    // and the collection it belongs to — so the next read is not stale.\n    await fetch('/api/products', { method: 'POST', body: JSON.stringify(product) })\n  }\n}"
+          "code": "export default class {\n  products = []\n\n  async load() {\n    // Public, anonymous reads opt in to the declared worker policy.\n    const response = await fetch('/api/products', { credentials: 'omit' })\n    this.products = await response.json()\n  }\n\n  async save(product) {\n    // A successful write drops affected cached worker reads.\n    await fetch('/api/products', {\n      method: 'POST',\n      headers: { 'content-type': 'application/json' },\n      body: JSON.stringify(product),\n    })\n  }\n}"
         }
       ]
     },
     {
       "id": "offline",
       "title": "Offline assets",
-      "summary": "A generated service worker caches static assets cache-first and navigations network-first. Component modules behind an untaken branch are warmed at idle.",
+      "summary": "A generated service worker caches known packaged public assets cache-first and packaged page documents network-first. It does not cache arbitrary credentialed responses. Component modules behind an untaken branch are warmed at idle; storage and response sizes are bounded.",
       "group": "Browser storage",
       "files": [
         {
@@ -386,7 +386,7 @@
     {
       "id": "any-language",
       "title": "Eight server languages",
-      "summary": "A Yon handler declares its layer, so Yon runs the languages whose syntax can carry that declaration: JavaScript, TypeScript, Python, Java, C#, Kotlin, PHP and Rust. Two have a built-in adapter, four are compiled and cached on first use, and none of them says how it is started — Yon knows how to start each of the eight.",
+      "summary": "Yon supports JavaScript, TypeScript, Python, Java, C#, Kotlin, PHP and Rust handlers. JavaScript/TypeScript and Python use adapters, PHP uses the supplied protocol runtime, Java uses source-file launch, and Kotlin, C# and Rust use managed compilation. Each declares a controller; Tachyon owns preparation and supervised execution.",
       "group": "Yon server",
       "files": [
         {
@@ -411,7 +411,7 @@
         },
         {
           "name": "server/routes/echo/yon.kt",
-          "code": "// Compiled once by kotlinc into .tachyon/handlers/<digest> and run with\n// java -jar, then reused. Change the file and the digest changes with it.\n//\n// Json is in scope without an import: Kotlin's standard library has none, and\n// org.json is on Android's classpath rather than a bare kotlinc one.\n@Controller\nobject EchoController {\n    @JvmStatic\n    fun POST(request: YonRequest): YonResponse =\n        YonResponse.json(Json.write(mapOf(\"echoed\" to request.body())))\n}\n"
+          "code": "// Compiled by kotlinc and run with java -jar. Tachyon manages a\n// content-addressed artifact cache and private runtime staging; applications\n// must not depend on an internal cache path.\n//\n// Json is supplied by the protocol prelude; no Android classpath is assumed.\n@Controller\nobject EchoController {\n    @JvmStatic\n    fun POST(request: YonRequest): YonResponse =\n        YonResponse.json(Json.write(mapOf(\"echoed\" to request.body())))\n}\n"
         },
         {
           "name": "server/routes/echo/yon.cs",
@@ -423,7 +423,7 @@
         },
         {
           "name": "resolution",
-          "code": "How a handler is started\n\n  yon.js, yon.ts    a built-in adapter, on a runtime that reads it\n  yon.py            a built-in adapter\n  yon.php           php, with the protocol runtime appended\n  yon.java          JEP 330 single-file source launch\n  yon.rs            rustc, with a proc-macro crate for the attributes\n  yon.kt            kotlinc, run with java -jar\n  yon.cs            a generated project, built with dotnet\n\nNo shebang. Yon runs eight languages and knows how to start each,\nso a handler declares its methods and nothing about its own\nexecution. A shebang was the right answer while Yon ran any\nlanguage — there is no table of every interpreter in the world —\nbut a bounded set is a table, and one Tachyon owns rather than\nevery handler repeating.\n\nWhich JavaScript, though, is the project's to choose:\n\n  TACHYON_JAVASCRIPT_RUNTIME=$(command -v bun) ty start\n  TACHYON_PYTHON_RUNTIME=/usr/bin/python3.13 ty start\n\nIt matters for more than speed. A yon.js or yon.ts that declares\n@Controller needs a runtime that transpiles a decorator: Bun and\nDeno do, and Node — the default — never will.\n\nCompiled handlers are cached under .tachyon/handlers/<source digest>.\n\nGo, Ruby, Perl, C and C++ are not Yon languages: none of them can\ncarry the annotation a handler declares its layer with. They are\nreached through @Relay instead.\n"
+          "code": "How a handler is started\n\n  yon.js, yon.ts    a built-in adapter, on a capable runtime\n  yon.py            a built-in adapter\n  yon.php           php, with the protocol runtime appended\n  yon.java          JEP 330 single-file source launch\n  yon.rs            rustc, with a proc-macro crate for attributes\n  yon.kt            kotlinc, then java -jar\n  yon.cs            a generated project built with dotnet\n\nRuntime selection belongs to the deployment:\n\n  YON_JAVASCRIPT_RUNTIME=$(command -v bun) ty start\n  YON_PYTHON_RUNTIME=/usr/bin/python3.13 ty start\n\nBun is the default JavaScript runtime. Overrides must support the\nauthored syntax and pass the capability probe.\n\nTachyon manages content-addressed prepared-source/artifact caching\nand private runtime staging. Cache paths are not application APIs.\nJava source launch is not ahead-of-time native compilation.\n\nJS/TS, Python and PHP may import separate layer source files. Java,\nKotlin, C# and Rust prepare one yon source with colocated helper\ntypes; separate application-layer source imports are not supported.\n\nPrograms outside the supported handler set may be reached through\nan explicit @Relay declaration.\n"
         }
       ],
       "verify": "yon-direct"
@@ -524,12 +524,12 @@
     {
       "id": "realtime",
       "title": "Streaming handlers",
-      "summary": "A handler that yields is a stream, and @Stream on the method is how the route says so before it is called — the server chooses the streaming path before the handler runs. Tachyon checks the two against each other, so the declaration and the body cannot disagree.",
+      "summary": "@Stream marks a yielding handler before dispatch chooses the SSE path. The matching JS/TS page examples below start and stop EventSource explicitly, retain at most 128 validated ticks, and close on page exit, error or a 30-second deadline. EventSource cannot attach an Authorization header; these examples use the same-origin endpoint without a bearer token.",
       "group": "Yon server",
       "files": [
         {
           "name": "client/pages/tac.html",
-          "code": "<ul>\n  <loop :for=\"tick of ticks\">\n    <li>{tick.sku} · {tick.level}</li>\n  </loop>\n</ul>"
+          "code": "<button on:click=\"watch()\">Start stream</button>\n<button on:click=\"stop()\">Stop stream</button>\n<p aria-live=\"polite\">{status}</p>\n<ul>\n  <loop :for=\"tick of ticks\">\n    <li>{tick.sku} · {tick.level}</li>\n  </loop>\n</ul>"
         },
         {
           "name": "server/routes/ticks/yon.js",
@@ -553,26 +553,26 @@
         },
         {
           "name": "server/routes/ticks/OPTIONS.schema.json",
-          "code": "// The contract describes what a caller receives. It no longer says\n// whether the route streams: that moved onto the method, where the\n// yielding is, so a second file can no longer contradict the code.\n{\n  \"summary\": \"Inventory levels as they change\",\n  \"methods\": {\n    \"GET\": {\n      \"ok\": { \"sku\": \"^[A-Z0-9-]{1,32}$\", \"level\": \"^[0-9]+$\" }\n    }\n  }\n}"
+          "code": "{\n  \"summary\": \"Inventory levels as they change\",\n  \"methods\": {\n    \"GET\": {\n      \"ok\": { \"sku\": \"^[A-Z0-9-]{1,32}$\", \"level\": \"^[0-9]+$\" }\n    }\n  }\n}"
         },
         {
           "name": "client/pages/tac.js",
-          "code": "export default class {\n  @onMount\n  subscribe() {\n    // The browser owns reconnection and resends its last event id.\n    const stream = new EventSource('/ticks')\n    stream.addEventListener('message', (event) => {\n      this.levels = [...this.levels, JSON.parse(event.data)]\n    })\n  }\n}"
+          "code": "export default class {\n  ticks = []\n  status = 'Stopped'\n  #stream = null\n  #listeners = null\n  #timer = null\n\n  watch() {\n    this.stop()\n    this.ticks = []\n    this.status = 'Watching'\n    const stream = new EventSource('/ticks')\n    const listeners = new AbortController()\n    this.#stream = stream\n    this.#listeners = listeners\n    const finish = () => { this.stop(); this.refresh() }\n    stream.addEventListener('message', (event) => this.accept(event.data), { signal: listeners.signal })\n    stream.addEventListener('error', finish, { once: true, signal: listeners.signal })\n    addEventListener('pagehide', () => this.stop(), { once: true, signal: listeners.signal })\n    this.#timer = setTimeout(finish, 30000)\n  }\n\n  accept(data) {\n    try {\n      if (data.length > 65536) throw new Error('Event too large')\n      const tick = JSON.parse(data)\n      if (!tick || typeof tick.sku !== 'string' || !/^[A-Z0-9-]{1,32}$/.test(tick.sku) || !Number.isSafeInteger(tick.level) || tick.level < 0) throw new Error('Invalid tick')\n      this.ticks = [...this.ticks.slice(-127), { sku: tick.sku, level: tick.level }]\n    } catch { this.stop(); this.status = 'Invalid stream event' }\n    this.refresh()\n  }\n\n  refresh() { void this.tac.render().catch(() => this.stop()) }\n\n  stop() {\n    clearTimeout(this.#timer)\n    this.#listeners?.abort()\n    this.#stream?.close()\n    this.#listeners = null\n    this.#stream = null\n    this.status = 'Stopped'\n  }\n}"
         },
         {
           "name": "client/pages/tac.ts",
-          "code": "// EventSource cannot send headers, so a stream behind an Authorization\n// header is read with fetch instead. Same route, same events — the\n// parsing is the only thing you take on.\nexport default class {\n  levels: string[] = []\n\n  async watch(): Promise<void> {\n    const response = await fetch('/ticks', {\n      headers: { authorization: `Bearer ${this.token}`, accept: 'text/event-stream' },\n    })\n    const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader()\n    let buffered = ''\n    for (;;) {\n      const { value, done } = await reader.read()\n      if (done) break\n      buffered += value\n      // Events are separated by a blank line; a chunk may hold part of one.\n      const parts = buffered.split('\\n\\n')\n      buffered = parts.pop() ?? ''\n      for (const part of parts) {\n        const data = part.split('\\n').find((line) => line.startsWith('data:'))\n        if (data) this.levels.push(JSON.parse(data.slice(5)))\n      }\n      await this.tac.render()\n    }\n  }\n}"
+          "code": "export default class {\n  declare tac: { render(): Promise<void> }\n  ticks: { sku: string; level: number }[] = []\n  status = 'Stopped'\n  #stream: EventSource | null = null\n  #listeners: AbortController | null = null\n  #timer: ReturnType<typeof setTimeout> | undefined\n\n  watch(): void {\n    this.stop()\n    this.ticks = []\n    this.status = 'Watching'\n    const stream = new EventSource('/ticks')\n    const listeners = new AbortController()\n    this.#stream = stream\n    this.#listeners = listeners\n    const finish = () => { this.stop(); this.refresh() }\n    stream.addEventListener('message', (event) => this.accept(event.data), { signal: listeners.signal })\n    stream.addEventListener('error', finish, { once: true, signal: listeners.signal })\n    addEventListener('pagehide', () => this.stop(), { once: true, signal: listeners.signal })\n    this.#timer = setTimeout(finish, 30000)\n  }\n\n  accept(data: string): void {\n    try {\n      if (data.length > 65536) throw new Error('Event too large')\n      const tick = JSON.parse(data)\n      if (!tick || typeof tick.sku !== 'string' || !/^[A-Z0-9-]{1,32}$/.test(tick.sku) || !Number.isSafeInteger(tick.level) || tick.level < 0) throw new Error('Invalid tick')\n      this.ticks = [...this.ticks.slice(-127), { sku: tick.sku, level: tick.level }]\n    } catch { this.stop(); this.status = 'Invalid stream event' }\n    this.refresh()\n  }\n\n  refresh(): void { void this.tac.render().catch(() => this.stop()) }\n\n  stop(): void {\n    clearTimeout(this.#timer)\n    this.#listeners?.abort()\n    this.#stream?.close()\n    this.#listeners = null\n    this.#stream = null\n    this.status = 'Stopped'\n  }\n}"
         },
         {
           "name": "languages",
-          "code": "Which languages a stream is written in\n\n  yon.js, yon.ts   an async generator\n  yon.py           a generator\n  yon.php          a generator, framed by the prelude\n  yon.kt           a Sequence, framed by the prelude\n  yon.cs           an IEnumerable or IAsyncEnumerable, framed\n                   by the prelude\n\nSix of the eight. A stream is a handler that answers more than\nonce, and `yield` is how a handler says so in its own words. The\ntwo built-in adapters hold a generator open across frames, and\nPHP, Kotlin and C# now do the same without one.\n\nJava and Rust are the two left out, and deliberately: neither has\na generator, so `yield` is not what an author would write there.\n@Stream in either is refused with TY2014 rather than accepted and\nquietly ignored, and a route that must stream can be one of the\nsix — or reach the rest through @Relay.\n\nOne thing follows from the annotation: a streaming yon.js needs\nBun or Deno, because Node will never transpile a decorator. Every\nother language needs nothing.\n"
+          "code": "Which languages a stream is written in\n\n  yon.js, yon.ts   an async generator\n  yon.py           a generator\n  yon.php          a generator, framed by the prelude\n  yon.kt           a Sequence, framed by the prelude\n  yon.cs           an IEnumerable or IAsyncEnumerable, framed\n                   by the prelude\n\nSix of the eight. A stream is a handler that answers more than\nonce, and `yield` is how a handler says so in its own words. The\ntwo built-in adapters hold a generator open across frames, and\nPHP, Kotlin and C# now do the same without one.\n\nJava and Rust are the two left out, and deliberately: neither has\na generator, so `yield` is not what an author would write there.\n@Stream in either is refused with TY2014 rather than accepted and\nquietly ignored, and a route that must stream can be one of the\nsix — or reach the rest through @Relay.\n\nJavaScript and TypeScript require a runtime supporting the authored\nstream and decorator syntax; Bun is the default. Other languages\nstill require their supported interpreter or compiler toolchain.\n"
         }
       ]
     },
     {
       "id": "stereotypes",
       "title": "Layer stereotypes",
-      "summary": "A server class declares its layer — @Controller, @Service, @Repository, @Client, @Delegate — and Tachyon checks the declaration against where the file sits, what it reaches, what the class is named, and, for a controller, what it declares. Not dependency injection: a handler is one process per request, so nothing an injector built would outlive the response. What they buy is the architecture written down and enforced.",
+      "summary": "A server class declares its layer — @Controller, @Service, @Repository, @Client, @Delegate. Tachyon checks stereotype placement and references at the source-file entry point, plus class names and the controller's own methods. This is not dependency injection: the default handler lifetime is one process per request. JS/TS, Python and PHP may import separate layer files. Java, Kotlin, C# and Rust currently prepare a single yon source; colocate helper types beside the controller instead of importing separate application-layer source files. Those helper types may have non-HTTP methods, but do not acquire independently enforced layer dependency graphs.",
       "group": "Yon server",
       "files": [
         {
@@ -620,12 +620,12 @@
     {
       "id": "native-targets",
       "title": "Native targets",
-      "summary": "The same client source becomes a browser application or a desktop and mobile application. One build command can produce several at once: ty bundle --target macos,ios.",
+      "summary": "The same client source becomes a browser application or a desktop and mobile host displaying the bundle in its platform WebView. One build command can request several targets: ty bundle --target macos,ios. Each native target requires its platform SDK, compiler and WebView dependencies.",
       "group": "Native",
       "files": [
         {
           "name": "build",
-          "code": "ty bundle --target macos     ->  dist/macos/App.app      SwiftUI / AppKit\nty bundle --target windows   ->  dist/windows/           Win32\nty bundle --target linux     ->  dist/linux/             GTK4\nty bundle --target android   ->  dist/android/*.apk      platform views\nty bundle --target ios       ->  dist/ios/App.app        SwiftUI / UIKit"
+          "code": "ty bundle --target macos     ->  dist/macos/     AppKit host + WKWebView\nty bundle --target windows   ->  dist/windows/   Win32 host + WebView2\nty bundle --target linux     ->  dist/linux/     GTK host + WebKitGTK\nty bundle --target android   ->  dist/android/   Android host + WebView\nty bundle --target ios       ->  dist/ios/       UIKit host + WKWebView\n\nThe WebView renders the application's HTML, CSS and JavaScript.\nTac elements are not translated into platform-native widgets."
         }
       ]
     },
@@ -637,7 +637,7 @@
       "files": [
         {
           "name": "reach",
-          "code": "client/pages/tac.js     the web platform, on every target\nclient/pages/tac.swift  Foundation, AppKit, UIKit\nclient/pages/tac.kt     the Android SDK\nclient/pages/tac.cs     the .NET base class library\nclient/pages/tac.rs     the Rust standard library, on three desktops\n\nThe host implements one channel and no verbs — companion.invoke:\nthe page asks its companion for a member, and the companion answers. Everything a\nplatform can do is the companion's to reach directly."
+          "code": "client/pages/tac.js     the web platform, on every target\nclient/pages/tac.swift  Foundation, AppKit, UIKit\nclient/pages/tac.kt     the Android SDK\nclient/pages/tac.cs     the .NET base class library\nclient/pages/tac.rs     the Rust standard library, on three desktops\n\ncompanion.invoke carries the page's asynchronous member requests\nto its selected native companion. The host checks the local origin,\nmain frame and canonical route before dispatch. Window controls are\na separate, manifest-granted surface. Native companion code is\ntrusted application code with the host process's OS permissions,\nnot a sandbox or an unrestricted reflection bridge from the page."
         }
       ]
     },
@@ -694,7 +694,7 @@
       "files": [
         {
           "name": "shell",
-          "code": "ty init my-app --name \"My App\"\nty preview                      # development: Tac, Yon, or both\nty start                        # production: serve what was published\nty bundle                       # dist/web\nty bundle --target macos,ios    # several targets at once\nty bundle --native              # stage the native host only\nty doctor                       # toolchains and handler runtimes\nty handler invoke server/routes/items/yon.py --method GET\nty migrate check                # classify a legacy project\nty cache status | clean\n"
+          "code": "ty init my-app --name \"My App\"\nty preview                      # development: Tac, Yon, or both\nty start                        # production: serve what was published\nty bundle                       # dist/web\nty bundle --target macos,ios    # several targets at once\nty bundle --native --target macos # stage the native host only\nty doctor                       # toolchains and handler runtimes\nty handler invoke server/routes/items/yon.py --method GET\nty migrate check                # classify a legacy project\nty cache status | clean\n"
         }
       ]
     },
@@ -718,7 +718,7 @@
       "files": [
         {
           "name": "shell",
-          "code": "$ ty doctor\nready     tac.ts companions             node_modules/.bin/tsc    Version 6.0.3\nready     tac.rs companions for macos, windows, linux    rustc    1.97.1\nmissing   yon.js handlers               node                     not on PATH\n        Install Node.js 20 or newer as 'node', or pass --javascript-runtime.\n\n5 of 6 ready"
+          "code": "$ ty doctor\nready     tac.ts companions             node_modules/.bin/tsc    Version 6.0.3\nready     tac.rs companions for macos, windows, linux    rustc    1.97.1\nmissing   yon.js handlers               bun                      not on PATH\n        Install Bun or configure YON_JAVASCRIPT_RUNTIME.\n\n5 of 6 ready"
         }
       ]
     },
@@ -879,7 +879,7 @@
     {
       "id": "window-controls",
       "title": "What a page may do to its window",
-      "summary": "A native window is declared in manifest.json — the file a PWA already ships — and what a page may do to that window is granted there too. Nothing by default. A control that was not granted is not generated into the host, so there is no code to reach rather than a check that refuses.",
+      "summary": "manifest.json declares the native window and grants the window controls exposed to the page. Nothing is granted by default: ungranted controls are not exposed, and the host validates grants before executing a request. Native companion code remains application-owned OS code, not sandboxed by this window-control policy.",
       "group": "Native",
       "files": [
         {
@@ -896,7 +896,7 @@
         },
         {
           "name": "grants",
-          "code": "What a page may do to its window\n\n  close        dismiss the window\n  fullscreen   toggle full screen\n  maximize     zoom to fill the display\n  minimize     send to the dock or taskbar\n  resize       set width and height\n  title        set the window title\n\nEmpty by default. Nothing is granted unless it is listed, and a\ncontrol that is not listed is not generated into the host at all\n— there is no code to reach, not a check that says no.\n\nElectron hands a privileged process the whole window and trusts\nthe application. Tauri gates each call behind a permission in a\ncapabilities dialect of its own. This is the same default-deny,\ndeclared in the file the application already ships: manifest.json\nis where a PWA already says its name, its icons and where it\nstarts, and a manifest carrying members a browser does not know\nis still a valid manifest.\n\nAn unknown control is refused at build time, naming the six.\n"
+          "code": "Window controls a desktop page may be granted\n\n  close        dismiss the window\n  fullscreen   toggle full screen\n  maximize     zoom to fill the display\n  minimize     send to the dock or taskbar\n  resize       set width and height\n  title        set the window title\n\nEmpty by default. Ungranted controls are not exposed to the page,\nand the host checks the declared grants before executing a request.\nTest for a tachyonWindow function before calling it; platform support\nmay differ. This policy does not sandbox the application's native\ncompanion, which runs with the host's OS privileges.\n\nThe grant list lives in manifest.json beside the application's name,\nicons and entry route. Unknown control names fail at build time.\n"
         }
       ]
     },
@@ -920,7 +920,7 @@
       "files": [
         {
           "name": "environment",
-          "code": "Serving a built bundle\n\n  YON_HOST        interface to bind, or YON_HOSTNAME\n  YON_PORT        TCP port; zero takes an ephemeral one\n  YON_DIST_PATH   where the built bundle is\n\n  TACHYON_JAVASCRIPT_RUNTIME   node, bun or deno\n  TACHYON_PYTHON_RUNTIME       the CPython to use\n  TAC_CACHE_DIR                where the standalone runtime cache lives\n\n`ty start` serves what was published and never rebuilds, so\neverything that varies between deployments is in the environment\nrather than in the artifact. The bundle a staging host serves is\nbyte-identical to the one production serves.\n\nThe runtime variables matter for more than speed: a yon.js or\nyon.ts that declares @Controller needs a runtime that transpiles\na decorator, and Node — the default — never will.\n"
+          "code": "Serving a built bundle\n\n  YON_HOST        interface to bind, or YON_HOSTNAME\n  YON_PORT        TCP port; zero takes an ephemeral one\n  TAC_DIST_PATH   where the built bundle is\n\n  YON_JAVASCRIPT_RUNTIME   decorator-capable runtime (Bun by default)\n  YON_PYTHON_RUNTIME       the CPython to use\n  TAC_CACHE_DIR                where the standalone runtime cache lives\n\n`ty start` serves what was published and never rebuilds, so\neverything that varies between deployments is in the environment\nrather than in the artifact. The bundle a staging host serves is\nbyte-identical to the one production serves.\n\nThe runtime variables matter for more than speed: a yon.js or\nyon.ts that declares @Controller needs a runtime that transpiles\na decorator. Bun is the default; runtime capability is checked before startup.\n"
         }
       ]
     },

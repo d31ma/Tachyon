@@ -64,7 +64,7 @@
         {
           "heading": "Layout",
           "body": "Pages live in client/pages, components in client/components, and backend routes in server/routes. A companion file sits beside its tac.html template; shared browser assets and data live under client/shared.",
-          "code": "client/\n  pages/tac.html\n  components/hero/tac.html\n  components/hero/tac.swift\n  shared/assets/  shared/data/\nserver/\n  routes/posts/yon.js"
+          "code": "client/\n  pages/tac.html\n  components/hero/tac.html\n  components/hero/tac.js\n  shared/assets/  shared/data/\nserver/\n  routes/posts/yon.js"
         }
       ]
     },
@@ -115,12 +115,12 @@
         },
         {
           "heading": "Layers",
-          "body": "A server class declares which layer it is in, and Tachyon checks the declaration against where the file sits (TY2008), against what it reaches (TY2009), against its own name (TY2011), and — for a controller — against what it declares (TY2012). A layer may reach a deeper one and never a shallower one, and the bottom three are peers rather than a stack. This is not dependency injection: a handler is one process per request, so nothing an injector built would outlive the response.",
+          "body": "A server class declares its layer. Tachyon checks stereotype placement (TY2008) and dependency references (TY2009) at the source-file entry point, plus class names (TY2011) and the controller's own methods (TY2012). Services may use repositories, clients and delegates; those lower layers are peers, not a stack. JavaScript, TypeScript, Python and PHP may import separate layer source files. Java, Kotlin, C# and Rust currently prepare one yon source file: place helper types beside the controller in that file rather than importing separate application layer files. The controller's HTTP-only method rule does not prohibit methods on those helper types, but colocated helpers do not acquire independently enforced layer dependency graphs. Java uses source-file launch; Kotlin, C# and Rust have managed compilation steps. This is not dependency injection or a persistent singleton container.",
           "code": "@Controller   server/routes         a request in, a response out\n@Service      server/services       owns a decision\n@Repository   server/repositories   owns storage\n@Client       server/clients        owns one outbound call\n@Delegate     server/delegates      owns work handed elsewhere"
         },
         {
           "heading": "Process lifecycle",
-          "body": "One bounded process per request. No container, no singleton, no lifetime to reason about — the process starts, reads one request, writes one response and exits. A compiled handler is built once and cached under `.tachyon/handlers/<digest>`, so the build cost is paid on first use and every later request reuses the artefact; change the file and the digest changes with it. Deadlines, concurrency limits and frame bounds are enforced by the supervisor rather than by each language.",
+          "body": "The default process mode starts one supervised handler process per request. It reads the request, writes its response or bounded stream, then exits. Prepared sources and compiled artifacts use Tachyon-managed content-addressed caching, and execution uses private runtime staging. Cache locations are implementation details, not application-relative paths to import or edit; source, prelude and compilation identity determine reuse. Java remains source-launched rather than an ahead-of-time native executable. The supervisor enforces deadlines, concurrency and frame bounds. Optional isolation drivers are a separate deployment policy.",
           "code": ""
         },
         {
@@ -150,8 +150,8 @@
         },
         {
           "heading": "Serving",
-          "body": "`ty start` reads `YON_HOST` (or `YON_HOSTNAME`), `YON_PORT` and `YON_DIST_PATH`, and selects handler runtimes with `TACHYON_JAVASCRIPT_RUNTIME` and `TACHYON_PYTHON_RUNTIME`. The runtime choice matters for more than speed: a `yon.js` or `yon.ts` that declares `@Controller` needs a runtime that transpiles a decorator, and Node — the default — never will. Bun and Deno do.",
-          "code": "YON_PORT=8080 \\\nYON_DIST_PATH=dist/web \\\nTACHYON_JAVASCRIPT_RUNTIME=$(command -v bun) \\\n  ty start"
+          "body": "`ty start` reads `YON_HOST` (or `YON_HOSTNAME`), `YON_PORT` and `TAC_DIST_PATH`, and selects handler runtimes with `YON_JAVASCRIPT_RUNTIME` and `YON_PYTHON_RUNTIME`. The runtime choice matters for more than speed: a `yon.js` or `yon.ts` that declares `@Controller` needs a runtime that transpiles a decorator, so Bun is the default. Overrides must pass the runtime capability probe before startup.",
+          "code": "YON_PORT=8080 \\\nTAC_DIST_PATH=dist/web \\\nYON_JAVASCRIPT_RUNTIME=$(command -v bun) \\\n  ty start"
         },
         {
           "heading": "JSON in every language",
@@ -196,18 +196,18 @@
       "sections": [
         {
           "heading": "One rendering",
-          "body": "`web` is a browser target. macOS, Windows, Linux, iOS and Android each embed the WebView their platform already provides — WKWebView, WebView2, WebKitGTK — and load the built bundle's `index.html` from disk. What a browser shows is what the application shows, because it is the same bundle.\n\nMatching a platform's look is a choice made in the UI layer, with whichever kit the application already uses. It is not something the framework decides by mapping tags to controls.",
+          "body": "`web` is a browser target. Native hosts serve the built application bundle from a restricted local origin inside the platform WebView: WKWebView on macOS and iOS, WebView2 on Windows, WebKitGTK on Linux, and Android WebView. The same DOM, CSS and client runtime render the application; browser-engine differences still require testing on each target.\n\nMatching a platform's look is a choice made in the UI layer, with whichever kit the application already uses. It is not something the framework decides by mapping tags to controls.",
           "code": ""
         },
         {
           "heading": "One HTML source",
-          "body": "An application writes `tac.html` once. Control elements — `logic`, `loop`, `switch`, `case` — and Tac components compile away before publication, and what ships is the document a browser would have rendered. No second tree, no per-platform view language, and no tag that is supported on one target and not another.",
+          "body": "An application writes `tac.html` once. Control elements — `logic`, `loop`, `switch`, `case` — compile into a render plan; the shared client runtime evaluates that plan and mounts components to create the DOM. Published route documents bootstrap that renderer rather than contain a server-rendered view subtree. Native hosts use the same plan and runtime, not a second platform-widget tree.",
           "code": ""
         },
         {
           "heading": "The engine is the platform's",
           "body": "Tachyon builds and vendors no JavaScript engine. Each host uses the one its platform already ships, which is the same engine backing the WebView it embeds.",
-          "code": "macOS, iOS   JavaScriptCore   a system framework; nothing to install\nLinux        JavaScriptCore   ships with the WebKitGTK the host links\nWindows      WebView2         Microsoft's current supported embedding API"
+          "code": "macOS, iOS   WKWebView      system WebKit and JavaScriptCore\nLinux        WebKitGTK      system WebKit and JavaScriptCore dependencies\nWindows      WebView2       requires the WebView2 runtime\nAndroid      WebView        uses the installed system WebView provider"
         },
         {
           "heading": "What the host adds",
@@ -216,7 +216,7 @@
         },
         {
           "heading": "Companions are compiled in",
-          "body": "A `tac.swift`, `tac.kt`, `tac.cs` or `tac.rs` beside a view is compiled for the target and linked into the host process — it is not interpreted, and not shipped as source. That is why it reaches AppKit or the Android framework directly, and why a route needs a companion that runs on the target being built (TY1010) rather than one that is merely present.",
+          "body": "A `tac.swift`, `tac.kt`, `tac.cs` or `tac.rs` beside a page is compiled for a supported target and included in its host; it is not a browser WebAssembly component. Swift and Rust use native compilation, Kotlin uses the Android toolchain, and C# uses the Windows .NET host. Components continue to use JavaScript or TypeScript. Native companion code reaches the platform SDK with the host process's OS permissions. A native-only route without a companion for the requested target fails with TY1010.",
           "code": ""
         },
         {
@@ -232,48 +232,48 @@
       "sections": [
         {
           "heading": "Reactive fields",
-          "body": "Assigning to a declared field schedules one batched rerender of the component subtree. Fields prefixed with $ persist to sessionStorage; $$ fields persist to localStorage. Props auto-bind onto same-named declared fields.",
+          "body": "Fields and methods belong to the companion instance. Template event handlers and signal subscriptions refresh the view after completing; code running outside those paths calls await this.tac.render() when it changes state. Fields prefixed with $ persist to sessionStorage; $$ fields persist to localStorage. Persistence records assignments, not mutations inside an array or object: assign a new value to persist a change.",
           "code": "export default class {\n  count = 0\n  $visits = 0\n  $$theme = 'light'\n\n  increment() { this.count += 1 }\n}"
         },
         {
           "heading": "Decorators",
-          "body": "Stage 3 decorators express the same things declaratively, and the compiler brings them into scope — `@publish` and `@subscribe` for signals between components, and `@onMount` for lifecycle. A `@subscribe` may ask to run on mount as well as on each signal.",
-          "code": "export default class {\n  @subscribe release\n  @publish('release') appVersion = 'TACHYON'\n\n  @subscribe('demo-refresh', { onMount: true })\n  refresh() {}\n\n  @onMount\n  initialize() {}\n}"
+          "body": "Tachyon lowers @publish, @subscribe and @onMount at build time. Put each decorator on its own line above an instance field or method. Signal decorators accept an optional quoted name, not an options object. Subscribed fields receive the retained value on attachment; subscribed methods receive new publications. Stack @onMount with @subscribe to invoke a method at initialization as well.",
+          "code": "export default class {\n  @subscribe\n  release = ''\n\n  @publish('release')\n  appVersion = 'TACHYON'\n\n  @subscribe('demo-refresh')\n  @onMount\n  refresh() {}\n}"
         }
       ]
     },
     "polyglot": {
       "title": "Polyglot companions",
-      "summary": "Tac companions are colocated controllers for templates. They are portable across web, desktop and mobile outputs and do not require a client worker endpoint.",
+      "summary": "Tac companions are colocated controllers for templates. JavaScript and TypeScript run in the browser on every target; native page companions compile for the platforms their languages support.",
       "sections": [
         {
           "heading": "Choose a companion language",
-          "body": "A component or page may use `tac.js`, `tac.ts`, `tac.rs`, `tac.kt`, `tac.swift` or `tac.cs` beside its `tac.html`. JavaScript and TypeScript reach every target; the rest reach the targets they are the language of — Rust on desktop, Swift on Apple, Kotlin on Android, C# on Windows. A route with no companion that runs on the target being built is refused with TY1010 naming what it declared. Dart is not a companion language: a companion is compiled for the target it runs on, and Dart has no target of its own.",
-          "code": "client/components/counter/\n  tac.html\n  tac.swift\n\nfinal class Counter: Tac {\n  var count: Int = 0\n  func increment() { self.count += 1 }\n}"
+          "body": "Components use tac.js or tac.ts. A page may additionally provide tac.rs, tac.swift, tac.kt or tac.cs beside tac.html. JavaScript and TypeScript run on every target; native page companions run on their supported targets — Rust on desktop, Swift on Apple, Kotlin on Android, C# on Windows. Provide a JavaScript or TypeScript sibling for web. A native-only route with no companion for the requested target fails with TY1010. Dart and Python are not Tac companion languages.",
+          "code": "// client/pages/counter/tac.swift\nfinal class Counter {\n  var count: Int = 0\n  func increment() { self.count += 1 }\n}\n\n// client/pages/counter/tac.js — browser fallback\nexport default class {\n  count = 0\n  increment() { this.count += 1 }\n}"
         },
         {
           "heading": "What a companion reaches",
           "body": "There is no capability vocabulary in the middle. A compiled companion is linked into the host process, so the platform's own SDK is simply there — AppKit, UIKit, the Android framework, the file system — reached because the companion was compiled as that language for that target. A fixed list of verbs in the middle could only ever be the subset Tachyon had got round to implementing, in three hosts, for every platform at once.\n\nWhat the prelude does supply is the two lifetimes the browser gives a page, spelled the way each language spells a property that persists itself, and one channel back to the page.",
-          "code": "// Swift — @Stored writes through to UserDefaults, @Session lasts the process\n@Stored(\"theme\") var theme: String = \"calm\"\ntacPublish(\"probe.tick\", 1)\n\n// Kotlin\nTac.session(\"theme\", \"calm\")\ntacPublish(\"probe.tick\", 1)\n\n// Rust\ntac_session(\"theme\", \"calm\");\ntac_publish(\"probe.tick\", 1);"
+          "code": "// Swift — inside a native page companion\n@Stored(\"theme\") var theme: String = \"calm\"\nfunc announce() { tacPublish(\"probe.tick\", 1) }\n\n// Kotlin — inside a companion method\ntacPublish(\"probe.tick\", 1)\n\n// Rust — inside a companion method\ntac_publish(\"probe.tick\", TacValue::Int(1));"
         },
         {
           "heading": "Contracts stay on the server",
-          "body": "OPTIONS.schema.json remains the Yon route contract for incoming requests and outgoing responses. Tac companions are UI controllers, so they call normal HTTP endpoints through the local-first fetch binding rather than declaring a second route protocol."
+          "body": "OPTIONS.schema.json remains the Yon route contract for incoming requests and outgoing responses. Browser companions call normal HTTP endpoints through this.tac.fetch; native companions may use their platform's networking APIs. Neither declares a second server route protocol."
         },
         {
           "heading": "Where the boundary is",
-          "body": "The boundary is the language, not a capability list. A `tac.js` runs everywhere and reaches what a browser reaches. A `tac.swift` runs on Apple targets and reaches what Swift reaches there. Nothing in between decides what is permitted, so nothing in between has to be extended before an application can use something its platform already offers.\n\nWhat is checked at build time is reach: a route whose only companion is a `tac.swift` cannot be built for Android, and TY1010 says so, naming what the route declared.",
+          "body": "A `tac.js` runs everywhere and reaches browser APIs. A `tac.swift` runs on Apple targets and reaches the platform SDK under the host process's OS permissions. Native companion code is trusted application code, not sandboxed by Tachyon. The page-to-companion bridge is a separate boundary: the host checks the local origin, main frame and canonical route before dispatching supported member operations. Manifest grants still control the exposed window API.\n\nAt build time, Tachyon checks language reach: a route whose only companion is a `tac.swift` cannot be built for Android, and TY1010 says so, naming what the route declared.",
           "code": "error[TY1010]: Route '/' has no companion that runs on android.\n               It declares Swift (macos, ios)."
         }
       ]
     },
     "devices": {
       "title": "Devices and targets",
-      "summary": "Tac builds one client source tree into a browser output or native desktop and mobile controls. The rooted terminology: platform is the form factor (desktop/mobile/web); environment and os are synonyms for the concrete host (windows/macos/linux/android/ios/web); target is the bundle output.",
+      "summary": "Tac builds one client source tree into a browser output or a desktop/mobile host embedding the platform WebView. The target selects the output and required platform toolchain, not a second rendering language.",
       "sections": [
         {
           "heading": "Targets",
-          "body": "The supported bundle targets are web, macos, windows, linux, ios and android. web emits browser assets; every non-web target uses the native renderer by default. The all target expands to every supported target and writes sibling directories under dist/.",
+          "body": "Bundle targets are web, macos, windows, linux, ios and android. web emits browser assets; every non-web target stages a host embedding the platform WebView. Native packaging requires the corresponding SDKs and host tools. The all target expands to every target and writes sibling directories under dist/; it is not a substitute for validating each platform.",
           "code": "ty bundle --target web      # dist/web\nty bundle --target macos    # dist/macos\nty bundle --target windows  # dist/windows\nty bundle --target linux    # dist/linux\nty bundle --target ios      # dist/ios\nty bundle --target android  # dist/android\nty bundle --target all"
         },
         {
@@ -283,13 +283,13 @@
         },
         {
           "heading": "Preview",
-          "body": "Preview accepts exactly one target. If you omit --target, Tachyon previews web. Native previews run prerequisite checks first so missing Xcode or Swift, the Android SDK, Windows build tools, GTK, embedded controller dependencies, or a WebView dependency required by an inferred boundary fail early with an actionable message.",
+          "body": "Preview accepts exactly one target. If you omit --target, Tachyon previews web. Native previews check for their platform SDK, compiler and WebView prerequisites, then report missing dependencies before attempting the build.",
           "code": "ty preview --target web\nty preview --target macos\nty preview --target android"
         },
         {
-          "heading": "Runtime globals",
-          "body": "Templates can read platform, environment, os and target without imports. Every companion language can read the same structured context through its Tac runtime binding.",
-          "code": "<switch :value=\"platform\">\n  <case :when=\"'desktop'\">Desktop bundle on {os}</case>\n  <case :when=\"'mobile'\">Mobile bundle on {os}</case>\n  <case default>Web platform</case>\n</switch>\n\nconst platform = this.tac.platform.platform  // desktop | mobile | web\nconst os = this.tac.platform.os              // windows | macos | linux | android | ios | web"
+          "heading": "Host context",
+          "body": "Native hosts mark the document body with data-platform=\"native\". They also expose only the tachyonWindow controls granted by the manifest. There is no this.tac.platform API and no automatic platform, environment, os or target template variable. If a view needs an OS-specific value or capability, declare it in your companion and obtain it through the platform implementation you own.",
+          "code": "export default class {\n  nativeHost = false\n\n  @onMount\n  initialize() {\n    this.nativeHost = document.body.dataset.platform === 'native'\n  }\n}"
         },
         {
           "heading": "Rooted terminology",
@@ -303,13 +303,13 @@
       "sections": [
         {
           "heading": "Persisted fields",
-          "body": "A field prefixed `$` persists for the tab and a field prefixed `$$` persists across sessions — sessionStorage and localStorage, named for how long they last rather than for the API behind them. Assigning to either schedules one batched rerender, the same as any other declared field. Reading storage can throw outright in a sandboxed frame, so even acquiring it is guarded and a field simply falls back to its declared value.",
+          "body": "A field prefixed $ persists for the tab and a field prefixed $$ persists across sessions, using sessionStorage and localStorage. Values restore before mount hooks. Assignment writes a JSON-compatible value, bounded to 64 KiB; nested object mutations need reassignment. Template handlers rerender after completing; background changes call await this.tac.render(). Denied storage, malformed values and quota errors leave the UI usable. Do not store secrets in these fields.",
           "code": "export default class {\n  $draft = ''      // this tab\n  $$theme = 'calm' // every visit\n}"
         },
         {
           "heading": "Cached reads",
-          "body": "`tac.fetch` caches a response so a repeated read does not repeat the request. A static asset is precached so a route the visitor has already seen opens without the network. Neither is a database: Tachyon ships no client-side collection, no `find`, and nothing that mirrors a server table into the browser. A handler is where data lives, and a route is how a page reaches it.",
-          "code": ""
+          "body": "this.tac.fetch is network-first by default. Its optional IndexedDB cache accepts only same-origin GET/HEAD requests with credentials: 'omit' and no Authorization header. Private, no-store and Vary responses are excluded. cache: 'cache-first' explicitly permits a stored response to answer first; cache: 'no-store' bypasses persistence. Responses and storage are bounded, and cache failure falls back to ordinary fetching. This is not a client database or a server-table mirror.",
+          "code": "export default class {\n  products = []\n\n  async load() {\n    const response = await this.tac.fetch('/api/products',\n      { credentials: 'omit' }, { cache: 'cache-first' })\n    this.products = await response.json()\n  }\n}"
         },
         {
           "heading": "Topics",
@@ -319,7 +319,7 @@
         {
           "heading": "Signals between components",
           "body": "A document-scoped publish and subscribe bus carries values between components that have no parent in common. `@publish` on a field sends its value under a name, `@subscribe` receives it, and the bus retains the last value so a component that mounts later is not left waiting for the next one. One failing subscriber does not stop the others.",
-          "code": "export default class {\n  @publish('release') appVersion = '26.31.06'\n\n  @subscribe release\n}"
+          "code": "export default class {\n  @publish('release')\n  appVersion = 'TACHYON'\n\n  @subscribe\n  release = ''\n}"
         }
       ]
     },
@@ -330,12 +330,12 @@
         {
           "heading": "Frontend-only prototype",
           "body": "Start with client/ only. Tac renders pages and components, and companions provide the reactive UI controller. When you later add server/routes, the UI contract can stay the same.",
-          "code": "client/\n  pages/tac.html\n  components/panel/users/tac.html\n  components/panel/users/tac.kt\n  shared/data/docs.json\ndb/\n  schemas/users/manifest.json"
+          "code": "client/\n  pages/tac.html\n  components/panel/users/tac.html\n  components/panel/users/tac.js\n  shared/data/docs.json"
         },
         {
           "heading": "Signal-driven UI",
           "body": "Publish and subscribe decorators replace manual event wiring between companion scripts. A form can publish a collection change and every interested panel can refresh itself without knowing who sent the signal.",
-          "code": "export default class {\n  @publish('users:changed') changed = 0\n\n  async save() {\n    await this.tac.fetch('/users', { method: 'POST', body: this.form })\n    this.changed += 1\n  }\n}\n\nexport default class {\n  @subscribe('users:changed', { onMount: true })\n  async refresh() {}\n}"
+          "code": "// Form companion: client/components/user/form/tac.js\nexport default class {\n  form = { name: '' }\n  @publish('users.changed')\n  changed = 0\n\n  async save() {\n    const response = await this.tac.fetch('/users', {\n      method: 'POST',\n      headers: { 'content-type': 'application/json' },\n      body: JSON.stringify(this.form),\n    })\n    if (!response.ok) throw new Error('Save failed')\n    this.changed += 1\n  }\n}\n\n// List companion: client/components/user/list/tac.js\nexport default class {\n  users = []\n  @subscribe('users.changed')\n  @onMount\n  async refresh() {\n    const response = await this.tac.fetch('/users', { cache: 'no-store' })\n    this.users = await response.json()\n  }\n}"
         },
         {
           "heading": "Polyglot middleware boundary",
@@ -344,8 +344,8 @@
         },
         {
           "heading": "Native target polish",
-          "body": "Design once against the environment and platform globals, then bundle to web, desktop and mobile outputs. The same Tac template can choose browser, desktop or mobile copy without creating separate pages.",
-          "code": "<switch :value=\"environment\">\n  <case :when=\"'desktop'\">Desktop workspace for {platform}</case>\n  <case :when=\"'mobile'\">Pocket workspace for {platform}</case>\n  <case default>Browser workspace</case>\n</switch>"
+          "body": "Keep the shared HTML and responsive styles, then add platform behavior in the page companion. Native hosts set a document marker; a stylesheet can use it without depending on nonexistent template globals. Use a target-native companion for OS SDK calls and explicitly handle its asynchronous results.",
+          "code": "/* client/shared/styles.css */\nbody[data-platform=\"native\"] .browser-only {\n  display: none;\n}"
         }
       ]
     },
@@ -386,7 +386,7 @@
         },
         {
           "heading": "Window controls are granted, not assumed",
-          "body": "`manifest.json` — the file a PWA already ships — declares the window a native target opens and what a page may do to it, under a `tachyon` member a browser ignores. Nothing is granted by default. A control that was not granted is not generated into the host at all, so there is no code to reach rather than a check that refuses, and a page can ask what it has by testing for the function.\n\nElectron hands a privileged process the whole window. Tauri gates each call behind a permission in a capabilities dialect of its own. This is the same default-deny, in the file the application already has.",
+          "body": "manifest.json declares the window a native target opens and the controls a page may request, under a tachyon member a browser ignores. Nothing is granted by default. Ungranted controls are not exposed to the page, and the host checks the manifest grants before carrying out a request. Test for an exposed tachyonWindow function before using it. These controls do not sandbox application-owned native companion code, which runs with the host process's OS privileges.",
           "code": "{\n  \"tachyon\": {\n    \"window\": {\n      \"width\": 1024,\n      \"height\": 768,\n      \"controls\": [\"minimize\", \"maximize\", \"close\"]\n    }\n  }\n}"
         },
         {

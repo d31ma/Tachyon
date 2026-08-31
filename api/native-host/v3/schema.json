@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tachyon.del.ma/schema/native-host/v3",
+  "title": "Tachyon Native Host v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "target", "appName", "appId", "version", "renderMode", "entryRoute", "entryDocument", "platformApiVersion", "bridgeVersion", "companions", "windowControls", "hostCapabilities"],
+  "properties": {
+    "schemaVersion": {"const": 3},
+    "target": {"enum": ["macos", "ios", "linux", "windows", "android"]},
+    "appName": {"type": "string", "minLength": 1, "maxLength": 64},
+    "appId": {"type": "string", "maxLength": 255, "pattern": "^[a-z0-9][a-z0-9-]*(\\.[a-z0-9][a-z0-9-]*)+$"},
+    "version": {"type": "string", "minLength": 1, "maxLength": 64},
+    "renderMode": {"const": "bundle"},
+    "entryRoute": {"type": "string", "pattern": "^/", "maxLength": 2048},
+    "entryDocument": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "^[^/\\\\]+(?:/[^/\\\\]+)*$"},
+    "platformApiVersion": {"const": 1},
+    "bridgeVersion": {"const": 3},
+    "companions": {
+      "type": "array", "maxItems": 128,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["route", "language"],
+        "properties": {
+          "route": {"type": "string", "pattern": "^/", "maxLength": 2048},
+          "language": {"enum": ["Swift", "Kotlin", "C#", "Rust"]}
+        }
+      }
+    },
+    "windowControls": {"type": "array", "uniqueItems": true, "maxItems": 6, "items": {"enum": ["minimize", "maximize", "fullscreen", "close", "resize", "title"]}},
+    "hostCapabilities": {"const": ["companion.invoke"]}
+  }
+}

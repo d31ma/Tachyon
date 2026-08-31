@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   cpSync,
@@ -19,7 +19,7 @@ import { chromium } from 'playwright'
 assert.equal(process.platform, 'darwin', 'Phase 4 macOS evidence requires macOS.')
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const binary = join(repository, 'target/debug/ty')
+const binary = process.env.TAC_BIN ?? join(process.env.CARGO_TARGET_DIR ?? join(repository, 'target'), 'debug/ty')
 const fixture = join(
   repository,
   'crates/tachyon-cli/tests/fixtures/phase4-macos',
@@ -34,11 +34,11 @@ const webScreenshot = join(evidenceDirectory, 'mobile-web.png')
 const accessibilityPath = join(evidenceDirectory, 'accessibility.json')
 const visualPath = join(evidenceDirectory, 'visual-comparison.json')
 const reportPath = join(evidenceDirectory, 'report.json')
-const bundleIdentifier = 'dev.tachyon.phase-four-evidence'
-const processName = 'TachyonPhaseFour'
+const bundleIdentifier = `dev.tachyon.phase-four-evidence.g${process.pid}`
+const processName = `TachyonPhaseFour${process.pid}`
 const lifecyclePath = join(
   process.env.HOME,
-  'Library/Logs/Tachyon/dev.tachyon.phase-four-evidence.jsonl',
+  `Library/Logs/Tachyon/${bundleIdentifier}.jsonl`,
 )
 
 let browser
@@ -83,31 +83,23 @@ async function retry(label, callback, attempts = 40) {
   throw new Error(`${label} did not become ready: ${lastError}`)
 }
 
-function flattenNative(node, result = []) {
-  if (node.accessibility?.role) {
-    result.push({
-      role: node.accessibility.role,
-      name: node.accessibility.label || '',
-    })
-  }
-  for (const child of node.children || []) flattenNative(child, result)
-  return result
-}
-
-function hasSemantic(entries, role, name) {
-  return entries.some((entry) => entry.role === role && entry.name === name)
-}
-
 function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
 }
 
 try {
+  run(process.execPath, [join(repository, 'scripts/native/apple-protocol-test.mjs')], {
+    timeout: 90000, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024,
+  })
   stopApplication()
   cpSync(fixture, project, {
     recursive: true,
     filter: (source) => relative(fixture, source).split(sep)[0] !== 'dist',
   })
+  const manifest = JSON.parse(readFileSync(join(project, 'manifest.json'), 'utf8'))
+  manifest.name = processName
+  manifest.tachyon.id = bundleIdentifier
+  writeFileSync(join(project, 'manifest.json'), JSON.stringify(manifest))
   mkdirSync(evidenceDirectory, { recursive: true })
   rmSync(lifecyclePath, { force: true })
 
@@ -138,30 +130,27 @@ try {
 
   const buildOutput = run(binary, ['build', project, '--target', 'macos'])
   const output = join(project, 'dist/macos')
-  const app = join(output, 'TachyonPhaseFour.app')
-  assert.ok(existsSync(join(app, 'Contents/MacOS/TachyonPhaseFour')))
+  const app = join(output, `${processName}.app`)
+  assert.ok(existsSync(join(app, `Contents/MacOS/${processName}`)))
 
-  const nativeDocument = JSON.parse(
-    readFileSync(join(output, 'native-ui/root.json'), 'utf8'),
-  )
-  const nativeSemantics = flattenNative(nativeDocument.root)
-  for (const [role, name] of [
-    ['main', 'Phase Four evidence'],
-    ['heading', 'Native rendering'],
-    ['button', 'Increase count'],
-    ['status', 'Current count'],
-    ['textbox', 'Customer name'],
-    ['group', 'Implementation details'],
-    ['group', 'Sales chart'],
-  ]) {
-    assert.ok(hasSemantic(nativeSemantics, role, name), `${role} "${name}"`)
-  }
+  const nativeIndex = JSON.parse(readFileSync(join(output, 'native-index.json'), 'utf8'))
+  assert.equal(nativeIndex.contract_version, 2)
+  assert.equal(nativeIndex.entry_document, 'index.html')
+  const host = JSON.parse(readFileSync(join(output, 'tachyon.host.json'), 'utf8'))
+  assert.equal(host.schemaVersion, 3)
+  assert.equal(host.renderMode, 'bundle')
+  assert.deepEqual(host.companions, [])
+  assert.deepEqual(readFileSync(join(output, 'web/index.html')),
+    readFileSync(join(app, 'Contents/Resources/WebBundle/index.html')))
 
   run('/usr/bin/open', ['-n', app])
   applicationStarted = true
-  await retry('native Accessibility window', () =>
-    JSON.parse(run(helper, [processName])),
-  )
+  await retry('native rendered Accessibility controls', () => {
+    const snapshot = JSON.parse(run(helper, [processName]))
+    assert.ok(snapshot.elements.some(element => element.role === 'AXButton' && element.label === 'Increase count'))
+    assert.ok(snapshot.elements.some(element => element.role === 'AXTextField' && element.label === 'Customer name'))
+    return snapshot
+  })
   const accessibility = JSON.parse(
     run(helper, [processName, '--interact']),
   )
@@ -179,21 +168,19 @@ try {
     elements.some(
       (element) =>
         element.role === 'AXButton' &&
-        element.identifier === 'n_000006' &&
         element.label === 'Increase count',
     ),
   )
   assert.ok(
     elements.some(
       (element) =>
-        element.identifier === 'n_000007' && element.value === '1',
+        element.value === '1',
     ),
   )
   assert.ok(
     elements.some(
       (element) =>
         element.role === 'AXTextField' &&
-        element.identifier === 'n_000008' &&
         element.label === 'Customer name' &&
         element.value === 'Ada',
     ),
@@ -202,8 +189,8 @@ try {
     elements.some(
       (element) =>
         element.role === 'AXDisclosureTriangle' &&
-        element.label === 'Implementation details' &&
-        element.value === 'true',
+        (element.label === 'Implementation details' || element.title === 'Implementation details') &&
+        ['true', '1'].includes(element.value),
     ),
   )
   assert.ok(
@@ -283,7 +270,7 @@ try {
   })
   await page.goto(url, { waitUntil: 'load' })
   await page.waitForFunction(
-    () => document.documentElement.dataset.tachyonController === 'active',
+    () => document.querySelector('button') && document.querySelector('output')?.textContent === '0',
   )
   await page.getByRole('button', { name: 'Increase count' }).click()
   await page.getByRole('textbox', { name: 'Customer name' }).fill('Ada')
@@ -368,9 +355,7 @@ try {
     'controller.created',
     'controller.mounted',
     'controller.active',
-    'state.increment',
-    'state.input',
-    'state.disclosure',
+    'bridge.ready',
     'controller.destroyed',
   ]) {
     assert.ok(lifecycleEvents.includes(event), `missing lifecycle event ${event}`)
@@ -392,7 +377,9 @@ try {
     contractVersion: 1,
     target: 'macos',
     build: buildOutput.trim(),
-    nativeSemantics,
+    nativeSemantics: elements,
+    nativeIndex,
+    host,
     webSemantics,
     lifecycleEvents,
     interactions: accessibility.interactions,
@@ -426,5 +413,6 @@ try {
     await new Promise((resolveClose) => server.close(resolveClose))
   }
   if (applicationStarted) stopApplication()
-  rmSync(temporary, { force: true, recursive: true })
+  if (process.env.TAC_KEEP_NATIVE_FIXTURE === '1') console.error(`Native fixture retained: ${project}`)
+  else rmSync(temporary, { force: true, recursive: true })
 }

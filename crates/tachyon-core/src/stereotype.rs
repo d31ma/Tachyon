@@ -325,6 +325,170 @@ const HTTP_METHODS: [&str; 8] = [
     "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "TRACE",
 ];
 
+/// Selects the entry point's body, not methods in colocated compiled helpers.
+/// Rust declares methods in separate inherent `impl` blocks, all of which
+/// belong to the same controller. The input has already had literals and
+/// comments masked, so their braces cannot extend a controller's scope.
+fn compiled_controller_source(source: &Path, executable: &str) -> String {
+    let language = extension(source);
+    if !matches!(language.as_str(), "java" | "cs" | "kt" | "rs") {
+        return executable.to_owned();
+    }
+    let Some((Stereotype::Controller, name)) = declared_class(source, executable) else {
+        return executable.to_owned();
+    };
+    if language == "rs" {
+        return rust_controller_source(executable, &name);
+    }
+    let mut result = String::new();
+    let mut offset = 0;
+    let mut consumed_until = 0;
+    for line in executable.split_inclusive('\n') {
+        let start = offset;
+        offset += line.len();
+        if start < consumed_until {
+            continue;
+        }
+        let declaration = line.trim();
+        if type_name(declaration).as_deref() == Some(name.as_str()) {
+            let Some((body, consumed)) = braced_body(&executable[start..]) else {
+                break;
+            };
+            result.push_str(body);
+            result.push('\n');
+            consumed_until = start + consumed;
+        }
+    }
+    result
+}
+
+fn rust_controller_source(executable: &str, name: &str) -> String {
+    let mut result = String::new();
+    let mut consumed_until = 0;
+    for (start, _) in executable.match_indices("impl") {
+        if start < consumed_until
+            || executable[..start]
+                .chars()
+                .next_back()
+                .is_some_and(identifier_character)
+            || executable[start + 4..]
+                .chars()
+                .next()
+                .is_some_and(identifier_character)
+        {
+            continue;
+        }
+        let declaration = &executable[start + 4..];
+        let Some(open) = rust_impl_body_start(declaration) else {
+            // Malformed headers must not erase the remaining methods.
+            result.push_str(declaration);
+            break;
+        };
+        let Some((body, consumed)) = braced_body(&declaration[open..]) else {
+            break;
+        };
+        if inherent_impl(&declaration[..open], name) {
+            result.push_str(body);
+            result.push('\n');
+        }
+        consumed_until = start + 4 + open + consumed;
+    }
+    result
+}
+
+fn identifier_character(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
+/// Find the body after generics and where bounds, not a const-generic block.
+fn rust_impl_body_start(declaration: &str) -> Option<usize> {
+    let mut angles = 0usize;
+    let mut braces = 0usize;
+    let bytes = declaration.as_bytes();
+    for (at, byte) in bytes.iter().enumerate() {
+        match byte {
+            b'{' if angles == 0 && braces == 0 => return Some(at),
+            b'{' => braces += 1,
+            b'}' => braces = braces.saturating_sub(1),
+            b'<' if braces == 0 => angles += 1,
+            b'>' if braces == 0 && at.checked_sub(1).and_then(|i| bytes.get(i)) != Some(&b'-') => {
+                angles = angles.saturating_sub(1);
+            }
+            b';' if angles == 0 && braces == 0 => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
+fn inherent_impl(header: &str, name: &str) -> bool {
+    // The target follows the optional generic parameter list. Retain unknown
+    // headers conservatively rather than silently exempting their methods.
+    let Some(target) = after_rust_generics(header.trim()) else {
+        return true;
+    };
+    let target = target.trim_start();
+    let path_end = target
+        .find(|character: char| !identifier_character(character) && character != ':')
+        .unwrap_or(target.len());
+    if target[..path_end].rsplit("::").next() != Some(name) {
+        return false;
+    }
+    let Some(after) = after_rust_generics(target[path_end..].trim_start()) else {
+        return true;
+    };
+    let after = after.trim_start();
+    after.is_empty()
+        || after
+            .strip_prefix("where")
+            .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+}
+
+fn after_rust_generics(source: &str) -> Option<&str> {
+    if !source.starts_with('<') {
+        return Some(source);
+    }
+    let mut depth = 0usize;
+    let mut braces = 0usize;
+    let bytes = source.as_bytes();
+    for (at, byte) in bytes.iter().enumerate() {
+        match byte {
+            b'{' => braces += 1,
+            b'}' => braces = braces.saturating_sub(1),
+            b'<' if braces == 0 => depth += 1,
+            b'>' if braces == 0 && at.checked_sub(1).and_then(|i| bytes.get(i)) != Some(&b'-') => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&source[at + 1..]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn braced_body(declaration: &str) -> Option<(&str, usize)> {
+    let open = declaration.find(['{', ';'])?;
+    if declaration.as_bytes()[open] != b'{' {
+        return None;
+    }
+    let mut depth = 1usize;
+    for (offset, byte) in declaration.as_bytes()[open + 1..].iter().enumerate() {
+        match byte {
+            b'{' => depth += 1,
+            b'}' => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 {
+            return Some((&declaration[open + 1..open + 1 + offset], open + 2 + offset));
+        }
+    }
+    // Keep malformed bodies visible to validation; the compiler diagnoses the
+    // missing delimiter. Do not silently accept a truncated empty controller.
+    Some((&declaration[open + 1..], declaration.len()))
+}
+
 /// The index of the parenthesis closing the one opened at `open`.
 ///
 /// Counted rather than searched, because a parameter list holds parentheses of
@@ -444,6 +608,7 @@ pub const STREAMING_LANGUAGES: [&str; 6] = ["js", "ts", "py", "php", "kt", "cs"]
 #[must_use]
 pub fn streaming_methods(source: &Path, contents: &str) -> BTreeSet<String> {
     let contents = executable_source(source, contents);
+    let contents = compiled_controller_source(source, &contents);
     let extension = extension(source);
     let mut declared = BTreeSet::new();
     let Some((_, open, close)) = SYNTAX
@@ -537,6 +702,7 @@ fn yields(contents: &str, method: &str) -> bool {
 /// an empty object.
 fn check_streaming(source: &Path, contents: &str, portable: &str) -> Result<(), Failure> {
     let executable = executable_source(source, contents);
+    let executable = compiled_controller_source(source, &executable);
     let streams = streaming_methods(source, &executable);
     if let Some(method) = streams.iter().next()
         && !STREAMING_LANGUAGES.contains(&extension(source).as_str())
@@ -695,7 +861,7 @@ pub fn check(source: &Path, contents: &str) -> Result<(), Failure> {
     // A controller's methods are dispatched by name, so a method that is not
     // an HTTP method is never reached through a route.
     if let Some((Stereotype::Controller, name)) = declared_class(source, contents)
-        && let Some(extra) = declared_methods(&executable)
+        && let Some(extra) = declared_methods(&compiled_controller_source(source, &executable))
             .into_iter()
             .find(|method| !HTTP_METHODS.contains(&method.to_ascii_uppercase().as_str()))
     {
@@ -1037,6 +1203,121 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn colocated_compiled_helpers_are_not_controller_methods() {
+        for (extension, code) in [
+            (
+                "java",
+                "@Controller\nclass OrdersController {\nstatic Object GET(Object request) { return null; }\n}\n@Service\nclass OrderService {\nstatic Object list() { return null; }\n}",
+            ),
+            (
+                "cs",
+                "[Controller]\nclass OrdersController\n{\nstatic object GET(object request) => null;\n}\n[Service]\nclass OrderService\n{\nstatic object List() => null;\n}",
+            ),
+            (
+                "kt",
+                "@Controller\nobject OrdersController {\nfun GET(request: Any) = request\n}\n@Service\nobject OrderService {\nfun list() = listOf(1)\n}",
+            ),
+            (
+                "rs",
+                "#[Controller]\nstruct OrdersController;\nimpl OrdersController {\nfn GET() {}\n}\n#[Service]\nstruct OrderService;\nimpl OrderService {\nfn list() {}\n}",
+            ),
+        ] {
+            let path = format!("server/routes/orders/yon.{extension}");
+            check(Path::new(&path), code)
+                .unwrap_or_else(|failure| panic!("{extension}: {failure}"));
+        }
+    }
+
+    #[test]
+    fn helper_streams_do_not_change_the_controller_protocol() {
+        let path = Path::new("server/routes/orders/yon.kt");
+        let code = "@Controller\nobject OrdersController {\nfun GET(request: Any) = request\n}\n@Service\nobject OrderService {\n@Stream\nfun GET() = sequence { yield(1) }\n}";
+        check(path, code).expect("only the controller determines a route's streaming protocol");
+        assert!(super::streaming_methods(path, code).is_empty());
+    }
+
+    #[test]
+    fn controller_scope_preserves_literals_nested_blocks_and_all_inherent_impls() {
+        let path = Path::new("server/routes/orders/yon.rs");
+        let code = "#[Controller]\nstruct OrdersController;\nimpl\nOrdersController {\nfn GET() { if true { let text = \"} fn hidden() {\"; } }\n}\nimpl OrdersControllerExtra {\nfn helper() {}\n}\nimpl OrdersController {\nfn secret() {}\n}";
+        let failure = check(path, code).expect_err("methods in later controller impls are checked");
+        assert!(failure.to_string().contains("secret()"), "{failure}");
+        assert!(!failure.to_string().contains("helper()"), "{failure}");
+        check(path, &code.replace("fn secret()", "fn POST()"))
+            .expect("nested blocks, literal braces and another type do not change scope");
+    }
+
+    #[test]
+    fn compiled_controller_body_boundaries_fail_closed() {
+        assert_eq!(super::braced_body("class X; class Y {}"), None);
+        assert_eq!(super::braced_body("class X"), None);
+        assert_eq!(
+            super::braced_body("class X { fn secret() {}").map(|(body, _)| body),
+            Some(" fn secret() {}")
+        );
+        let path = Path::new("server/routes/orders/yon.java");
+        let failure = check(
+            path,
+            "@Controller\nclass OrdersController {\nstatic Object hidden() {}\n",
+        )
+        .expect_err("a malformed body does not erase controller methods");
+        assert!(failure.to_string().contains("TY2012"), "{failure}");
+    }
+
+    #[test]
+    fn blank_lines_do_not_duplicate_rust_controller_bodies() {
+        let path = Path::new("server/routes/orders/yon.rs");
+        let code = "#[Controller]\nstruct OrdersController;\n\n\n\nimpl\nOrdersController {\nfn GET() {}\n}";
+        let body = super::compiled_controller_source(path, code);
+        assert_eq!(super::declared_methods(&body), ["GET"]);
+    }
+
+    #[test]
+    fn rust_controller_impls_are_independent_of_line_layout_and_generics() {
+        let path = Path::new("server/routes/orders/yon.rs");
+        for declaration in [
+            "impl<'a> OrdersController",
+            "impl <'a> OrdersController",
+            "impl<T: Into<Vec<u8>>> OrdersController<T>",
+            "impl<T: Fn() -> Vec<u8>> OrdersController<T> where T: Send",
+            "impl OrdersController<{ 1 > 0 }>",
+            "impl self::OrdersController",
+            "impl OrdersController",
+        ] {
+            let code = format!(
+                "#[Controller]\nstruct OrdersController; {declaration} {{\nfn secret() {{}}\n}} impl OrdersController {{\nfn POST() {{}}\n}}"
+            );
+            let failure = check(path, &code).expect_err("every inherent impl is checked");
+            assert!(
+                failure.to_string().contains("secret()"),
+                "{declaration}: {failure}"
+            );
+            check(path, &code.replace("secret()", "GET()"))
+                .expect("valid controller methods in generic and same-line impls");
+        }
+    }
+
+    #[test]
+    fn rust_trait_impls_and_prefix_matches_do_not_become_controller_methods() {
+        let path = Path::new("server/routes/orders/yon.rs");
+        let code = "#[Controller]\nstruct OrdersController;\nimpl OrdersController for Other {\nfn helper() {}\n}\nimpl<'a> Trait<'a> for OrdersController {\nfn helper() {}\n}\nimpl OrdersControllerExtra {\nfn helper() {}\n}\nimpl OrdersController {\nfn GET() {}\n}";
+        check(path, code).expect("only inherent methods belong to the controller protocol");
+    }
+
+    #[test]
+    fn malformed_nested_declarations_do_not_amplify_the_source() {
+        let path = Path::new("server/routes/orders/yon.rs");
+        let code = format!(
+            "#[Controller]\nstruct OrdersController;\n{}fn GET() {{}}\n{}",
+            "impl OrdersController {\n".repeat(1_000),
+            "}\n".repeat(1_000)
+        );
+        let body = super::compiled_controller_source(path, &code);
+        assert!(body.len() <= code.len());
+        assert_eq!(super::declared_methods(&body), ["GET"]);
     }
 
     #[test]

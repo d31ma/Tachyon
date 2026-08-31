@@ -1,71 +1,55 @@
-# Native-first hybrid rendering
+# Native application rendering
 
-Status: greenfield, Native UI schema version 1.
+Status: platform web-view hosts, Native Host contract v3 (ADRs 0018 and 0019).
 
-Every non-web target is native-first. Application developers author the same
-HTML used by the web build; there is no application-wide render-mode flag and
-no SwiftUI, Compose, WinUI, or GTK view language in an application project.
+Every target uses the same client-rendered Tac application. The compiler does
+not lower a separate widget tree, server-render native pages, or choose
+per-subtree fallback. JavaScript/TypeScript components run in the platform web
+engine. Page companions compile to their selected native target.
 
 ## Pipeline
 
-1. The compiler resolves Tac components, slots, bindings, and structural
-   control tags into the platform-neutral View IR.
-2. The native planner evaluates bounded route state and walks the resolved
-   tree one subtree at a time.
-3. Supported HTML semantics and explicit semantic roles lower to native
-   controls.
-4. The smallest unsupported safe subtree becomes an isolated local
-   `WebSurface`; supported parents, siblings, and unrelated descendants remain
-   native.
-5. The platform host reads Native UI v1, reconciles native state, mounts local
-   surfaces, and dispatches declared events through the controller contract.
-6. Same-origin navigation from a local surface returns to the native route
-   stack.
+1. Capture one immutable project snapshot and validate routes and configuration.
+2. Compile bounded client render plans, modules, styles, and shared assets.
+3. Select one native companion per route using the canonical target table.
+4. Emit bounded per-route dispatch tables and target-native companion code.
+5. Stage the platform web-view host and local bundle resources.
+6. Build with the target SDK when packaging is requested, then atomically
+   publish the complete artifact and accurate host manifest.
 
-Control tags never reach a platform renderer. A surviving `if`, `else`, `for`,
-or `loop` is a compiler failure, not an unknown HTML element.
+WKWebView serves macOS/iOS, WebKitGTK serves Linux, WebView2 serves Windows,
+and Android WebView serves Android. Root-relative assets and canonical static
+and dynamic routes resolve within the staged bundle.
 
-## Authored tag behavior
-
-- Standard supported elements become native controls or native layout
-  containers.
-- A custom element may select a native adapter with an explicit supported role,
-  such as `role="button"` or `role="banner"`; adapters are semantic rather than
-  tied to one design-system prefix.
-- Tac components are composed before planning, so their invocation tags do not
-  become unknown native elements.
-- An unknown custom or web component becomes a bounded local `WebSurface` when
-  its subtree is safe to isolate.
-- Malformed HTML, invalid state, unsafe URLs, unsupported capability requests,
-  and a subtree that cannot be isolated safely fail closed with a diagnostic.
-
-Fallback is local, not contagious. One unsupported chart does not convert its
-native heading, button, or surrounding route into an application-wide WebView.
+Automatic companion member discovery currently exposes supported fields and
+zero-argument public methods. A method taking arguments requires an explicit
+native member table; the transport forwards only authored JSON arguments,
+never an implicit DOM event. Unsupported automatic bindings must not be
+mistaken for generated methods. Native methods return browser Promises.
 
 ## Security boundary
 
-Local surfaces load only generated bundle assets through the platform's local
-asset scheme and receive a restrictive content-security policy. Remote
-surfaces are HTTPS-only and host-pinned. Neither local nor remote surfaces
-receive a general native bridge; remote content always records `bridge: none`.
-Capability Manifest v1 remains deny-by-default.
+Only the main application frame at the exact local bundle origin may invoke
+declared capabilities. Navigation checks and per-message origin/frame checks
+are separate requirements. A canonical route in a request must belong to the
+compiler-generated registry and match the active application page.
 
-## Bundle contract
+Native companions are trusted application code with the host's operating-system
+privileges. They are not sandboxed plugins. Remote pages, subframes, arbitrary
+file URLs, unknown routes, unknown operations, and undeclared members do not
+inherit the bridge. User-originated strings never become executable script
+without JSON encoding.
 
-Each target publishes beneath `dist/<target>/` even when several targets are
-built by one command. Native UI v1 contains the entry route and one resolved
-tree per route. Each live snapshot contains `schemaVersion`, `route`, and
-`root`; element nodes carry stable IDs, adapter identity, attributes,
-accessibility, events, and children. `WebSurface` nodes name their isolated
-local payload or approved remote origin.
+## Bundle and migration
 
-The host refuses a mismatched schema, unresolved control flow, an undeclared
-event, an unsafe surface, or a capability absent from the manifest. Fallback
-decisions and surface counts remain inspectable in build output and the
-artifact manifest.
+Each target publishes beneath `dist/<target>/`, including when multiple
+targets are built together. `tachyon.host.json` declares schema/bridge version
+3, bundle rendering, the entry route/document, selected route companions,
+window controls, and supported host capabilities. Artifact metadata no longer
+claims that an absent Native UI v1 document was produced.
 
-## Removed compatibility switch
-
-`--render-mode` and `TAC_RENDER_MODE` are rejected with a migration diagnostic.
-The old whole-application `webview` mode is deliberately not retained: native
-adapters and local subtree fallback are now one unconditional planning model.
+The former widget planner and WebAssembly companion contracts are superseded.
+Use [ADR 0019](../adr/0019-companions-compile-for-their-target.md) for companion
+migration and [RECONCILIATION.md](../RECONCILIATION.md) for release qualification.
+`--render-mode` remains rejected: the renderer is an architectural contract,
+not an undocumented compatibility switch.

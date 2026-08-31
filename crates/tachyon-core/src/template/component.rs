@@ -157,7 +157,6 @@ pub(crate) struct ComponentDefinition {
     program: TemplateProgram,
     script_path: Option<PathBuf>,
     style_path: Option<PathBuf>,
-    wasm_path: Option<PathBuf>,
 }
 
 impl ComponentDefinition {
@@ -166,7 +165,7 @@ impl ComponentDefinition {
     }
 
     pub(crate) fn has_script(&self) -> bool {
-        self.script_path.is_some() || self.wasm_path.is_some()
+        self.script_path.is_some()
     }
 
     pub(crate) fn script_path(&self) -> Option<&Path> {
@@ -176,12 +175,6 @@ impl ComponentDefinition {
     pub(crate) fn style_path(&self) -> Option<&Path> {
         self.style_path.as_deref()
     }
-
-    /// Source of a companion compiled to WebAssembly, when the component has
-    /// one instead of a JavaScript module.
-    pub(crate) fn wasm_path(&self) -> Option<&Path> {
-        self.wasm_path.as_deref()
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -190,8 +183,6 @@ struct ComponentFiles {
     script: Option<PathBuf>,
     script_real_compiler: Option<PathBuf>,
     style: Option<PathBuf>,
-    wasm: Option<PathBuf>,
-    wasm_real_compiler: Option<PathBuf>,
 }
 
 fn visit_components(
@@ -272,24 +263,9 @@ fn inspect_component_file(
     };
     if !matches!(
         name,
-        "tac.html"
-            | "tac.js"
-            | "tac.ts"
-            | "tac.css"
-            | "tac.rs"
-            | "tac.dart"
-            | "tac.kt"
-            | "tac.swift"
-            | "tac.cs"
-            | "tachyon-wasm.rs"
-            | "tachyon-wasm.dart"
-            | "tachyon-wasm.kt"
-            | "tachyon-wasm.swift"
-            | "tachyon-wasm.cs"
-            | "tachyon-island.js"
-            | "tachyon-island.ts"
+        "tac.html" | "tac.js" | "tac.ts" | "tac.css" | "tachyon-island.js" | "tachyon-island.ts"
     ) {
-        if name.starts_with("tac.") {
+        if name.starts_with("tac.") || name.starts_with("tachyon-wasm.") {
             let relative = portable_path(path.strip_prefix(root).unwrap_or(path));
             diagnostics.push(component_diagnostic(
                 1401,
@@ -297,11 +273,10 @@ fn inspect_component_file(
                 0,
                 relative.len(),
                 "Component companion is not a supported browser language.",
-                "A browser companion is tac.js or tac.ts, tac.rs, tac.dart, \
-                 tac.kt, tac.swift or tac.cs compiled to WebAssembly, and \
-                 tac.css for styles. Logic in another language belongs in a \
-                 Yon handler, where any language runs under the direct \
-                 protocol.",
+                "Use tac.js or tac.ts for a browser component and tac.css for styles. \
+                 Place compiled native companions beside a page under client/pages, \
+                 where the target platform selects and links them. Browser WASM \
+                 companions are superseded by target-native companions (ADR 0019).",
             ));
         }
         return;
@@ -327,15 +302,6 @@ fn inspect_component_file(
     match name {
         "tac.html" => files.template = Some(path.to_path_buf()),
         "tac.css" => files.style = Some(path.to_path_buf()),
-        // A companion in a language that compiles to wasm, whichever of the two
-        // module shapes in ADR 0011 its toolchain can emit.
-        "tac.rs" | "tac.dart" | "tac.kt" | "tac.swift" | "tac.cs" => {
-            files.wasm = Some(path.to_path_buf());
-        }
-        "tachyon-wasm.rs" | "tachyon-wasm.dart" | "tachyon-wasm.kt" | "tachyon-wasm.swift"
-        | "tachyon-wasm.cs" => {
-            files.wasm_real_compiler = Some(path.to_path_buf());
-        }
         "tachyon-island.js" | "tachyon-island.ts" => {
             files.script_real_compiler = Some(path.to_path_buf());
         }
@@ -359,16 +325,10 @@ fn define_component(
         mark_scope_roots(&mut program.nodes, name);
     }
     let script_path = files.script_real_compiler.or(files.script);
-    let wasm_path = files.wasm_real_compiler.or(files.wasm);
-    if let Some(wasm) = &wasm_path {
-        validate_script(project_root, wasm, diagnostics);
-        hash_file(hasher, project_root, wasm, diagnostics);
-    }
     ComponentDefinition {
         program,
         script_path,
         style_path: files.style,
-        wasm_path,
     }
 }
 
@@ -391,7 +351,8 @@ fn mark_scope_roots(nodes: &mut [TemplateNode], component: &str) {
                 );
             }
             TemplateNodeKind::Conditional { children, .. }
-            | TemplateNodeKind::Iteration { children, .. } => {
+            | TemplateNodeKind::Iteration { children, .. }
+            | TemplateNodeKind::CountedIteration { children, .. } => {
                 mark_scope_roots(children, component);
             }
             _ => {}
@@ -690,7 +651,7 @@ mod tests {
     }
 
     #[test]
-    fn real_compiler_sidecar_wins_without_removing_the_legacy_companion() {
+    fn superseded_wasm_components_report_the_native_page_migration() {
         let root = tempfile::tempdir().unwrap_or_else(|_| unreachable!());
         let component = root.path().join("client/components/language/rust");
         write(&component.join("tac.html"), "<p>{count}</p>");
@@ -700,13 +661,10 @@ mod tests {
             "#[no_mangle] pub extern \"C\" fn tac_alloc(_: i32) -> i32 { 0 }",
         );
 
-        let registry = ComponentRegistry::discover(root.path()).expect("registry");
-        let selected = registry
-            .get("language-rust")
-            .and_then(super::ComponentDefinition::wasm_path)
-            .and_then(std::path::Path::file_name)
-            .and_then(std::ffi::OsStr::to_str);
-        assert_eq!(selected, Some("tachyon-wasm.rs"));
+        let failure =
+            ComponentRegistry::discover(root.path()).expect_err("obsolete wasm companion");
+        assert!(failure.to_string().contains("client/pages"));
+        assert!(failure.to_string().contains("ADR 0019"));
     }
 
     #[test]

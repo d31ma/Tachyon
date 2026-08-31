@@ -1,8 +1,15 @@
 // @ts-check
-import { mkdir, rm, stat } from 'node:fs/promises'
+import { chmod, lstat, mkdir, rm, stat } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { tmpdir, userInfo } from 'node:os'
+import { join, resolve } from 'node:path'
 
-const PROJECT_ROOT = import.meta.dir.replace(/[/\\]tests[/\\]helpers$/, '')
-const LOCK_DIR = `${PROJECT_ROOT}/.test-bundle-lock`
+const PROJECT_ROOT = resolve(import.meta.dir, '../..')
+const user = process.getuid?.() ?? createHash('sha256').update(userInfo().username).digest('hex').slice(0, 12)
+const LOCK_ROOT = join(tmpdir(), `tachyon-website-tests-${user}`)
+// A synced folder can recreate a deleted empty lock. Keep coordination local
+// to this user and distinguish independent checkouts by their absolute path.
+const LOCK_DIR = join(LOCK_ROOT, createHash('sha256').update(PROJECT_ROOT).digest('hex').slice(0, 24))
 const WEB_DIST = `${PROJECT_ROOT}/dist/web`
 const REQUIRED_OUTPUTS = [
     `${WEB_DIST}/index.html`,
@@ -18,6 +25,16 @@ const REQUIRED_OUTPUTS = [
 
 /** @type {Promise<void> | null} */
 let bundlePromise = null
+
+async function prepareLockRoot() {
+    await mkdir(LOCK_ROOT, { recursive: true, mode: 0o700 })
+    const info = await lstat(LOCK_ROOT)
+    if (info.isSymbolicLink() || !info.isDirectory())
+        throw new Error('The website test lock root must be a real directory')
+    if (process.getuid && info.uid !== process.getuid())
+        throw new Error('The website test lock root must belong to this user')
+    if (process.platform !== 'win32') await chmod(LOCK_ROOT, 0o700)
+}
 
 /** @param {string} path */
 async function fileExists(path) {
@@ -92,8 +109,11 @@ async function runBundle() {
 export async function ensureBundle() {
     if (bundlePromise) return bundlePromise
     bundlePromise = (async () => {
+        let ownsLock = false
+        await prepareLockRoot()
         try {
-            await mkdir(LOCK_DIR)
+            await mkdir(LOCK_DIR, { mode: 0o700 })
+            ownsLock = true
             await runBundle()
         } catch (error) {
             if (error && typeof error === 'object' && /** @type {{ code?: string }} */ (error).code === 'EEXIST') {
@@ -102,7 +122,7 @@ export async function ensureBundle() {
             }
             throw error
         } finally {
-            await rm(LOCK_DIR, { recursive: true, force: true })
+            if (ownsLock) await rm(LOCK_DIR, { recursive: true, force: true })
         }
     })()
     return bundlePromise

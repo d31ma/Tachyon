@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Empirically verifies every feature claim in docs/PARITY_LEDGER.md.
+# Verifies compiler/discovery classifications in docs/PARITY_LEDGER.md.
 #
-# Every row is proven by running the real `ty` binary against a minimal
-# fixture and observing what actually happens. Nothing here is asserted from
-# reading source. Output is a table of FEATURE | EXPECTED | ACTUAL | VERDICT.
+# Runtime claims additionally require the named browser/native gates; building
+# a fixture alone is not execution evidence. Output is FEATURE | EXPECTED |
+# ACTUAL | VERDICT, always against the selected external TAC_BIN.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -100,6 +100,22 @@ client/pages/tac.html	${PAGE}
 client/pages/tac.py	x = 1
 EOF
 
+check "native-only Rust page rejects web build" "TY1010" <<EOF
+client/pages/tac.html	${PAGE}
+client/pages/tac.rs	#[derive(Default)]\nstruct Companion { count: i64 }
+EOF
+
+check "native page has an explicit JS web companion" "ok" <<EOF
+client/pages/tac.html	${PAGE}
+client/pages/tac.rs	#[derive(Default)]\nstruct Companion { count: i64 }
+client/pages/tac.js	export default class { count = 0 }
+EOF
+
+check "retired Dart Tac companion fails closed" "TY1008" <<EOF
+client/pages/tac.html	${PAGE}
+client/pages/tac.dart	class Companion {}
+EOF
+
 check "inline <style> in view" "ok" <<EOF
 client/pages/tac.html	<main aria-label="T"><style>h1{color:red}</style><h1>T</h1></main>
 EOF
@@ -111,6 +127,21 @@ EOF
 check "released literal page state and class" "ok" <<EOF
 client/pages/tac.html	<script>let count = 0</script><main aria-label="T"><button on:click="count += 1">Add</button><output>{count}</output></main>
 client/pages/tac.js	export default class {\n  @onMount\n  initialize() {}\n}
+EOF
+
+check "signal decorators without inline state" "ok" <<EOF
+client/pages/tac.html	<main><p>{count}</p></main>
+client/pages/tac.js	export default class {\n@publish('counter')\ncount = 0;\n@subscribe('counter')\nseen = 0;\n}
+EOF
+
+check "invalid signal decorator fails before emission" "TY1306" <<EOF
+client/pages/tac.html	${PAGE}
+client/pages/tac.js	export default class {\n@publish(untrusted)\ncount = 0;\n}
+EOF
+
+check "JS module-level helpers remain legal" "ok" <<EOF
+client/pages/tac.html	<main><p>{count}</p></main>
+client/pages/tac.js	const LIMIT = 3;\nexport default class { count = LIMIT; }
 EOF
 
 check "nested route directory" "ok" <<EOF
@@ -198,6 +229,18 @@ EOF
 
 check "iteration <for :each>" "ok" <<EOF
 client/pages/tac.html	<main><for :each="i in items"><p>{i}</p></for></main>
+EOF
+
+check "counted loop ascending" "ok" <<EOF
+client/pages/tac.html	<main><loop :for="let i = 0; i < 3; i++"><p>{i}</p></loop></main>
+EOF
+
+check "counted loop descending" "ok" <<EOF
+client/pages/tac.html	<main><loop :for="let i = 4; i >= 0; i -= 2"><p>{i}</p></loop></main>
+EOF
+
+check "counted loop wrong direction fails closed" "TY1302" <<EOF
+client/pages/tac.html	<main><loop :for="let i = 0; i < 3; i--"><p>{i}</p></loop></main>
 EOF
 
 check "dynamic attribute :attr" "ok" <<EOF

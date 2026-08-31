@@ -11,12 +11,14 @@
         class="search-input"
         type="search"
         :value="term"
+        on:input="find($event.target.value)"
+        on:keydown="dismiss($event.key)"
         placeholder="Search the documentation"
         aria-label="Search documentation"
         autocomplete="off"
       >
       <p class="text-sm opacity-70 px-4 py-2" aria-live="polite">{status()}</p>
-      <ul class="search-results" role="listbox">
+      <ul class="search-results">
         <loop :for="hit of results">
           <li>
             <a class="search-hit" :href="hit.path">

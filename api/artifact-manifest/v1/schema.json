@@ -38,7 +38,7 @@
           "enum": ["linux", "macos", "windows", "android", "ios"]
         },
         "architecture": {
-          "enum": ["x86_64", "aarch64"]
+          "enum": ["x86_64", "aarch64", "universal"]
         },
         "abi": {
           "type": "string",
@@ -72,10 +72,8 @@
       "additionalProperties": false,
       "required": [
         "artifact_manifest",
-        "capability_manifest",
         "diagnostics",
         "handler_protocol",
-        "native_ui",
         "route_manifest",
         "view_ir"
       ],
@@ -85,6 +83,7 @@
         "diagnostics": { "const": 1 },
         "handler_protocol": { "const": 1 },
         "native_ui": { "const": 1 },
+        "native_host": { "const": 3 },
         "route_manifest": { "const": 1 },
         "view_ir": { "const": 1 }
       }

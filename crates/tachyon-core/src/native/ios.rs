@@ -1,5 +1,7 @@
-//! `iOS` `SwiftUI` host generation.
+//! `iOS` host generation.
 //!
+//! A full-screen web view over the application's own bundle; see
+//! `native/routes.rs` for why it is no longer a tree of `UIKit` controls.
 //! Phase 5 targets the iOS Simulator. Device provisioning and distribution
 //! signing remain deferred and are recorded in `docs/SUPPORT_TIERS.md`.
 
@@ -8,7 +10,7 @@ use super::host::{
     GeneratedHost, first_line, native_tool_failure, quoted_string_escape, run_tool,
     stage_application, write, write_host_source, xml_escape,
 };
-use super::planner::{NativeRouteIndex, PlannedNativeRoute};
+use super::routes::NativeRouteIndex;
 use crate::Failure;
 use std::path::{Path, PathBuf};
 
@@ -21,21 +23,32 @@ pub(super) struct IosHostGenerator;
 impl IosHostGenerator {
     pub(super) async fn generate(
         application: &NativeApplication,
-        routes: &[PlannedNativeRoute],
         index: &NativeRouteIndex,
+        companions: &[super::registry::NativeCompanionInput],
         web_bundle: &Path,
         stage: &Path,
         package: bool,
     ) -> Result<GeneratedHost, Failure> {
         let bundle_name = format!("{}.app", application.executable_name);
         let bundle = stage.join(&bundle_name);
-        stage_application(application, routes, index, web_bundle, stage, &bundle)?;
+        stage_application(index, web_bundle, stage, &bundle)?;
 
+        let companion = super::macos::stage_swift_companion(companions, stage)?;
         let swift_path = stage.join("project").join("TachyonHost.swift");
-        write_host_source(&swift_path, &swift_source(application))?;
+        write_host_source(
+            &swift_path,
+            &swift_source(
+                application,
+                super::macos::companion_call(companion.as_deref(), None),
+                index,
+            ),
+        )?;
+        // iOS reads a flat list of icon files from the bundle rather than a
+        // path, so the manifest's icon is staged under the names it looks for.
+        let icons = stage_icons(application, web_bundle, &bundle).await?;
         write(
             &bundle.join("Info.plist"),
-            info_plist(application).as_bytes(),
+            info_plist(application, &icons).as_bytes(),
         )?;
         if !package {
             return Ok(GeneratedHost {
@@ -46,7 +59,8 @@ impl IosHostGenerator {
         }
 
         let executable = bundle.join(&application.executable_name);
-        let swift_version = compile_swift(&swift_path, &executable).await?;
+        let swift_version =
+            compile_swift(&swift_path, companion.as_deref(), None, &executable).await?;
         sign_bundle(&bundle).await?;
         Ok(GeneratedHost {
             application_bundle: PathBuf::from(bundle_name),
@@ -66,7 +80,12 @@ fn simulator_triple() -> String {
     format!("{architecture}-apple-ios{DEPLOYMENT_TARGET}-simulator")
 }
 
-async fn compile_swift(source: &Path, executable: &Path) -> Result<String, Failure> {
+async fn compile_swift(
+    source: &Path,
+    companion: Option<&Path>,
+    library: Option<&Path>,
+    executable: &Path,
+) -> Result<String, Failure> {
     if !cfg!(target_os = "macos") {
         return Err(native_tool_failure(
             1605,
@@ -88,28 +107,43 @@ async fn compile_swift(source: &Path, executable: &Path) -> Result<String, Failu
         .to_str()
         .ok_or_else(|| native_tool_failure(1605, "Application path is not valid Unicode."))?;
     let triple = simulator_triple();
-    run_tool(
-        "/usr/bin/xcrun",
-        &[
-            "--sdk",
-            "iphonesimulator",
-            "swiftc",
-            "-parse-as-library",
-            "-O",
-            "-target",
-            &triple,
-            "-framework",
-            "UIKit",
-            "-framework",
-            "SwiftUI",
-            "-framework",
-            "WebKit",
-            "-o",
-            executable,
-            source,
-        ],
-    )
-    .await?;
+    let companion = companion
+        .map(|path| {
+            path.to_str().ok_or_else(|| {
+                native_tool_failure(1605, "Companion source path is not valid Unicode.")
+            })
+        })
+        .transpose()?;
+    let mut arguments = vec![
+        "--sdk",
+        "iphonesimulator",
+        "swiftc",
+        "-parse-as-library",
+        "-O",
+        "-target",
+        &triple,
+        "-framework",
+        "UIKit",
+        "-framework",
+        "SwiftUI",
+        "-framework",
+        "WebKit",
+        "-o",
+        executable,
+        source,
+    ];
+    // Compiled together, so the companion is part of the application rather
+    // than something it loads.
+    arguments.extend(companion);
+    let library = library
+        .map(|path| {
+            path.to_str().ok_or_else(|| {
+                native_tool_failure(1605, "Companion library path is not valid Unicode.")
+            })
+        })
+        .transpose()?;
+    arguments.extend(library);
+    run_tool("/usr/bin/xcrun", &arguments).await?;
     Ok(version)
 }
 
@@ -125,7 +159,66 @@ async fn sign_bundle(bundle: &Path) -> Result<(), Failure> {
     .map(|_| ())
 }
 
-fn info_plist(application: &NativeApplication) -> String {
+/// Stages the manifest's icon at the sizes iOS asks a bundle for.
+///
+/// `sips` resizes; there is no asset catalog because compiling one needs
+/// `actool` and an Xcode project, and a bundle may simply carry its icons as
+/// files. Returns the names for `CFBundleIconFiles`.
+///
+/// # Errors
+///
+/// Returns diagnostics when `sips` refuses the image.
+async fn stage_icons(
+    application: &NativeApplication,
+    web_bundle: &Path,
+    bundle: &Path,
+) -> Result<Vec<String>, Failure> {
+    let Some(source) = application.largest_icon() else {
+        return Ok(Vec::new());
+    };
+    let origin = web_bundle.join(source.trim_start_matches('/'));
+    if !origin.is_file() {
+        return Ok(Vec::new());
+    }
+    let mut names = Vec::new();
+    // The home screen and the settings list, at both densities.
+    for (points, scale) in [(60u32, 2u32), (60, 3), (76, 2), (83, 2), (29, 2), (40, 2)] {
+        let pixels = points * scale;
+        let name = format!("AppIcon{points}x{points}@{scale}x.png");
+        run_tool(
+            "sips",
+            &[
+                "-z",
+                &pixels.to_string(),
+                &pixels.to_string(),
+                &origin.to_string_lossy(),
+                "--out",
+                &bundle.join(&name).to_string_lossy(),
+            ],
+        )
+        .await?;
+        names.push(name);
+    }
+    Ok(names)
+}
+
+fn info_plist(application: &NativeApplication, icons: &[String]) -> String {
+    // Declared only when there are files to name.
+    let icon_block = if icons.is_empty() {
+        String::new()
+    } else {
+        use std::fmt::Write as _;
+
+        let files = icons.iter().fold(String::new(), |mut out, name| {
+            let _ = write!(out, "<string>{name}</string>");
+            out
+        });
+        format!(
+            "\n<key>CFBundleIcons</key><dict><key>CFBundlePrimaryIcon</key><dict>\
+             <key>CFBundleIconFiles</key><array>{files}</array>\
+             </dict></dict>"
+        )
+    };
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -133,7 +226,7 @@ fn info_plist(application: &NativeApplication) -> String {
 <key>CFBundleDevelopmentRegion</key><string>en</string>
 <key>CFBundleDisplayName</key><string>{name}</string>
 <key>CFBundleExecutable</key><string>{executable}</string>
-<key>CFBundleIdentifier</key><string>{identifier}</string>
+<key>CFBundleIdentifier</key><string>{identifier}</string>{icon_block}
 <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 <key>CFBundleName</key><string>{name}</string>
 <key>CFBundlePackageType</key><string>APPL</string>
@@ -152,11 +245,40 @@ fn info_plist(application: &NativeApplication) -> String {
         identifier = application.application_id,
         version = application.version,
         deployment = DEPLOYMENT_TARGET,
+        icon_block = icon_block,
     )
 }
 
-fn swift_source(application: &NativeApplication) -> String {
+fn swift_source(
+    application: &NativeApplication,
+    companion_call: &str,
+    index: &NativeRouteIndex,
+) -> String {
     SWIFT_HOST
+        .replace("__TACHYON_JSON_REQUEST__", super::macos::APPLE_JSON_REQUEST)
+        .replace(
+            "__ENTRY_DOCUMENT__",
+            &quoted_string_escape(&index.entry_document),
+        )
+        .replace("__ENTRY_ROUTE__", &quoted_string_escape(&index.entry_route))
+        .replace("__ROUTE_DOCUMENTS__", &super::routes::swift_routes(index))
+        .replace(
+            "__NATIVE_SHIM__",
+            &super::host::native_shim(&application.window),
+        )
+        .replace("__TACHYON_COMPANION_CALL__", companion_call)
+        .replace(
+            "__TACHYON_COMPANION_EMIT__",
+            super::macos::companion_emit(companion_call),
+        )
+        .replace(
+            "__TACHYON_RUST_SHIM__",
+            if companion_call.contains("tacRustInvoke") {
+                super::macos::RUST_SHIM
+            } else {
+                ""
+            },
+        )
         .replace(
             "__APP_TYPE__",
             &format!("{}App", application.executable_name),
@@ -168,161 +290,64 @@ fn swift_source(application: &NativeApplication) -> String {
         )
 }
 
-const SWIFT_HOST: &str = r#"import Foundation
-import SwiftUI
+/// The generated host source, for the cross-host drift tests.
+///
+/// The dispatch arms live in this string rather than in Rust, so reading it
+/// is the only way to assert what this host does and does not implement.
+#[cfg(test)]
+pub(super) const fn host_source() -> &'static str {
+    SWIFT_HOST
+}
+
+const SWIFT_HOST: &str = r##"import Foundation
 import UIKit
 import WebKit
 
-private struct NativeAccessibility: Decodable {
-    let role: String?
-    let label: String?
+// The application's own web bundle in a full-screen web view. See
+// `native/routes.rs` for why this is no longer a tree of UIKit controls.
+
+__TACHYON_RUST_SHIM__
+__TACHYON_JSON_REQUEST__
+
+private let tachyonEntryDocument = "__ENTRY_DOCUMENT__"
+private let tachyonRouteDocuments: [String: String] = __ROUTE_DOCUMENTS__
+
+private func tachyonRoute(_ path: String) -> String? {
+    guard path.utf8.count <= 2048, !path.contains("\\"), !path.split(separator: "/").contains("..") else { return nil }
+    if tachyonRouteDocuments[path] != nil { return path }
+    if let document = tachyonRouteDocuments.first(where: { "/" + $0.value == path }) { return document.key }
+    let parts = path.split(separator: "/")
+    // Prefer exact routes, then the most-specific dynamic pattern.
+    let patterns = tachyonRouteDocuments.keys.sorted {
+        let a = $0.split(separator: "/").filter { !$0.hasPrefix("_") }.count
+        let b = $1.split(separator: "/").filter { !$0.hasPrefix("_") }.count
+        return a == b ? $0 < $1 : a > b
+    }
+    for route in patterns {
+        let expected = route.split(separator: "/")
+        if expected.count == parts.count && zip(expected, parts).allSatisfy({ $0.0.hasPrefix("_") || $0.0 == $0.1 }) { return route }
+    }
+    return nil
 }
 
-private struct NativeNode: Decodable, Identifiable {
-    let kind: String
-    let id: String?
-    let adapter: String?
-    let properties: [String: String]?
-    let events: [String: String]?
-    let accessibility: NativeAccessibility?
-    let children: [NativeNode]?
-    let value: String?
-    let source: String?
-    let location: String?
-    let bridge: String?
-    let reason: String?
-}
-
-private struct NativeDocument: Decodable {
-    let contract_version: Int
-    let target: String
-    let root: NativeNode
-}
-
-private struct RouteEntry: Decodable {
-    let route: String
-    let document: String
-}
-
-private struct NativeIndex: Decodable {
-    let contract_version: Int
-    let entry_route: String
-    let routes: [RouteEntry]
-    let initial_state: [String: [String: String]]
+private func tachyonDocument(_ path: String) -> String? {
+    if let route = tachyonRoute(path) { return tachyonRouteDocuments[route] }
+    let parts = path.split(separator: "/")
+    guard parts.count > 1 else { return nil }
+    for count in stride(from: parts.count - 1, through: 1, by: -1) {
+        let prefix = "/" + parts.prefix(count).joined(separator: "/")
+        if let route = tachyonRoute(prefix), route.contains("/_"), let document = tachyonRouteDocuments[route] {
+            let directory = (document as NSString).deletingLastPathComponent
+            return directory + "/" + parts.dropFirst(count).joined(separator: "/")
+        }
+    }
+    return nil
 }
 
 @MainActor
-private final class NativeModel: ObservableObject {
-    static let shared = NativeModel()
-    @Published var root: NativeNode?
-    @Published var state: [String: String] = [:]
-    @Published var error: String?
-    private var index: NativeIndex?
-    private(set) var route = "/"
-    private(set) var lifecycle = "created"
-
-    private init() {
-        record("controller.created")
-        do {
-            let indexURL = Bundle.main.url(forResource: "NativeIndex", withExtension: "json")!
-            index = try JSONDecoder().decode(NativeIndex.self, from: Data(contentsOf: indexURL))
-            open(index?.entry_route ?? "/")
-        } catch {
-            self.error = "Unable to load native application resources."
-            record("controller.failed")
-        }
-    }
-
-    func mount() {
-        guard lifecycle == "created" || lifecycle == "suspended" else { return }
-        lifecycle = "mounted"
-        record("controller.mounted")
-    }
-
-    func activate() {
-        guard lifecycle != "destroyed", lifecycle != "active" else { return }
-        lifecycle = "active"
-        record("controller.active")
-    }
-
-    func suspend() {
-        guard lifecycle == "active" || lifecycle == "mounted" else { return }
-        lifecycle = "suspended"
-        record("controller.suspended")
-    }
-
-    func destroy() {
-        guard lifecycle != "destroyed" else { return }
-        lifecycle = "destroyed"
-        record("controller.destroyed")
-    }
-
-    func open(_ route: String) {
-        guard let index,
-              let entry = index.routes.first(where: { $0.route == route })
-                ?? index.routes.first(where: { matches($0.route, route) })
-        else {
-            error = "Native route is unavailable."
-            record("route.failed")
-            return
-        }
-        do {
-            let relative = entry.document.replacingOccurrences(of: ".json", with: "")
-            let url = Bundle.main.url(forResource: relative, withExtension: "json", subdirectory: "NativeUI")!
-            let document = try JSONDecoder().decode(NativeDocument.self, from: Data(contentsOf: url))
-            guard document.contract_version == 1, document.target == "ios" else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
-            self.route = route
-            state = index.initial_state[entry.route] ?? [:]
-            root = document.root
-            error = nil
-            record("route.opened")
-        } catch {
-            self.error = "Unable to decode native route."
-            record("route.failed")
-        }
-    }
-
-    private func matches(_ pattern: String, _ candidate: String) -> Bool {
-        let expected = pattern.split(separator: "/", omittingEmptySubsequences: true)
-        let actual = candidate.split(separator: "/", omittingEmptySubsequences: true)
-        guard expected.count == actual.count else { return false }
-        return zip(expected, actual).allSatisfy { part, value in
-            part.hasPrefix("_") ? !value.isEmpty : part == value
-        }
-    }
-
-    func binding(_ name: String) -> Binding<String> {
-        Binding(
-            get: { self.state[name] ?? "" },
-            set: { value in
-                var updated = self.state
-                updated[name] = String(value.prefix(4096))
-                self.state = updated
-                self.record("state.input")
-            }
-        )
-    }
-
-    func dispatch(_ action: String?) {
-        guard lifecycle != "destroyed",
-              let action,
-              let separator = action.firstIndex(of: ":") else { return }
-        let verb = String(action[..<separator])
-        let key = String(action[action.index(after: separator)...])
-        if verb == "increment", let value = Int(state[key] ?? "") {
-            var updated = state
-            updated[key] = String(value + 1)
-            state = updated
-            record("state.increment")
-        } else if verb == "toggle" {
-            var updated = state
-            updated[key] = state[key] == "true" ? "false" : "true"
-            state = updated
-            record("state.toggle")
-        }
-    }
+private final class Telemetry {
+    static let shared = Telemetry()
+    var route = "__ENTRY_ROUTE__"
 
     func record(_ event: String) {
         let allowed = String(event.prefix(128))
@@ -342,147 +367,56 @@ private final class NativeModel: ObservableObject {
     }
 }
 
-private func nodeText(_ node: NativeNode) -> String {
-    if node.kind == "text" { return node.value ?? "" }
-    return (node.children ?? []).map(nodeText).joined()
-}
-
-private func accessibility(_ view: AnyView, node: NativeNode) -> AnyView {
-    if node.adapter == "control.button" { return view }
-    var result = view
-    let role = node.accessibility?.role ?? ""
-    let containerRoles = ["main", "navigation", "banner", "contentinfo", "group", "list", "listitem"]
-    if containerRoles.contains(role) {
-        result = AnyView(result.accessibilityElement(children: .contain))
-    } else if node.adapter?.hasPrefix("layout.") != true, let id = node.id {
-        result = AnyView(result.accessibilityIdentifier(id))
-    }
-    if let label = node.accessibility?.label,
-       !label.isEmpty,
-       containerRoles.contains(role) || nodeText(node).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        result = AnyView(result.accessibilityLabel(Text(label)))
-    }
-    if node.accessibility?.role == "heading" {
-        result = AnyView(result.accessibilityAddTraits(.isHeader))
-    }
-    if node.properties?["aria-hidden"] == "true" {
-        result = AnyView(result.accessibilityHidden(true))
-    }
-    return result
-}
-
-private struct AccessibleButton: UIViewRepresentable {
-    let title: String
-    let label: String
-    let identifier: String
-    let action: () -> Void
-
-    final class Coordinator: NSObject {
-        var action: () -> Void
-        init(action: @escaping () -> Void) { self.action = action }
-        @objc func press() { action() }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
-
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .system)
-        button.setTitle(title, for: .normal)
-        button.addTarget(
-            context.coordinator,
-            action: #selector(Coordinator.press),
-            for: .touchUpInside
-        )
-        button.isAccessibilityElement = true
-        button.accessibilityTraits = .button
-        button.accessibilityLabel = label
-        button.accessibilityIdentifier = identifier
-        button.setContentHuggingPriority(.required, for: .horizontal)
-        return button
-    }
-
-    func updateUIView(_ button: UIButton, context: Context) {
-        context.coordinator.action = action
-        button.setTitle(title, for: .normal)
-        button.accessibilityLabel = label
-        button.accessibilityIdentifier = identifier
-    }
-}
-
-private struct AccessibleTextField: UIViewRepresentable {
-    let placeholder: String
-    let label: String
-    let identifier: String
-    @Binding var value: String
-
-    final class Coordinator: NSObject {
-        var value: Binding<String>
-        init(value: Binding<String>) { self.value = value }
-        @objc func changed(_ field: UITextField) {
-            value.wrappedValue = String((field.text ?? "").prefix(4096))
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(value: $value) }
-
-    func makeUIView(context: Context) -> UITextField {
-        let field = UITextField()
-        field.text = value
-        field.placeholder = placeholder
-        field.borderStyle = .roundedRect
-        field.autocorrectionType = .no
-        field.autocapitalizationType = .none
-        field.addTarget(
-            context.coordinator,
-            action: #selector(Coordinator.changed(_:)),
-            for: .editingChanged
-        )
-        field.isAccessibilityElement = true
-        field.accessibilityLabel = label
-        field.accessibilityIdentifier = identifier
-        return field
-    }
-
-    func updateUIView(_ field: UITextField, context: Context) {
-        context.coordinator.value = $value
-        if field.text != value { field.text = value }
-        field.placeholder = placeholder
-        field.accessibilityLabel = label
-        field.accessibilityIdentifier = identifier
-    }
-}
-
+// Served rather than loaded from file://, because a bundle is a module graph:
+// WebKit refuses cross-origin module imports from file URLs, so the page would
+// load and none of its JavaScript would.
 private final class TachyonAssetSchemeHandler: NSObject, WKURLSchemeHandler {
     static let shared = TachyonAssetSchemeHandler()
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url,
               url.scheme == "tachyon-app",
-              url.host == "bundle",
+              url.host == "bundle", url.port == nil, url.user == nil, url.password == nil,
               let resources = Bundle.main.resourceURL
         else {
             task.didFailWithError(NSError(domain: "TachyonAsset", code: 1))
             return
         }
-        let root = resources.standardizedFileURL
-        let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let direct = root.appendingPathComponent(path).standardizedFileURL
-        let bundled = root.appendingPathComponent("WebBundle").appendingPathComponent(path).standardizedFileURL
-        let file = FileManager.default.fileExists(atPath: direct.path) ? direct : bundled
-        guard !path.isEmpty,
-              !path.split(separator: "/").contains(".."),
-              file.path.hasPrefix(root.path + "/"),
+        let root = resources.appendingPathComponent("WebBundle").standardizedFileURL
+        var path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if let document = tachyonDocument(url.path) { path = document }
+        var file = root.appendingPathComponent(path).standardizedFileURL
+        // A client-routed application asks for a path with no file behind it;
+        // the document that owns that route is the answer, not a 404.
+        var isDirectory: ObjCBool = false
+        if !FileManager.default.fileExists(atPath: file.path, isDirectory: &isDirectory)
+            || isDirectory.boolValue {
+            file = root.appendingPathComponent(path)
+                .appendingPathComponent("index.html").standardizedFileURL
+        }
+        file = file.resolvingSymlinksInPath()
+        guard !path.split(separator: "/").contains(".."),
+              file.path.hasPrefix(root.resolvingSymlinksInPath().path + "/"),
+              let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
+              let size = attributes[.size] as? NSNumber, size.uint64Value <= 16 * 1024 * 1024,
               let data = try? Data(contentsOf: file)
         else {
             task.didFailWithError(NSError(domain: "TachyonAsset", code: 2))
             return
         }
-        let response = URLResponse(
+        let response = HTTPURLResponse(
             url: url,
-            mimeType: TachyonAssetSchemeHandler.mimeType(file.pathExtension),
-            expectedContentLength: data.count,
-            textEncodingName: nil
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: [
+                "Content-Type": TachyonAssetSchemeHandler.mimeType(file.pathExtension),
+                "Content-Length": String(data.count),
+            ]
         )
+        guard let response else {
+            task.didFailWithError(NSError(domain: "TachyonAsset", code: 3))
+            return
+        }
         task.didReceive(response)
         task.didReceive(data)
         task.didFinish()
@@ -495,356 +429,196 @@ private final class TachyonAssetSchemeHandler: NSObject, WKURLSchemeHandler {
         case "html": return "text/html"
         case "css": return "text/css"
         case "js", "mjs": return "text/javascript"
-        case "json": return "application/json"
+        case "json", "map": return "application/json"
         case "svg": return "image/svg+xml"
         case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "webp": return "image/webp"
+        case "woff2": return "font/woff2"
         case "wasm": return "application/wasm"
         default: return "application/octet-stream"
         }
     }
 }
 
-private let tachyonSurfaceHeightScript = """
-(() => { const top = document.body.getBoundingClientRect().top; let bottom = top;
-for (const node of document.body.querySelectorAll('*')) {
-  const rect = node.getBoundingClientRect();
-  if (rect.width || rect.height) bottom = Math.max(bottom, rect.bottom);
-}
-return Math.ceil(bottom - top); })()
-"""
 
-private final class WebSurfaceCoordinator: NSObject, WKNavigationDelegate {
-    let node: NativeNode
-    let record: (String) -> Void
-    let open: @MainActor (String) -> Void
-    private var observation: NSKeyValueObservation?
-    var measured: CGFloat?
+// MARK: - JavaScript host bridge
+//
+// One function is the whole native surface: a capability name and a JSON
+// payload in, a JSON answer out. It is reached from the page rather than from
+// a separate engine, because the page is now the application.
 
-    init(
-        node: NativeNode,
-        record: @escaping (String) -> Void,
-        open: @escaping @MainActor (String) -> Void
+@MainActor
+private final class NativeBridge: NSObject, WKScriptMessageHandlerWithReply {
+    static let shared = NativeBridge()
+    weak var webView: WKWebView?
+
+    func userContentController(
+        _ controller: WKUserContentController,
+        didReceive message: WKScriptMessage,
+        replyHandler: @escaping (Any?, String?) -> Void
     ) {
-        self.node = node
-        self.record = record
-        self.open = open
-        super.init()
-        record("websurface.created")
+        guard message.frameInfo.isMainFrame,
+              message.frameInfo.request.url?.scheme == "tachyon-app",
+              message.frameInfo.request.url?.host == "bundle",
+              message.frameInfo.request.url?.port == nil, message.frameInfo.request.url?.user == nil,
+              message.frameInfo.request.url?.password == nil,
+              let body = message.body as? [String: Any],
+              let capability = body["capability"] as? String
+        else {
+            replyHandler(nil, "malformed host call")
+            return
+        }
+        let payload = body["payload"] as? String ?? "{}"
+        guard capability.utf8.count <= 64,
+              let request = tachyonParseJSONRequest(payload) else {
+            replyHandler(nil, "invalid or oversized host call"); return
+        }
+        if capability == "companion.invoke" {
+            guard let path = message.frameInfo.request.url?.path,
+                  let route = tachyonRoute(path), request["route"] as? String == route else {
+                replyHandler(nil, "companion route does not belong to this page"); return
+            }
+        }
+        guard let canonicalPayload = tachyonCanonicalJSONRequest(request) else {
+            replyHandler(nil, "invalid or oversized host call"); return
+        }
+        replyHandler(handle(capability, canonicalPayload), nil)
     }
 
-    func observe(_ webView: WKWebView) {
-        observation = webView.scrollView.observe(\.contentSize, options: [.initial, .new]) {
-            [weak self, weak webView] _, _ in
-            if let webView { self?.measure(webView) }
+    private func handle(_ capability: String, _ payload: String) -> String {
+        let data = payload.data(using: .utf8) ?? Data()
+        let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        switch capability {
+        case "companion.invoke":
+            return __TACHYON_COMPANION_CALL__
+        case "route.open":
+            let route = String((parsed["route"] as? String ?? "/").prefix(256))
+            Telemetry.shared.route = route
+            webView?.evaluateJavaScript("location.assign(\(NativeBridge.jsonString(route)))")
+            Telemetry.shared.record("route.opened")
+        default:
+            // iOS has no status item, no window to show or hide, and an
+            // application may not terminate itself: naming the platform is
+            // what tells a developer this is a target difference rather than
+            // a typo.
+            return "{\"ok\":false,\"error\":\"ios host does not implement capability '\(NativeBridge.safeName(capability))'\"}"
+        }
+        return "{\"ok\":true,\"value\":{}}"
+    }
+
+    private static func jsonString(_ value: String) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: [value])) ?? Data("[\"/\"]".utf8)
+        let text = String(data: data, encoding: .utf8) ?? "[\"/\"]"
+        return String(text.dropFirst().dropLast())
+    }
+
+    private static func safeName(_ value: String) -> String {
+        let allowed = value.prefix(64).filter { character in
+            character.isLetter || character.isNumber || character == "." || character == "_" || character == "-"
+        }
+        return allowed.isEmpty ? "unnamed" : String(allowed)
+    }
+}
+
+private let TACHYON_NATIVE_SHIM = #"""
+__NATIVE_SHIM__
+"""#
+
+/// Relays one companion publish into the page.
+///
+/// A companion may publish from whatever thread it likes — a timer, a
+/// notification, a URLSession callback — and a WKWebView may only be touched
+/// from the main one. The hop belongs here rather than in every companion an
+/// author writes.
+///
+/// The payload is the companion's own JSON object, and JSON is a JavaScript
+/// expression already, so it is not re-encoded on the way through.
+private func tachyonRelayPublish(_ payload: String) {
+    Task { @MainActor in
+        NativeBridge.shared.webView?.evaluateJavaScript(
+            "globalThis.__tachyonCompanionPublish(" + payload + ")")
+    }
+}
+
+private final class RootViewController: UIViewController, WKNavigationDelegate {
+    private var webView: WKWebView?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        Telemetry.shared.record("controller.created")
+        let configuration = WKWebViewConfiguration()
+        configuration.setURLSchemeHandler(TachyonAssetSchemeHandler.shared, forURLScheme: "tachyon-app")
+        configuration.websiteDataStore = .default()
+        configuration.userContentController.addUserScript(
+            WKUserScript(source: TACHYON_NATIVE_SHIM, injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        )
+        configuration.userContentController.addScriptMessageHandler(
+            NativeBridge.shared, contentWorld: .page, name: "tachyon"
+        )
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.navigationDelegate = self
+        view.accessibilityIdentifier = "tachyon-application"
+        view.translatesAutoresizingMaskIntoConstraints = false
+        self.view.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.topAnchor.constraint(equalTo: self.view.topAnchor),
+            view.bottomAnchor.constraint(equalTo: self.view.bottomAnchor),
+            view.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+        ])
+        webView = view
+        NativeBridge.shared.webView = view
+        // Installed before the page loads, so a companion that publishes the
+        // moment it wakes up has somewhere to publish to. The shim queues
+        // until the page's modules take over, so nothing is lost either way.
+        __TACHYON_COMPANION_EMIT__
+        view.load(URLRequest(url: URL(string: "tachyon-app://bundle/" + tachyonEntryDocument)!))
+        Telemetry.shared.record("bridge.ready")
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = action.request.url else { decisionHandler(.cancel); return }
+        if url.scheme == "tachyon-app" && url.host == "bundle" && url.port == nil && url.user == nil && url.password == nil { decisionHandler(.allow); return }
+        decisionHandler(.cancel)
+        if action.targetFrame?.isMainFrame != false && ["https", "http"].contains(url.scheme ?? "") {
+            UIApplication.shared.open(url)
         }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        measure(webView)
+        Telemetry.shared.record("controller.mounted")
+        Telemetry.shared.record("controller.active")
     }
 
-    private func measure(_ webView: WKWebView) {
-        guard node.source == "local_bundle" else {
-            let height = webView.scrollView.contentSize.height
-            guard measured != height else { return }
-            measured = height
-            webView.invalidateIntrinsicContentSize()
-            return
-        }
-        webView.evaluateJavaScript(tachyonSurfaceHeightScript) {
-            [weak self, weak webView] value, _ in
-            guard let height = (value as? NSNumber).map({ CGFloat($0.doubleValue) }),
-                  height > 0
-            else { return }
-            guard self?.measured != height else { return }
-            self?.measured = height
-            webView?.invalidateIntrinsicContentSize()
-        }
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        decidePolicyFor action: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-    ) {
-        guard let url = action.request.url else {
-            decisionHandler(.cancel)
-            return
-        }
-        if node.source == "local_bundle" {
-            let contained = url.scheme == "tachyon-app" && url.host == "bundle"
-            if contained,
-               action.navigationType == .linkActivated,
-               !url.path.hasPrefix("/WebSurfaces/") {
-                Task { @MainActor in open(url.path.isEmpty ? "/" : url.path) }
-                decisionHandler(.cancel)
-                return
-            }
-            decisionHandler(contained ? .allow : .cancel)
-            return
-        }
-        if node.source == "remote_url",
-           let declared = URL(string: node.location ?? ""),
-           url.scheme == "https",
-           url.host == declared.host,
-           (url.port ?? 443) == (declared.port ?? 443) {
-            decisionHandler(.allow)
-            return
-        }
-        decisionHandler(.cancel)
-    }
-
-    deinit { record("websurface.destroyed") }
-}
-
-private let tachyonWebDataStore = WKWebsiteDataStore.nonPersistent()
-
-private struct WebSurfaceView: UIViewRepresentable {
-    let node: NativeNode
-    let model: NativeModel
-
-    func makeCoordinator() -> WebSurfaceCoordinator {
-        WebSurfaceCoordinator(node: node, record: model.record, open: model.open)
-    }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = tachyonWebDataStore
-        configuration.setURLSchemeHandler(
-            TachyonAssetSchemeHandler.shared,
-            forURLScheme: "tachyon-app"
-        )
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = node.source == "local_bundle"
-        let view = WKWebView(frame: .zero, configuration: configuration)
-        view.navigationDelegate = context.coordinator
-        view.isOpaque = false
-        view.backgroundColor = .clear
-        view.scrollView.isScrollEnabled = false
-        if node.source == "local_bundle",
-           let location = node.location,
-           var components = URLComponents(string: "tachyon-app://bundle/\(location)") {
-            components.queryItems = [URLQueryItem(name: "tachyon-route", value: model.route)]
-            guard let url = components.url else { return view }
-            view.load(URLRequest(url: url))
-        } else if let location = node.location, let url = URL(string: location) {
-            view.load(URLRequest(url: url))
-        }
-        context.coordinator.observe(view)
-        model.record("websurface.attached")
-        return view
-    }
-
-    func updateUIView(_ view: WKWebView, context: Context) {}
-
-    /// A fallback subtree is as tall as its document. A fixed height clipped
-    /// whatever rendered past it, and a native window has no scroll of its own
-    /// to reveal the rest.
-    func sizeThatFits(
-        _ proposal: ProposedViewSize,
-        uiView: WKWebView,
-        context: Context
-    ) -> CGSize? {
-        return CGSize(
-            width: proposal.width ?? uiView.scrollView.contentSize.width,
-            height: context.coordinator.measured ?? 1
-        )
-    }
-
-    static func dismantleUIView(_ view: WKWebView, coordinator: WebSurfaceCoordinator) {
-        view.stopLoading()
-        coordinator.record("websurface.detached")
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        Telemetry.shared.record("route.failed")
     }
 }
 
-private struct StateOutputView: View {
-    @ObservedObject var model: NativeModel
-    let binding: String
-    let prefix: String
-    let label: String?
+// The entry point is an attribute rather than a top-level call: the host is
+// compiled with -parse-as-library, where an expression at file scope is an
+// error rather than a program.
+@UIApplicationMain
+private final class AppDelegate: UIResponder, UIApplicationDelegate {
+    var window: UIWindow?
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if let label { Text(label).font(.caption) }
-            Text(prefix + (model.state[binding] ?? "")).font(.title2).monospacedDigit()
-        }
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        window.rootViewController = RootViewController()
+        window.makeKeyAndVisible()
+        self.window = window
+        return true
     }
-}
 
-private struct DisclosureNodeView: View {
-    @ObservedObject var model: NativeModel
-    let node: NativeNode
-    let children: [NativeNode]
-
-    var body: some View {
-        let key = node.properties?["binding"] ?? (node.id ?? "disclosure")
-        let expanded = Binding(
-            get: { model.state[key] == "true" },
-            set: {
-                var updated = model.state
-                updated[key] = $0 ? "true" : "false"
-                model.state = updated
-                model.record("state.disclosure")
-            }
-        )
-        DisclosureGroup(node.properties?["label"] ?? "Details", isExpanded: expanded) {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(children.indices, id: \.self) { nodeView(children[$0], model: model) }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
-@MainActor
-private func nodeView(_ node: NativeNode, model: NativeModel) -> AnyView {
-    if node.kind == "text" {
-        return AnyView(Text(node.value ?? ""))
-    }
-    if node.kind == "web_surface" {
-        return accessibility(AnyView(WebSurfaceView(node: node, model: model)), node: node)
-    }
-    let children = node.children ?? []
-    let adapter = node.adapter ?? ""
-    let built: AnyView
-    switch adapter {
-    case "layout.app_bar":
-        built = AnyView(
-            HStack(spacing: 12) {
-                ForEach(children.indices, id: \.self) { nodeView(children[$0], model: model) }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.accentColor.opacity(0.12))
-        )
-    case "layout.column":
-        let isMain = node.accessibility?.role == "main"
-        let containsOnlyWebSurface = children.count == 1 && children.first?.kind == "web_surface"
-        built = AnyView(
-            VStack(alignment: .leading, spacing: isMain && !containsOnlyWebSurface ? 16 : 0) {
-                ForEach(children.indices, id: \.self) { nodeView(children[$0], model: model) }
-            }
-            .padding(isMain && !containsOnlyWebSurface ? 24 : 0)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        )
-    case "layout.list", "layout.list_item":
-        built = AnyView(
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(children.indices, id: \.self) { nodeView(children[$0], model: model) }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        )
-    case "text.heading1":
-        built = AnyView(Text(nodeText(node)).font(.largeTitle).bold())
-    case "text.heading2":
-        built = AnyView(Text(nodeText(node)).font(.title).bold())
-    case "text.heading3", "text.heading4", "text.heading5", "text.heading6":
-        built = AnyView(Text(nodeText(node)).font(.headline).bold())
-    case "content.text":
-        built = AnyView(Text(nodeText(node)))
-    case "control.button":
-        built = AnyView(
-            AccessibleButton(
-                title: nodeText(node),
-                label: node.accessibility?.label ?? nodeText(node),
-                identifier: node.id ?? "",
-                action: { model.dispatch(node.properties?["action"]) }
-            )
-            .frame(height: 44)
-            .fixedSize()
-        )
-    case "control.text_field":
-        let binding = node.properties?["binding"] ?? ""
-        let placeholder = node.properties?["placeholder"] ?? ""
-        built = AnyView(
-            AccessibleTextField(
-                placeholder: placeholder,
-                label: node.accessibility?.label ?? placeholder,
-                identifier: node.id ?? "",
-                value: model.binding(binding)
-            )
-            .frame(height: 44)
-        )
-    case "content.output":
-        if let binding = node.properties?["binding"] {
-            built = AnyView(
-                StateOutputView(
-                    model: model,
-                    binding: binding,
-                    prefix: node.properties?["prefix"] ?? "",
-                    label: node.accessibility?.label
-                )
-            )
-        } else {
-            built = AnyView(Text(nodeText(node)))
-        }
-    case "control.disclosure":
-        built = AnyView(
-            DisclosureNodeView(model: model, node: node, children: children)
-        )
-    case "navigation.link":
-        built = AnyView(
-            Button(nodeText(node)) { model.open(node.properties?["href"] ?? "/") }
-                .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
-        )
-    case "content.image":
-        built = AnyView(
-            Label(node.accessibility?.label ?? "Image", systemImage: "photo")
-        )
-    case "content.divider":
-        built = AnyView(Divider())
-    default:
-        built = AnyView(
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(children.indices, id: \.self) { nodeView(children[$0], model: model) }
-            }
-        )
-    }
-    return accessibility(built, node: node)
-}
-
-private struct RootView: View {
-    @ObservedObject private var model = NativeModel.shared
-    @Environment(\.scenePhase) private var scenePhase
-
-    var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            Group {
-                if let root = model.root {
-                    nodeView(root, model: model)
-                } else if let error = model.error {
-                    Text(error).foregroundColor(.red)
-                } else {
-                    ProgressView()
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(uiColor: .systemBackground))
-        .onAppear { model.mount(); model.activate() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { model.activate() }
-            else { model.suspend() }
-        }
-    }
-}
-
-@MainActor
-private final class AppDelegate: NSObject, UIApplicationDelegate {
     func applicationWillTerminate(_ application: UIApplication) {
-        NativeModel.shared.destroy()
+        Telemetry.shared.record("controller.destroyed")
     }
 }
-
-@main
-private struct __APP_TYPE__: App {
-    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    var body: some Scene {
-        WindowGroup("__APP_NAME__") { RootView() }
-    }
-}
-"#;
+"##;
 
 #[cfg(test)]
 mod tests {
@@ -858,30 +632,35 @@ mod tests {
             application_id: String::from("dev.tachyon.native-catalog"),
             version: String::from("1.0.0"),
             entry_route: String::from("/"),
+            icons: Vec::new(),
+            window: crate::native::config::WindowConfiguration::default(),
+        }
+    }
+
+    fn index() -> crate::native::routes::NativeRouteIndex {
+        crate::native::routes::NativeRouteIndex {
+            contract_version: 2,
+            entry_route: String::from("/"),
+            entry_document: String::from("index.html"),
+            routes: Vec::new(),
         }
     }
 
     #[test]
-    fn generated_host_uses_uikit_adapters_lifecycle_and_no_bridge() {
-        let source = swift_source(&application());
+    fn the_host_is_a_full_screen_view_over_the_bundle() {
+        let source = swift_source(&application(), "tacNativeInvoke(payload)", &index());
         assert!(source.contains("import UIKit"));
         assert!(!source.contains("import AppKit"));
-        assert!(source.contains("UIViewRepresentable"));
         assert!(source.contains("controller.created"));
-        assert!(source.contains("controller.destroyed"));
-        assert!(source.contains("websiteDataStore = tachyonWebDataStore"));
         assert!(source.contains("TachyonAssetSchemeHandler"));
         assert!(source.contains("tachyon-app://bundle/"));
-        assert!(source.contains("(url.port ?? 443) == (declared.port ?? 443)"));
-        assert!(source.contains("accessibilityIdentifier"));
-        assert!(!source.contains("WKScriptMessageHandler"));
-        assert!(source.contains("case \"control.button\""));
-        assert!(source.contains(r#"document.target == "ios""#));
+        assert!(source.contains("WKScriptMessageHandlerWithReply"));
+        assert!(!source.contains("UIViewRepresentable"));
     }
 
     #[test]
     fn plist_declares_a_launchable_simulator_bundle() {
-        let plist = info_plist(&application());
+        let plist = info_plist(&application(), &[String::from("AppIcon60x60@2x.png")]);
         assert!(plist.contains("dev.tachyon.native-catalog"));
         assert!(plist.contains("<string>iPhoneSimulator</string>"));
         assert!(plist.contains("<key>UILaunchScreen</key>"));

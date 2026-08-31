@@ -16,7 +16,48 @@ These labels are never interchangeable. Containers do not replace host-native
 filesystem and process tests. Emulation does not replace device or native
 architecture evidence for a supported claim.
 
-## Phase 5 Native Target Status
+## Reconciliation candidate evidence (unpublished)
+
+These results qualify the working candidate only. They do not promote a
+support tier or substitute for verification of the actual release download.
+
+| Target host | Observed execution | Remaining qualification |
+| --- | --- | --- |
+| macOS WKWebView | full arm64 application gate passed: controls, accessibility, typing, lifecycle and visual parity at 420x752 | exact release artifact and current-head CI |
+| iOS WKWebView | isolated iPhone SE (3rd generation), iOS 26.5; Swift calls, publish, input/focus, assets and route state `7 -> 9 -> 7` passed | exact release artifact; physical-device support remains unclaimed |
+| Android WebView | Android 15 emulator; Kotlin calls, publish, per-character input/focus with a delayed setter, service-worker retirement and packaged dynamic routes passed | exact release artifact; physical-device support remains unclaimed |
+| Linux WebKitGTK | Rust companion compiles; shared route/security probe passes | Linux native GUI CI execution |
+| Windows WebView2 | generated C compiles with official SDK; real C# protocol/OS execution | Windows native GUI CI execution |
+
+Use `scripts/phase4-macos-test.mjs`, `scripts/ios/native-test.mjs`,
+`scripts/android/native-test.sh`, `scripts/linux/native-test.sh` and
+`scripts/windows/native-test.ps1` to reproduce each platform gate.
+
+The final macOS/iOS/Android gates used the same frozen candidate executable.
+Current-head Linux and Windows GUI CI is still pending; compilation and
+protocol execution do not establish GUI qualification. API 36/Android 16
+results below are historical and do not describe the final Android run.
+
+An earlier unchanged Apple helper run timed out in three cases before later
+runs passed. Android installation also needed an unchanged retry after a
+boot-readiness failure. Their causes remain unconfirmed; passing reruns do
+not establish a fix for either transient.
+
+Android requires a System WebView supporting `WEB_MESSAGE_LISTENER`; the
+AndroidX WebKit `1.14.0` bridge has no legacy fallback. An unsupported runtime
+reports an unavailable bridge and needs a compatible WebView. Native calls'
+ten-second browser wait limit does not preempt or roll back companion code;
+companions must remain responsive, and a hung application may need relaunch.
+
+## Historical Phase 5 Native Target Status
+
+**Reconciliation notice (2026-08-30):** ADRs 0018 and 0019 replace the widget
+planner and WebAssembly companions with platform web-view hosts and native
+page companions. The tables below are historical evidence for the previous
+architecture, not qualification of the new hosts. Fresh platform evidence is
+required before publishing the reconciliation release; see
+[`RECONCILIATION.md`](RECONCILIATION.md). No support tier is promoted by the
+architecture change itself.
 
 Evidence and reproduction commands are in `docs/PHASE_5_EVIDENCE.md`.
 

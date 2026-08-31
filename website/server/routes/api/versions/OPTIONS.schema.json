@@ -1,12 +1,11 @@
 {
-  "summary": "What the Ruby handler reports about its own runtime",
+  "summary": "PHP runtime version",
   "methods": {
     "GET": {
-      "summary": "The interpreter this route's shebang started, and its version",
+      "summary": "The PHP interpreter selected by the Yon runtime",
       "ok": {
         "language": "^.{1,40}$",
-        "version": "^[0-9][0-9A-Za-z.+-]{0,30}$",
-        "startedBy": "^#!.{1,80}$"
+        "version": "^[0-9][0-9A-Za-z.+-]{0,30}$"
       }
     }
   }

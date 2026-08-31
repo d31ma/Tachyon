@@ -1,0 +1,1 @@
+{"schemaVersion":3,"target":"macos","appName":"Example","appId":"dev.example.app","version":"1.0.0","renderMode":"bundle","entryRoute":"/","entryDocument":"index.html","platformApiVersion":1,"bridgeVersion":3,"companions":[{"route":"/","language":"Swift"}],"windowControls":[],"hostCapabilities":["companion.invoke"]}

@@ -21,6 +21,7 @@ RUN apt-get update \
       libgtk-4-dev \
       libjson-glib-dev \
       libwebkitgtk-6.0-dev \
+      nodejs \
       pkg-config \
       python3-gi \
       xauth \

@@ -38,7 +38,7 @@ flowchart LR
   do not participate in the view pipeline.
 - The handler supervisor depends on Handler Protocol, not on a language
   runtime's internal API.
-- Platform adapters consume Native UI IR and declared capabilities.
+- Platform web-view hosts consume the client bundle and declared capabilities.
 - The CLI may depend on all orchestration modules. No library depends on the
   CLI.
 
@@ -223,25 +223,23 @@ Cross-document navigation remains browser-native. See ADR 0015.
 
 ```mermaid
 flowchart LR
-    W["Authored Tac declarations"] --> P["Native planner"]
-    P --> N["Native UI v1"]
-    P --> F["Contained WebSurface documents"]
-    N --> S["Generated platform host"]
-    F --> S
+    W["Authored Tac declarations"] --> P["Client render-plan compiler"]
+    P --> N["Staged web bundle"]
+    C["Per-route native companions"] --> S["Generated platform web-view host"]
+    N --> S
     S --> A["Compiled and ad-hoc-signed app"]
     A --> M["Capability + Artifact manifests"]
     M --> O["Atomic dist/macos publication"]
 ```
 
-`tachyon-core::native` owns strict application configuration, semantic adapter
-selection, deterministic identities, controller state validation, WebSurface
-boundaries, generated host source, toolchain execution, manifests, and atomic
-publication. SwiftUI/UIKit, Android platform views, GTK4, and Win32 common
-controls consume one Native UI contract. Unsupported safe subtrees use local
-WKWebView, Android WebView, or WebKitGTK surfaces where available; Windows
-retains its documented placeholder reduction until WebView2 evidence exists.
-Same-origin surface links return to the native route stack. Remote content
-requires HTTPS, stays on its declared host, and never receives a native bridge.
+`tachyon-core::native` owns strict application configuration, target companion
+selection, deterministic route registries, local-origin bridge boundaries,
+generated host source, supervised toolchain execution, manifests, and atomic
+publication. WKWebView, Android WebView, WebKitGTK, and WebView2 consume the
+same client-rendered web bundle. Native page companions compile with ordinary
+platform toolchains and are dispatched through a bounded, per-route registry.
+Remote content and subframes never receive a native bridge. See ADRs 0018 and
+0019 for the explicit migration from the released widget/WASM architecture.
 
 ## Compatibility Boundary
 
