@@ -5,6 +5,7 @@ $script:process = $null
 $script:window = $null
 $script:desktop = $null
 $script:deadline = $null
+$script:devToolsPort = 9343
 
 function Enable-Msvc {
     if (Get-Command cl.exe -ErrorAction SilentlyContinue) { return }
@@ -71,6 +72,72 @@ function Write-UiaFailureDiagnostics($window) {
     Write-Host ("UIA diagnostic traversal ended: nodes={0}; queued={1}" -f (64 - $remaining), $queue.Count)
 }
 
+function Send-DevToolsCommand($socket, [int] $id, [string] $method, [string] $parameters) {
+    $text = '{"id":' + $id + ',"method":"' + $method + '","params":' + $parameters + '}'
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+    $segment = [System.ArraySegment[byte]]::new($bytes)
+    $sent = $socket.SendAsync($segment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true,
+        [System.Threading.CancellationToken]::None)
+    if (-not $sent.Wait(2000)) { throw "DevTools command $method timed out" }
+}
+
+function Receive-DevToolsMessage($socket, [DateTime] $until) {
+    $buffer = [byte[]]::new(65536)
+    $message = [System.IO.MemoryStream]::new()
+    do {
+        $wait = [int][Math]::Max(0, ($until - [DateTime]::UtcNow).TotalMilliseconds)
+        $segment = [System.ArraySegment[byte]]::new($buffer)
+        $received = $socket.ReceiveAsync($segment, [System.Threading.CancellationToken]::None)
+        if (-not $received.Wait($wait)) { return $null }
+        $message.Write($buffer, 0, $received.Result.Count)
+    } while (-not $received.Result.EndOfMessage)
+    return [System.Text.Encoding]::UTF8.GetString($message.ToArray())
+}
+
+function Write-DevToolsMessage([string] $message) {
+    if ($message.StartsWith('{"method":"Runtime.executionContext')) { return }
+    if ($message.Length -gt 4000) { $message = $message.Substring(0, 4000) + '...' }
+    Write-Host "WebView2: $message"
+}
+
+function Get-WebViewPage {
+    $targets = Invoke-RestMethod -TimeoutSec 3 -Uri "http://127.0.0.1:$($script:devToolsPort)/json/list"
+    foreach ($target in @($targets)) {
+        Write-Host ("WebView2 target: type={0}; url={1}; title={2}" -f $target.type, $target.url, $target.title)
+    }
+    return @($targets | Where-Object { $_.type -eq 'page' }) | Select-Object -First 1
+}
+
+function Write-WebViewDiagnostics {
+    $page = Get-WebViewPage
+    if ($null -eq $page) { Write-Host 'WebView2: no page target'; return }
+    $socket = [System.Net.WebSockets.ClientWebSocket]::new()
+    try {
+        $connected = $socket.ConnectAsync([Uri] $page.webSocketDebuggerUrl, [System.Threading.CancellationToken]::None)
+        if (-not $connected.Wait(3000)) { Write-Host 'WebView2: DevTools connection timed out'; return }
+        Send-DevToolsCommand $socket 1 'Log.enable' '{}'
+        Send-DevToolsCommand $socket 2 'Runtime.enable' '{}'
+        $expression = "JSON.stringify({ state: document.readyState, url: location.href, " +
+            "host: typeof globalThis.__tachyonNativeHostCall, " +
+            "navigation: performance.getEntriesByType('navigation').map(entry => entry.responseStatus), " +
+            "resources: performance.getEntriesByType('resource').slice(0, 40).map(entry => entry.name + ' ' + entry.responseStatus), " +
+            "html: document.documentElement.outerHTML.slice(0, 3000) })"
+        $parameters = '{"returnByValue":true,"expression":' + (ConvertTo-Json -InputObject $expression -Compress) + '}'
+        Send-DevToolsCommand $socket 3 'Runtime.evaluate' $parameters
+        $until = [DateTime]::UtcNow.AddSeconds(5)
+        for ($count = 0; $count -lt 200; $count++) {
+            $message = Receive-DevToolsMessage $socket $until
+            if ($null -eq $message) { Write-Host 'WebView2: DevTools answer timed out'; return }
+            Write-DevToolsMessage $message
+            if ($message.StartsWith('{"id":3,')) { return }
+        }
+    }
+    finally {
+        $socket.Abort()
+        $socket.Dispose()
+    }
+}
+
 function Write-NativeLogTail([string] $log) {
     if (-not (Test-Path $log)) {
         Write-Host 'Native lifecycle log: absent'
@@ -98,6 +165,8 @@ function Write-NativeFailureDiagnostics($process, $window, [string] $log) {
     Write-Host 'Windows native failure diagnostics (before owned-process cleanup):'
     Write-NativeLogTail $log
     Write-OwnedProcessState $process
+    try { Write-WebViewDiagnostics }
+    catch { Write-Host "WebView2 diagnostics were incomplete: $($_.Exception.Message)" }
     Write-UiaFailureDiagnostics $window
 }
 
@@ -211,6 +280,7 @@ function Test-RenderedControls([string] $app, [string] $log) {
     if (Test-Path $log) { Remove-Item $log }
     Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
     $script:desktop = [System.Windows.Automation.AutomationElement]::RootElement
+    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$($script:devToolsPort)"
     $script:process = Start-Process -FilePath (Join-Path $app 'bin\NativeGate.exe') -PassThru
     $script:deadline = [DateTime]::UtcNow.AddSeconds(120)
 
