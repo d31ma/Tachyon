@@ -1790,7 +1790,8 @@ fn method(input: &Input<'_>, registration: &Registration, start: usize) -> Resul
         return Err(input.failure(start, "Behavior methods must be named concrete methods, not generators, accessors, fields or computed members"));
     }
     let open = start + relative_open;
-    let Some(close) = matching(&input.code, open, b'(', b')') else {
+    let close = matching(&input.code, open, b'(', b')');
+    let Some(close) = close.filter(|close| *close < registration.close) else {
         return Err(input.failure(start, "Behavior method parameters are not balanced"));
     };
     let (body, declared) = method_body(input, registration, start, close)?;
@@ -3305,5 +3306,15 @@ mod tests {
             super::module_id(Path::new("client/first/tac.js")),
             super::module_id(Path::new("client/second/tac.js"))
         );
+    }
+
+    #[test]
+    fn a_method_whose_parameters_close_after_its_class_is_rejected() {
+        let source = "\n@Entity({\"adapter\":\"data\"})\n@Table(\"products\")\nclass Product {\n  @Id\n  id = 0;\n}\n@Store(Product, {\"fields\":[\"id\",\"status\"],\"defaultSize\":20,\"maxSize\":100})\nclass Products {\n  behaviors;\n  async findByStatusAndIdGreaterThan(statu:\"id\",\"operator\":\"eq\",\"argument\":0}],\"orderBy\"rue:[]})\n  async available(id) {}\n}\n@Checked()\nclass Input {\n  @Required()\n  @NotEmpty()\n  @Length({\"min\":1,\"max\":64})\n  name = \"\";\n  @Min(0)\n  @Max(100)\n  quantity = 0;\n}\nclass Service {\n  /** @param {Input} value */\n  accept(@Check value) { return value; }\n}\n@Settings({\"prefix\":\"YON_CATALOG_\"})\nclass Settings {\n  @Min(1)\n  @Max(100)\n  size = 20;\n}\n@Setup()\n@WhenProfile(\"test\")\n@WhenSetting({\"name\":\"YON_CATALOG_ENABLED\",\"havingValue\":\"true\",\"matchIfMissing\":false})\nclass Adapters { static co{}; } }\n";
+        assert!(rejected(
+            "server/controllers/FuzzController.js",
+            source,
+            "yon"
+        ));
     }
 }
