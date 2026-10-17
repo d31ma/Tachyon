@@ -1697,7 +1697,7 @@
       "files": [
         {
           "name": "client/manifest.json",
-          "code": "{\n  \"tac\": {\n    \"cache\": [\n      {\n        \"path\": \"/api/products\",\n        \"policy\": \"cache-first\"\n      },\n      {\n        \"path\": \"/api/search/*\",\n        \"policy\": \"network-first\"\n      },\n      {\n        \"path\": \"/api/session\",\n        \"policy\": \"no-store\"\n      }\n    ]\n  }\n}\n"
+          "code": "{\n  \"tac\": {\n    \"python\": {\n      \"runtime\": \"pyodide-314.0.7\",\n      \"profile\": \"offline\"\n    },\n    \"cache\": [\n      {\n        \"path\": \"/api/products\",\n        \"policy\": \"cache-first\"\n      },\n      {\n        \"path\": \"/api/search/*\",\n        \"policy\": \"network-first\"\n      },\n      {\n        \"path\": \"/api/session\",\n        \"policy\": \"no-store\"\n      }\n    ]\n  }\n}\n"
         },
         {
           "name": "client/remotes/ProductsClient.js",

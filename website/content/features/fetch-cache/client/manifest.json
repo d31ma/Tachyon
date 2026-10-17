@@ -1,5 +1,9 @@
 {
   "tac": {
+    "python": {
+      "runtime": "pyodide-314.0.7",
+      "profile": "offline"
+    },
     "cache": [
       {
         "path": "/api/products",
