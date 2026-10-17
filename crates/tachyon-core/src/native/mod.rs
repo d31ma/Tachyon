@@ -148,6 +148,7 @@ mod rust_native_libraries;
 mod rust_page_graph;
 mod rust_service_plan;
 mod rust_web_module;
+mod service_companions;
 mod site;
 mod site_map;
 #[cfg(test)]

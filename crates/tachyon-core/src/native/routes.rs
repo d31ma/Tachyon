@@ -122,12 +122,9 @@ fn parameter_count(route: &str) -> usize {
 fn c_companion_language(companions: &[super::registry::NativeCompanionInput]) -> u8 {
     let mut language = 0;
     for item in companions {
-        let item_language = match item.language {
-            crate::project::NativeCompanion::Rust => 1,
-            crate::project::NativeCompanion::CSharp => 2,
-            _ => 0,
-        };
-        language = language.max(item_language);
+        language = language.max(super::service_companions::ServiceCompanions::number(
+            item.language,
+        ));
     }
     language
 }
@@ -192,6 +189,83 @@ int main(void) {
   return 0;
 }
 "#
+    }
+
+    #[cfg(unix)]
+    fn companion(
+        service: &str,
+        language: crate::project::NativeCompanion,
+    ) -> super::super::registry::NativeCompanionInput {
+        super::super::registry::NativeCompanionInput {
+            snapshot_root: std::path::PathBuf::new(),
+            language,
+            source: std::path::PathBuf::new(),
+            service: String::from(service),
+            class: String::new(),
+            web_assembly: false,
+            application_provider: false,
+        }
+    }
+
+    #[cfg(unix)]
+    fn service_companion_harness() -> &'static str {
+        r#"
+int main(void) {
+  (void)tachyon_local_path;
+  (void)tachyon_bundle_path;
+  (void)tachyon_payload_route_matches;
+  assert(tachyon_service_companion("{\"op\":\"get\",\"route\":\"/\",\"service\":\"gateRoot\"}")==1);
+  assert(tachyon_service_companion("{\"op\":\"call\",\"service\":\"gateSecond\",\"name\":\"doubled\"}")==2);
+  assert(tachyon_service_companion("{\"op\":\"init\",\"service\":\"gateMissing\"}")==0);
+  assert(tachyon_service_companion("{\"op\":\"init\",\"service\":\"webOnly\"}")==0);
+  assert(tachyon_service_companion("{\"op\":\"init\",\"service\":\"applicationClock\"}")==0);
+  assert(tachyon_service_companion("{\"props\":{\"service\":\"gateRoot\"},\"service\":\"gateSecond\"}")==2);
+  assert(tachyon_service_companion("{\"service\":\"gateRoot\",\"service\":\"gateSecond\"}")==0);
+  assert(tachyon_service_companion("{\"service\":\"gate\\u0052oot\"}")==0);
+  return 0;
+}
+"#
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn each_native_call_reaches_the_companion_that_owns_its_service() {
+        use crate::project::NativeCompanion;
+        let mut web_only = companion("webOnly", NativeCompanion::CSharp);
+        web_only.web_assembly = true;
+        let mut provider = companion("applicationClock", NativeCompanion::Rust);
+        provider.application_provider = true;
+        let companions = [
+            companion("gateRoot", NativeCompanion::Rust),
+            companion("gateSecond", NativeCompanion::CSharp),
+            companion("appleOnly", NativeCompanion::Swift),
+            web_only,
+            provider,
+        ];
+        let helper = super::c_local_bundle(&boundary_index(), &companions, "https://tachyon.local");
+        let services = super::super::service_companions::ServiceCompanions::c_table(&companions);
+        assert!(!services.contains("appleOnly"), "{services}");
+        let directory = tempfile::tempdir().expect("C dispatch fixture");
+        let source = directory.path().join("dispatch.c");
+        let binary = directory.path().join("dispatch");
+        std::fs::write(
+            &source,
+            format!(
+                "#include <stdio.h>\n#include <string.h>\n#include <assert.h>\n{helper}\n{services}\n{}",
+                service_companion_harness()
+            ),
+        )
+        .expect("fixture");
+        let compile = compile_c(&source, &binary);
+        assert!(
+            compile.status.success(),
+            "{}",
+            String::from_utf8_lossy(&compile.stderr)
+        );
+        let run = std::process::Command::new(&binary)
+            .status()
+            .expect("C dispatch execution");
+        assert!(run.success());
     }
 
     #[cfg(unix)]

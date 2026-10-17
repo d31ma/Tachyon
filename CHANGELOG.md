@@ -461,6 +461,14 @@ machine contracts have their own, independent major versions.
 
 ### Fixed
 
+- A Windows app that links both a Rust and a C# service now sends each
+  native call to the companion that owns the call's service. Before, the
+  host asked the C# companion first and moved on to Rust only when the C#
+  answer was "unknown service", which `init` gives but `get`, `set`, `call`
+  and `dispose` do not. So a page with a Rust service failed its first
+  field read and rendered nothing. The build now writes a table of linked
+  services and their companions into the Windows host.
+
 - The shared annotation rule table now lists F# (`.fs`) as a Yon language,
   with the same reach as C# (ADR 0073). The checks that ask the table about
   a language directly, such as the role-folder message and the `@Topic`
