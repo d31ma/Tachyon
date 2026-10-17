@@ -583,6 +583,67 @@ fn ci_runs_on_the_develop_integration_branch() -> Result<(), Box<dyn std::error:
 }
 
 #[test]
+fn self_hosted_runners_serve_only_opted_in_branch_pushes() -> Result<(), Box<dyn std::error::Error>>
+{
+    let root = repository_root();
+    let workflow = fs::read_to_string(root.join(".github/workflows/rust-ci.yml"))?;
+    let guard = "github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') && vars.TACHYON_SELF_HOSTED == 'true'";
+    let hosted_fallbacks = [
+        "|| 'ubuntu-latest' }}",
+        "|| 'macos-latest' }}",
+        "|| 'windows-latest' }}",
+        "|| matrix.os }}",
+    ];
+
+    let runner_lines = workflow
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| line.starts_with("runs-on:"))
+        .collect::<Vec<_>>();
+    assert!(!runner_lines.is_empty());
+    for line in runner_lines {
+        assert!(
+            line.contains(guard),
+            "every Rust CI job chooses a self-hosted runner only behind `{guard}`: {line}"
+        );
+        assert!(
+            hosted_fallbacks
+                .iter()
+                .any(|fallback| line.ends_with(fallback)),
+            "every Rust CI job falls back to a GitHub-hosted runner: {line}"
+        );
+    }
+
+    for line in workflow
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| line.contains("self-hosted"))
+    {
+        let guarded_choice = line.starts_with("runs-on:") && line.contains(guard);
+        let matrix_labels = line.starts_with("self_hosted_labels: '[\"self-hosted\",\"tachyon\",");
+        assert!(
+            guarded_choice || matrix_labels,
+            "self-hosted labels appear only in guarded runner choices and matrix label entries: {line}"
+        );
+    }
+    assert!(workflow.contains("vars.TACHYON_SELF_HOSTED_ANDROID == 'true'"));
+    assert!(!workflow.contains("pull_request_target"));
+
+    for other in collect_files(&root.join(".github/workflows"), "yml")? {
+        if other.ends_with("rust-ci.yml") {
+            continue;
+        }
+        let contents = fs::read_to_string(&other)?;
+        assert!(
+            !contents.contains("self-hosted"),
+            "{} must stay on GitHub-hosted runners",
+            other.display()
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn ci_runs_the_browser_gates_that_exist() -> Result<(), Box<dyn std::error::Error>> {
     let root = repository_root();
     let workflow = fs::read_to_string(root.join(".github/workflows/rust-ci.yml"))?;
