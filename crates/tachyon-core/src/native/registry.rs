@@ -229,6 +229,21 @@ fn lowered_body(
     if let Some(module) = events.as_mut() {
         crate::events::describe(module, &identity, &item.snapshot_root, "client")?;
     }
+    let held_off_the_page = [
+        item.web_assembly,
+        events
+            .as_ref()
+            .is_some_and(super::kotlin_stream_clients::KotlinStreamClients::has_streams),
+    ] == [false, true];
+    if held_off_the_page {
+        return Err(super::host::native_tool_failure(
+            1405,
+            &format!(
+                "{}: The page's JavaScript holds @StreamRequest and @SocketRequest connections, so a Kotlin service holds those clients only in its browser build. In a native build, write the client in JavaScript or TypeScript and receive its messages with @OnEvent",
+                identity.display()
+            ),
+        ));
+    }
     crate::route_types::Converters::require_rust_program(
         language,
         &item.snapshot_root,

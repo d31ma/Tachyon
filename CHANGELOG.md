@@ -10,6 +10,22 @@ machine contracts have their own, independent major versions.
 
 ### Added
 
+- A Kotlin Tac `@HTTPClient` interface method may carry `@StreamRequest` or
+  `@SocketRequest`. The page's event bus holds the stream or socket for the
+  Kotlin web service that keeps the client in a `@Needs` field, with the same
+  origin, JSON, size and reconnect rules as JavaScript, and closes it when the
+  service's owner goes away. The service receives each message with
+  `@OnEvent`. A socket client gets `suspend fun send(message: Any)`, which
+  waits for the page like an HTTP call and throws an error whose message
+  starts with its code. A native Kotlin build refuses these clients, because
+  no page holds the connection there; a Kotlin test unit builds them, and
+  `send` fails with `HTTP_MISSING` (ADR 0058, ADR 0060 and ADR 0090
+  amendments).
+- A Kotlin Tac service or Helper may name a Helper from `client/helpers` in a
+  `@Needs` field; each needing class gets its own new Helper, in the browser,
+  in a native build and in a test unit. A Kotlin Helper takes no
+  `@NeedsAll`, `@Lifetime`, `@OnStart`, `@OnStop` or `@OnEvent`, and the
+  build says so at the Helper file (ADR 0091 amendment).
 - C++ Tac test units can now replace and answer what a service needs. A
   `[[Fake]] GreetingClient greetingClient;` field reaches the `[[Needs]]`
   fields of the service that `construct<CounterService>()` makes. A static

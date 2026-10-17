@@ -580,6 +580,31 @@ fn reject_http_verb(
 pub(crate) struct HelperRole;
 
 impl HelperRole {
+    const KOTLIN: &'static str = "kt";
+    const KOTLIN_UNMANAGED: [&'static str; 5] =
+        ["NeedsAll", "Lifetime", "OnStart", "OnStop", "OnEvent"];
+    const KOTLIN_UNMANAGED_ADVICE: &'static str = "A Kotlin Tac Helper is a new object for each class that names it in a @Needs field, so it takes no @NeedsAll, @Lifetime, @OnStart, @OnStop or @OnEvent. Mark each field it needs with @Needs, and move lifecycle and event methods to the Service that needs the Helper";
+
+    fn refuse_kotlin_unmanaged(path: &Path, source: &str) -> Result<(), Failure> {
+        if !crate::declared_contract::DeclaredContract::is_kotlin_helper(path) {
+            return Ok(());
+        }
+        let mask = crate::lexical::code_mask(Self::KOTLIN, source);
+        let input = Input {
+            path,
+            source,
+            code: visible_code(source, mask.code),
+        };
+        let role = annotations(&input, Self::KOTLIN, "tac")?
+            .into_iter()
+            .find(|marker| Self::KOTLIN_UNMANAGED.contains(&marker.name.as_str()))
+            .map(|marker| marker.span.start);
+        let hook = crate::events::first_marker(source, Self::KOTLIN, &Self::KOTLIN_UNMANAGED);
+        role.or(hook).map_or(Ok(()), |at| {
+            Err(input.failure(at, Self::KOTLIN_UNMANAGED_ADVICE))
+        })
+    }
+
     pub(crate) fn keeps_tac_marker(path: &Path) -> bool {
         CsharpTacHelpers::retains_marker(path)
     }
@@ -600,6 +625,7 @@ impl HelperRole {
     pub(crate) fn refuse_in_tac(path: &Path, source: &str) -> Result<(), Failure> {
         crate::fsharp_source::FsharpTacHelpers::source(path, source)?;
         CsharpTacHelpers::source(path, source)?;
+        Self::refuse_kotlin_unmanaged(path, source)?;
         let Some(message) = Self::refusal(path) else {
             return Ok(());
         };

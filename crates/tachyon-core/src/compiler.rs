@@ -546,6 +546,35 @@ mod tests {
     }
 
     #[test]
+    fn a_kotlin_helper_is_supported_and_its_hooks_fail_at_its_own_file() {
+        let service = "@Service\nclass TallyService\n";
+        let root = tempfile::tempdir().expect("project");
+        write_file(root.path(), "client/services/TallyService.kt", service);
+        write_file(
+            root.path(),
+            "client/helpers/StepHelper.kt",
+            "@Helper\nclass StepHelper {}\n",
+        );
+        let path = Path::new("client/services/TallyService.kt");
+        let roles = crate::behavior::ServiceRoles::read(path, service).expect("owner role");
+        ServiceChecks::check_native_source(root.path(), path, &roles.source)
+            .expect("Kotlin Helper source is supported");
+        let failure = helper_failure(
+            service,
+            "\n@Helper\nclass StepHelper {\n    @OnStart\n    fun open() {}\n}\n",
+            "kt",
+        );
+        let diagnostic = &failure.diagnostics()[0];
+        assert!(
+            diagnostic
+                .message
+                .contains("A Kotlin Tac Helper is a new object"),
+            "{failure}"
+        );
+        assert_eq!(diagnostic.spans[0].file, "client/helpers/StepHelper.kt");
+    }
+
+    #[test]
     fn a_csharp_helper_failure_names_the_helper_file() {
         let failure = helper_failure(
             "using System;\n[Service]\nclass TallyService {}\n",
@@ -565,19 +594,16 @@ mod tests {
     }
 
     #[test]
-    fn kotlin_and_swift_helper_failures_name_the_helper_file() {
-        for (extension, service) in [
-            ("kt", "@Service\nclass TallyService\n"),
-            ("swift", "@Service\nfinal class TallyService {}\n"),
-        ] {
-            let helper = "\n@Helper\nclass StepHelper {}\n";
-            let failure = helper_failure(service, helper, extension);
-            let diagnostic = &failure.diagnostics()[0];
-            assert!(diagnostic.message.contains("not available"), "{failure}");
-            let expected = format!("client/helpers/StepHelper.{extension}");
-            assert_eq!(diagnostic.spans[0].file, expected, "{failure}");
-            assert_eq!(diagnostic.spans[0].start, 1, "{failure}");
-        }
+    fn a_swift_helper_failure_names_the_helper_file() {
+        let failure = helper_failure(
+            "@Service\nfinal class TallyService {}\n",
+            "\n@Helper\nclass StepHelper {}\n",
+            "swift",
+        );
+        let diagnostic = &failure.diagnostics()[0];
+        assert!(diagnostic.message.contains("not available"), "{failure}");
+        assert_eq!(diagnostic.spans[0].file, "client/helpers/StepHelper.swift");
+        assert_eq!(diagnostic.spans[0].start, 1, "{failure}");
     }
 
     fn compose(root: &Path, page: &str, name: &str, markup: &str) {

@@ -245,8 +245,9 @@ pub(crate) struct Module {
 }
 
 impl Module {
-    fn injected_ruby(modules: Vec<Self>, extension: &str, environment: &str) -> Vec<Self> {
+    fn injected_dependencies(modules: Vec<Self>, extension: &str, environment: &str) -> Vec<Self> {
         let ruby_tac = [extension == "rb", environment == "tac"] == [true, true];
+        let kotlin_tac = [extension == "kt", environment == "tac"] == [true, true];
         let paths = modules.iter().map(|module| module.path.as_path());
         let contracts = crate::declared_contract::DeclaredContract::injected_names(paths);
         let paths = modules.iter().map(|module| module.path.as_path());
@@ -254,7 +255,10 @@ impl Module {
         modules
             .into_iter()
             .map(|module| {
-                let injected = ruby_tac
+                let helper =
+                    crate::declared_contract::DeclaredContract::is_kotlin_helper(&module.path);
+                let injected = [ruby_tac, [kotlin_tac, helper] == [true, true]]
+                    .contains(&true)
                     .then(|| {
                         crate::declared_contract::DeclaredContract::injected_with_remotes(
                             &module.path,
@@ -451,7 +455,7 @@ impl Module {
             return Ok(utilities.changed().then_some(source));
         }
         refuse_tac_helpers(&modules, extension, environment)?;
-        let mut modules = Module::injected_ruby(modules, extension, environment);
+        let mut modules = Module::injected_dependencies(modules, extension, environment);
         csharp_test_helpers::CsharpTestHelpers::prune(&root, input, &mut modules, total)?;
         HelperCallers::check(entry, &source, &modules, environment)?;
         let injected = injected_contracts(entry, &source, &modules, environment);
@@ -2351,21 +2355,16 @@ mod tests {
 
     #[test]
     fn a_helper_beside_a_native_tac_service_fails_at_its_own_file() {
-        for (extension, role) in [
-            ("swift", "@Helper\nfinal class MoneyHelper {}"),
-            ("kt", "@Helper\nclass MoneyHelper {}"),
-        ] {
-            let root = tempfile::tempdir().expect("project");
-            let entry = format!("client/services/ShellService.{extension}");
-            write(root.path(), &entry, "");
-            let helper = format!("client/helpers/MoneyHelper.{extension}");
-            write(root.path(), &helper, role);
-            let failure = assemble(root.path(), Path::new(&entry), "", "tac")
-                .expect_err("unsupported compiled Helper role");
-            let diagnostic = &failure.diagnostics()[0];
-            assert_eq!(diagnostic.code.to_string(), "TY1308", "{failure}");
-            assert_eq!(diagnostic.spans[0].file, helper, "{failure}");
-        }
+        let root = tempfile::tempdir().expect("project");
+        let entry = "client/services/ShellService.swift";
+        write(root.path(), entry, "");
+        let helper = "client/helpers/MoneyHelper.swift";
+        write(root.path(), helper, "@Helper\nfinal class MoneyHelper {}");
+        let failure = assemble(root.path(), Path::new(entry), "", "tac")
+            .expect_err("unsupported compiled Helper role");
+        let diagnostic = &failure.diagnostics()[0];
+        assert_eq!(diagnostic.code.to_string(), "TY1308", "{failure}");
+        assert_eq!(diagnostic.spans[0].file, helper, "{failure}");
     }
 
     #[test]

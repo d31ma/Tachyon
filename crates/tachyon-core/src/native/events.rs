@@ -1,3 +1,4 @@
+use super::kotlin_stream_clients::KotlinStreamClients;
 use crate::{
     Failure,
     companion::CompanionLanguage,
@@ -93,13 +94,22 @@ pub(super) fn prepare(
             entries: String::new(),
         });
     };
-    validate_module(language, module, path)?;
+    let owner = validate_module(language, module, path)?;
     let mut output = Prepared {
         source: module.source.clone(),
         excluded: Vec::new(),
         entries: String::new(),
     };
-    if let Some(metadata) = module.types.first() {
+    if let Some(owner) = owner.as_deref() {
+        output.entries = KotlinStreamClients::entries(module, owner, path)?;
+    }
+    let metadata = owner.as_deref().and_then(|owner| {
+        module
+            .types
+            .iter()
+            .find(|event_type| event_type.name == owner)
+    });
+    if let Some(metadata) = metadata {
         add_members(language, module, metadata, path, &mut output)?;
     }
     let (rewritten, publishers) = publisher_members(language, &output.source);
@@ -117,7 +127,13 @@ fn add_members(
 ) -> Result<(), Failure> {
     let mut seen = BTreeSet::new();
     for method in &module.methods {
-        if !seen.insert((method.owner.as_str(), method.name.as_str())) {
+        let of_a_client = module.types.iter().any(|event_type| {
+            [
+                event_type.name == method.owner,
+                KotlinStreamClients::is_client_of(event_type, &metadata.name),
+            ] == [true, true]
+        });
+        if of_a_client || !seen.insert((method.owner.as_str(), method.name.as_str())) {
             continue;
         }
         if is_asynchronous(method) {
@@ -157,21 +173,29 @@ fn validate_module(
     language: NativeCompanion,
     module: &EventModule,
     path: &Path,
-) -> Result<(), Failure> {
-    if module.types.len() > 1 {
-        return Err(failure(
-            path,
-            "Native events belong to the page companion type only.",
-        ));
-    }
-    let Some(metadata) = module.types.first() else {
-        return Ok(());
-    };
+) -> Result<Option<String>, Failure> {
     let owner = crate::companion::owner_name(
         companion_language(language),
         &module.source,
         &path.to_string_lossy(),
     );
+    let page_types: Vec<&EventType> = module
+        .types
+        .iter()
+        .filter(|event_type| {
+            let name = owner.as_deref().unwrap_or("");
+            !KotlinStreamClients::is_client_of(event_type, name)
+        })
+        .collect();
+    if page_types.len() > 1 {
+        return Err(failure(
+            path,
+            "Native events belong to the page companion type only.",
+        ));
+    }
+    let Some(metadata) = page_types.first() else {
+        return Ok(owner);
+    };
     if owner.as_deref() != Some(&metadata.name) {
         return Err(failure(
             path,
@@ -190,7 +214,7 @@ fn validate_module(
             "Native event metadata exceeds its 32-topic/128-listener bounds.",
         ));
     }
-    Ok(())
+    Ok(owner)
 }
 
 fn publisher_members(language: NativeCompanion, source: &str) -> (String, Vec<String>) {
@@ -312,7 +336,7 @@ fn rust_publisher(line: &str) -> Option<PublisherField> {
     })
 }
 
-fn string_literal(language: NativeCompanion, text: &str) -> String {
+pub(super) fn string_literal(language: NativeCompanion, text: &str) -> String {
     let mut literal = String::with_capacity(text.len() + 2);
     literal.push('"');
     for character in text.chars() {

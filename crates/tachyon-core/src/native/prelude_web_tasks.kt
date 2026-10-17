@@ -5,6 +5,9 @@ private external fun tacHostHttpStart(ticket: Int, text: String)
 @JsFun("(ticket) => globalThis[Symbol.for('tachyon.kotlin.host')].httpCancel(ticket)")
 private external fun tacHostHttpCancel(ticket: Int)
 
+@JsFun("(ticket, owner, text) => globalThis[Symbol.for('tachyon.kotlin.host')].socket(ticket, owner, text)")
+private external fun tacHostSocket(ticket: Int, owner: String, text: String)
+
 @JsFun("(task, text) => globalThis[Symbol.for('tachyon.kotlin.host')].taskDone(task, text)")
 private external fun tacHostTaskDone(task: Int, text: String)
 
@@ -86,14 +89,17 @@ private object TacHttpTickets {
     private var last = 0
     private val waiting = HashMap<Int, Pair<TacRunningTask, kotlin.coroutines.Continuation<String>>>()
 
-    suspend fun exchange(request: String): String {
+    suspend fun exchange(request: String): String =
+        awaited({ ticket -> tacHostHttpCancel(ticket) }) { ticket, _ -> tacHostHttpStart(ticket, request) }
+
+    suspend fun awaited(cancel: (Int) -> Unit, start: (Int, String) -> Unit): String {
         val running = TacTasks.current ?: return OUTSIDE_TASK
         return kotlin.coroutines.suspendCoroutine { continuation ->
             last += 1
             val ticket = last
             waiting[ticket] = running to continuation
-            running.cancel = { waiting.remove(ticket); tacHostHttpCancel(ticket) }
-            tacHostHttpStart(ticket, request)
+            running.cancel = { waiting.remove(ticket); cancel(ticket) }
+            start(ticket, running.owner)
         }
     }
 
@@ -107,3 +113,26 @@ private object TacHttpTickets {
 @OptIn(kotlin.js.ExperimentalJsExport::class)
 @JsExport
 fun tacHttpSettle(ticket: Int, answer: String) { TacHttpTickets.settle(ticket, answer) }
+
+private class TacSocketFailure(val code: String, message: String) : RuntimeException("$code: $message")
+
+private object TacSockets {
+    private const val MOST_BYTES = 65536
+    private val CODES = setOf("HTTP_MISSING", "HTTP_REQUEST", "CANCELLED")
+
+    suspend fun send(client: String, message: Any): Unit {
+        val text = try { tacEncode(tacPlain(message)) } catch (_: RuntimeException) { null }
+        if (text == null || text.encodeToByteArray().size > MOST_BYTES) {
+            throw TacSocketFailure("HTTP_BODY", "A socket message is JSON of at most 64 KiB.")
+        }
+        val request = "{\"client\":${tacQuote(client)},\"message\":$text}"
+        val answer = TacHttpTickets.awaited({}) { ticket, owner -> tacHostSocket(ticket, owner, request) }
+        val parsed = tacObject(try { tacParseJson(answer) } catch (_: RuntimeException) { null })
+        val failure = parsed?.get("error") as? Map<*, *>
+        if (failure == null && parsed?.containsKey("value") == true) return
+        val code = (failure?.get("code") as? String)?.takeIf { it in CODES } ?: "HTTP_NETWORK"
+        throw TacSocketFailure(code, "The socket message was not sent.")
+    }
+}
+
+private suspend fun behaviorSocketSend(client: String, message: Any) { TacSockets.send(client, message) }

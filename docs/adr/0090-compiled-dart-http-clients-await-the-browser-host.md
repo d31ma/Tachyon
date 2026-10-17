@@ -500,3 +500,38 @@ second, aborts every pending fetch, starts no new one, runs both `OnStop`
 hooks before any woken call, and settles each call with `CANCELLED`. Before
 the change every standard-Go case hung past 30 seconds, and under TinyGo the
 "asks again" cases started fetches that were never aborted.
+
+## Kotlin streams and sockets — 2026-10-17
+
+A Kotlin HTTPClient interface method may carry `@StreamRequest` or
+`@SocketRequest`, as in Go. The method takes one parameter whose model type
+says what each message holds, for example `fun receive(tick: Tick)`, and has
+no result. The generated client class keeps an empty method. A Kotlin client
+with only stream or socket methods needs no Setup: it has no behavior context.
+
+The page's JavaScript still holds the connection. A Kotlin web service that
+keeps the client in a field (`@Needs private val ticks: TicksClient`) lists the
+client's streams in its `init` answer, next to its listeners, and the page's
+event bus opens and closes them exactly as it does for Go, with the same
+limits. A Kotlin service holds at most 16 such methods through its clients.
+
+A socket client gets a generated `suspend fun send(message: Any)`. It writes
+the message as JSON and waits for the page like an HTTP call: the task
+releases the service, the bus sends or queues the text, and `send` returns or
+throws an error whose message starts with its code: `HTTP_NETWORK` (for
+example, 16 messages already wait for the socket to open), `HTTP_MISSING`
+(the service does not hold the client), `HTTP_REQUEST` (no service task is
+running) or `CANCELLED` (the owner went away). A message larger than 64 KiB fails with `HTTP_BODY`. The Kotlin host
+reuses the shell's socket sender that the Go program uses.
+
+A native Kotlin build (Android, desktop) has no page event bus, so a Kotlin
+service there that holds a stream or socket client stops the build with
+TY1405 and says to write that client in JavaScript or TypeScript. A Kotlin
+test unit builds the clients, and `send` fails with `HTTP_MISSING`, as in Go.
+
+Evidence: `tac_web::kotlin_stream_tests` builds a real Kotlin service to
+WebAssembly and runs it under Node with the real event bus and fake
+`EventSource` and `WebSocket` classes, with the same checks as the Go test.
+`native::kotlin_stream_clients_tests` checks the generated stream entries,
+the `send` method and the native refusal, and
+`client_tests::kotlin_stream_unit_tests` runs a Kotlin test unit on the JVM.

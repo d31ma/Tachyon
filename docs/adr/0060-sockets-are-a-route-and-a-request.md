@@ -154,3 +154,10 @@ client in a field; the Go service receives each message with `// @OnEvent`,
 and the generated `Send(message any) error` writes to the socket and returns
 an error code instead of a rejected promise. See ADR 0090, "Go streams and
 sockets". The other compiled Tac languages still refuse `@SocketRequest`.
+
+## Amendment (2026-10-17): Kotlin socket clients
+
+`@SocketRequest` is also written on a Kotlin HTTPClient interface method. The
+page's event bus holds the `WebSocket` for the Kotlin web service that keeps
+the client in a field, and the generated `suspend fun send(message: Any)`
+writes to the socket. See ADR 0090, "Kotlin streams and sockets".

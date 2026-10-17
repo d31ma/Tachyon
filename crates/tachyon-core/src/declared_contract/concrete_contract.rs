@@ -31,9 +31,11 @@ impl<'a> ConcreteContract<'a> {
     const TASKS: [&'static str; 2] = ["Task", "System.Threading.Tasks.Task"];
     const FUTURE: &'static str = "Future";
     const GO_FIELDS: [&'static str; 2] = ["struct{}", "struct {\n\tbehaviors *BehaviorContext\n}"];
-    const GO_HELD: [&'static str; 2] = ["streamrequest", "socketrequest"];
-    const GO_SOCKET: [&'static str; 1] = ["socketrequest"];
+    const HELD: [&'static str; 2] = ["streamrequest", "socketrequest"];
+    const SOCKET: [&'static str; 1] = ["socketrequest"];
     const GO_SEND: &'static str = "\nfunc ({receiver} *{owner}) Send(message any) error {\n\treturn behaviorSocketSend(\"{owner}\", message)\n}\n";
+    const KOTLIN: &'static str = "kt";
+    const KOTLIN_SEND: &'static str = "\n{indent}suspend fun send(message: Any) {\n{indent}{indent}behaviorSocketSend(\"{owner}\", message)\n{indent}}\n";
     const RUST_FIELDS: [&'static str; 2] = [";", " { behaviors: BehaviorContext }"];
     const TRAIT: &'static str = "trait";
     const RUST_DEFAULTS: [&'static str; 2] = [
@@ -141,7 +143,7 @@ impl<'a> ConcreteContract<'a> {
 
     fn braced_edits(&self, declaration: &ContractDeclaration) -> Vec<SourceEdit> {
         let members = declaration.members(self.form, &self.code);
-        let needs_context = declaration.role.needs_context(&members);
+        let needs_context = declaration.role.needs_context(&self.exchanged(&members));
         let mut edits: Vec<SourceEdit> = self
             .header(declaration, needs_context)
             .into_iter()
@@ -154,7 +156,34 @@ impl<'a> ConcreteContract<'a> {
                 .filter_map(|member| self.method_edit(member)),
         );
         edits.extend(self.context_edits(declaration, &members, needs_context));
+        edits.extend(self.kotlin_send(declaration, &members));
         edits
+    }
+
+    fn exchanged(&self, members: &[ContractMember]) -> Vec<ContractMember> {
+        let held_by_the_page = [self.tac, self.form.language == Self::KOTLIN] == [true, true];
+        members
+            .iter()
+            .filter(|member| !held_by_the_page || !member.is_marked_with(&Self::HELD))
+            .cloned()
+            .collect()
+    }
+
+    fn kotlin_send(
+        &self,
+        declaration: &ContractDeclaration,
+        members: &[ContractMember],
+    ) -> Option<SourceEdit> {
+        let socket = members
+            .iter()
+            .any(|member| member.is_marked_with(&Self::SOCKET));
+        let wanted = [self.tac, self.form.language == Self::KOTLIN, socket];
+        (wanted == [true, true, true]).then(|| {
+            let text = Self::KOTLIN_SEND
+                .replace("{indent}", &self.indent(members))
+                .replace("{owner}", &declaration.name);
+            (declaration.close..declaration.close, text)
+        })
     }
 
     fn is_bodiless_method(member: &ContractMember) -> bool {
@@ -310,7 +339,7 @@ impl<'a> ConcreteContract<'a> {
         let members = declaration.members(self.form, &self.code);
         let exchanged: Vec<ContractMember> = members
             .iter()
-            .filter(|member| !member.is_marked_with(&Self::GO_HELD))
+            .filter(|member| !member.is_marked_with(&Self::HELD))
             .cloned()
             .collect();
         let needs_context = declaration.role.needs_context(&exchanged);
@@ -341,7 +370,7 @@ impl<'a> ConcreteContract<'a> {
     fn go_send(&self, declaration: &ContractDeclaration, members: &[ContractMember]) -> String {
         let socket = members
             .iter()
-            .any(|member| member.is_marked_with(&Self::GO_SOCKET));
+            .any(|member| member.is_marked_with(&Self::SOCKET));
         if [self.tac, socket] != [true, true] {
             return String::new();
         }

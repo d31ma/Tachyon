@@ -742,12 +742,13 @@ fn the_layout_gate_runs_the_rules_for_every_file() {
 fn deeper_paths_share_the_table_messages() {
     assert!(AnnotationRules::no_arguments("Service").starts_with("Service accepts no arguments"));
     assert!(AnnotationRules::belongs("Cached").starts_with("Cached belongs on a method"));
-    let refusal = AnnotationRules::unavailable("Helper", "kt", "tac").expect("browser role");
+    let refusal = AnnotationRules::unavailable("Helper", "swift", "tac").expect("browser role");
     assert!(
         refusal.contains("qualified same-language Helper constructor"),
         "{refusal}"
     );
     assert_eq!(AnnotationRules::unavailable("Helper", "dart", "tac"), None);
+    assert_eq!(AnnotationRules::unavailable("Helper", "kt", "tac"), None);
     assert_eq!(
         AnnotationRules::unavailable("StreamRoute", "fs", "yon"),
         None

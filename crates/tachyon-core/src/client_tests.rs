@@ -64,8 +64,14 @@ mod java_publisher_tests;
 
 #[cfg(test)]
 mod kotlin_construct_tests;
+
+#[cfg(test)]
+mod kotlin_helper_unit_tests;
+
 #[cfg(test)]
 mod kotlin_document_title_tests;
+#[cfg(test)]
+mod kotlin_stream_unit_tests;
 #[cfg(test)]
 mod swift_construct_tests;
 

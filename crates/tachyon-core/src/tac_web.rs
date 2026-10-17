@@ -563,6 +563,7 @@ globalThis[Symbol.for('tachyon.kotlin.host')] = {
   httpStart: (ticket, text) => { kotlinHttp.start(ticket, text, (answer) => kotlin.tacHttpSettle(ticket, answer)) },
   httpCancel: (ticket) => { kotlinHttp.cancel(ticket) },
   taskDone: (task, text) => { taskAnswers.done(task, text) },
+  socket: (ticket, owner, text) => { socketHost(owner, text).then((answer) => kotlin.tacHttpSettle(ticket, answer)) },
 }
 const kotlin = await import('./kotlin/services.js')
 const transport = (text) => kotlin.tacInvoke(text)
@@ -870,6 +871,12 @@ mod reach_tests;
 
 #[cfg(test)]
 mod go_stream_tests;
+
+#[cfg(test)]
+mod kotlin_helper_tests;
+
+#[cfg(test)]
+mod kotlin_stream_tests;
 
 #[cfg(test)]
 mod rust_embedding_tests;

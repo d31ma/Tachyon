@@ -133,3 +133,11 @@ the client in a field declares the stream, the page's event bus opens it with
 the same rules, and the Go service receives each message with `// @OnEvent`
 on a method whose parameter is the message model. See ADR 0090, "Go streams
 and sockets". The other compiled Tac languages still refuse `@StreamRequest`.
+
+## Amendment (2026-10-17): Kotlin stream clients
+
+`@StreamRequest` is also written on a Kotlin HTTPClient interface method,
+with the same rules as Go: the page's JavaScript holds the `EventSource` for
+the Kotlin web service that keeps the client in a field, and that service
+receives each message with `@OnEvent`. See ADR 0090, "Kotlin streams and
+sockets".

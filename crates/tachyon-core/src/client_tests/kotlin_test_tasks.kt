@@ -7,3 +7,7 @@ object BehaviorTasks {
         checkNotNull(outcome) { STILL_WAITING }.getOrThrow()
     }
 }
+
+class BehaviorSocketFailure(val code: String) : RuntimeException("$code: A test unit has no page, so the socket message was not sent.")
+
+suspend fun behaviorSocketSend(client: String, message: Any) { throw BehaviorSocketFailure("HTTP_MISSING") }

@@ -414,6 +414,14 @@ fn strip_field_modifier(declaration: &str) -> Option<&str> {
     None
 }
 
+pub(crate) fn first_marker(source: &str, language: &str, names: &[&str]) -> Option<usize> {
+    scan(source, language)
+        .markers
+        .into_iter()
+        .find(|marker| names.contains(&marker.name.as_str()))
+        .map(|marker| marker.span.start)
+}
+
 fn scan(source: &str, language: &str) -> EventScan {
     let mask = crate::lexical::code_mask(language, source);
     let mut code = masked_code(source, &mask.code);
@@ -1684,10 +1692,10 @@ mod tests {
                 "@StreamRequest is not available in Java Tac code; it works in JavaScript, TypeScript",
             ),
             (
-                "client/services/ChatService.kt",
+                "client/services/ChatService.swift",
                 "tac",
-                "@HTTPClient(\"/chat\")\ninterface ChatClient {\n    @SocketRequest\n    fun receive(message: ChatMessage)\n}\n",
-                "@SocketRequest is not available in Kotlin Tac code",
+                "@HTTPClient(\"/chat\")\nprotocol ChatClient {\n    @SocketRequest\n    func receive(message: ChatMessage)\n}\n",
+                "@SocketRequest is not available in Swift Tac code",
             ),
             (
                 "server/controllers/TicksController.js",

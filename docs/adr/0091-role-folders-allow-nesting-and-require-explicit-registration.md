@@ -115,3 +115,17 @@ their own rules. A folder that is not a role folder never needs a marker.
 `ty migrate check` lists missing markers (`role.marker`), imports of the other
 realm (`role.realm_import`) and the dependency findings; `ty migrate fix
 --write` renames a file whose class has another name.
+
+## Amendment (2026-10-17): Kotlin Tac Helpers
+
+A Kotlin Tac service or Helper may name a Helper from `client/helpers` in a
+`@Needs` field. The field becomes `private val rates: TaxRateHelper =
+TaxRateHelper()`, as a Kotlin client field does, so each class that needs a
+Helper makes its own new one, in the browser, in a native build and in a
+test unit. A Helper therefore has a constructor without parameters. It has
+no shared lifetime and no lifecycle of its own, so a Kotlin Helper that
+carries `@NeedsAll`, `@Lifetime`, `@OnStart`, `@OnStop` or `@OnEvent` stops
+the build at the Helper file and says to mark each needed field with
+`@Needs` and move lifecycle and event methods to the Service. A Kotlin test
+unit replaces a needed Helper with an `@Fake` field, as it does a client.
+Swift still refuses Helper.

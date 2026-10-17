@@ -21,6 +21,8 @@ class TacListener(
 }
 class TacHook(val destroy: Boolean, val invoke: () -> Unit)
 
+class TacStream(val client: String, val path: String, val event: String, val socket: Boolean, val models: String?)
+
 class ApplicationEventPublisher {
     fun <T : Any> publishEvent(value: T, retain: Boolean = false) {
         val plain = tacPlain(value)
@@ -400,13 +402,23 @@ private fun tacDescribeListener(key: String, listener: TacListener): Map<String,
         "condition" to listener.condition,
     )
 
+private fun tacDescribeStream(stream: TacStream): Map<String, Any?> =
+    linkedMapOf(
+        "client" to stream.client,
+        "path" to stream.path,
+        "event" to stream.event,
+        "socket" to stream.socket,
+        "models" to stream.models?.let { tacParseJson(it) },
+    )
+
 private fun tacDescribe(members: Map<String, Any>): String {
     val fields = members.entries.filter { it.value is TacField }.map { it.key }
     val methods = members.entries.filter { it.value is TacMethod || it.value is TacTask }.map { it.key }
     val tasks = members.entries.filter { it.value is TacTask && tacTaskHost() }.map { it.key }
     if (!tacPageListeners) return "{\"value\":{\"fields\":${tacEncode(fields)},\"methods\":${tacEncode(methods)}}}"
     val listeners = members.entries.mapNotNull { (key, member) -> (member as? TacListener)?.let { tacDescribeListener(key, it) } }
-    return "{\"value\":{\"fields\":${tacEncode(fields)},\"methods\":${tacEncode(methods)},\"asyncMethods\":${tacEncode(tasks)},\"listeners\":${tacEncode(listeners)}}}"
+    val streams = members.values.mapNotNull { (it as? TacStream)?.let(::tacDescribeStream) }
+    return "{\"value\":{\"fields\":${tacEncode(fields)},\"methods\":${tacEncode(methods)},\"asyncMethods\":${tacEncode(tasks)},\"listeners\":${tacEncode(listeners)},\"streams\":${tacEncode(streams)}}}"
 }
 
 private fun tacReceive(activation: TacActivation, key: String, value: Any?): String {

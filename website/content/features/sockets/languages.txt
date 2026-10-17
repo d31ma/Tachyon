@@ -26,12 +26,16 @@ fields keep state in a Cell or a lock.
 When OnOpen or OnMessage fails, OnError runs and the socket stays
 open, as in Jakarta. The error text goes to the server log only.
 
-In the browser, @SocketRequest is JavaScript, TypeScript or Go.
-Every Tac language receives the messages with @OnEvent. A Go
-client is an interface method; the page holds the socket for the
+In the browser, @SocketRequest is JavaScript, TypeScript, Go or
+Kotlin. Every Tac language receives the messages with @OnEvent. A
+Go client is an interface method; the page holds the socket for the
 Go service that keeps the client in a // @Needs field, and the
 generated Send(message any) error returns HTTP_NETWORK when 16
-messages already wait for the socket to open.
+messages already wait for the socket to open. A Kotlin client is an
+interface method such as fun receive(message: ChatMessage); the
+page holds the socket for the Kotlin web service that keeps the
+client in a @Needs field, and the generated suspend send(message)
+throws an error whose message starts with HTTP_NETWORK in that case.
 
 Limits: messages are JSON text of at most 64 KiB, at most 32
 sockets are open at once, five idle minutes or one hour close a
