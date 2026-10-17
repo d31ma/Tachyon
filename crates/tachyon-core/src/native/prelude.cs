@@ -461,91 +461,28 @@ public partial class Tac
             SendEvent(owner.Route, owner.Service, owner.Owner, next.Name, next.Json, next.Retain);
         }
     }
-    // A service has one instance per page (route) unless it is a prototype,
-    // which belongs to the one activation that created it (CONTEXT.md, ADR 0030).
-    private sealed class ServiceNode(string route, string service, string owner, Dictionary<string, TacMember> members, string capabilities, System.Threading.CancellationTokenSource lifetime)
-    {
-        internal readonly string Route = route;
-        internal readonly string Service = service;
-        internal readonly string Owner = owner;
-        internal readonly Dictionary<string, TacMember> Members = members;
-        internal readonly string Capabilities = capabilities;
-        internal readonly System.Threading.CancellationTokenSource Lifetime = lifetime;
-        internal bool Started;
-        internal bool Disposed;
-        internal List<TacMember> Hooks(bool destroy) => Members
-            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-            .Select(pair => pair.Value)
-            .Where(member => member.Lifecycle != null && member.Destroy == destroy)
-            .ToList();
-    }
-    private const string ProviderOwnerPrefix = "00000000-0000-4000-a000-";
-    private static readonly List<ServiceNode> PageNodes = new();
-    private static long ProviderOwners;
-    private static bool ReservedOwner(string owner) => owner.StartsWith(ProviderOwnerPrefix, StringComparison.OrdinalIgnoreCase);
-    private static string ProviderOwner() => ProviderOwnerPrefix + (++ProviderOwners).ToString("x12", CultureInfo.InvariantCulture);
-    private static ServiceNode ObtainNode(string route, string service, string owner, System.Threading.CancellationTokenSource activation, out bool created)
-    {
-        var prototype = TacServices.Prototype(service);
-        var shared = prototype ? null : PageNodes.Find(node => node.Owner.Length == 0 && node.Route == route && node.Service == service);
-        created = shared == null;
-        return shared ?? CreateNode(route, service, prototype ? owner : "", activation);
-    }
-    private static ServiceNode CreateNode(string route, string service, string owner, System.Threading.CancellationTokenSource activation)
-    {
-        var capabilities = owner.Length > 0 ? owner : ProviderOwner();
-        var lifetime = owner.Length > 0 ? null : new System.Threading.CancellationTokenSource();
-        Dictionary<string, TacMember> members = null;
-        try { members = CreateMembers(capabilities, service, lifetime ?? activation); }
-        finally {
-            if (members == null) { NativeCapabilities.Dispose(capabilities); lifetime?.Cancel(); lifetime?.Dispose(); }
-        }
-        return members == null ? null : new ServiceNode(route, service, owner, members, capabilities, lifetime);
-    }
-    private static void StartNode(ServiceNode node)
-    {
-        if (node.Started) return;
-        node.Started = true;
-        foreach (var hook in node.Hooks(false)) hook.Lifecycle();
-    }
-    private static void DisposeNode(ServiceNode node)
-    {
-        if (node.Disposed) return;
-        node.Disposed = true;
-        PageNodes.Remove(node);
-        if (node.Started) {
-            foreach (var hook in node.Hooks(true)) { try { hook.Lifecycle(); } catch (Exception) { EventFailure(); } }
-        }
-        NativeCapabilities.Dispose(node.Capabilities);
-        node.Lifetime?.Cancel();
-        node.Lifetime?.Dispose();
-    }
-    private static void RetireActivation(Activation owner)
+    private static void DisposeActivation(Activation owner)
     {
         owner.Disposed = true;
         owner.Cancellation.Cancel();
         owner.Cancellation.Dispose();
+        NativeCapabilities.Dispose(owner.Owner);
         owner.Queue.Clear(); owner.Retained.Clear(); owner.Deferred.Clear();
+        foreach (var member in owner.Members.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Value)) {
+            if (member.Lifecycle != null && member.Destroy) { try { member.Lifecycle(); } catch (Exception) { EventFailure(); } }
+        }
     }
     private static void DisposeOwner(string id)
     {
         if (!Activations.Remove(id, out var owner)) return;
         if (Executing == owner) Executing = null;
-        RetireActivation(owner);
-        foreach (var node in PageNodes.Where(node => node.Owner == id).Reverse().ToList()) DisposeNode(node);
+        DisposeActivation(owner);
     }
     private static void DisposeAll()
     {
         var owners = Activations.Values.ToList();
         Activations.Clear(); Executing = null;
-        foreach (var owner in owners) RetireActivation(owner);
-        var nodes = PageNodes
-            .Select((node, index) => (Node: node, Index: index))
-            .OrderBy(entry => entry.Node.Route, StringComparer.Ordinal)
-            .ThenByDescending(entry => entry.Index)
-            .Select(entry => entry.Node)
-            .ToList();
-        foreach (var node in nodes) DisposeNode(node);
+        foreach (var owner in owners) DisposeActivation(owner);
     }
     private const int StartUpRequestLimit = 1048576;
     private const int MemberRequestLimit = 65536;
@@ -553,12 +490,14 @@ public partial class Tac
         "{\"error\":" + Encode($"The {subject} is {size} bytes. The limit is {limit} bytes. Pass less data to the service.") + "}";
     private static string DescribeTaskMethods(List<string> methods) =>
         methods.Count == 0 ? "" : ",\"asyncMethods\":" + Encode(methods);
-    private static Dictionary<string, TacMember> CreateMembers(string capabilities, string service, System.Threading.CancellationTokenSource lifetime)
+    private static Dictionary<string, TacMember> CreateMembers(string owner, string service, out System.Threading.CancellationTokenSource lifetime)
     {
+        lifetime = new();
         var previous = CreatingCancellation;
         CreatingCancellation = lifetime;
-        try { return NativeCapabilities.Create(capabilities, () => TacServices.Members(service)); }
-        finally { CreatingCancellation = previous; }
+        try { return NativeCapabilities.Create(owner, () => TacServices.Members(service)); }
+        catch { lifetime.Cancel(); lifetime.Dispose(); throw; }
+        finally { CreatingCancellation = previous; CreatingProps = null; }
     }
 
     private static string Handle(string request)
@@ -574,22 +513,17 @@ public partial class Tac
             if (operation == "host-dispose") { DisposeAll(); return "{\"value\":null}"; }
             var route = parsed?["route"]?.GetValue<string>() ?? "";
             var owner = parsed?["owner"]?.GetValue<string>() ?? "";
-            if (!Guid.TryParseExact(owner, "D", out _) || ReservedOwner(owner)) throw new ArgumentException("Missing native owner identity.");
+            if (!Guid.TryParseExact(owner, "D", out _)) throw new ArgumentException("Missing native owner identity.");
             var service = parsed?["service"]?.GetValue<string>() ?? "";
             if (service.Length == 0) return "{\"error\":\"Missing companion name.\",\"code\":\"TY_NATIVE_SERVICE\"}";
             Activations.TryGetValue(owner, out var existing);
             if (operation == "init" && (existing == null || existing.Route != route || existing.Service != service)) {
                 if (existing != null) DisposeOwner(owner);
-                if (Activations.Count >= 256) throw new ArgumentException("Too many native activations.");
-                var lifetime = new System.Threading.CancellationTokenSource();
-                ServiceNode node;
-                bool created;
                 CreatingProps = parsed["props"] as JsonObject;
-                try { node = ObtainNode(route, service, owner, lifetime, out created); }
-                catch { lifetime.Cancel(); lifetime.Dispose(); throw; }
-                finally { CreatingProps = null; }
-                if (node == null) { lifetime.Cancel(); lifetime.Dispose(); return "{\"error\":\"Unknown native service.\",\"code\":\"TY_NATIVE_SERVICE\"}"; }
-                var activation = new Activation(route, service, owner, node.Members, lifetime);
+                var table = CreateMembers(owner, service, out var lifetime);
+                if (table == null) { lifetime.Cancel(); lifetime.Dispose(); NativeCapabilities.Dispose(owner); return "{\"error\":\"Unknown native service.\",\"code\":\"TY_NATIVE_SERVICE\"}"; }
+                if (Activations.Count >= 256) { lifetime.Cancel(); lifetime.Dispose(); NativeCapabilities.Dispose(owner); throw new ArgumentException("Too many native activations."); }
+                var activation = new Activation(route, service, owner, table, lifetime);
                 Activations[owner] = activation; Executing = activation;
                 try {
                     if (parsed["props"] is JsonObject props)
@@ -599,14 +533,10 @@ public partial class Tac
                             if ((required.Contains("*") || required.Contains(property)) && activation.Members.TryGetValue(property, out var filled) && filled.Write != null)
                                 filled.Write(Value(given));
                     }
-                    StartNode(node);
+                    foreach (var member in activation.Members.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Value))
+                        if (member.Lifecycle != null && !member.Destroy) member.Lifecycle();
                     Drain(activation);
-                } catch (Exception) {
-                    if (created) DisposeNode(node);
-                    DisposeOwner(owner);
-                    throw;
-                }
-                if (created) PageNodes.Add(node);
+                } catch (Exception) { DisposeOwner(owner); throw; }
             }
             if (!Activations.TryGetValue(owner, out var active) || active.Route != route || active.Service != service) throw new ArgumentException("Stale native owner.");
             if (operation == "dispose") { DisposeOwner(owner); return "{\"value\":null}"; }
