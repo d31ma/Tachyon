@@ -1,6 +1,6 @@
 {
   "heading": "The same service shape in every language",
-  "body": "A service is written in its own language and uses its own platform directly. So there is no portable verb list to learn. All languages share the same shape. A class has the same name as its file. Its fields are state and its methods are behaviour. It has the two persistence lifetimes (how long saved fields last) that the browser gives a page. It has an injected applicationEventPublisher and OnEvent for local events that it owns. Each language writes these parts in its own normal syntax. Lua and Python do not have every part yet: Lua has no saved fields, and Python has no saved fields and no event listeners (see \"Which languages can I use?\").",
+  "body": "A service is written in its own language and uses its own platform directly. So there is no portable verb list to learn. All languages share the same shape. A class has the same name as its file. Its fields are state and its methods are behaviour. It has the two persistence lifetimes (how long saved fields last) that the browser gives a page. It has an injected applicationEventPublisher and OnEvent for local events that it owns. Each language writes these parts in its own normal syntax. Lua does not have every part yet: it has no saved fields (see \"Which languages can I use?\").",
   "code": {
     "file": "example.txt"
   }

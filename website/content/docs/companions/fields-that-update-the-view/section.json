@@ -1,7 +1,7 @@
 {
   "heading": "Fields that update the page",
   "target": "web",
-  "body": "Fields and methods belong to the service instance. A view reads them by the instance name: {counter.count}, on:click=\"counter.increment()\". Template handlers and OnEvent methods refresh the view when they finish. Background work injects taskScheduler (Tachyon gives it to a field) and calls its render(). Fields marked @SessionState are saved to sessionStorage. Fields marked @LocalState are saved to localStorage. The Python, Lua and C++ tabs have only plain fields, because the build refuses SessionState and LocalState in Python, Lua and C++ Tac code with TY1308. Their `theme` starts again after a reload. A Python service also needs the Python runtime in `client/manifest.json` (see Your first app). To save a change inside an array or object, assign a new value to the field.",
+  "body": "Fields and methods belong to the service instance. A view reads them by the instance name: {counter.count}, on:click=\"counter.increment()\". Template handlers and OnEvent methods refresh the view when they finish. Background work injects taskScheduler (Tachyon gives it to a field) and calls its render(). Fields marked @SessionState are saved to sessionStorage. Fields marked @LocalState are saved to localStorage. A Python field writes the marker in its type, as `Annotated[str, local_state]`. The Lua and C++ tabs have only plain fields, because the build refuses SessionState and LocalState in Lua and C++ Tac code with TY1308. Their `theme` starts again after a reload. A Python service also needs the Python runtime in `client/manifest.json` (see Your first app). To save a change inside an array or object, assign a new value to the field.",
   "axis": "language",
   "files": [
     {

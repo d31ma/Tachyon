@@ -159,3 +159,37 @@ the runtime files; `ty doctor` names the folder.
   allowance. Python is not one of those runtimes, and the 512 KiB budget of
   a Python route does not change. When a Python route also loads other web
   runtimes, its budget is the larger of the two.
+
+## Amendment 2026-10-17: async methods, behaviors, saved fields, stores and clients
+
+- An `async def` method builds. The page gets a promise: the bridge answers
+  `{"task": n}`, and the shared task settlement of the other Tac languages
+  sends the answer when the coroutine finishes. Disposal cancels the
+  owner's unfinished tasks, and their callers get `CANCELLED`.
+- `@on_start` may be `async def`. A call that arrives before it finishes
+  waits for it. `@on_stop` and `@on_event` stay synchronous; an
+  `async def` one still fails with `TY1605`.
+- Python reaches the page's storage and HTTP hosts. With no adapter in its
+  Setup, a Python behavior context uses the page cache for `CacheSettings`,
+  the page entity store (adapter `indexeddb`) for `Entity` and
+  `AllOrNothing`, and the browser HTTP transport for a generated
+  `HTTPClient`. A Setup adapter still replaces each of them. Python
+  therefore joins the Tac lists of `CacheSettings`, `Cached`, `CacheKey`,
+  `ClearCache`, `UpdateCache`, `PageDefaults`, `Retry`, `MaxAtOnce`,
+  `AllOrNothing`, `Store`, `Query`, `HTTPClient`, `GetRequest`,
+  `PostRequest`, `PutRequest`, `PatchRequest`, `DeleteRequest`,
+  `PathVariable`, `RequestParam`, `RequestBody` and `RequestHeader`.
+- A `Store` in `client/stores/` or an `HTTPClient` in `client/remotes/` is a
+  `Protocol` contract, as in Yon. The build writes its class, and a `Needs`
+  field reaches it like any other provider.
+- `LocalState` and `SessionState` fields are written in the type, as
+  `Annotated[str, local_state]`. The page saves and restores them like the
+  saved fields of the other languages; the field's page name is its
+  lowerCamelCase name.
+- `ValueSource` works in Python Tac test units, which run under native
+  CPython as in Yon.
+- `StreamRequest` and `SocketRequest` stay refused with `TY1308`. Only
+  JavaScript, TypeScript and Go hold a browser stream or socket in a Tac
+  service.
+- This amendment replaces the 2026-10-04 limits on behaviors, saved fields
+  and `HTTPClient`, and the `async def` limit in "Limits" above.

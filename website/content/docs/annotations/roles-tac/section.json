@@ -1,6 +1,6 @@
 {
   "heading": "Roles: Tac",
-  "body": "These are the same roles, in the browser and in a native companion. A native companion is an app that runs outside the browser, such as a phone or desktop app. An entry is the file that the compiler starts from. A Tac entry is the service itself, at client/services/<Name>Service.<ext>. The page places <billing-panel hydrate=\"load\" />. The view refers to the service instance as {billing.total} (ADR 0030). The service's role files live in the realm's shared client/ folders: stores, helpers, converters, setups and entities. The compiler finds only files in the same language as the entry. Every Tac service language runs in the browser: JavaScript and TypeScript as page JavaScript, and Dart, Rust, Go, C#, F#, Swift, Kotlin, Java, Ruby, Lua and Python as WebAssembly. Swift, Kotlin, C# and Rust can also be linked into a native companion. Dart compiles to WebAssembly with garbage collection (WasmGC), behind one JavaScript module per service (ADR 0033). A service written only in Rust, only in C# or in Go compiles to WebAssembly (ADR 0035, ADR 0037, ADR 0045). Service, Lifetime and Needs work in every Tac language; a Java service cannot ask for another service, and the build refuses that with TY1405. Helper works in JavaScript, TypeScript, Dart, Rust and Python, where Needs injects it, in Go, where Needs gives each service its own Helper or the service creates one itself, and in C# and F#, where the caller builds it with `new` (see Injection: Tac). Swift, Kotlin, Java, Ruby and Lua refuse Helper with TY1308. BillingService reads its total through the injected helper. BillingStore shows the form of a Store: a contract with no implementation that names its Entity, and Tachyon generates each query. The Swift, Kotlin, Java, C#, F#, Rust, Go and Ruby tabs place Store, Setup and Entity next to a plain service type. That is why those services hold their own state. Python and Lua have no tab here, because the build refuses Store in Python and Lua Tac code with TY1308. HTTPClient works in every Tac language except Python and Lua, which refuse it with TY1308 (see Outgoing HTTP: Tac). Controllers (RequestRoute) do not exist in Tac at all. C++ has no tab here: it has the Service and HTTPClient roles, but the build refuses Store and the other roles in C++ Tac code with TY1308 (ADR 0099).",
+  "body": "These are the same roles, in the browser and in a native companion. A native companion is an app that runs outside the browser, such as a phone or desktop app. An entry is the file that the compiler starts from. A Tac entry is the service itself, at client/services/<Name>Service.<ext>. The page places <billing-panel hydrate=\"load\" />. The view refers to the service instance as {billing.total} (ADR 0030). The service's role files live in the realm's shared client/ folders: stores, helpers, converters, setups and entities. The compiler finds only files in the same language as the entry. Every Tac service language runs in the browser: JavaScript and TypeScript as page JavaScript, and Dart, Rust, Go, C#, F#, Swift, Kotlin, Java, Ruby, Lua and Python as WebAssembly. Swift, Kotlin, C# and Rust can also be linked into a native companion. Dart compiles to WebAssembly with garbage collection (WasmGC), behind one JavaScript module per service (ADR 0033). A service written only in Rust, only in C# or in Go compiles to WebAssembly (ADR 0035, ADR 0037, ADR 0045). Service, Lifetime and Needs work in every Tac language; a Java service cannot ask for another service, and the build refuses that with TY1405. Helper works in JavaScript, TypeScript, Dart, Rust and Python, where Needs injects it, in Go, where Needs gives each service its own Helper or the service creates one itself, and in C# and F#, where the caller builds it with `new` (see Injection: Tac). Swift, Kotlin, Java, Ruby and Lua refuse Helper with TY1308. BillingService reads its total through the injected helper. BillingStore shows the form of a Store: a contract with no implementation that names its Entity, and Tachyon generates each query. The Swift, Kotlin, Java, C#, F#, Rust, Go and Ruby tabs place Store, Setup and Entity next to a plain service type. That is why those services hold their own state. Lua has no tab here, because the build refuses Store in Lua Tac code with TY1308. HTTPClient works in every Tac language except Lua, which refuses it with TY1308 (see Outgoing HTTP: Tac). Controllers (RequestRoute) do not exist in Tac at all. C++ has no tab here: it has the Service and HTTPClient roles, but the build refuses Store and the other roles in C++ Tac code with TY1308 (ADR 0099).",
   "axis": "language",
   "files": [
     {
@@ -247,6 +247,36 @@
       "name": "client/entities/BillingEntity.rb",
       "code": {
         "file": "client/entities/BillingEntity.rb"
+      }
+    },
+    {
+      "name": "client/services/BillingService.py",
+      "code": {
+        "file": "client/services/BillingService.py"
+      }
+    },
+    {
+      "name": "client/stores/BillingStore.py",
+      "code": {
+        "file": "client/stores/BillingStore.py"
+      }
+    },
+    {
+      "name": "client/helpers/BillingHelper.py",
+      "code": {
+        "file": "client/helpers/BillingHelper.py"
+      }
+    },
+    {
+      "name": "client/setups/BillingSetup.py",
+      "code": {
+        "file": "client/setups/BillingSetup.py"
+      }
+    },
+    {
+      "name": "client/entities/BillingEntity.py",
+      "code": {
+        "file": "client/entities/BillingEntity.py"
       }
     },
     {

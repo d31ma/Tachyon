@@ -122,3 +122,12 @@ accepted, and `@Order` without `@OnEvent` was accepted in some languages.
   (`Service`, `NeedsAll`). Java joins the Tac list when the TeaVM reader
   reads the table instead of its own list; until then, tools take Java's
   refusals from `TY1405`.
+
+## Amendment 2026-10-17: Python Tac behaviors, stores and clients
+
+- Python Tac services now have behavior, storage and HTTP adapters (ADR 0093
+  amendment of 2026-10-17). The table drops `TAC_BEHAVIOR_ADAPTER` and adds
+  Python to the Tac lists of the behavior, storage, `Store`, `Query`,
+  `HTTPClient` and request annotations, to `LocalState` and
+  `SessionState`, and to `ValueSource`. `StreamRequest` and `SocketRequest`
+  keep their JavaScript, TypeScript and Go list.

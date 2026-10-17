@@ -1,6 +1,6 @@
 {
   "title": "Behavior annotations",
-  "summary": "Behavior annotations add common work to a method without extra code, such as caching, retries, value checks, stores and settings. The same annotations work in Tac and in Yon, in every service language except Lua and Python in Tac: Lua Tac code refuses them, and Python Tac cannot run them yet.",
+  "summary": "Behavior annotations add common work to a method without extra code, such as caching, retries, value checks, stores and settings. The same annotations work in Tac and in Yon, in every service language except Lua in Tac, where the build refuses them. A Python Tac service writes each method that has one of them with `async def`.",
   "before": [
     "dependency-injection"
   ],

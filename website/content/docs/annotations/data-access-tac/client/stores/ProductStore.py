@@ -1,0 +1,9 @@
+from typing import Annotated, Protocol
+
+
+@store(ProductEntity, {"fields":["id","status"],"defaultSize":20,"maxSize":100,"setup":"CatalogSetup"})
+class ProductStore(Repository[ProductEntity, int], Protocol):
+    async def find_by_status(self, status: str) -> list[ProductEntity]: ...
+    async def count_by_status(self, status: str) -> int: ...
+    @query({"operation":"find","where":[{"field":"status","operator":"ne","argument":0}],"orderBy":[{"field":"id","direction":"desc"}]})
+    async def excluding(self, status: str, page: Annotated[dict[str, int], page_defaults]) -> list[ProductEntity]: ...

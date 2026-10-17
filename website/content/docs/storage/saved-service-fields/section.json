@@ -1,9 +1,8 @@
 {
   "heading": "Saved service fields",
   "target": "web",
-  "body": "A service field marked @SessionState is saved in sessionStorage for the life of the tab. A field marked @LocalState is saved in localStorage, so it comes back in later visits on this device. Both markers work in JavaScript, TypeScript, Dart, Swift, Kotlin, Java, C#, F#, Rust, Go and Ruby services. Lua has no tab here, because the build refuses both markers in Lua Tac code with TY1308. Python has no tab here either: the Python runtime has no browser storage, so nothing would save the field. One field takes one of the two markers, and never together with Needs. The old `$` and `$$` field prefixes are refused, and the message names the marker to write. `ty migrate fix --write` changes the fields, their uses in the class and in the views, and a value saved under the old key moves to the new key once. Tachyon restores saved values before OnStart runs. Each assignment stores JSON of up to 64 KiB. When a service method changes its own saved field, the new value is saved as the method returns; this is also true for a Rust, Go, C#, F#, Swift, Kotlin, Java or Ruby service that runs as WebAssembly. To save a change inside the value, assign the field again. Template handlers and OnEvent methods render the view again automatically. Background work uses an injected taskScheduler. If the browser denies storage or its quota (storage limit) is full, the UI still works. Never save secrets. C++ has no tab here, because the build refuses SessionState in C++ Tac code with TY1308 (ADR 0099).",
+  "body": "A service field marked @SessionState is saved in sessionStorage for the life of the tab. A field marked @LocalState is saved in localStorage, so it comes back in later visits on this device. Both markers work in JavaScript, TypeScript, Dart, Swift, Kotlin, Java, C#, F#, Rust, Go, Ruby and Python services. A Python field writes the marker in its type, as `Annotated[str, session_state]`. Lua has no tab here, because the build refuses both markers in Lua Tac code with TY1308. One field takes one of the two markers, and never together with Needs. The old `$` and `$$` field prefixes are refused, and the message names the marker to write. `ty migrate fix --write` changes the fields, their uses in the class and in the views, and a value saved under the old key moves to the new key once. Tachyon restores saved values before OnStart runs. Each assignment stores JSON of up to 64 KiB. When a service method changes its own saved field, the new value is saved as the method returns; this is also true for a Rust, Go, C#, F#, Swift, Kotlin, Java or Ruby service that runs as WebAssembly. To save a change inside the value, assign the field again. Template handlers and OnEvent methods render the view again automatically. Background work uses an injected taskScheduler. If the browser denies storage or its quota (storage limit) is full, the UI still works. Never save secrets. C++ has no tab here, because the build refuses SessionState in C++ Tac code with TY1308 (ADR 0099).",
   "axis": "language",
-  "notApplicable": ["py"],
   "files": [
     {
       "name": "client/services/EditorService.js",
@@ -39,6 +38,12 @@
       "name": "client/services/EditorService.rb",
       "code": {
         "file": "client/services/EditorService.rb"
+      }
+    },
+    {
+      "name": "client/services/EditorService.py",
+      "code": {
+        "file": "client/services/EditorService.py"
       }
     },
     {
