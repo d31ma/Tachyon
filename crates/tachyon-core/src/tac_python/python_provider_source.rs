@@ -19,6 +19,7 @@ pub(super) struct PythonProviderSource {
 
 impl PythonProviderSource {
     const PUBLISHER_TYPE: &'static str = "ApplicationEventPublisher";
+    const CONTRACT_FOLDERS: [&'static str; 2] = ["client/stores", "client/remotes"];
 
     pub(super) fn read(path: &Path, source: &str) -> Result<Self, Failure> {
         let class = path
@@ -29,7 +30,11 @@ impl PythonProviderSource {
         PythonBrowserApis::refuse(path, source)?;
         let roles = ServiceRoles::read(path, source)?;
         let plain = ServiceRoles::without_roles(path, source)?;
-        let members = PythonMembers::read(path, &plain, &class)?;
+        let members = if Self::contract(path) {
+            json!({ "fields": [], "methods": [], "constructor": [], "qualifiers": {} })
+        } else {
+            PythonMembers::read(path, &plain, &class)?
+        };
         let module = crate::events::extract(path, &plain, "tac")?;
         let events = PythonEvents::read(path, module, &class)?;
         let source = events.source().map_or(plain, str::to_owned);
@@ -42,6 +47,12 @@ impl PythonProviderSource {
             helper: path.starts_with("client/helpers"),
             events,
         })
+    }
+
+    fn contract(path: &Path) -> bool {
+        Self::CONTRACT_FOLDERS
+            .iter()
+            .any(|folder| path.starts_with(folder))
     }
 
     pub(super) fn manual(&self, names: &BTreeSet<String>) -> bool {

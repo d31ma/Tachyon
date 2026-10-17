@@ -151,3 +151,73 @@ async fn python_async_methods_use_the_page_cache_store_and_resilience() {
     assert_eq!(report["size"], 5, "{report}");
     assert_eq!(report["cancelled"], "CANCELLED", "{report}");
 }
+
+struct PythonContracts;
+
+impl PythonContracts {
+    const FILES: [(&'static str, &'static str); 2] = [
+        (
+            "client/stores/NotesStore.py",
+            "from typing import Protocol\n\n@store(NoteEntity, {\"fields\":[\"id\",\"text\"],\"defaultSize\":20,\"maxSize\":100,\"setup\":\"BrowserSetup\"})\nclass NotesStore(Repository[NoteEntity, str], Protocol):\n    async def find_by_text(self, text: str) -> list[dict[str, str]]: ...\n    @query({\"operation\":\"count\",\"where\":[],\"orderBy\":[]})\n    async def total(self) -> int: ...\n",
+        ),
+        (
+            "client/remotes/CatalogClient.py",
+            "from typing import Annotated, Protocol\n\n@http_client({\"path\":\"/api\",\"setup\":\"BrowserSetup\"})\nclass CatalogClient(Protocol):\n    @get_request(\"/items/{id}\")\n    async def find(self, id: Annotated[int, path_variable], tag: Annotated[str, request_param(\"tag\")]) -> dict[str, object]: ...\n    @post_request(\"/items\")\n    async def create(self, item: Annotated[dict[str, object], request_body], key: Annotated[str, request_header(\"X-Key\")]) -> dict[str, object]: ...\n",
+        ),
+    ];
+
+    const LIBRARY: &'static str = "from typing import Annotated\n\n@service\nclass LibraryService:\n    notes_store: Annotated[NotesStore, needs]\n    catalog_client: Annotated[CatalogClient, needs]\n\n    async def add(self, id: str, text: str) -> int:\n        await self.notes_store.save({'id': id, 'text': text})\n        return await self.notes_store.total()\n\n    async def matching(self, text: str) -> int:\n        return len(await self.notes_store.find_by_text(text))\n\n    async def item(self, id: int) -> str:\n        answer = await self.catalog_client.find(id, 'new')\n        return answer['path']\n\n    async def create(self, name: str) -> str:\n        answer = await self.catalog_client.create({'name': name}, 'k1')\n        return answer['method'] + ' ' + answer['body'] + ' ' + answer['key']\n";
+
+    const DRIVER: &'static str = "console.info = () => {}\n\
+         globalThis.indexedDB = { databases: async () => [], open: () => ({}) }\n\
+         ;(0, eval)(await readFile('./tac-storage.js', 'utf8'))\n\
+         globalThis[Symbol.for('tachyon.tac.http')] = { start: (text) => {\n\
+         \x20 const request = JSON.parse(text)\n\
+         \x20 const path = `${request.path}?tag=${request.query.tag ?? ''}`\n\
+         \x20 const value = { path, method: request.method, body: JSON.stringify(request.body ?? null), key: request.headers['X-Key'] ?? '' }\n\
+         \x20 return { answer: Promise.resolve(JSON.stringify({ value })), cancel() {} }\n\
+         } }\n\
+         const { default: LibraryService } = await import('./LibraryService.js')\n\
+         const library = new LibraryService({})\n\
+         const first = await library.add('n1', 'hello')\n\
+         const second = await library.add('n2', 'bye')\n\
+         const matching = await library.matching('hello')\n\
+         const item = await library.item(7)\n\
+         const created = await library.create('anvil')\n\
+         console.log(JSON.stringify({ first, second, matching, item, created }))\n\
+         process.exit(0)\n";
+}
+
+#[tokio::test]
+async fn python_needs_a_store_and_an_http_client_from_their_contracts() {
+    if let Some(reason) = PythonPage::skip_reason() {
+        eprintln!("skipping: {reason}");
+        return;
+    }
+    let root = tempfile::tempdir().unwrap_or_else(|error| panic!("project: {error}"));
+    for (relative, text) in PythonPage::STORAGE_FILES
+        .into_iter()
+        .chain(PythonContracts::FILES)
+    {
+        PythonPage::write(root.path(), relative, text);
+    }
+    PythonPage::write(
+        root.path(),
+        "tac-storage.js",
+        include_str!("../template/tac-storage.js"),
+    );
+    PythonPage::publish(
+        root.path(),
+        &[("library", "LibraryService", PythonContracts::LIBRARY)],
+    )
+    .await;
+    let report = PythonPage::run(root.path(), PythonContracts::DRIVER);
+    assert_eq!(report["first"], 1, "{report}");
+    assert_eq!(report["second"], 2, "{report}");
+    assert_eq!(report["matching"], 1, "{report}");
+    assert_eq!(report["item"], "/api/items/7?tag=new", "{report}");
+    assert_eq!(
+        report["created"], "POST {\"name\":\"anvil\"} k1",
+        "{report}"
+    );
+}

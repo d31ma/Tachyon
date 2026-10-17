@@ -281,10 +281,11 @@ impl AnnotationRules {
     const TAC_ROLE: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "lua", "py", "java", "fs", "hpp",
     ];
-    pub(crate) const TAC_RESOURCE: &'static [&'static str] =
-        &["js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb"];
+    pub(crate) const TAC_RESOURCE: &'static [&'static str] = &[
+        "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "py",
+    ];
     const TAC_REMOTE: &'static [&'static str] = &[
-        "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "hpp",
+        "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "hpp", "py",
     ];
     const TAC_BEHAVIOR: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "py",

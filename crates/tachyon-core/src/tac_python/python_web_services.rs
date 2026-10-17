@@ -117,7 +117,14 @@ impl PythonWebServices {
     }
 
     fn provider_path(path: &Path) -> bool {
-        path.starts_with("client/services") || path.starts_with("client/helpers")
+        [
+            "client/services",
+            "client/helpers",
+            "client/stores",
+            "client/remotes",
+        ]
+        .iter()
+        .any(|folder| path.starts_with(folder))
     }
 
     fn descriptions(

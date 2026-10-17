@@ -203,6 +203,27 @@ impl PythonMembers {
         if written.is_empty() {
             return Ok(Shape::Any);
         }
-        TypeText::shape("py", written).map_err(|message| input.failure(0, message))
+        TypeText::shape("py", Self::annotated_type(written))
+            .map_err(|message| input.failure(0, message))
+    }
+
+    fn annotated_type(written: &str) -> &str {
+        let Some(inner) = ["Annotated[", "typing.Annotated["]
+            .into_iter()
+            .find_map(|prefix| written.strip_prefix(prefix))
+            .and_then(|inner| inner.strip_suffix(']'))
+        else {
+            return written;
+        };
+        let mut depth = 0_i32;
+        for (at, byte) in inner.bytes().enumerate() {
+            match byte {
+                b'[' | b'(' => depth += 1,
+                b']' | b')' => depth -= 1,
+                b',' if depth == 0 => return inner[..at].trim(),
+                _ => {}
+            }
+        }
+        written
     }
 }
