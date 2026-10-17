@@ -10,6 +10,10 @@ machine contracts have their own, independent major versions.
 
 ### Added
 
+- Yon Rust listeners accept `#[InBackground]`. The listener stays
+  synchronous and runs after the other listeners of the event, as in
+  JavaScript and Python, and its return value is never published again
+  (ADR 0031 amendment).
 - C++ Tac test units can now replace and answer what a service needs. A
   `[[Fake]] GreetingClient greetingClient;` field reaches the `[[Needs]]`
   fields of the service that `construct<CounterService>()` makes. A static

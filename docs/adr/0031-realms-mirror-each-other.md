@@ -96,6 +96,12 @@ in every language that a realm supports, including native Tac services.
   Tac JS/TS (JavaScript/TypeScript), native Tac services on their host queue,
   and Yon JS/TS/Python. Elsewhere it fails at compile time, as asynchronous
   methods already do.
+- Amendment (2026-10-17): Yon Rust also accepts `InBackground`. In JS/TS and
+  Python the deferred listener is awaited after the other listeners of the
+  same event, so the delay is an order, not a second thread. Rust keeps that
+  order with a synchronous method: the listener runs after every other
+  listener of the event, its failure is logged, and its return value is never
+  published again.
 
 ## Consequences
 

@@ -114,7 +114,7 @@ fn __yon_event_matches(matcher: &Json, value: &Json, event: &str) -> bool {
     }
     test(matcher, value, event)
 }
-struct __YonListener { name: String, order: i64, condition: Option<Json>, models: Option<Json>, returns: Option<String>, sequence: usize, callback: std::rc::Rc<dyn Fn(Json) -> Json> }
+struct __YonListener { name: String, order: i64, condition: Option<Json>, asynchronous: bool, models: Option<Json>, returns: Option<String>, sequence: usize, callback: std::rc::Rc<dyn Fn(Json) -> Json> }
 struct __YonEvents {
     listeners: Vec<__YonListener>, destroyers: Vec<Box<dyn Fn()>>, deliveries: usize,
     only: Option<std::collections::BTreeSet<String>>, delivered: Option<(String,String)>,
@@ -150,11 +150,12 @@ impl __YonEvents {
         let condition = Some(options.get("condition")).filter(|matcher| !matcher.is_null()).cloned();
         let models = Some(options.get("models")).filter(|models| !models.is_null()).cloned();
         let returns = Some(options.get("returns")).filter(|returns| !returns.is_null()).map(Json::text);
+        let asynchronous = matches!(options.get("async"), Json::Bool(true));
         for name in options.get("events").items() {
             assert!(self.listeners.len() < 1024, "Local listener capacity exceeded");
             let name = name.text();
             if replay { __YON_EVENT_STATE.with(|state| { if let Some(owner) = state.borrow_mut().as_mut() { if let Some(encoded) = owner.retained.get(&name).cloned() { owner.queue.push_back((name.clone(),encoded)); } } }); }
-            self.listeners.push(__YonListener { name, order: options.get("order").number() as i64, condition: condition.clone(), models: models.clone(), returns: returns.clone(), sequence: self.listeners.len(), callback: callback.clone() });
+            self.listeners.push(__YonListener { name, order: options.get("order").number() as i64, condition: condition.clone(), asynchronous, models: models.clone(), returns: returns.clone(), sequence: self.listeners.len(), callback: callback.clone() });
         }
         self.listeners.sort_by_key(|listener| (listener.order, listener.sequence));
     }
@@ -171,15 +172,20 @@ impl __YonEvents {
             let Some((name, encoded)) = next else { Self::send_topics(); return; };
             self.deliveries += 1;
             if self.deliveries > 4096 { __YON_EVENT_STATE.with(|state| { if let Some(owner) = state.borrow_mut().as_mut() { owner.queue.clear(); } }); eprintln!("Yon local event delivery bound exceeded."); return; }
+            let mut deferred = Vec::new();
             for listener in &self.listeners { if listener.name == name {
                 let value = Json::parse(&encoded).expect("Validated local event JSON");
                 if listener.models.as_ref().is_some_and(|models| !__yon_event_fits(models, &name, &value)) { eprintln!("Yon local event payload does not fit the listener model."); continue; }
                 if listener.condition.as_ref().is_some_and(|matcher| !__yon_event_matches(matcher, &value, &name)) { continue; }
+                if listener.asynchronous { deferred.push((listener, value)); continue; }
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (listener.callback)(value))) {
                     Ok(result) => Self::republish(&result, listener.returns.as_deref()),
                     Err(_) => eprintln!("Yon local event listener failed."),
                 }
             }}
+            for (listener, value) in deferred {
+                if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (listener.callback)(value))).is_err() { eprintln!("Yon local event listener failed."); }
+            }
         }
     }
 }

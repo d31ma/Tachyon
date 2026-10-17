@@ -21,7 +21,7 @@ impl<'p> LuaEvents<'p> {
     }
 
     pub(super) fn functions(&self, owners: &str, controller: usize) -> Result<String, String> {
-        crate::events::yon::EventLowering::check(self.plan, self.events, false)?;
+        crate::events::yon::EventLowering::check(self.plan, self.events, "lua")?;
         Ok(format!(
             "{}{}{}{}{}",
             self.topics_line(),

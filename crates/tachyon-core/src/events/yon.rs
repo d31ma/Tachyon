@@ -13,15 +13,11 @@ impl EventLowering {
     const SYNCHRONOUS_ONLY: &str =
         "This Yon language supports synchronous local event and lifecycle completion only";
     const BACKGROUND_NEEDS_ASYNC: &str =
-        "InBackground listeners require a Yon language with asynchronous methods (js, ts, py)";
+        "InBackground listeners require a Yon language with deferred listeners (js, ts, py, rs)";
     const NO_STREAMS: &str = "Local event containers do not support streaming endpoints; use a separate non-streaming event controller";
 
-    pub(crate) fn check(
-        plan: &Plan,
-        events: &EventModule,
-        asynchronous: bool,
-    ) -> Result<(), String> {
-        Self::synchronous(events, asynchronous)?;
+    pub(crate) fn check(plan: &Plan, events: &EventModule, extension: &str) -> Result<(), String> {
+        Self::synchronous(events, extension)?;
         validate_providers(plan, events)?;
         Self::without_streams(plan)
     }
@@ -30,18 +26,23 @@ impl EventLowering {
         containers::listener_options(listener)
     }
 
-    fn synchronous(events: &EventModule, asynchronous: bool) -> Result<(), String> {
+    fn synchronous(events: &EventModule, extension: &str) -> Result<(), String> {
         let problems = [
             (
                 events.methods.iter().any(is_asynchronous_method),
+                is_async_language(extension),
                 Self::SYNCHRONOUS_ONLY,
             ),
-            (has_async_listener(events), Self::BACKGROUND_NEEDS_ASYNC),
+            (
+                has_async_listener(events),
+                defers_background_listeners(extension),
+                Self::BACKGROUND_NEEDS_ASYNC,
+            ),
         ];
         problems
             .into_iter()
-            .find(|(present, _)| [*present, asynchronous] == [true, false])
-            .map_or(Ok(()), |(_, message)| Err(String::from(message)))
+            .find(|(present, supported, _)| [*present, *supported] == [true, false])
+            .map_or(Ok(()), |(_, _, message)| Err(String::from(message)))
     }
 
     fn without_streams(plan: &Plan) -> Result<(), String> {
@@ -64,7 +65,7 @@ pub(crate) fn lower(
             .and_then(|value| value.to_str())
             .unwrap_or(""),
     );
-    EventLowering::check(plan, events, is_async_language(extension))?;
+    EventLowering::check(plan, events, extension)?;
     let relocated = super::relocate(path, source, events)
         .map_err(|error| format!("Cannot locate event methods: {error:?}"))?;
     let source = relocated.source.clone();
@@ -80,6 +81,10 @@ pub(crate) fn lower(
 
 fn is_async_language(extension: &str) -> bool {
     matches!(extension, "js" | "ts" | "py")
+}
+
+fn defers_background_listeners(extension: &str) -> bool {
+    matches!(extension, "js" | "ts" | "py" | "rs")
 }
 
 fn is_asynchronous_method(method: &EventMethod) -> bool {
