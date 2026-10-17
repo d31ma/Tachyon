@@ -46,6 +46,7 @@ mod kotlin_builtins;
 mod kotlin_test_construction;
 mod lua_behavior_method;
 mod lua_behavior_plan;
+mod typed_fake_reset;
 mod typed_test_construction;
 mod typed_test_fakes;
 pub(crate) use kotlin_builtins::KotlinBuiltins;

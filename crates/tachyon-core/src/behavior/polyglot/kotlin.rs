@@ -83,7 +83,14 @@ fn lower_type(
     }
     if let Some(unit) = super::super::testing::polyglot_unit(type_declaration) {
         let body = &module.source[type_declaration.body.clone()];
-        members.push_str(&test_members(body, &unit, &module.environment));
+        let cleared_fakes =
+            super::typed_fake_reset::TypedFakeReset::KOTLIN.statements(type_declaration, &unit)?;
+        members.push_str(&test_members(
+            body,
+            &unit,
+            &module.environment,
+            &cleared_fakes,
+        ));
         members.push_str(
             &super::kotlin_test_construction::KotlinTestConstruction::members(
                 module,
@@ -1059,7 +1066,7 @@ fn quote(value: &str) -> String {
         .replace('$', "\\$")
 }
 
-fn test_members(body: &str, unit: &Unit, environment: &str) -> String {
+fn test_members(body: &str, unit: &Unit, environment: &str, cleared_fakes: &str) -> String {
     let report = report_type(environment);
     let answer = report_value(unit, environment);
     let calls = super::super::ValueSource::jvm_calls(&unit.cases, &unit.inputs)
@@ -1084,6 +1091,7 @@ fn test_members(body: &str, unit: &Unit, environment: &str) -> String {
          fun POST(): {report} {{\n\
          val cases = mutableListOf<Any?>()\n\
          for (name in listOf({names})) {{\n\
+         {cleared_fakes}\
          startBehaviors()\n\
          BehaviorCalls.take()\n\
          try {{ runCase(name); cases.add(mapOf(\"name\" to name, \"passed\" to true, \"called\" to BehaviorCalls.take())) }}\n\

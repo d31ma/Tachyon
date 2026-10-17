@@ -530,6 +530,13 @@ machine contracts have their own, independent major versions.
   case, and a Tac unit's `construct()` passed it on. A case reads the unit
   through `&self`, so a Fake in a plain field cannot change between cases.
 
+- A Kotlin test unit now clears every `@Fake` field before each case: a
+  nullable field becomes `null`, a `Boolean` becomes `false` and a number or
+  `Char` becomes zero. Before, a test double that one case assigned was still
+  there in the next case, and `construct(Role::class)` passed it on. A Fake
+  with another non-nullable type, such as a `lateinit var`, has no empty
+  value, so the build now refuses it and asks for a nullable type.
+
 - The `lua/THIRD_PARTY_NOTICES.txt` that a build writes beside the Lua web
   runtime now also holds the Emscripten, musl and compiler-rt licenses, as
   the Ruby notices do. The runtime is linked with Emscripten, which adds its
