@@ -429,16 +429,21 @@ language gets:
 | PHP | yes | yes: a typed field is unset, an untyped field becomes `null` | no |
 | Java, Groovy | yes | yes, to `null`, `false` or zero | `construct(Role.class)` |
 | F# | yes | yes, because every case runs on a new instance | no |
-| Kotlin | yes | no | `construct(Role::class)` |
-| C# | yes | no | `construct<Role>()` |
-| Dart | yes | no | `construct<Role>(Role)` |
-| Go | yes | no | no; only a Tac unit gets `construct` |
-| Rust | yes | no | no; only a Tac unit gets `construct()` |
+| Kotlin | yes | yes, to `null`, `false` or zero | `construct(Role::class)` |
+| C# | yes | yes, to `default`: `null`, `false` or zero | `construct<Role>()` |
+| Dart | yes | yes, to `null`, `false` or zero | `construct<Role>(Role)` |
+| Go | yes | yes, to the zero value: `nil`, `false`, zero or `""` | no; only a Tac unit gets `construct` |
+| Rust | yes | yes: a `RefCell` or `Cell` Fake is reset to its `Default`, `None` for an `Option` | no; only a Tac unit gets `construct()` |
 
-In Kotlin, C#, Dart, Go and Rust a test double that one case assigns is
-still there in the next case, so a case assigns every Fake it reads. A unit
-without a construct helper passes its Fakes to the role's own constructor,
-for example `new CatalogService($this->catalogCounterHelper)` in PHP.
+A Kotlin or Dart Fake must be nullable or have a primitive type (`Int`,
+`Boolean` and the other numbers in Kotlin; `int`, `double`, `num` or `bool`
+in Dart). A Fake with another non-nullable type, such as a `lateinit var` or
+a `late` field, has no empty value, so the build refuses it. A Rust case
+reads the unit through `&self`, so a Fake that a case assigns is a `RefCell`
+or a `Cell`; a Fake in a plain field keeps the value that `new()` gave it.
+A unit without a construct helper passes its Fakes to the role's own
+constructor, for example `new CatalogService($this->catalogCounterHelper)` in
+PHP.
 
 **Every public method needs a test.** Every public method of an annotated class
 must have a test, and the development server enforces this:
