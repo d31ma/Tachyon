@@ -22,6 +22,8 @@ mod browser_tests;
 mod host_tests;
 #[cfg(test)]
 mod notices_tests;
+#[cfg(test)]
+mod page_tests;
 #[cfg(all(test, unix))]
 mod test_unit_parity_tests;
 #[cfg(test)]

@@ -9,6 +9,8 @@ class _TacPythonOwner:
         self.resolving = set()
         self.root = None
         self.disposed = False
+        self.starting = None
+        self.tasks = {}
 
     def require_identity(self, request):
         if self.service != request['service'] or self.route != request['route']:

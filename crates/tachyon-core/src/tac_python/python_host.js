@@ -1,16 +1,16 @@
 class TacPythonHost {
-  static async start(program, emit) {
+  static async start(program, hosts) {
     const root = new URL('./python/314.0.7/', import.meta.url)
     const loader = await import(new URL('pyodide.mjs', root).href)
     const runtime = await loader.loadPyodide({ indexURL: root.href, lockFileURL: new URL('pyodide-lock.json', root).href, stdLibURL: new URL('python_stdlib.zip', root).href })
     runtime.runPython(program)
     const type = runtime.globals.get('_TacPythonRuntime')
-    return TacPythonHost.retain(type, emit)
+    return TacPythonHost.retain(type, hosts)
   }
 
-  static retain(type, emit) {
+  static retain(type, hosts) {
     try {
-      type.connect(emit)
+      type.connect(hosts?.emit, hosts?.done, hosts?.storage, hosts?.http)
       return TacPythonHost.copyMethods(type)
     } finally {
       type.destroy()
@@ -82,5 +82,12 @@ class TacPythonHost {
   }
 }
 
-const pythonHost = await TacPythonHost.start(__TAC_PYTHON_PROGRAM__, (payload) => { published.push(payload) })
+const taskAnswers = new TacTaskAnswers()
+const pythonHttpMissing = () => ({ answer: Promise.resolve('{"error":{"code":"HTTP_MISSING"}}'), cancel() {} })
+const pythonHost = await TacPythonHost.start(__TAC_PYTHON_PROGRAM__, {
+  emit: (payload) => { published.push(payload); queueMicrotask(() => deliver()) },
+  done: (task, text) => { taskAnswers.done(task, text) },
+  storage: (text) => storageHost ? storageHost(text) : JSON.stringify({ error: 'Tachyon storage is not on this page.' }),
+  http: (text) => (globalThis[Symbol.for('tachyon.tac.http')]?.start ?? pythonHttpMissing)(text),
+})
 const transport = (text) => pythonHost.exchange(text)

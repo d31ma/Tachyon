@@ -126,21 +126,24 @@ fn python_inferred_needs_cannot_become_an_unknown_page_property() {
 }
 
 #[test]
-fn python_async_and_async_lifecycle_are_explicitly_pending() {
+fn python_async_methods_and_async_start_build_but_async_stop_is_pending() {
     for source in [
         "@service\nclass CounterService:\n    async def answer(self) -> int:\n        return 1\n",
         "@service\nclass CounterService:\n    @on_start\n    async def _start(self):\n        pass\n",
     ] {
-        let failure =
-            PythonProviderSource::read(Path::new("client/services/CounterService.py"), source)
-                .err()
-                .unwrap_or_else(|| panic!("async continuation is pending"));
-        assert_eq!(failure.diagnostics()[0].code.number(), 1605);
         assert!(
-            failure.to_string().contains("async")
-                || failure.to_string().contains("synchronous OnStart")
+            PythonProviderSource::read(Path::new("client/services/CounterService.py"), source)
+                .is_ok(),
+            "{source}"
         );
     }
+    let stop =
+        "@service\nclass CounterService:\n    @on_stop\n    async def _stop(self):\n        pass\n";
+    let failure = PythonProviderSource::read(Path::new("client/services/CounterService.py"), stop)
+        .err()
+        .unwrap_or_else(|| panic!("an async OnStop is pending"));
+    assert_eq!(failure.diagnostics()[0].code.number(), 1605);
+    assert!(failure.to_string().contains("async OnStop"), "{failure}");
 }
 
 #[test]

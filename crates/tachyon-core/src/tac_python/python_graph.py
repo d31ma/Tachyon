@@ -1,3 +1,4 @@
+import asyncio as _tac_asyncio
 import inspect as _tac_inspect
 
 class _TacPythonGraph:
@@ -10,6 +11,8 @@ class _TacPythonGraph:
         self.codec = codec
         self.publisher = publisher
         self.shared = {}
+        self.starting = None
+        self.failed = set()
 
     def acquire(self, name, owner):
         return self._acquire(name, owner)
@@ -50,7 +53,7 @@ class _TacPythonGraph:
     def _prototype(self, name, metadata, owner):
         value = self._construct(name, metadata, owner)
         owner.retain_prototype(value, metadata)
-        self._hooks(value, metadata['starts'])
+        self._start(value, metadata['starts'])
         return value
 
     def _shared(self, name, metadata, owner):
@@ -73,7 +76,7 @@ class _TacPythonGraph:
         value = self._shared_value(name, metadata, scope)
         self.shared[name] = [value, 1, scope]
         owner.retain(name, value, metadata)
-        self._hooks(value, metadata['starts'])
+        self._start(value, metadata['starts'])
         return value
 
     def _shared_value(self, name, metadata, scope):
@@ -126,6 +129,24 @@ class _TacPythonGraph:
             self._hooks(value, metadata['stops'])
         finally:
             self.dispose(scope)
+
+    def started(self, value):
+        return id(value) not in self.failed
+
+    def _start(self, value, names):
+        results = [getattr(value, name)() for name in names]
+        for started in results:
+            if _tac_inspect.isawaitable(started):
+                self.starting = _tac_asyncio.ensure_future(self._after(self.starting, value, started))
+
+    async def _after(self, previous, value, started):
+        if previous is not None:
+            await _tac_asyncio.gather(previous, return_exceptions=True)
+        try:
+            await started
+        except BaseException:
+            self.failed.add(id(value))
+            raise
 
     def _hooks(self, value, names):
         results = [getattr(value, name)() for name in names]

@@ -11,7 +11,7 @@ pub(super) struct PythonEvents {
 
 impl PythonEvents {
     const PUBLISHER: &'static str = "applicationEventPublisher";
-    const PENDING: &'static str = "Python Tac async methods, streams and browser API adapters remain pending; synchronous OnStart, OnStop and OnEvent methods and ApplicationEventPublisher are supported.";
+    const PENDING: &'static str = "Python Tac streams, browser API adapters and async OnStop or OnEvent methods remain pending; OnStart may be async, and synchronous OnStop and OnEvent methods and ApplicationEventPublisher are supported.";
 
     pub(super) fn read(
         path: &Path,
@@ -124,7 +124,17 @@ impl PythonEvents {
 
     fn pending_module(module: &EventModule) -> bool {
         module.types.iter().any(Self::pending_owner)
-            || module.methods.iter().any(|method| method.asynchronous)
+            || module
+                .methods
+                .iter()
+                .any(|method| method.asynchronous && !Self::starts_owner(module, &method.name))
+    }
+
+    fn starts_owner(module: &EventModule, method: &str) -> bool {
+        module
+            .types
+            .iter()
+            .any(|owner| owner.post_construct.as_deref() == Some(method))
     }
 
     fn pending_owner(owner: &EventType) -> bool {

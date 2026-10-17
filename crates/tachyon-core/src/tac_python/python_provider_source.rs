@@ -31,7 +31,6 @@ impl PythonProviderSource {
         let plain = ServiceRoles::without_roles(path, source)?;
         let members = PythonMembers::read(path, &plain, &class)?;
         let module = crate::events::extract(path, &plain, "tac")?;
-        Self::require_sync(path, &members)?;
         let events = PythonEvents::read(path, module, &class)?;
         let source = events.source().map_or(plain, str::to_owned);
         Ok(Self {
@@ -276,27 +275,12 @@ impl PythonProviderSource {
             .map_err(|message| Self::failure(&self.path, &message))
     }
 
-    fn require_sync(path: &Path, members: &Value) -> Result<(), Failure> {
-        let asynchronous = members["methods"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|method| method["asynchronous"] == true);
-        if asynchronous {
-            return Err(Self::failure(
-                path,
-                "Python Tac async methods need the pending continuation adapter; the initial bridge is synchronous.",
-            ));
-        }
-        Ok(())
-    }
-
     pub(super) fn failure(path: &Path, message: &str) -> Failure {
         Failure::one(crate::failure::diagnostic(
             1605,
             format!("Cannot compile Python Tac service: {message}"),
             Some(
-                "Keep Python Tac service methods synchronous and pass only typed JSON values."
+                "Keep Python Tac OnStop and OnEvent methods synchronous and pass only typed JSON values."
                     .to_owned(),
             ),
             crate::failure::source_span(&path.to_string_lossy(), 0, 1),

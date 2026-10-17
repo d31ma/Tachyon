@@ -14,7 +14,7 @@ class PythonHostOwnershipGate {
         state.listener = null
       },
     }
-    const source = fs.readFileSync(process.argv[2], 'utf8').split('\nconst pythonHost =')[0]
+    const source = fs.readFileSync(process.argv[2], 'utf8').split('\nconst taskAnswers =')[0]
     vm.runInNewContext(source.replaceAll('import.meta.url', "'file:///fixture/engine.js'") + '\nglobalThis.Host = TacPythonHost', context)
     return context.Host
   }
@@ -41,7 +41,7 @@ class PythonHostOwnershipGate {
       },
     })
     const type = {
-      connect: (emit) => { state.emit = emit },
+      connect: (emit, done, storage, http) => { state.hosts = { emit, done, storage, http } },
       invoke: borrowed('invoke'),
       shutdown: borrowed('shutdown'),
       destroy: () => {
@@ -54,9 +54,9 @@ class PythonHostOwnershipGate {
 
   static ownedMethodsSurviveParentAndReleaseOnce() {
     const { state, type, Host } = PythonHostOwnershipGate.fixture()
-    const emit = () => {}
-    const host = Host.retain(type, emit)
-    assert.equal(state.emit, emit)
+    const hosts = { emit: () => {}, done: () => {}, storage: () => '{}', http: () => ({}) }
+    const host = Host.retain(type, hosts)
+    assert.deepEqual(state.hosts, hosts)
     assert.equal(state.parentDestroyed, true)
     assert.equal(host.exchange('request'), 'answer:request')
     state.listener({ persisted: true })

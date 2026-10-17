@@ -691,8 +691,13 @@ class _BehaviorContext:
             _behavior_invalid('Behavior context exceeds concurrency bounds.')
         self.active += 1
         return execution
+    def _builtin(self, group, name):
+        configured = self.adapters.get(group, {}).get(name)
+        return configured is None and _BehaviorHostAdapters.find(self.factory.environment, group, name) is not None
     def _adapter(self, group, name, operation):
         adapter = self.adapters.get(group, {}).get(name)
+        if adapter is None:
+            adapter = _BehaviorHostAdapters.find(self.factory.environment, group, name)
         if type(adapter) is dict:
             function = adapter.get(operation)
         else:
@@ -726,9 +731,10 @@ class _BehaviorContext:
         selected = _behavior_copy([args[index] for index in key_arguments], _BehaviorLimits.SMALL_JSON_BYTES)
         call = {'operation': operation, 'cache': record['cache']['name'], 'type': record['name'], 'method': name, 'keyArguments': _behavior_copy(selected)}
         authorize = self.adapters.get('authorize')
-        if not callable(authorize):
+        builtin = authorize is None and self._builtin('caches', record['cache']['name'])
+        if not builtin and not callable(authorize):
             raise BehaviorError('unauthorized', 'Behavior cache access denied.')
-        if await _behavior_adapter(authorize, (call, execution), execution) is not True:
+        if not builtin and await _behavior_adapter(authorize, (call, execution), execution) is not True:
             raise BehaviorError('unauthorized', 'Behavior cache access denied.')
         key = [self.partition, record['cache']['name'], self.factory.module_id, record['name'], name, selected]
         key = _behavior_copy(key, _BehaviorLimits.SMALL_JSON_BYTES)
@@ -783,7 +789,7 @@ class _BehaviorContext:
         policy = metadata.get('httpExchange')
         if policy is not None and policy.get('generated'):
             filled = dict(policy, path=_behavior_exchange_path(policy, call.args))
-            return await self._exchange(filled, _behavior_exchange_request(policy, call.args), call.execution)
+            return await self._exchange(filled, _behavior_exchange_request(policy, call.args), call.execution, True)
         result = await _behavior_await(call.original(call.instance, *call.args), call.execution)
         if policy is not None:
             result = await self._exchange(policy, result, call.execution)
@@ -901,7 +907,7 @@ class _BehaviorContext:
             await _behavior_adapter(adapter, (key, execution), execution)
         execution.check()
         return result
-    async def _exchange(self, policy, descriptor, execution):
+    async def _exchange(self, policy, descriptor, execution, browser=False):
         _behavior_keys(descriptor, ('query', 'headers', 'body'))
         descriptor = _behavior_copy(descriptor)
         query = descriptor.get('query', {})
@@ -915,6 +921,9 @@ class _BehaviorContext:
         request = dict(descriptor, method=policy['method'], path=policy['path'], query=query, headers=headers,
                        redirect='error', credentials='omit', maxResponseBytes=_BehaviorLimits.MAX_JSON_BYTES,
                        signal=execution.signal, deadline=execution.deadline)
+        custom = self.adapters.get('http', {}).get(policy['client'])
+        if browser and custom is None and _BehaviorBrowserHttp.available(self.factory.environment):
+            return _behavior_copy(await _BehaviorBrowserHttp.exchange(request, execution))
         exchange = self._adapter('http', policy['client'], 'exchange')
         return _behavior_copy(await _behavior_adapter(exchange, (request, execution), execution))
     async def _query(self, policy, args, execution):
@@ -932,10 +941,11 @@ class _BehaviorContext:
         if joined is not None:
             command['transaction'] = joined
         authorize = self.adapters.get('authorizeEntity')
-        if not callable(authorize):
+        builtin = authorize is None and self._builtin('entities', entity['adapter'])
+        if not builtin and not callable(authorize):
             _behavior_invalid('Store query requires entity authorization.')
         adapter = self._adapter('entities', entity['adapter'], 'execute')
-        if await _behavior_adapter(authorize, (_behavior_copy(command), execution), execution) is not True:
+        if not builtin and await _behavior_adapter(authorize, (_behavior_copy(command), execution), execution) is not True:
             raise BehaviorError('unauthorized', 'Store query was not authorized.')
         result = _behavior_copy(await _behavior_adapter(adapter, (_behavior_copy(command), execution), execution))
         _behavior_check_query_result(policy, query, result)
@@ -965,6 +975,76 @@ class _BehaviorContext:
         if 'entity' not in record:
             _behavior_invalid('Store requires a source-local Entity/Table.')
         return _BehaviorRepository(self, record)
+
+class _BehaviorHostCache:
+    def __init__(self, name):
+        self.name = name
+    def get(self, key, execution):
+        return _BehaviorHostAdapters.ask({'op': 'cache.get', 'cache': self.name, 'key': key})
+    def set(self, key, value, execution):
+        return _BehaviorHostAdapters.ask({'op': 'cache.set', 'cache': self.name, 'key': key, 'value': value,
+                                          'expiresAt': execution.expiresAt, 'maxEntries': execution.policy['maxEntries']})
+    def delete(self, key, execution):
+        return _BehaviorHostAdapters.ask({'op': 'cache.delete', 'cache': self.name, 'key': key})
+
+class _BehaviorHostEntities:
+    def execute(self, command, execution):
+        return _BehaviorHostAdapters.ask({'op': 'entity', 'command': command})
+
+class _BehaviorHostAdapters:
+    ENTITIES = 'indexeddb'
+    @staticmethod
+    def find(environment, group, name):
+        if environment != 'tac' or not callable(getattr(_behavior_builtins, 'TacStorage', None)):
+            return None
+        if group == 'caches':
+            return _BehaviorHostCache(name)
+        if group == 'entities' and name == _BehaviorHostAdapters.ENTITIES:
+            return _BehaviorHostEntities()
+        return None
+    @staticmethod
+    def ask(request):
+        answer = _behavior_json.loads(str(_behavior_builtins.TacStorage(_behavior_json.dumps(request, allow_nan=False))))
+        if type(answer) is not dict:
+            raise BehaviorError('storage', 'Tachyon storage did not answer.')
+        if type(answer.get('error')) is str:
+            raise BehaviorError('storage', answer['error'])
+        return answer.get('value')
+
+class _BehaviorBrowserHttp:
+    KEYS = ('method', 'path', 'query', 'headers', 'body', 'redirect', 'credentials', 'maxResponseBytes')
+    CODES = ('HTTP_REQUEST', 'HTTP_ORIGIN', 'HTTP_HEADER', 'HTTP_QUERY', 'HTTP_BODY', 'HTTP_LIMIT', 'HTTP_RESPONSE',
+             'HTTP_STATUS', 'HTTP_CAPACITY', 'HTTP_NETWORK', 'HTTP_MISSING', 'CANCELLED', 'DEADLINE')
+    @staticmethod
+    def available(environment):
+        return environment == 'tac' and callable(getattr(_behavior_builtins, 'TacHttp', None))
+    @staticmethod
+    async def exchange(request, execution):
+        browser = {key: request[key] for key in _BehaviorBrowserHttp.KEYS if key in request}
+        browser['deadline'] = execution.deadline
+        execution.check()
+        ticket = _behavior_builtins.TacHttp(_behavior_json.dumps(browser, allow_nan=False))
+        remove = execution.signal._listen(lambda: ticket.cancel())
+        try:
+            text = await ticket.answer
+        finally:
+            remove()
+        execution.check()
+        return _BehaviorBrowserHttp.value_of(_behavior_json.loads(str(text)))
+    @staticmethod
+    def value_of(answer):
+        if type(answer) is not dict:
+            raise _BehaviorBrowserHttp.failure('HTTP_RESPONSE')
+        if 'error' in answer:
+            error = answer['error']
+            code = error.get('code') if type(error) is dict else None
+            raise _BehaviorBrowserHttp.failure(code if code in _BehaviorBrowserHttp.CODES else 'HTTP_NETWORK')
+        if 'value' not in answer:
+            raise _BehaviorBrowserHttp.failure('HTTP_RESPONSE')
+        return answer['value']
+    @staticmethod
+    def failure(code):
+        return BehaviorError(code, 'The browser HTTP request failed (' + code + ').')
 
 class _BehaviorRestClient:
     def __init__(self, context, name):
