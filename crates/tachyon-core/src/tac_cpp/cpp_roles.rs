@@ -1,4 +1,4 @@
-use super::CppFile;
+use super::{CppFile, CppLifetime};
 use crate::Failure;
 use std::path::Path;
 
@@ -26,5 +26,34 @@ impl CppRoles {
             .markers
             .iter()
             .any(|marker| Self::ROLES.contains(&marker.name.as_str())))
+    }
+
+    pub(crate) fn service_roles(
+        path: &Path,
+        source: &str,
+    ) -> Result<crate::behavior::ServiceRoles, Failure> {
+        let file = CppFile::read(path, source)?;
+        let required = if CppLifetime::needs_all(&file.class) {
+            vec![String::from("*")]
+        } else {
+            Vec::new()
+        };
+        Ok(crate::behavior::ServiceRoles::declared(
+            source,
+            CppLifetime::is_prototype(&file.class),
+            required,
+        ))
+    }
+
+    pub(crate) fn props(path: &Path, source: &str) -> Vec<String> {
+        CppFile::read(path, source).map_or_else(
+            |_| Vec::new(),
+            |file| {
+                CppLifetime::props(&file.class)
+                    .into_iter()
+                    .map(|member| crate::companion::camel_case(&member.name))
+                    .collect()
+            },
+        )
     }
 }

@@ -57,6 +57,15 @@ public:
         static Provider provider;
         return provider;
     }
+
+    template <typename Provider>
+    static std::shared_ptr<Provider> fresh() {
+        Provider* fake = TacFake<Provider>::slot();
+        if (fake != nullptr && !TacSharedMaking::active()) {
+            return std::shared_ptr<Provider>(fake, [](Provider*) {});
+        }
+        return std::make_shared<Provider>();
+    }
 };
 
 }

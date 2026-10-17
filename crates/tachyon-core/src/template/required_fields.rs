@@ -87,6 +87,9 @@ impl RequiredFields {
             .extension()
             .and_then(|value| value.to_str())
             .unwrap_or("");
+        if extension == crate::tac_cpp::CppSource::EXTENSION {
+            return (Vec::new(), crate::tac_cpp::CppRoles::props(path, source));
+        }
         let local_classes = crate::annotation_layout::declaration_names(path, source)
             .unwrap_or_default()
             .into_iter()

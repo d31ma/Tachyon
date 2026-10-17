@@ -8,6 +8,7 @@ mod cpp_failure;
 mod cpp_file;
 mod cpp_file_reader;
 mod cpp_folder;
+mod cpp_injection;
 mod cpp_lexer;
 mod cpp_listener;
 mod cpp_lowering;
@@ -37,6 +38,8 @@ mod cpp_type_text;
 mod cpp_value_source;
 
 #[cfg(test)]
+mod page_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod unit_tests;
@@ -51,6 +54,7 @@ use cpp_failure::CppFailure;
 use cpp_file::CppFile;
 use cpp_file_reader::CppFileReader;
 use cpp_folder::CppFolder;
+use cpp_injection::{CppInjection, CppLifetime};
 use cpp_lexer::CppLexer;
 use cpp_listener::CppListener;
 use cpp_lowering::CppLowering;

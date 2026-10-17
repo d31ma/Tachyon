@@ -145,10 +145,19 @@ impl CppProgram {
     }
 
     fn lowered(&self, service: &CppService) -> String {
+        let prototypes = self.prototypes();
         if self.records_calls {
-            return CppLowering::recorded_service(service);
+            return CppLowering::recorded_service(service, &prototypes);
         }
-        CppLowering::service(service)
+        CppLowering::service(service, &prototypes)
+    }
+
+    fn prototypes(&self) -> Vec<String> {
+        self.services
+            .iter()
+            .filter(|service| service.is_prototype())
+            .map(|service| service.class().name.clone())
+            .collect()
     }
 
     fn bindings(&self) -> String {

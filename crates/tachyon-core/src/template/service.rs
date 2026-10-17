@@ -1027,6 +1027,32 @@ mod tests {
     }
 
     #[test]
+    fn a_cpp_needs_all_service_takes_its_props_once_per_component() {
+        let root = project(&[
+            (
+                "client/services/LabelService.hpp",
+                "#include <string>\nclass [[Service, NeedsAll]] LabelService {\npublic:\n    std::string page_title;\n    TallyService& tally;\n    int clicks = 0;\n};\n",
+            ),
+            (
+                "client/services/TallyService.hpp",
+                "class [[Service, Lifetime({\"value\":\"prototype\"})]] TallyService {\npublic:\n    int count = 0;\n};\n",
+            ),
+            (
+                "client/services/BoardService.hpp",
+                "class [[Service]] BoardService {\npublic:\n    int count = 0;\n};\n",
+            ),
+        ]);
+        let registry = ServiceRegistry::discover(root.path()).expect("registry");
+        let label = registry.get("label").expect("label");
+        assert!(label.is_prototype());
+        assert_eq!(label.required(), ["pageTitle"]);
+        assert!(registry.get("tally").expect("tally").is_prototype());
+        let board = registry.get("board").expect("board");
+        assert!(!board.is_prototype());
+        assert!(board.required().is_empty());
+    }
+
+    #[test]
     fn rust_comes_before_go_and_go_before_csharp_on_the_web() {
         let root = project(&[
             (

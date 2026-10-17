@@ -1,5 +1,6 @@
 use super::{
-    CppClass, CppFailure, CppFile, CppListener, CppMarkerCheck, CppMember, CppMemberKind, CppRemote,
+    CppClass, CppFailure, CppFile, CppInjection, CppLifetime, CppListener, CppMarkerCheck,
+    CppMember, CppMemberKind, CppRemote,
 };
 use crate::Failure;
 use serde_json::{Value, json};
@@ -33,6 +34,7 @@ impl CppService {
             .then_some(())
             .ok_or_else(|| CppFailure::unreadable(relative, class.name_at, Self::NAMED))?;
         CppMarkerCheck::check(relative, class)?;
+        CppLifetime::check(relative, class)?;
         Self::check_members(relative, class)?;
         Self::check_remote(relative, class)?;
         let listeners = class
@@ -66,12 +68,18 @@ impl CppService {
     }
 
     pub(crate) fn needs(&self) -> Vec<(String, String)> {
-        self.class()
-            .members
-            .iter()
-            .filter(|member| member.marked("Needs"))
-            .map(|member| (member.name.clone(), member.plain_type()))
+        self.injections()
+            .into_iter()
+            .map(|injection| (injection.field, injection.provider))
             .collect()
+    }
+
+    pub(crate) fn injections(&self) -> Vec<CppInjection> {
+        CppLifetime::injections(self.class())
+    }
+
+    pub(crate) fn is_prototype(&self) -> bool {
+        CppLifetime::is_prototype(self.class())
     }
 
     pub(crate) fn page_fields(&self) -> Vec<&CppMember> {
@@ -133,15 +141,38 @@ impl CppService {
     }
 
     fn binding_class(&self) -> String {
-        let class = &self.class().name;
         let binding = self.binding_name();
         let metadata = self.metadata();
         let fields = self.field_bindings();
+        let props = self.prop_bindings();
         let methods = self.method_bindings();
         let hooks = self.hook_bindings();
+        let create = self.creation();
         format!(
-            "class {binding} {{\npublic:\n    static tachyon::TacServiceType type() {{\n        tachyon::TacServiceType type;\n        type.metadata = tachyon::json::JsonNode::parse(R\"tachyon({metadata})tachyon\");\n        type.create = [] {{ return std::shared_ptr<void>(&tachyon::TacNeeds::of<{class}>(), [](void*) {{}}); }};\n        type.fields = {{ {fields}}};\n        type.methods = {{ {methods}}};\n        type.hooks = {{ {hooks}}};\n        return type;\n    }}\n}};\n"
+            "class {binding} {{\npublic:\n    static tachyon::TacServiceType type() {{\n        tachyon::TacServiceType type;\n        type.metadata = tachyon::json::JsonNode::parse(R\"tachyon({metadata})tachyon\");\n        type.create = [] {{ {create} }};\n        type.fields = {{ {fields}}};\n        type.props = {{ {props}}};\n        type.methods = {{ {methods}}};\n        type.hooks = {{ {hooks}}};\n        return type;\n    }}\n}};\n"
         )
+    }
+
+    fn creation(&self) -> String {
+        let class = &self.class().name;
+        if self.is_prototype() {
+            return format!("return std::shared_ptr<void>(std::make_shared<{class}>());");
+        }
+        format!("return std::shared_ptr<void>(&tachyon::TacNeeds::of<{class}>(), [](void*) {{}});")
+    }
+
+    fn prop_bindings(&self) -> String {
+        let class = &self.class().name;
+        let mut text = String::new();
+        for member in CppLifetime::props(self.class()) {
+            let page = Self::page_name(&member.name);
+            let _ = write!(
+                text,
+                "tachyon::TacBind::field(\"{page}\", &{class}::{}), ",
+                member.name
+            );
+        }
+        text
     }
 
     fn check_remote(relative: &Path, class: &CppClass) -> Result<(), Failure> {

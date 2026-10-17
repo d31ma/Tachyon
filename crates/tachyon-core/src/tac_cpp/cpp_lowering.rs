@@ -1,5 +1,6 @@
 use super::{
-    CppAttribute, CppClass, CppCoverage, CppFile, CppMarkerCheck, CppMember, CppRemote, CppService,
+    CppAttribute, CppClass, CppCoverage, CppFile, CppLifetime, CppMarkerCheck, CppMember,
+    CppRemote, CppService,
 };
 use std::fmt::Write as _;
 use std::ops::Range;
@@ -43,22 +44,22 @@ impl CppLowering {
         provided
     }
 
-    pub(crate) fn service(service: &CppService) -> String {
-        Self::service_lowering(service).finished_service(service)
+    pub(crate) fn service(service: &CppService, prototypes: &[String]) -> String {
+        Self::service_lowering(service, prototypes).finished_service(service)
     }
 
-    pub(crate) fn recorded_service(service: &CppService) -> String {
-        let mut lowering = Self::service_lowering(service);
+    pub(crate) fn recorded_service(service: &CppService, prototypes: &[String]) -> String {
+        let mut lowering = Self::service_lowering(service, prototypes);
         lowering.record_calls(service);
         lowering.finished_service(service)
     }
 
-    fn service_lowering(service: &CppService) -> Self {
+    fn service_lowering(service: &CppService, prototypes: &[String]) -> Self {
         let mut lowering = Self::blanked(&service.file, &service.source);
         let class = service.class();
         let friend = format!(" friend class {};", service.binding_name());
         lowering.insertions.push((class.body.start + 1, friend));
-        lowering.fill_needs(class);
+        lowering.fill_needs(class, prototypes);
         lowering
     }
 
@@ -84,11 +85,29 @@ impl CppLowering {
         format!("\n{}", CppRemote::definitions(service.class()))
     }
 
-    fn fill_needs(&mut self, class: &CppClass) {
-        for member in class.members.iter().filter(|member| member.marked("Needs")) {
-            let provided = format!(" = ::tachyon::TacNeeds::of<{}>()", member.plain_type());
-            self.insertions.push((member.terminator, provided));
+    fn fill_needs(&mut self, class: &CppClass, prototypes: &[String]) {
+        for injection in CppLifetime::injections(class) {
+            let provider = &injection.provider;
+            if !prototypes.contains(provider) {
+                let shared = format!(" = ::tachyon::TacNeeds::of<{provider}>()");
+                self.insertions.push((injection.terminator, shared));
+                continue;
+            }
+            let owned = format!("tachyonOwned{}", Self::capitalized(&injection.field));
+            let holder = format!(
+                " std::shared_ptr<{provider}> {owned} = ::tachyon::TacNeeds::fresh<{provider}>();"
+            );
+            self.insertions.push((class.body.start + 1, holder));
+            self.insertions
+                .push((injection.terminator, format!(" = *{owned}")));
         }
+    }
+
+    fn capitalized(name: &str) -> String {
+        let mut characters = name.chars();
+        characters.next().map_or_else(String::new, |first| {
+            format!("{}{}", first.to_ascii_uppercase(), characters.as_str())
+        })
     }
 
     fn blanked(file: &CppFile, source: &str) -> Self {

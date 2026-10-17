@@ -81,7 +81,7 @@ fn listeners_and_lifecycle_hooks_are_described_for_the_page() {
 #[test]
 fn lowering_removes_markers_and_fills_needs_fields() {
     let service = Sources::service(Sources::TALLY);
-    let lowered = super::CppLowering::service(&service);
+    let lowered = super::CppLowering::service(&service, &[]);
     assert!(!lowered.contains("[[Service]]"), "{lowered}");
     assert!(!lowered.contains("#pragma once"), "{lowered}");
     assert!(!lowered.contains("CounterService.hpp"), "{lowered}");
@@ -201,7 +201,7 @@ fn markers_follow_the_shared_rule_table() {
     );
     let pending = Sources::refusal(
         "client/services/TallyService.hpp",
-        "class [[Lifetime({\"value\":\"prototype\"})]] TallyService {};\n",
+        "class [[Store]] TallyService {};\n",
     );
     assert!(
         pending.contains("C++ gets it in a later step (ADR 0099)"),
@@ -328,7 +328,7 @@ fn an_http_client_gets_its_request_methods_written() {
         CppService::read(Path::new("client/remotes/OrderClient.hpp"), source).expect("remote");
     assert!(service.is_remote());
     assert_eq!(service.binding(), "");
-    let lowered = super::CppLowering::service(&service);
+    let lowered = super::CppLowering::service(&service, &[]);
     assert!(
         lowered.contains("inline Task<Order> OrderClient::find(int id, int page) const {"),
         "{lowered}"
@@ -411,4 +411,62 @@ fn doctor_lists_emscripten_and_the_test_compiler_for_cpp_services() {
         "{}",
         rows[0].install
     );
+}
+
+#[test]
+fn lifetime_needs_all_and_named_forms_are_checked() {
+    let lifetime = |value: &str| {
+        Sources::refusal(
+            "client/services/TallyService.hpp",
+            &format!("class [[Service, Lifetime({value})]] TallyService {{}};\n"),
+        )
+    };
+    assert!(
+        lifetime("{\"value\":\"application\"}").contains("no native host"),
+        "application"
+    );
+    assert!(
+        lifetime("{\"value\":\"often\"}").contains("singleton"),
+        "often"
+    );
+    assert!(
+        lifetime("\"prototype\"").contains("JSON object"),
+        "bare string"
+    );
+    let constructor = Sources::refusal(
+        "client/services/TallyService.hpp",
+        "class [[Service, NeedsAll]] TallyService {\npublic:\n    TallyService() {}\n    int count;\n};\n",
+    );
+    assert!(
+        constructor.contains("declares no constructor"),
+        "{constructor}"
+    );
+    let empty = Sources::refusal(
+        "client/services/TallyService.hpp",
+        "class [[Service, NeedsAll]] TallyService {\npublic:\n    std::optional<int> count;\n};\n",
+    );
+    assert!(
+        empty.contains("TY1331") && empty.contains("never empty"),
+        "{empty}"
+    );
+    let named = Sources::refusal(
+        "client/services/TallyService.hpp",
+        "class [[Service]] TallyService {\npublic:\n    [[Needs, Named(loud)]] Greeter& greeter;\n};\n",
+    );
+    assert!(named.contains("[[Named]] takes the class name"), "{named}");
+    let service = Sources::service(
+        "class [[Service, NeedsAll]] TallyService {\npublic:\n    std::string title;\n    CounterService& counter;\n    int clicks = 0;\n    [[Needs, Named(\"LoudGreeterService\")]] Greeter& greeter;\n};\n",
+    );
+    assert!(service.is_prototype());
+    assert_eq!(
+        service.needs(),
+        [
+            (String::from("counter"), String::from("CounterService")),
+            (String::from("greeter"), String::from("LoudGreeterService")),
+        ]
+    );
+    let singleton = Sources::service(
+        "class [[Service, NeedsAll, Lifetime({\"value\":\"singleton\"})]] TallyService {\npublic:\n    std::string title;\n};\n",
+    );
+    assert!(!singleton.is_prototype());
 }

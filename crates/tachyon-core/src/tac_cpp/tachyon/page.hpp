@@ -76,6 +76,7 @@ public:
     json::JsonNode metadata;
     std::function<std::shared_ptr<void>()> create;
     std::vector<TacMember> fields;
+    std::vector<TacMember> props;
     std::vector<TacMethod> methods;
     std::vector<TacMethod> hooks;
 
@@ -376,9 +377,21 @@ private:
         created.id = id;
         created.type = &registered->second;
         created.instance = registered->second.create();
+        receiveProps(created, request["props"]);
         owners[id] = created;
         executing = id;
         return start(owners[id]);
+    }
+
+    static void receiveProps(TacOwner& created, const json::JsonNode& given) {
+        if (given.getValueKind() != json::JsonValueKind::Object) {
+            return;
+        }
+        for (const TacMember& prop : created.type->props) {
+            if (given.containsKey(prop.name)) {
+                prop.write(created.instance.get(), given[prop.name]);
+            }
+        }
     }
 
     std::string start(TacOwner& started) {

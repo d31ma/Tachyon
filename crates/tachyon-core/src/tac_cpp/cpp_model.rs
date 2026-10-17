@@ -12,6 +12,7 @@ pub(crate) struct CppModel {
 impl CppModel {
     const NAMED: &'static str = "A C++ model is named after its file";
     const CLIENT: &'static str = "client";
+    const PURE_ENDS: [&'static str; 4] = [")=0;", ")const=0;", ")noexcept=0;", ")constnoexcept=0;"];
     const CLIENT_ONLY: &'static str = "C++ is a Tac language only for now: a C++ model goes in client/models. Yon C++ comes later (ADR 0099)";
 
     pub(crate) fn read(relative: &Path, source: &str) -> Result<Self, Failure> {
@@ -71,7 +72,19 @@ impl CppModel {
         if self.file.class.is_enum {
             return self.enum_codec();
         }
+        if self.is_abstract() {
+            return String::new();
+        }
         self.struct_codec()
+    }
+
+    fn is_abstract(&self) -> bool {
+        let body = &self.source[self.file.class.body.clone()];
+        let squeezed: String = body
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect();
+        Self::PURE_ENDS.iter().any(|end| squeezed.contains(end))
     }
 
     fn struct_codec(&self) -> String {
