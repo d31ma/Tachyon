@@ -11,7 +11,12 @@ pub(crate) struct CppServiceGraph<'a> {
 }
 
 impl<'a> CppServiceGraph<'a> {
-    const FOLDERS: [&'static str; 3] = ["client/services", "client/remotes", "client/converters"];
+    const FOLDERS: [&'static str; 4] = [
+        "client/services",
+        "client/remotes",
+        "client/converters",
+        "client/helpers",
+    ];
     const CIRCLE: &'static str =
         "C++ services need each other in a circle; break the circle with an event";
 
@@ -97,7 +102,7 @@ impl<'a> CppServiceGraph<'a> {
     ) -> Result<PathBuf, Failure> {
         self.available.get(needed).cloned().ok_or_else(|| {
             CppFailure::pending(relative, service.field_at(field), &format!(
-                "A C++ [[Needs]] field names another C++ service in client/services, a C++ [[HTTPClient]] in client/remotes or a C++ [[Converter]] in client/converters; there is no {needed}.hpp in any of them. Other C++ roles come later (ADR 0099)"
+                "A C++ [[Needs]] field names another C++ service in client/services, a C++ [[HTTPClient]] in client/remotes, a C++ [[Converter]] in client/converters or a C++ [[Helper]] in client/helpers; there is no {needed}.hpp in any of them. Other C++ roles come later (ADR 0099)"
             ))
         })
     }

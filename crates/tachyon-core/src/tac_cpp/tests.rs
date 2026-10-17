@@ -682,3 +682,20 @@ fn a_converter_names_the_target_fields_it_cannot_fill() {
         );
     }
 }
+
+#[test]
+fn a_helper_lives_in_client_helpers() {
+    let helper =
+        "class [[Helper]] PriceHelper {\npublic:\n    int price(int count) { return count; }\n};\n";
+    let path = Path::new("client/helpers/PriceHelper.hpp");
+    crate::annotation_layout::FolderRoleCheck::check(path, helper).expect("helper folder");
+    super::CppMarkerCheck::check_source(path, helper).expect("helper marker");
+    let misplaced = crate::annotation_layout::FolderRoleCheck::check(
+        Path::new("client/services/PriceHelper.hpp"),
+        helper,
+    );
+    assert!(
+        misplaced.is_err(),
+        "a helper outside client/helpers was accepted"
+    );
+}

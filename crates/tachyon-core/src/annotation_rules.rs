@@ -299,7 +299,8 @@ impl AnnotationRules {
     const TAC_STORED_STATE: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "hpp",
     ];
-    const TAC_HELPER: &'static [&'static str] = &["js", "ts", "dart", "rs", "py", "cs", "fs"];
+    const TAC_HELPER: &'static [&'static str] =
+        &["js", "ts", "dart", "rs", "py", "cs", "fs", "hpp"];
     const TAC_NEEDS_ALL: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "java", "lua", "py", "hpp",
     ];
@@ -368,7 +369,7 @@ impl AnnotationRules {
     ];
     const CACHE_CHANGES: &'static [&'static str] = &["Cached", "ClearCache", "UpdateCache"];
     const LIFECYCLE: &'static [&'static str] = &["OnStart", "OnStop", "OnEvent"];
-    const HELPER_ADVICE: &'static str = "Tac Helper supports JavaScript, TypeScript, Dart, compiled Rust, the synchronous Python ownership adapter and caller-owned C#/F# composition. C# and F# Helpers require explicit construction and do not support managed Helper injection or lifecycle hooks. F# Helpers require an ordinary primary constructor and do not support authored Needs properties. Other compiled languages need a qualified same-language Helper constructor and ownership adapter; use a supported role rather than replacing Service with Helper";
+    const HELPER_ADVICE: &'static str = "Tac Helper supports JavaScript, TypeScript, Dart, compiled Rust, C++, the synchronous Python ownership adapter and caller-owned C#/F# composition. C# and F# Helpers require explicit construction and do not support managed Helper injection or lifecycle hooks. F# Helpers require an ordinary primary constructor and do not support authored Needs properties. Other compiled languages need a qualified same-language Helper constructor and ownership adapter; use a supported role rather than replacing Service with Helper";
     const RUBY_NEEDS_ADVICE: &'static str = "A Ruby NeedsAll class lists each field as `attr_reader :order_store` and writes no `initialize`; a Ruby class that needs default values writes a plain `initialize` and no NeedsAll";
 
     pub(crate) const ALL: &'static [Rule] = &[

@@ -407,3 +407,38 @@ fn a_converter_fills_a_model_and_a_json_value_from_its_plan() {
         "{answers:?}"
     );
 }
+
+#[test]
+fn a_helper_does_part_of_a_service_s_work() {
+    if !PageProject::has_compiler() {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    PageProject::write(
+        root.path(),
+        &[
+            (
+                "client/helpers/RateHelper.hpp",
+                "class [[Helper]] RateHelper {\npublic:\n    int rate = 3;\n};\n",
+            ),
+            (
+                "client/helpers/PriceHelper.hpp",
+                "class [[Helper]] PriceHelper {\npublic:\n    [[Needs]] RateHelper& rates;\n    int price(int count) { return count * rates.rate; }\n};\n",
+            ),
+            (
+                "client/services/CartService.hpp",
+                "class [[Service]] CartService {\npublic:\n    [[Needs]] PriceHelper& prices;\n    int total(int count) { return prices.price(count); }\n};\n",
+            ),
+        ],
+    );
+    let services = [("cart", "CartService")];
+    let answers = PageProject::answers(
+        root.path(),
+        &services,
+        &[
+            PageProject::init("cart", 1, &json!({})),
+            PageProject::call("cart", 1, "total", &json!([4])),
+        ],
+    );
+    assert_eq!(answers[1]["value"], 12, "{answers:?}");
+}
