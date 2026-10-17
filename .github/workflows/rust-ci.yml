@@ -541,7 +541,10 @@ jobs:
           cargo test --locked -p tachyon-core --lib behavior::polyglot -- --test-threads=1
           cargo test --locked -p tachyon-core --test it -- \
             behavior_annotations:: behavior_dynamic:: \
-            behavior_jvm:: behavior_csharp:: behavior_rust:: behavior_go:: --test-threads=1
+            behavior_jvm:: behavior_csharp:: behavior_rust:: behavior_go:: \
+            test_units::every_typed_language_clears_its_fakes_before_each_case --test-threads=1
+        env:
+          TAC_TEST_UNITS_REQUIRE_TOOLCHAINS: "1"
 
       - name: Execute Swift web services, Swift test units and Apple async companions
         run: |

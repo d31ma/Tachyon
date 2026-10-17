@@ -337,6 +337,24 @@ async fn every_compiled_language_runs_its_test_unit() {
 async fn every_typed_language_clears_its_fakes_before_each_case() {
     for (extension, probe, configuration, unit) in [
         (
+            "kt",
+            "kotlinc",
+            "@TestSetup\nclass CatalogTestSetup {\n    companion object {\n        fun configure(execution: Behaviors.Execution): Behaviors.Configuration = Behaviors.Configuration()\n    }\n}\n",
+            "@Test(CatalogTestSetup::class, {\"partition\":\"tests\"})\nclass CatalogServiceTest {\n    @Fake\n    var names: MutableList<String>? = null\n    @Fake\n    var count: Int = 0\n    @Fake\n    var seen: Boolean = false\n\n    fun testStartsWithEmptyFakes() {\n        Assert.isTrue(names == null, \"the list fake is null\")\n        Assert.equals(0, count, \"the number fake is zero\")\n        Assert.isTrue(!seen, \"the boolean fake is false\")\n        names = mutableListOf(\"assigned\")\n        count = 3\n        seen = true\n    }\n    fun testStartsWithEmptyFakesAgain() {\n        Assert.isTrue(names == null, \"the list fake is null again\")\n        Assert.equals(0, count, \"the number fake is zero again\")\n        Assert.isTrue(!seen, \"the boolean fake is false again\")\n        names = mutableListOf(\"assigned\")\n        count = 3\n        seen = true\n    }\n}\n",
+        ),
+        (
+            "cs",
+            "dotnet",
+            "[TestSetup]\npublic sealed class CatalogTestSetup {\n    public static BehaviorAdapters configure(BehaviorExecution execution) { return new BehaviorAdapters(); }\n}\n",
+            "[Test(typeof(CatalogTestSetup), {\"partition\":\"tests\"})]\nsealed class CatalogServiceTest {\n    [Fake]\n    public System.Collections.Generic.List<string> names;\n    [Fake]\n    public int count;\n    [Fake]\n    public bool seen;\n\n    void testStartsWithEmptyFakes() {\n        Assert.isTrue(names == null, \"the list fake is null\");\n        Assert.equals(0, count, \"the number fake is zero\");\n        Assert.isTrue(!seen, \"the boolean fake is false\");\n        names = new System.Collections.Generic.List<string> { \"assigned\" };\n        count = 3;\n        seen = true;\n    }\n    void testStartsWithEmptyFakesAgain() {\n        Assert.isTrue(names == null, \"the list fake is null again\");\n        Assert.equals(0, count, \"the number fake is zero again\");\n        Assert.isTrue(!seen, \"the boolean fake is false again\");\n        names = new System.Collections.Generic.List<string> { \"assigned\" };\n        count = 3;\n        seen = true;\n    }\n}\n",
+        ),
+        (
+            "dart",
+            "dart",
+            "@TestSetup\nclass CatalogTestSetup {\n  static BehaviorAdapters configure(BehaviorExecution execution) {\n    return BehaviorAdapters();\n  }\n}\n",
+            "@Test(CatalogTestSetup, {\"partition\":\"tests\"})\nclass CatalogServiceTest {\n  @Fake\n  List<String>? names;\n  @Fake\n  int count = 0;\n  @Fake\n  bool seen = false;\n\n  Future<void> testStartsWithEmptyFakes() async {\n    Assert.isTrue(names == null, 'the list fake is null');\n    Assert.equals(0, count, 'the number fake is zero');\n    Assert.isTrue(!seen, 'the boolean fake is false');\n    names = ['assigned'];\n    count = 3;\n    seen = true;\n  }\n\n  Future<void> testStartsWithEmptyFakesAgain() async {\n    Assert.isTrue(names == null, 'the list fake is null again');\n    Assert.equals(0, count, 'the number fake is zero again');\n    Assert.isTrue(!seen, 'the boolean fake is false again');\n    names = ['assigned'];\n    count = 3;\n    seen = true;\n  }\n}\n",
+        ),
+        (
             "go",
             "go",
             "// @TestSetup\ntype CatalogTestSetup struct{}\n\nfunc (CatalogTestSetup) Configure(execution *BehaviorExecution) (*BehaviorConfiguration, error) {\n\treturn NewBehaviorConfiguration(), nil\n}\n",
