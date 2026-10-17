@@ -13,7 +13,7 @@ def write(root, relative, source):
 def manifest(platform):
     visibility = ""
     if platform == "windows":
-        visibility = ',\n    "visibility": { "check": false }'
+        visibility = ',\n    "visibility": { "check": false },\n    "scripts": ["/shared/GatePageErrors.js"]'
     return f"""{{
   "name": "Native Gate",
   "start_url": "/",
@@ -222,6 +222,23 @@ public class __SERVICE__
     return source.replace("__SERVICE__", service)
 
 
+def write_page_errors(root):
+    write(root, "client/shared/GatePageErrors.js", """export default class GatePageErrors {
+  static start() {
+    addEventListener('error', (event) => GatePageErrors.report(`${event.message} ${event.filename}:${event.lineno}`))
+    addEventListener('unhandledrejection', (event) => GatePageErrors.report(String(event.reason?.stack || event.reason)))
+  }
+
+  /** @param {string} text */
+  static report(text) {
+    document.title = `Page error: ${text}`.slice(0, 500)
+  }
+}
+
+GatePageErrors.start()
+""")
+
+
 def write_route(root, platform, route, label, number):
     language = "Rust"
     if route and platform == "windows":
@@ -247,6 +264,8 @@ def create(root, platform):
     if any(root.iterdir()):
         raise RuntimeError("the acceptance fixture directory must be empty")
     write_shared_files(root, platform)
+    if platform == "windows":
+        write_page_errors(root)
     write_route(root, platform, "", "Root", 7)
     write_route(root, platform, "items/_id/", "Second", 9)
 

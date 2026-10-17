@@ -57,7 +57,7 @@ function Write-UiaFailureDiagnostics($window) {
         $element = $queue.Dequeue()
         $current = $element.Current
         $name = ($current.Name -replace '[\r\n\t]', ' ')
-        if ($name.Length -gt 160) { $name = $name.Substring(0, 160) + '...' }
+        if ($name.Length -gt 600) { $name = $name.Substring(0, 600) + '...' }
         Write-Host ("UIA: type={0}; name={1}; class={2}; pid={3}; offscreen={4}" -f
             $current.ControlType.ProgrammaticName, $name, $current.ClassName,
             $current.ProcessId, $current.IsOffscreen)
@@ -69,6 +69,63 @@ function Write-UiaFailureDiagnostics($window) {
         }
     }
     Write-Host ("UIA diagnostic traversal ended: nodes={0}; queued={1}" -f (64 - $remaining), $queue.Count)
+}
+
+function Write-CompanionAnswers([string] $app) {
+    $probe = {
+        param([string] $app)
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class TachyonCompanionProbe
+{
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr Invoke(IntPtr request);
+
+    [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadLibraryW(string path);
+
+    [DllImport("kernel32", CharSet = CharSet.Ansi, ExactSpelling = true)]
+    private static extern IntPtr GetProcAddress(IntPtr module, string name);
+
+    public static string Call(string library, string request)
+    {
+        IntPtr module = LoadLibraryW(library);
+        if (module == IntPtr.Zero) return "load failed: " + Marshal.GetLastWin32Error();
+        IntPtr entry = GetProcAddress(module, "tac_native_invoke");
+        if (entry == IntPtr.Zero) return "no tac_native_invoke export";
+        Invoke invoke = (Invoke)Marshal.GetDelegateForFunctionPointer(entry, typeof(Invoke));
+        byte[] bytes = Encoding.UTF8.GetBytes(request + "\0");
+        IntPtr text = Marshal.AllocHGlobal(bytes.Length);
+        try
+        {
+            Marshal.Copy(bytes, 0, text, bytes.Length);
+            return ReadText(invoke(text));
+        }
+        finally { Marshal.FreeHGlobal(text); }
+    }
+
+    private static string ReadText(IntPtr answer)
+    {
+        if (answer == IntPtr.Zero) return "null answer";
+        int length = 0;
+        while (length < 65536 && Marshal.ReadByte(answer, length) != 0) length++;
+        byte[] bytes = new byte[length];
+        Marshal.Copy(answer, bytes, 0, length);
+        return Encoding.UTF8.GetString(bytes);
+    }
+}
+'@
+        $owner = [guid]::NewGuid().ToString()
+        $request = '{"op":"init","props":{},"route":"/","service":"gateRoot","owner":"' + $owner + '"}'
+        foreach ($name in @('TachyonCompanion.dll', 'TachyonRustCompanion.dll')) {
+            $library = Join-Path $app "bin\$name"
+            "Companion {0} init gateRoot: {1}" -f $name, [TachyonCompanionProbe]::Call($library, $request)
+        }
+    }
+    & powershell.exe -NoProfile -NonInteractive -Command $probe -args $app | ForEach-Object { Write-Host $_ }
 }
 
 function Write-NativeLogTail([string] $log) {
@@ -94,11 +151,13 @@ function Write-OwnedProcessState($process) {
         Format-Table -AutoSize | Out-String | Write-Host
 }
 
-function Write-NativeFailureDiagnostics($process, $window, [string] $log) {
+function Write-NativeFailureDiagnostics($process, $window, [string] $log, [string] $app) {
     Write-Host 'Windows native failure diagnostics (before owned-process cleanup):'
     Write-NativeLogTail $log
     Write-OwnedProcessState $process
     Write-UiaFailureDiagnostics $window
+    try { Write-CompanionAnswers $app }
+    catch { Write-Host "Companion diagnostics were incomplete: $($_.Exception.Message)" }
 }
 
 function Stop-NativeProcesses($process) {
@@ -256,7 +315,7 @@ function Invoke-NativeGate {
     }
     catch {
         $gateFailure = $_
-        try { Write-NativeFailureDiagnostics $script:process $script:window $log }
+        try { Write-NativeFailureDiagnostics $script:process $script:window $log $app }
         catch { Write-Warning "Native failure diagnostics were incomplete: $($_.Exception.Message)" }
         throw $gateFailure
     }
