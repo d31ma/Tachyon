@@ -93,6 +93,22 @@ header-only types, shaped like .NET's `System.Text.Json.Nodes` and
   the same object. Tachyon compiles the needed services before the services
   that need them, and refuses a circle and a `[[Needs]]` type that is not a
   C++ service in `client/services`.
+- `class [[Service, Lifetime({"value":"prototype"})]] TallyService` makes a
+  new object for each component that uses the service and for each
+  `[[Needs]]` field that names it; `"singleton"` is the default.
+  `"application"` fails with `TY1372`, because a C++ page program has no
+  native host to keep an application object. `[[Named("FastGreeterService")]]`
+  beside `[[Needs]]` chooses the class that fills a base-class field.
+- A `[[NeedsAll]]` class declares no constructor. Each reference field
+  without an initial value is a `[[Needs]]` field, and each other field
+  without an initial value is a component property: the page passes it once
+  per component, so a `[[NeedsAll]]` service is a prototype unless
+  `[[Lifetime]]` says otherwise. A property is never empty, so a
+  `std::optional` or pointer property fails with `TY1331`.
+- `[[LocalState]] int count = 0;` and `[[SessionState]]` keep a public page
+  field in `localStorage` or `sessionStorage`, as in the other languages.
+- `[[Description("Keeps the score")]]` gives a class a one-line description
+  for tools; on a model it needs another Tachyon marker beside it.
 - `ApplicationEventPublisher applicationEventPublisher;` publishes a model
   with `publishEvent(model, retain)`. `[[OnEvent]]` takes the event model as
   its one parameter; `{"replay", "condition", "id"}` options, `[[Order(n)]]`
@@ -190,6 +206,25 @@ header-only types, shaped like .NET's `System.Text.Json.Nodes` and
   The browser transport does not read the name; a test unit uses it to find
   the answer (see Test units).
 
+### Validation and converters
+
+- `struct [[Checked]] SignUp` with `[[Required]]` (on a `std::optional` or
+  pointer field), `[[NotEmpty]]` (text), `[[Length({"min":1,"max":80})]]`
+  (text, `std::vector`, `std::map`, `std::set`), `[[Min(0)]]` and `[[Max(9)]]`
+  (numbers) gets a generated `TacChecks<SignUp>`. `[[Check]]` on a service
+  or HTTP client parameter of a `[[Checked]]` model runs it first, so a bad
+  argument fails with the `validation` code and the field path
+  (`name.notBlank`) before the method runs or the request leaves.
+- A `[[Converter]]` class in `client/converters` declares methods without a
+  body, such as `Summary toSummary(const Product& product);`. Tachyon writes
+  each one: it copies same-named fields (nested models, lists and maps of
+  models too) and follows the `[[Convert({"fields":[...]})]]` plan for the
+  rest, with the shared limits (32 entries, source paths of 8 names, an
+  absent path is null). A `JsonNode` to `JsonNode` method needs a plan. A
+  target field with no source, a source that may be empty for a field that
+  is not `std::optional`, and a value of another kind fail the build and
+  name the field. A service gets the converter with `[[Needs]]`.
+
 ### Test units
 
 - A test unit is `client/tests/<Name>Test.hpp` with one class marked
@@ -222,6 +257,8 @@ header-only types, shaped like .NET's `System.Text.Json.Nodes` and
   leaks into a later case. `CounterService counter;` still makes the service
   with the shared objects. A `[[Fake]]` field in the TestSetup class is
   refused, because no `construct` reads it there.
+- `[[FreshStart]]` on the test class or its TestSetup makes every shared
+  service again before each case, so no case sees another case's state.
 - `[[ValueSource([1, 2, 3])]]` on a case with one parameter runs it once for
   each input, named `testName[1]`, `testName[2]` and so on (ADR 0080). The
   list is JSON with 1 to 256 numbers, strings or booleans; Tachyon writes
