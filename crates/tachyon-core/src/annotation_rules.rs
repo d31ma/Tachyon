@@ -677,41 +677,48 @@ impl AnnotationRules {
             Self::TYPE,
             "marks a model whose fields are checked before a method uses it",
         )
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR)
         .bare(),
         Rule::new(
             "Check",
             Self::PARAMETER,
             "checks the fields of this argument before the method runs",
-        ),
+        )
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new(
             "Required",
             Self::FIELD,
             "refuses a value when this field is missing",
         )
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR)
         .bare(),
         Rule::new(
             "NotEmpty",
             Self::FIELD,
             "refuses a value when this field is empty",
         )
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR)
         .bare(),
         Rule::new(
             "Length",
             Self::FIELD,
             "limits how long the text or list in this field may be",
         )
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR)
         .needs_arguments(),
         Rule::new(
             "Min",
             Self::FIELD,
             "refuses a number in this field that is below the given value",
         )
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR)
         .needs_arguments(),
         Rule::new(
             "Max",
             Self::FIELD,
             "refuses a number in this field that is above the given value",
         )
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR)
         .needs_arguments(),
         Rule::new(
             "OnEvent",

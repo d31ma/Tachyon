@@ -1,5 +1,6 @@
 mod cpp_attribute;
 mod cpp_attributes;
+mod cpp_checks;
 mod cpp_class;
 mod cpp_client_unit;
 mod cpp_coverage;
@@ -46,6 +47,7 @@ mod unit_tests;
 
 use cpp_attribute::CppAttribute;
 use cpp_attributes::CppAttributes;
+use cpp_checks::CppChecks;
 use cpp_class::CppClass;
 pub(crate) use cpp_client_unit::CppClientUnit;
 pub(crate) use cpp_coverage::CppCoverage;

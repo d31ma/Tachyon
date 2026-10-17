@@ -1,4 +1,4 @@
-use super::{CppFailure, CppFile, CppLowering, CppMarkerCheck, CppMemberKind};
+use super::{CppChecks, CppFailure, CppFile, CppLowering, CppMarkerCheck, CppMemberKind};
 use crate::Failure;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -28,6 +28,7 @@ impl CppModel {
             .then_some(())
             .ok_or_else(|| CppFailure::pending(relative, 0, Self::CLIENT_ONLY))?;
         CppMarkerCheck::check(relative, &file.class)?;
+        CppChecks::check_model(relative, &file.class)?;
         Ok(Self {
             file,
             path: relative.to_path_buf(),
@@ -55,7 +56,15 @@ impl CppModel {
     }
 
     pub(crate) fn codec(&self) -> String {
-        self.codec_text()
+        format!(
+            "{}{}",
+            self.codec_text(),
+            CppChecks::specialization(&self.file.class)
+        )
+    }
+
+    pub(crate) fn is_checked(&self) -> bool {
+        CppChecks::is_checked(&self.file.class)
     }
 
     fn fields(&self) -> Vec<(String, String)> {

@@ -321,3 +321,51 @@ fn fresh_start_gives_every_case_new_shared_services() {
     let report = UnitProject::report(shared.path(), "client/tests/ReportServiceTest.hpp");
     assert!(!report.cases[1].passed, "{report:?}");
 }
+
+#[test]
+fn a_checked_request_body_is_refused_before_the_request_leaves() {
+    if !UnitProject::has_compiler() {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    UnitProject::write(
+        root.path(),
+        &[
+            (
+                "client/models/Note.hpp",
+                "#include <string>\nstruct [[Checked]] Note {\n    [[NotEmpty]] std::string text;\n};\n",
+            ),
+            (
+                "client/remotes/NoteClient.hpp",
+                "class [[HTTPClient(\"/api\")]] NoteClient {\npublic:\n    [[PostRequest(\"/notes\")]]\n    Task<Note> save([[Check, RequestBody]] Note note);\n};\n",
+            ),
+            (
+                "client/services/NoteService.hpp",
+                "class [[Service]] NoteService {\npublic:\n    [[Needs]] NoteClient& notes;\n    std::string saved;\n    Task<void> keep(std::string text) { Note note = co_await notes.save(Note{text}); saved = note.text; }\n    int length([[Check]] const Note& note) { return static_cast<int>(note.text.size()); }\n};\n",
+            ),
+            (
+                "client/tests/NoteTestSetup.hpp",
+                "class [[TestSetup]] NoteTestSetup {\npublic:\n    static BehaviorAdapters configure() {\n        BehaviorAdapters adapters;\n        adapters.http[\"note\"] = [](const tachyon::http::HttpRequestMessage& request) {\n            return tachyon::json::JsonNode::parse(request.content->readAsString());\n        };\n        return adapters;\n    }\n};\n",
+            ),
+            (
+                "client/tests/NoteServiceTest.hpp",
+                "class [[Test(NoteTestSetup)]] NoteServiceTest {\npublic:\n    NoteService notes;\n    Task<void> testKeepsANote() { co_await notes.keep(\"hi\"); Assert::equals(\"hi\", notes.saved); }\n    Task<void> testRefusesABlankNote() { co_await notes.keep(\"  \"); }\n    void testChecksALength() { Assert::equals(2, notes.length(Note{\"ab\"})); Assert::equals(\"Behavior validation failed: text.notBlank.\", Assert::throws([this] { notes.length(Note{\"\"}); })); }\n};\n",
+            ),
+        ],
+    );
+    let report = UnitProject::report(root.path(), "client/tests/NoteServiceTest.hpp");
+    assert_eq!(
+        UnitProject::outcomes(&report),
+        [
+            (String::from("testKeepsANote"), true),
+            (String::from("testRefusesABlankNote"), false),
+            (String::from("testChecksALength"), true),
+        ],
+        "{report:?}"
+    );
+    assert_eq!(
+        report.cases[1].error.as_deref(),
+        Some("Behavior validation failed: text.notBlank."),
+        "{report:?}"
+    );
+}

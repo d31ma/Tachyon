@@ -494,3 +494,75 @@ fn stored_state_is_a_page_field_the_browser_keeps() {
         ]
     );
 }
+
+#[test]
+fn validation_markers_have_their_cpp_forms() {
+    let model =
+        |source: &str| match super::CppModel::read(Path::new("client/models/SignUp.hpp"), source) {
+            Ok(_) => String::new(),
+            Err(failure) => failure.to_string(),
+        };
+    assert!(
+        model("struct SignUp {\n    [[Min(1)]] int age = 0;\n};\n").contains("needs [[Checked]]")
+    );
+    assert!(
+        model("struct [[Checked]] SignUp {\n    [[Required]] std::string name;\n};\n")
+            .contains("always holds a value")
+    );
+    assert!(
+        model("struct [[Checked]] SignUp {\n    [[NotEmpty]] std::vector<int> tags;\n};\n")
+            .contains("[[NotEmpty]] refuses blank text")
+    );
+    assert!(
+        model("struct [[Checked]] SignUp {\n    [[Length({\"min\":3,\"max\":1})]] std::string name;\n};\n")
+            .contains("[[Length]] takes one JSON object")
+    );
+    assert!(
+        model("struct [[Checked]] SignUp {\n    [[Min(5), Max(1)]] int age = 0;\n};\n")
+            .contains("Min cannot exceed Max")
+    );
+    assert!(
+        model("struct [[Checked]] SignUp {\n    [[Max(\"x\")]] int age = 0;\n};\n")
+            .contains("finite JSON number")
+    );
+    assert!(model("struct [[Checked]] SignUp {\n    [[Min(1), Max(9)]] std::optional<long> age;\n    [[NotEmpty]] std::optional<std::string> name;\n};\n").is_empty());
+    let service = Sources::refusal(
+        "client/services/TallyService.hpp",
+        "class [[Service]] TallyService {\npublic:\n    [[Min(1)]] int count = 0;\n};\n",
+    );
+    assert!(
+        service.contains("go on a C++ model in client/models"),
+        "{service}"
+    );
+    let argued = Sources::refusal(
+        "client/services/TallyService.hpp",
+        "class [[Service]] TallyService {\npublic:\n    void add([[Check(1)]] const SignUp& form) {}\n};\n",
+    );
+    assert!(argued.contains("[[Check]] takes no arguments"), "{argued}");
+}
+
+#[test]
+fn a_check_parameter_needs_a_checked_model() {
+    let root = tempfile::tempdir().expect("project");
+    for (relative, source) in [
+        (
+            "client/models/Plain.hpp",
+            "struct Plain {\n    int count = 0;\n};\n",
+        ),
+        (
+            "client/services/TallyService.hpp",
+            "class [[Service]] TallyService {\npublic:\n    void add([[Check]] const Plain& plain) {}\n};\n",
+        ),
+    ] {
+        let path = root.path().join(relative);
+        std::fs::create_dir_all(path.parent().expect("folder")).expect("folder");
+        std::fs::write(path, source).expect("file");
+    }
+    let Err(failure) = super::CppProgram::tested(root.path()) else {
+        panic!("an unchecked model was accepted");
+    };
+    assert!(
+        failure.to_string().contains("[[Checked]] model"),
+        "{failure}"
+    );
+}

@@ -4,6 +4,7 @@ impl CppPrelude {
     const INCLUDES: &'static str = include_str!("tachyon/includes.hpp");
     const JSON: &'static str = include_str!("tachyon/json.hpp");
     const TASK: &'static str = include_str!("tachyon/task.hpp");
+    const CHECKS: &'static str = include_str!("tachyon/checks.hpp");
     const PAGE: &'static str = include_str!("tachyon/page.hpp");
     const TICKETS: &'static str = include_str!("tachyon/tickets.hpp");
     const PAGE_TASKS: &'static str = include_str!("tachyon/page_tasks.hpp");
@@ -24,6 +25,7 @@ impl CppPrelude {
             Self::INCLUDES,
             Self::JSON,
             Self::TASK,
+            Self::CHECKS,
             Self::PAGE,
             Self::TICKETS,
             Self::PAGE_TASKS,
@@ -41,6 +43,7 @@ impl CppPrelude {
             Self::INCLUDES,
             Self::JSON,
             Self::TASK,
+            Self::CHECKS,
             Self::TEST_HOST,
             Self::TICKETS,
             Self::TEST_EVENTS,

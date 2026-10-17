@@ -281,6 +281,8 @@ private:
             std::string result = handle(text);
             drain();
             return result;
+        } catch (const TacCodedError& problem) {
+            return coded(problem.what(), problem.code());
         } catch (const std::exception& problem) {
             return failure(problem.what());
         } catch (...) {

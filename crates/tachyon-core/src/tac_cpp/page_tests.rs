@@ -275,3 +275,70 @@ fn named_chooses_the_service_that_fills_a_base_class_field() {
     );
     assert_eq!(answers[1]["value"], "HI", "{answers:?}");
 }
+
+#[test]
+fn a_checked_argument_is_refused_before_the_method_runs() {
+    if !PageProject::has_compiler() {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    PageProject::write(
+        root.path(),
+        &[
+            (
+                "client/models/SignUp.hpp",
+                "#include <optional>\n#include <string>\n#include <vector>\nstruct [[Checked]] SignUp {\n    [[NotEmpty, Length({\"max\":8})]] std::string name;\n    [[Required]] std::optional<std::string> email;\n    [[Min(18), Max(130)]] int age = 0;\n    [[Length({\"min\":1})]] std::vector<std::string> tags;\n    [[Min(0)]] std::optional<double> score;\n};\n",
+            ),
+            (
+                "client/services/JoinService.hpp",
+                "class [[Service]] JoinService {\npublic:\n    int joined = 0;\n    int join([[Check]] const SignUp& form) { joined += 1; return form.age; }\n};\n",
+            ),
+        ],
+    );
+    let good = json!({"name": "Ada", "email": "a@b.c", "age": 36, "tags": ["x"]});
+    let with = |key: &str, value: Value| {
+        let mut form = good.clone();
+        form[key] = value;
+        PageProject::call("join", 1, "join", &json!([form]))
+    };
+    let mut missing_email = good.clone();
+    missing_email.as_object_mut().expect("form").remove("email");
+    let answers = PageProject::answers(
+        root.path(),
+        &[("join", "JoinService")],
+        &[
+            PageProject::init("join", 1, &json!({})),
+            PageProject::call("join", 1, "join", &json!([good])),
+            with("name", json!(" \u{a0}")),
+            with("name", json!("Ada Lovelace")),
+            PageProject::call("join", 1, "join", &json!([missing_email])),
+            with("age", json!(17)),
+            with("age", json!(131)),
+            with("tags", json!([])),
+            with("score", json!(-1)),
+            with("score", json!(2.5)),
+            PageProject::get("join", 1, "joined"),
+        ],
+    );
+    assert_eq!(answers[1]["value"], 36, "{answers:?}");
+    let failed: Vec<&str> = answers[2..9]
+        .iter()
+        .map(|answer| answer["error"].as_str().unwrap_or_default())
+        .collect();
+    assert_eq!(
+        failed,
+        [
+            "Behavior validation failed: name.notBlank.",
+            "Behavior validation failed: name.size.",
+            "Behavior validation failed: email.notNull.",
+            "Behavior validation failed: age.min.",
+            "Behavior validation failed: age.max.",
+            "Behavior validation failed: tags.size.",
+            "Behavior validation failed: score.min.",
+        ],
+        "{answers:?}"
+    );
+    assert_eq!(answers[2]["code"], "validation", "{answers:?}");
+    assert_eq!(answers[9]["value"], 36, "{answers:?}");
+    assert_eq!(answers[10]["value"], 2, "{answers:?}");
+}

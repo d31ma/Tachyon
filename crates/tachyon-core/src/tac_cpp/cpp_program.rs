@@ -1,4 +1,4 @@
-use super::{CppFolder, CppLowering, CppModel, CppPrelude, CppService, CppServiceGraph};
+use super::{CppChecks, CppFolder, CppLowering, CppModel, CppPrelude, CppService, CppServiceGraph};
 use crate::Failure;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -17,23 +17,40 @@ impl CppProgram {
     pub(crate) fn read(root: &Path, chosen: &[(String, String, PathBuf)]) -> Result<Self, Failure> {
         let mut graph = CppServiceGraph::new(root)?;
         let registered = Self::register(&mut graph, chosen)?;
-        Ok(Self {
+        Self {
             models: Self::models(root)?,
             services: graph.finish(),
             registered,
             records_calls: false,
-        })
+        }
+        .checked()
     }
 
     pub(crate) fn tested(root: &Path) -> Result<Self, Failure> {
         let mut graph = CppServiceGraph::new(root)?;
         graph.add_every()?;
-        Ok(Self {
+        Self {
             models: Self::models(root)?,
             services: graph.finish(),
             registered: Vec::new(),
             records_calls: true,
-        })
+        }
+        .checked()
+    }
+
+    fn checked(self) -> Result<Self, Failure> {
+        let checked: Vec<String> = self
+            .models
+            .iter()
+            .filter(|model| model.is_checked())
+            .map(|model| model.name().to_owned())
+            .collect();
+        for service in &self.services {
+            for (type_name, at) in CppChecks::checked_types(service.class()) {
+                CppChecks::require_checked(&service.path, at, &type_name, &checked)?;
+            }
+        }
+        Ok(self)
     }
 
     pub(crate) fn has_class(&self, name: &str) -> bool {

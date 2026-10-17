@@ -1,6 +1,6 @@
 use super::{
-    CppClass, CppFailure, CppFile, CppInjection, CppLifetime, CppListener, CppMarkerCheck,
-    CppMember, CppMemberKind, CppRemote,
+    CppChecks, CppClass, CppFailure, CppFile, CppInjection, CppLifetime, CppListener,
+    CppMarkerCheck, CppMember, CppMemberKind, CppRemote,
 };
 use crate::Failure;
 use serde_json::{Value, json};
@@ -36,6 +36,7 @@ impl CppService {
             .ok_or_else(|| CppFailure::unreadable(relative, class.name_at, Self::NAMED))?;
         CppMarkerCheck::check(relative, class)?;
         CppLifetime::check(relative, class)?;
+        CppChecks::check_service(relative, class)?;
         Self::check_members(relative, class)?;
         Self::check_remote(relative, class)?;
         let listeners = class

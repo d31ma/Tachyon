@@ -98,9 +98,10 @@ impl<'a> CppRemote<'a> {
         let constant = [" ", " const "][usize::from(member.is_const)];
         let target = Self::path_expression(&path);
         let parts = Self::request_parts(&member.parameters);
+        let guards = super::CppChecks::guards(member);
         let adapter = Self::literal(&self.adapter);
         format!(
-            "inline {} {}::{}({parameters}){constant}{{\n    tachyon::http::HttpRequestMessage request(tachyon::http::HttpMethod::{verb}, {target});\n{parts}    co_return co_await tachyon::http::TacRemoteCall::answer<{answer}>({adapter}, std::move(request));\n}}\n",
+            "inline {} {}::{}({parameters}){constant}{{{guards}\n    tachyon::http::HttpRequestMessage request(tachyon::http::HttpMethod::{verb}, {target});\n{parts}    co_return co_await tachyon::http::TacRemoteCall::answer<{answer}>({adapter}, std::move(request));\n}}\n",
             member.type_text, self.class.name, member.name
         )
     }
