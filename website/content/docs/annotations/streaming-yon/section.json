@@ -1,8 +1,12 @@
 {
   "heading": "Streaming: Yon",
   "axis": "language",
-  "notApplicable": ["java","groovy","rs"],
-  "body": "StreamRoute marks a controller route method that answers GET requests with a stream of server-sent events. It replaces GetRoute with Stream: one marker says that the route streams. The method name starts with stream, such as streamEvents, StreamEvents or stream_events. The server sends text/event-stream headers before it invokes the route. Then it sends each yielded value as one SSE (server-sent events) data frame, and an end event when the method finishes. The route method only passes on the values; a private generator method holds the loop. StreamRoute is Yon-only and takes an optional path, like the other route annotations. A generator under GetRoute or another route annotation is refused, and so is Stream: `ty migrate fix --write` turns GetRoute with Stream into StreamRoute and renames a get method to stream when that is safe. In one controller, either every GET route is a StreamRoute or none is. Python supports only synchronous generators. These Yon languages stream: JavaScript, TypeScript, Python, PHP, Kotlin, C#, F#, Dart, Ruby, Lua and Go. A Lua stream method, like its private helper, sends each value with `coroutine.yield(value)`, because Tachyon runs the route in a coroutine (ADR 0085). An F# stream member returns `seq<'T>` or `IAsyncEnumerable<'T>`. A Go stream method returns `iter.Seq[Ticket]`, or `iter.Seq2[Ticket, error]` when the stream can fail, and its function stops when `yield` returns false. Java, Groovy and Rust stay single-response. They reject StreamRoute with TY2015 \"@StreamRoute needs JavaScript, TypeScript, Python, PHP, Kotlin, C#, F#, Dart, Ruby, Lua or Go\". In those languages, return the whole collection once as ordinary JSON instead. A stream has the request time limit. At the limit the server stops the process and sends an error event. When the reader goes away, the server stops the process group at once (ADR 0058). A Go route that takes *http.Request gets a request context that ends at that deadline. /api.json marks a stream route with \"stream\": true and \"produces\": \"text/event-stream\". In the browser, StreamRequest on an HTTPClient method in JavaScript, TypeScript or Go receives the stream. The browser event bus opens it. After an error it reconnects after 1, 2, 4, 8 and 16 seconds and then stops, and sixty seconds without a message count as an error.",
+  "notApplicable": [
+    "java",
+    "groovy",
+    "rs"
+  ],
+  "body": "StreamRoute marks a controller route method that answers GET requests with a stream of server-sent events. It replaces GetRoute with Stream: one marker says that the route streams. The method name starts with stream, such as streamEvents, StreamEvents or stream_events. The server sends text/event-stream headers before it invokes the route. Then it sends each yielded value as one SSE (server-sent events) data frame, and an end event when the method finishes. The route method only passes on the values; a private generator method holds the loop. StreamRoute is Yon-only and takes an optional path, like the other route annotations. A generator under GetRoute or another route annotation is refused, and so is Stream: `ty migrate fix --write` turns GetRoute with Stream into StreamRoute and renames a get method to stream when that is safe. In one controller, either every GET route is a StreamRoute or none is. Python supports only synchronous generators. These Yon languages stream: JavaScript, TypeScript, Python, PHP, Kotlin, C#, F#, Dart, Ruby, Lua and Go. A Lua stream method, like its private helper, sends each value with `coroutine.yield(value)`, because Tachyon runs the route in a coroutine (ADR 0085). An F# stream member returns `seq<'T>` or `IAsyncEnumerable<'T>`. A Go stream method returns `iter.Seq[Ticket]`, or `iter.Seq2[Ticket, error]` when the stream can fail, and its function stops when `yield` returns false. Java, Groovy and Rust stay single-response. They reject StreamRoute with TY2015 \"@StreamRoute needs JavaScript, TypeScript, Python, PHP, Kotlin, C#, F#, Dart, Ruby, Lua or Go\". In those languages, return the whole collection once as ordinary JSON instead. A stream has the request time limit. At the limit the server stops the process and sends an error event. When the reader goes away, the server stops the process group at once (ADR 0058). A Go route that takes *http.Request gets a request context that ends at that deadline. /api.json marks a stream route with \"stream\": true and \"produces\": \"text/event-stream\". In the browser, StreamRequest on an HTTPClient method in JavaScript, TypeScript, Go or Swift receives the stream. The browser event bus opens it. After an error it reconnects after 1, 2, 4, 8 and 16 seconds and then stops, and sixty seconds without a message count as an error.",
   "files": [
     {
       "name": "server/services/TicketService.js",
@@ -18,7 +22,9 @@
     },
     {
       "name": "server/models/Ticket.ts",
-      "code": { "file": "server/models/Ticket.ts" }
+      "code": {
+        "file": "server/models/Ticket.ts"
+      }
     },
     {
       "name": "server/services/TicketService.ts",
@@ -34,7 +40,9 @@
     },
     {
       "name": "server/models/Ticket.py",
-      "code": { "file": "server/models/Ticket.py" }
+      "code": {
+        "file": "server/models/Ticket.py"
+      }
     },
     {
       "name": "server/services/TicketService.py",
@@ -50,7 +58,9 @@
     },
     {
       "name": "server/models/Ticket.php",
-      "code": { "file": "server/models/Ticket.php" }
+      "code": {
+        "file": "server/models/Ticket.php"
+      }
     },
     {
       "name": "server/services/TicketService.php",
@@ -66,7 +76,9 @@
     },
     {
       "name": "server/models/Ticket.kt",
-      "code": { "file": "server/models/Ticket.kt" }
+      "code": {
+        "file": "server/models/Ticket.kt"
+      }
     },
     {
       "name": "server/services/TicketService.kt",
@@ -82,7 +94,9 @@
     },
     {
       "name": "server/models/Ticket.cs",
-      "code": { "file": "server/models/Ticket.cs" }
+      "code": {
+        "file": "server/models/Ticket.cs"
+      }
     },
     {
       "name": "server/services/TicketService.cs",
@@ -98,7 +112,9 @@
     },
     {
       "name": "server/models/Ticket.fs",
-      "code": { "file": "server/models/Ticket.fs" }
+      "code": {
+        "file": "server/models/Ticket.fs"
+      }
     },
     {
       "name": "server/services/TicketService.fs",
@@ -114,7 +130,9 @@
     },
     {
       "name": "server/models/Ticket.dart",
-      "code": { "file": "server/models/Ticket.dart" }
+      "code": {
+        "file": "server/models/Ticket.dart"
+      }
     },
     {
       "name": "server/services/TicketService.dart",
@@ -130,7 +148,9 @@
     },
     {
       "name": "server/models/Ticket.rb",
-      "code": { "file": "server/models/Ticket.rb" }
+      "code": {
+        "file": "server/models/Ticket.rb"
+      }
     },
     {
       "name": "server/services/TicketService.rb",

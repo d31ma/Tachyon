@@ -30,6 +30,7 @@ impl SwiftWebServices {
         include_str!("swift_web_services/TacRunningTask.swift"),
         include_str!("swift_web_services/TacTasks.swift"),
         include_str!("swift_web_services/TacHttpTickets.swift"),
+        include_str!("swift_web_services/TacSocketSend.swift"),
         include_str!("TacAwaited.swift")
     );
     const TEST_UNIT_PAGE: &'static str = concat!(

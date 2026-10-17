@@ -452,6 +452,7 @@ const instance = await WebAssembly.instantiate(swiftModule, { tachyon: { ...tach
 const exports = instance.exports
 exports._initialize()
 wasmTasks.attach(exports)
+wasmTasks.sockets = (owner, text) => socketHost(owner, text)
 "
     );
 
@@ -894,6 +895,12 @@ mod kotlin_tests;
 
 #[cfg(test)]
 pub(crate) mod swift_tests;
+
+#[cfg(test)]
+mod swift_helper_tests;
+
+#[cfg(test)]
+mod swift_stream_tests;
 
 #[cfg(test)]
 mod java_behavior_tests;

@@ -293,7 +293,8 @@ impl AnnotationRules {
     ];
     const TAC_BEHAVIOR_ADAPTER: &'static [&'static str] =
         &["js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb"];
-    const TAC_HELPER: &'static [&'static str] = &["js", "ts", "dart", "rs", "py", "cs", "fs"];
+    const TAC_HELPER: &'static [&'static str] =
+        &["js", "ts", "dart", "rs", "py", "cs", "fs", "swift"];
     const TAC_NEEDS_ALL: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "java", "lua", "py",
     ];
@@ -301,7 +302,7 @@ impl AnnotationRules {
     const YON_STREAM: &'static [&'static str] = &[
         "js", "ts", "py", "php", "kt", "cs", "fs", "dart", "rb", "lua", "go",
     ];
-    const TAC_STREAM: &'static [&'static str] = &["js", "ts", "go"];
+    const TAC_STREAM: &'static [&'static str] = &["js", "ts", "go", "swift"];
     const TAC_VALUE_SOURCE: &'static [&'static str] = &[
         "js", "ts", "rs", "kt", "cs", "go", "rb", "dart", "swift", "lua", "hpp",
     ];
@@ -362,7 +363,7 @@ impl AnnotationRules {
     ];
     const CACHE_CHANGES: &'static [&'static str] = &["Cached", "ClearCache", "UpdateCache"];
     const LIFECYCLE: &'static [&'static str] = &["OnStart", "OnStop", "OnEvent"];
-    const HELPER_ADVICE: &'static str = "Tac Helper supports JavaScript, TypeScript, Dart, compiled Rust, the synchronous Python ownership adapter and caller-owned C#/F# composition. C# and F# Helpers require explicit construction and do not support managed Helper injection or lifecycle hooks. F# Helpers require an ordinary primary constructor and do not support authored Needs properties. Other compiled languages need a qualified same-language Helper constructor and ownership adapter; use a supported role rather than replacing Service with Helper";
+    const HELPER_ADVICE: &'static str = "Tac Helper supports JavaScript, TypeScript, Dart, compiled Rust, Swift, the synchronous Python ownership adapter and caller-owned C#/F# composition. A Swift Helper is built by the field that needs it, so it has an init() without arguments. C# and F# Helpers require explicit construction and do not support managed Helper injection or lifecycle hooks. F# Helpers require an ordinary primary constructor and do not support authored Needs properties. Other compiled languages need a qualified same-language Helper constructor and ownership adapter; use a supported role rather than replacing Service with Helper";
     const RUBY_NEEDS_ADVICE: &'static str = "A Ruby NeedsAll class lists each field as `attr_reader :order_store` and writes no `initialize`; a Ruby class that needs default values writes a plain `initialize` and no NeedsAll";
 
     pub(crate) const ALL: &'static [Rule] = &[
@@ -921,7 +922,7 @@ impl AnnotationRules {
         .request()
         .instance()
         .reach(Self::TAC_STREAM, Self::NOWHERE)
-        .advice("The browser's JavaScript holds the stream, so write the @StreamRequest client in JavaScript, TypeScript or Go. Each message is also published as a typed event, so a service in any Tac language receives it with @OnEvent on a method whose parameter is the message model"),
+        .advice("The browser's JavaScript holds the stream, so write the @StreamRequest client in JavaScript, TypeScript, Go or Swift. Each message is also published as a typed event, so a service in any Tac language receives it with @OnEvent on a method whose parameter is the message model"),
         Rule::new(
             "StreamRoute",
             Self::METHOD,
@@ -937,7 +938,7 @@ impl AnnotationRules {
         .request()
         .instance()
         .reach(Self::TAC_STREAM, Self::NOWHERE)
-        .advice("The browser's JavaScript holds the socket, so write the @SocketRequest client in JavaScript, TypeScript or Go. Each message is also published as a typed event, so a service in any Tac language receives it with @OnEvent on a method whose parameter is the message model"),
+        .advice("The browser's JavaScript holds the socket, so write the @SocketRequest client in JavaScript, TypeScript, Go or Swift. Each message is also published as a typed event, so a service in any Tac language receives it with @OnEvent on a method whose parameter is the message model"),
         Rule::new(
             "SocketRoute",
             Self::TYPE,

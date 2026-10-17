@@ -31,8 +31,10 @@ impl<'a> ConcreteContract<'a> {
     const TASKS: [&'static str; 2] = ["Task", "System.Threading.Tasks.Task"];
     const FUTURE: &'static str = "Future";
     const GO_FIELDS: [&'static str; 2] = ["struct{}", "struct {\n\tbehaviors *BehaviorContext\n}"];
-    const GO_HELD: [&'static str; 2] = ["streamrequest", "socketrequest"];
-    const GO_SOCKET: [&'static str; 1] = ["socketrequest"];
+    const PAGE_HELD: [&'static str; 2] = ["streamrequest", "socketrequest"];
+    const SOCKET: [&'static str; 1] = ["socketrequest"];
+    const SWIFT: &'static str = "swift";
+    const SWIFT_SEND: &'static str = "\n{indent}func send<Message: Encodable>(_ message: Message) async throws {\n{indent}{indent}try await tacSocketSend(\"{owner}\", message)\n{indent}}\n";
     const GO_SEND: &'static str = "\nfunc ({receiver} *{owner}) Send(message any) error {\n\treturn behaviorSocketSend(\"{owner}\", message)\n}\n";
     const RUST_FIELDS: [&'static str; 2] = [";", " { behaviors: BehaviorContext }"];
     const TRAIT: &'static str = "trait";
@@ -141,7 +143,8 @@ impl<'a> ConcreteContract<'a> {
 
     fn braced_edits(&self, declaration: &ContractDeclaration) -> Vec<SourceEdit> {
         let members = declaration.members(self.form, &self.code);
-        let needs_context = declaration.role.needs_context(&members);
+        let exchanged = Self::exchanged(&members);
+        let needs_context = declaration.role.needs_context(&exchanged);
         let mut edits: Vec<SourceEdit> = self
             .header(declaration, needs_context)
             .into_iter()
@@ -154,7 +157,31 @@ impl<'a> ConcreteContract<'a> {
                 .filter_map(|member| self.method_edit(member)),
         );
         edits.extend(self.context_edits(declaration, &members, needs_context));
+        edits.extend(self.swift_send(declaration, &members));
         edits
+    }
+
+    fn exchanged(members: &[ContractMember]) -> Vec<ContractMember> {
+        members
+            .iter()
+            .filter(|member| !member.is_marked_with(&Self::PAGE_HELD))
+            .cloned()
+            .collect()
+    }
+
+    fn swift_send(
+        &self,
+        declaration: &ContractDeclaration,
+        members: &[ContractMember],
+    ) -> Option<SourceEdit> {
+        let socket = members
+            .iter()
+            .any(|member| member.is_marked_with(&Self::SOCKET));
+        let wanted = [self.tac, socket, self.form.language == Self::SWIFT] == [true, true, true];
+        let text = Self::SWIFT_SEND
+            .replace("{indent}", &self.indent(members))
+            .replace("{owner}", &declaration.name);
+        wanted.then_some((declaration.close..declaration.close, text))
     }
 
     fn is_bodiless_method(member: &ContractMember) -> bool {
@@ -308,12 +335,7 @@ impl<'a> ConcreteContract<'a> {
 
     fn go_edits(&self, declaration: &ContractDeclaration) -> Vec<SourceEdit> {
         let members = declaration.members(self.form, &self.code);
-        let exchanged: Vec<ContractMember> = members
-            .iter()
-            .filter(|member| !member.is_marked_with(&Self::GO_HELD))
-            .cloned()
-            .collect();
-        let needs_context = declaration.role.needs_context(&exchanged);
+        let needs_context = declaration.role.needs_context(&Self::exchanged(&members));
         let end = (declaration.close + 1).min(self.source.len());
         let text = self.go_type(declaration, &members, needs_context);
         vec![(declaration.header.start..end, text)]
@@ -341,7 +363,7 @@ impl<'a> ConcreteContract<'a> {
     fn go_send(&self, declaration: &ContractDeclaration, members: &[ContractMember]) -> String {
         let socket = members
             .iter()
-            .any(|member| member.is_marked_with(&Self::GO_SOCKET));
+            .any(|member| member.is_marked_with(&Self::SOCKET));
         if [self.tac, socket] != [true, true] {
             return String::new();
         }

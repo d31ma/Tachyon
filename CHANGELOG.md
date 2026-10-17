@@ -10,6 +10,16 @@ machine contracts have their own, independent major versions.
 
 ### Added
 
+- A Swift Tac service can now use a Helper. A `@Needs` field such as
+  `private let cartHelper: CartHelper` builds the Helper in
+  `client/helpers/`, and a Helper can need other Helpers the same way. Each
+  class owns its own Helper, so a Swift Helper has an `init()` without
+  arguments (ADR 0091).
+- A Swift Tac HTTPClient protocol method can now carry `@StreamRequest` or
+  `@SocketRequest`. The page holds the stream or socket for the Swift web
+  service that keeps the client in a `@Needs` field, the service receives each
+  message with `@OnEvent`, and a socket client gets
+  `send(_ message:) async throws` (ADR 0058, ADR 0060 and ADR 0090).
 - C++ Tac test units can now replace and answer what a service needs. A
   `[[Fake]] GreetingClient greetingClient;` field reaches the `[[Needs]]`
   fields of the service that `construct<CounterService>()` makes. A static

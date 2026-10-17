@@ -154,3 +154,10 @@ client in a field; the Go service receives each message with `// @OnEvent`,
 and the generated `Send(message any) error` writes to the socket and returns
 an error code instead of a rejected promise. See ADR 0090, "Go streams and
 sockets". The other compiled Tac languages still refuse `@SocketRequest`.
+
+## Amendment (2026-10-17): Swift socket clients
+
+`@SocketRequest` is also written on a Swift HTTPClient protocol method. The
+page holds the `WebSocket` for the Swift web service that keeps the client in
+a property, and the generated `send(_ message:) async throws` writes to it.
+See ADR 0090, "Swift streams and sockets".

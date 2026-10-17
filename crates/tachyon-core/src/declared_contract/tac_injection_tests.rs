@@ -206,6 +206,23 @@ fn a_swift_service_field_that_needs_a_remote_builds_the_client() {
 }
 
 #[test]
+fn a_swift_field_that_needs_a_helper_builds_it_and_a_rust_one_does_not() {
+    let paths = [
+        Path::new("client/helpers/cart/CartHelper.swift"),
+        Path::new("client/helpers/CartHelper.rs"),
+    ];
+    let names = DeclaredContract::injected_names(paths.into_iter());
+    assert_eq!(names, ["CartHelper"]);
+    let source = "@Service\nfinal class CartService {\n    @Needs\n    private let cartHelper: CartHelper\n}\n";
+    let path = TacInjection::service_path("swift");
+    let filled = DeclaredContract::injected(Path::new(&path), source, &names).unwrap_or_default();
+    assert!(
+        filled.contains("    private let cartHelper: CartHelper = CartHelper()"),
+        "{filled}"
+    );
+}
+
+#[test]
 fn a_java_service_field_that_needs_a_remote_builds_the_client() {
     let paths = [Path::new("client/remotes/GreetingClient.java")];
     let names = DeclaredContract::injected_names(paths.into_iter());

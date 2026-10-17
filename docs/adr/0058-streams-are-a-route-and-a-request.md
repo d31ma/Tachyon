@@ -133,3 +133,9 @@ the client in a field declares the stream, the page's event bus opens it with
 the same rules, and the Go service receives each message with `// @OnEvent`
 on a method whose parameter is the message model. See ADR 0090, "Go streams
 and sockets". The other compiled Tac languages still refuse `@StreamRequest`.
+
+## Amendment (2026-10-17): Swift stream clients
+
+`@StreamRequest` is also written on a Swift HTTPClient protocol method, held
+by the page for the Swift web service that keeps the client in a property,
+as for Go. See ADR 0090, "Swift streams and sockets".

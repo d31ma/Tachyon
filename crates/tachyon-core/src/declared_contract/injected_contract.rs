@@ -55,6 +55,8 @@ impl<'a> InjectedContract<'a> {
     const EMPTY_ARGUMENTS: &'static str = "()";
     const INJECTED_FOLDERS: [&'static str; 2] = ["client/stores", "client/converters"];
     const REMOTES: &'static str = "client/remotes";
+    const HELPERS: &'static str = "client/helpers";
+    const HELPER_LANGUAGES: [&'static str; 1] = ["swift"];
     const GO: &'static str = "go";
     const REMOTE_LANGUAGES: [&'static str; 5] = [Self::GO, "kt", "swift", "java", Self::RUBY];
     const RUBY: &'static str = "rb";
@@ -101,7 +103,21 @@ impl<'a> InjectedContract<'a> {
         let in_folder = Self::INJECTED_FOLDERS
             .iter()
             .any(|folder| path.parent() == Some(Path::new(folder)));
-        [in_folder, Self::injected_remote(path)].contains(&true)
+        [
+            in_folder,
+            Self::injected_remote(path),
+            Self::injected_helper(path),
+        ]
+        .contains(&true)
+    }
+
+    fn injected_helper(path: &Path) -> bool {
+        [
+            path.starts_with(Self::HELPERS),
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| Self::HELPER_LANGUAGES.contains(&extension)),
+        ] == [true, true]
     }
 
     fn injected_remote(path: &Path) -> bool {

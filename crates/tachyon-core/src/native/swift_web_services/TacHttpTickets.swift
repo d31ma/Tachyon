@@ -11,6 +11,12 @@ enum TacHttpTickets {
     nonisolated(unsafe) static var waiting: [Int: (TacRunningTask, CheckedContinuation<String, Never>)] = [:]
 
     static func exchange(_ request: String) async -> String {
+        await started(request) { ticket, pointer, length in tacHostHttpStart(ticket, pointer, length) }
+    }
+
+    static func started(
+        _ request: String, _ start: (Int32, UnsafePointer<UInt8>?, Int32) -> Void
+    ) async -> String {
         guard let running = TacTasks.running else { return outsideTask }
         guard !Task.isCancelled else { return cancelled }
         return await withCheckedContinuation { continuation in
@@ -18,7 +24,7 @@ enum TacHttpTickets {
             let ticket = last
             waiting[ticket] = (running, continuation)
             var text = request
-            text.withUTF8 { tacHostHttpStart(Int32(ticket), $0.baseAddress, Int32($0.count)) }
+            text.withUTF8 { start(Int32(ticket), $0.baseAddress, Int32($0.count)) }
         }
     }
 

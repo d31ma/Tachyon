@@ -32,11 +32,13 @@ without the error text. A stream has the request
 time limit: at the limit the server stops it and sends
 event: error, and the browser opens the stream again.
 
-In the browser, @StreamRequest is JavaScript, TypeScript or Go.
+In the browser, @StreamRequest is JavaScript, TypeScript, Go or Swift.
 A Go client is an interface method such as Receive(tick Tick);
 the page holds the stream for the Go service that keeps the client
 in a // @Needs field, and that service receives each message with
-// @OnEvent.
+// @OnEvent. A Swift client is a protocol method such as
+func receive(_ tick: Tick), held the same way for the Swift web
+service that keeps the client in a @Needs field.
 
 JavaScript and TypeScript require a runtime supporting the authored
 stream syntax; Node is the default. Other languages still require

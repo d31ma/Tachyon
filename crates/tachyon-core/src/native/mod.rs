@@ -155,6 +155,7 @@ mod site_tests;
 #[cfg(test)]
 mod storage_tests;
 mod style_source;
+mod swift_streams;
 mod swift_web_services;
 mod vendor_provenance;
 mod web_program_build;

@@ -4,6 +4,7 @@ enum TacMember {
     case task(([Any?]) async throws -> Any?)
     case listener(TacListener)
     case hook(Bool, () throws -> Void)
+    case stream(TacStream)
 
     static func field(_ read: @escaping () -> Any?) -> TacMember { .field(read, nil) }
 }
@@ -31,6 +32,22 @@ final class TacListener {
         self.returns = returns
         self.asynchronous = asynchronous
         self.invoke = invoke
+    }
+}
+
+final class TacStream {
+    let client: String
+    let path: String
+    let event: String
+    let socket: Bool
+    let models: Any?
+
+    init(_ client: String, _ path: String, _ event: String, _ socket: Bool, _ models: String?) {
+        self.client = client
+        self.path = path
+        self.event = event
+        self.socket = socket
+        self.models = models.flatMap(tacParse)
     }
 }
 
@@ -181,13 +198,16 @@ private func tacHandle(_ raw: String) throws -> String {
         var methods: [Any?] = []
         var tasks: [Any?] = []
         var listeners: [Any?] = []
+        var streams: [Any?] = []
         for (name, member) in tac {
             if case .field = member { fields.append(name) }
             if case .method = member { methods.append(name) }
             if case .task = member { methods.append(name); tasks.append(name) }
             if case .listener(let listener) = member { listeners.append(tacDescribeListener(name, listener)) }
+            if case .stream(let stream) = member { streams.append(tacDescribeStream(stream)) }
         }
-        let described = TacPlatform.pageListeners ? ",\"listeners\":" + tacEncode(listeners) : ""
+        let held = streams.isEmpty ? "" : ",\"streams\":" + tacEncode(streams)
+        let described = TacPlatform.pageListeners ? ",\"listeners\":" + tacEncode(listeners) + held : ""
         let asynchronous = TacPlatform.taskHost ? ",\"asyncMethods\":" + tacEncode(tasks) : ""
         return "{\"value\":{\"fields\":" + tacEncode(fields) + ",\"methods\":"
             + tacEncode(methods) + asynchronous + described + "}}"
@@ -447,6 +467,13 @@ private func tacDescribeListener(_ key: String, _ listener: TacListener) -> [Str
         "key": key, "events": listener.events.map { $0 as Any? }, "replay": listener.replay,
         "order": listener.order, "asynchronous": listener.asynchronous,
         "condition": listener.condition, "models": listener.models,
+    ]
+}
+
+private func tacDescribeStream(_ stream: TacStream) -> [String: Any?] {
+    [
+        "client": stream.client, "path": stream.path, "event": stream.event,
+        "socket": stream.socket, "models": stream.models,
     ]
 }
 

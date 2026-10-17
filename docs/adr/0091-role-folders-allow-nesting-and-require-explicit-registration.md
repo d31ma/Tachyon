@@ -80,6 +80,22 @@ is removed. Field `Needs` constructor lowering works only for typed
 constructors that are called explicitly. C# has no managed Helper injection
 and no automatic Helper cleanup.
 
+## Swift Tac Helpers — 2026-10-17
+
+A Swift Tac Helper is built by the field that needs it. Tachyon writes
+`@Needs private let cartHelper: CartHelper` as
+`private let cartHelper: CartHelper = CartHelper()`, in a service and in a
+Helper under `client/helpers/` at any depth, so a Helper may need other
+Helpers. Each class that needs a Helper owns its own instance, which lives
+and goes away with that class. A Swift Helper therefore has an `init()`
+without arguments. It has no lifetime of its own and no `OnStart`, `OnStop`
+or `OnEvent`; the event check refuses those with `TY1405`, as it does for any
+type that is not the service. Named does not select a Swift Helper.
+
+Evidence: `tac_web::swift_helper_tests` builds a Swift prototype service that
+needs a Helper which needs another Helper, runs it under Node, and checks that
+each service instance and its replacement have their own Helpers.
+
 ## Amendment (2026-10-03): one structure check before the build
 
 The rules of this ADR, ADR 0067 (file names) and ADR 0064 (utilities) run as

@@ -140,19 +140,20 @@ fn csharp_tac_helper_keeps_folder_and_role_guards() {
             "{path}"
         );
     }
-    for (extension, source) in [
-        ("kt", "@Helper\nclass LabelHelper {}"),
-        ("swift", "@Helper\nfinal class LabelHelper {}"),
-    ] {
-        assert!(
-            crate::behavior::HelperRole::refuse_in_tac(
-                Path::new(&format!("client/helpers/LabelHelper.{extension}")),
-                source
-            )
-            .is_err(),
-            "{extension}"
-        );
-    }
+    assert!(
+        crate::behavior::HelperRole::refuse_in_tac(
+            Path::new("client/helpers/LabelHelper.kt"),
+            "@Helper\nclass LabelHelper {}"
+        )
+        .is_err()
+    );
+    assert!(
+        crate::behavior::HelperRole::refuse_in_tac(
+            Path::new("client/helpers/LabelHelper.swift"),
+            "@Helper\nfinal class LabelHelper {}"
+        )
+        .is_ok()
+    );
 }
 
 #[test]

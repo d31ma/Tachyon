@@ -9,7 +9,7 @@ import { RuleTableParser } from './rule-table-parser.mjs'
 export class AnnotationReach {
   static ruleTable = fileURLToPath(new URL('../../crates/tachyon-core/src/annotation_rules.rs', import.meta.url))
   static codePrefix = 'TY'
-  static browserHeld = ['js', 'ts', 'go']
+  static browserHeld = ['js', 'ts', 'go', 'swift']
 
   /** @type {Record<Realm, string[]>} */
   realmLanguages
