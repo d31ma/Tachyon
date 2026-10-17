@@ -156,3 +156,32 @@ fn python_client_units_keep_missing_test_and_plain_helper_diagnostics() {
             .any(|problem| problem.code.number() == 1363)
     );
 }
+
+#[test]
+fn python_client_value_source_runs_the_case_once_for_each_input() {
+    let project = PythonProject::project(
+        "@Test(UnitTestSetup)\nclass CounterServiceTest:\n    @ValueSource([1, \"two\", [3]])\n    def test_keeps_an_input(self, value: object) -> None:\n        Assert.is_true(value is not None)\n\n    @ValueSource([0, 1])\n    def test_counts_from_zero(self, start: int) -> None:\n        Assert.equals(0, start)\n",
+    );
+    let report = run(project.path(), Path::new(PythonProject::UNIT_PATH)).expect("Python unit");
+    let names = report
+        .cases
+        .iter()
+        .map(|case| case.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        [
+            "test_keeps_an_input[1]",
+            "test_keeps_an_input[2]",
+            "test_keeps_an_input[3]",
+            "test_counts_from_zero[1]",
+            "test_counts_from_zero[2]",
+        ]
+    );
+    let passed = report
+        .cases
+        .iter()
+        .map(|case| case.passed)
+        .collect::<Vec<_>>();
+    assert_eq!(passed, [true, true, true, true, false]);
+}

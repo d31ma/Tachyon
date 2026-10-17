@@ -306,7 +306,7 @@ impl AnnotationRules {
     ];
     const TAC_STREAM: &'static [&'static str] = &["js", "ts", "go", "rb", "rs"];
     const TAC_VALUE_SOURCE: &'static [&'static str] = &[
-        "js", "ts", "rs", "kt", "cs", "go", "rb", "dart", "swift", "lua", "hpp",
+        "js", "ts", "rs", "kt", "cs", "go", "rb", "dart", "swift", "lua", "hpp", "py",
     ];
     const YON_VALUE_SOURCE: &'static [&'static str] = &[
         "js", "ts", "py", "rs", "java", "groovy", "kt", "cs", "fs", "go", "rb", "php", "dart",
@@ -521,7 +521,7 @@ impl AnnotationRules {
             "keeps this field in the browser's localStorage, so its value comes back after a reload and in later visits on this device",
         )
         .bare()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::NOWHERE)
+        .reach(Self::TAC_BEHAVIOR, Self::NOWHERE)
         .clashes(&["SessionState", "Needs"]),
         Rule::new(
             "SessionState",
@@ -529,7 +529,7 @@ impl AnnotationRules {
             "keeps this field in the browser's sessionStorage, so its value comes back after a reload in the same tab",
         )
         .bare()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::NOWHERE)
+        .reach(Self::TAC_BEHAVIOR, Self::NOWHERE)
         .clashes(&["LocalState", "Needs"]),
         Rule::new(
             "CacheSettings",
