@@ -39,6 +39,8 @@ Start with:
 10. [`RELEASE_ENGINEERING.md`](RELEASE_ENGINEERING.md) and
     [`SUPPORT_TIERS.md`](SUPPORT_TIERS.md) for release claims based on
     evidence.
+11. [`SELF_HOSTED_RUNNERS.md`](SELF_HOSTED_RUNNERS.md) for running the Rust CI
+    workflow on maintainer machines.
 
 Decisions that are hard to undo are in [`adr/`](adr/). Public machine
 contracts are in [`../api/`](../api/). The `tachyon-contracts` test suite runs

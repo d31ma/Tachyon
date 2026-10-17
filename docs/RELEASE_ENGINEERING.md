@@ -95,6 +95,12 @@ investigate.
 Cross-building may add to the matrix. It never replaces native evidence for
 promotion.
 
+Release qualification always runs on GitHub-hosted runners. `rust-ci.yml`
+chooses a self-hosted runner only for pushes to branches when
+`TACHYON_SELF_HOSTED` is `true`, and a release tag is not a branch.
+[SELF_HOSTED_RUNNERS.md](SELF_HOSTED_RUNNERS.md) describes the self-hosted
+runners that maintainers can use for branch CI.
+
 [RECONCILIATION.md](RECONCILIATION.md) lists the local features being
 reconciled. Its acceptance gates must pass on the actual downloaded draft
 assets, not only on a local developer executable. The existing `v26.35.07`

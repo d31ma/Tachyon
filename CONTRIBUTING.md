@@ -184,6 +184,15 @@ on the target. The `tachyon-contracts` tests check every canonical schema
 against its meta-schema. They also check that each schema accepts its
 positive fixture and rejects its negative fixture.
 
+## Self-Hosted CI Runners
+
+By default every job in `.github/workflows/rust-ci.yml` runs on a
+GitHub-hosted runner. A maintainer can move the jobs of branch pushes to their
+own macOS, Windows, and WSL machines with the repository variable
+`TACHYON_SELF_HOSTED`. Pull requests always stay on GitHub-hosted runners.
+[`docs/SELF_HOSTED_RUNNERS.md`](docs/SELF_HOSTED_RUNNERS.md) explains how to
+set up each machine and the security rules for this public repository.
+
 ## Change Shape
 
 - Work in a branch with one purpose. Submit small vertical slices.
