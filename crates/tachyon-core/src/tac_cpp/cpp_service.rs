@@ -23,6 +23,7 @@ impl CppService {
     const ONE_FIELD: &'static str = "Declare one C++ field per line";
     const OVERLOADED: &'static str = "A C++ service method that the page calls has one name; C++ overloads cannot reach the page. Rename one of the methods";
     const NAMED: &'static str = "A C++ class is named after its file";
+    const STORED: &'static str = "A C++ [[LocalState]] or [[SessionState]] field is a page field that the browser keeps: public, not static, not const and not a reference, for example `[[LocalState]] int count = 0;`";
 
     pub(crate) fn read(relative: &Path, source: &str) -> Result<Self, Failure> {
         let file = CppFile::read(relative, source)?;
@@ -212,8 +213,15 @@ impl CppService {
         .contains(&true);
         let wrong_needs = [member.marked("Needs"), wrong_reference] == [true, true];
         let crowded = [member.kind == CppMemberKind::Field, member.declarators > 1] == [true, true];
+        let stored = [member.marked("LocalState"), member.marked("SessionState")].contains(&true);
+        let page_field = [
+            member.is_public_instance(CppMemberKind::Field),
+            !member.is_const,
+            Self::is_page_field(member),
+        ] == [true, true, true];
         [
             (nested, Self::NESTED),
+            ([stored, page_field] == [true, false], Self::STORED),
             (wrong_needs, Self::NEEDS_FORM),
             (crowded, Self::ONE_FIELD),
         ]

@@ -291,8 +291,14 @@ impl AnnotationRules {
     const TAC_FAKE: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "py", "hpp",
     ];
+    const TAC_BEHAVIOR_AND_CPP: &'static [&'static str] = &[
+        "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "py", "hpp",
+    ];
     const TAC_BEHAVIOR_ADAPTER: &'static [&'static str] =
         &["js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb"];
+    const TAC_STORED_STATE: &'static [&'static str] = &[
+        "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "hpp",
+    ];
     const TAC_HELPER: &'static [&'static str] = &["js", "ts", "dart", "rs", "py", "cs", "fs"];
     const TAC_NEEDS_ALL: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "java", "lua", "py", "hpp",
@@ -418,6 +424,7 @@ impl AnnotationRules {
             "builds new objects for every test instead of sharing them",
         )
         .bare()
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR)
         .class_needs(Self::TEST_CLASSES),
         Rule::retired(
             "Client",
@@ -518,7 +525,7 @@ impl AnnotationRules {
             "keeps this field in the browser's localStorage, so its value comes back after a reload and in later visits on this device",
         )
         .bare()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::NOWHERE)
+        .reach(Self::TAC_STORED_STATE, Self::NOWHERE)
         .clashes(&["SessionState", "Needs"]),
         Rule::new(
             "SessionState",
@@ -526,7 +533,7 @@ impl AnnotationRules {
             "keeps this field in the browser's sessionStorage, so its value comes back after a reload in the same tab",
         )
         .bare()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::NOWHERE)
+        .reach(Self::TAC_STORED_STATE, Self::NOWHERE)
         .clashes(&["LocalState", "Needs"]),
         Rule::new(
             "CacheSettings",

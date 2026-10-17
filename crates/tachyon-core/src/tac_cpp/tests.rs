@@ -193,7 +193,7 @@ fn needs_fields_are_references_without_a_value() {
 fn markers_follow_the_shared_rule_table() {
     let refused = Sources::refusal(
         "client/services/TallyService.hpp",
-        "class TallyService {\npublic:\n    [[LocalState]] int count = 0;\n};\n",
+        "class TallyService {\npublic:\n    [[AllOrNothing]] void save() {}\n};\n",
     );
     assert!(
         refused.contains("TY1308") && refused.contains("is not available in C++ Tac code"),
@@ -469,4 +469,28 @@ fn lifetime_needs_all_and_named_forms_are_checked() {
         "class [[Service, NeedsAll, Lifetime({\"value\":\"singleton\"})]] TallyService {\npublic:\n    std::string title;\n};\n",
     );
     assert!(!singleton.is_prototype());
+}
+
+#[test]
+fn stored_state_is_a_page_field_the_browser_keeps() {
+    let refused = Sources::refusal(
+        "client/services/TallyService.hpp",
+        "class [[Service]] TallyService {\nprivate:\n    [[LocalState]] int count = 0;\n};\n",
+    );
+    assert!(
+        refused.contains("is a page field that the browser keeps"),
+        "{refused}"
+    );
+    let stored = super::CppRoles::stored(
+        Path::new("client/services/TallyService.hpp"),
+        "class [[Service]] TallyService {\npublic:\n    [[LocalState]] int item_count = 0;\n    [[SessionState]] std::string draft;\n    int plain = 0;\n};\n",
+    )
+    .expect("stored");
+    assert_eq!(
+        stored.into_iter().collect::<Vec<_>>(),
+        [
+            (String::from("draft"), String::from("session")),
+            (String::from("itemCount"), String::from("local")),
+        ]
+    );
 }

@@ -294,3 +294,30 @@ fn coverage_lists_the_public_methods_of_cpp_services() {
         [(String::from("CounterService"), String::from("askServer"))]
     );
 }
+
+#[test]
+fn fresh_start_gives_every_case_new_shared_services() {
+    if !UnitProject::has_compiler() {
+        return;
+    }
+    let unit = |marker: &str| {
+        format!(
+            "class [[Test(ReportTestSetup){marker}]] ReportServiceTest {{\npublic:\n    ReportService report;\n    void testFirstAdds() {{ report.tally.count += 1; Assert::equals(1, report.direct()); }}\n    void testSecondAdds() {{ report.tally.count += 1; Assert::equals(1, report.shared()); }}\n}};\n"
+        )
+    };
+    let root = tempfile::tempdir().expect("project");
+    UnitProject::report_project(root.path(), &unit(", FreshStart"));
+    let report = UnitProject::report(root.path(), "client/tests/ReportServiceTest.hpp");
+    assert_eq!(
+        UnitProject::outcomes(&report),
+        [
+            (String::from("testFirstAdds"), true),
+            (String::from("testSecondAdds"), true),
+        ],
+        "{report:?}"
+    );
+    let shared = tempfile::tempdir().expect("project");
+    UnitProject::report_project(shared.path(), &unit(""));
+    let report = UnitProject::report(shared.path(), "client/tests/ReportServiceTest.hpp");
+    assert!(!report.cases[1].passed, "{report:?}");
+}

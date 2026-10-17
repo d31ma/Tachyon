@@ -12,6 +12,7 @@ pub(crate) struct CppClientUnit {
     setup: String,
     cases: Vec<CppTestCase>,
     fakes: Vec<(String, usize)>,
+    fresh: bool,
     lowered: String,
     path: PathBuf,
 }
@@ -23,6 +24,7 @@ impl CppClientUnit {
     const FLAGS: [&'static str; 3] = ["-std=c++20", "-O0", "-fno-color-diagnostics"];
     const FAILED: u16 = 2021;
     const CONFIGURE: &'static str = "configure";
+    const FRESH_START: &'static str = "FreshStart";
     const NO_TEST: &'static str =
         "A C++ test unit declares one class marked [[Test(<Name>TestSetup)]]";
     const NO_SETUP: &'static str = "[[Test]] names its TestSetup class first, for example [[Test(TallyTestSetup)]], and client/tests/TallyTestSetup.hpp declares class [[TestSetup]] TallyTestSetup";
@@ -32,11 +34,11 @@ impl CppClientUnit {
 
     pub(crate) fn run(project: &Path, relative: &Path, source: &str) -> Result<String, Failure> {
         let unit = Self::read(relative, source)?;
-        let (setup, answers) = Self::setup(project, &unit)?;
+        let (setup, answers, fresh) = Self::setup(project, &unit)?;
         let program = CppProgram::tested(project)?;
         unit.check_fake_types(&program)?;
         let located = CppProgram::located(&unit.path, &unit.lowered);
-        let units = format!("{setup}{located}{}", unit.main(answers));
+        let units = format!("{setup}{located}{}", unit.main(answers, fresh));
         Self::compiled_and_run(relative, &program.test_source(&units))
     }
 
@@ -60,6 +62,7 @@ impl CppClientUnit {
             setup,
             cases: CppTestCase::read_all(relative, &file.class)?,
             fakes: fake_types,
+            fresh: Self::starts_fresh(&file.class),
             lowered: CppLowering::test_unit(&file, source, &fakes),
             path: relative.to_path_buf(),
         })
@@ -101,7 +104,14 @@ impl CppClientUnit {
             .ok_or_else(|| CppFailure::unreadable(relative, marker.at, Self::NO_SETUP))
     }
 
-    fn setup(project: &Path, unit: &Self) -> Result<(String, bool), Failure> {
+    fn starts_fresh(class: &super::CppClass) -> bool {
+        class
+            .markers
+            .iter()
+            .any(|marker| marker.name == Self::FRESH_START)
+    }
+
+    fn setup(project: &Path, unit: &Self) -> Result<(String, bool, bool), Failure> {
         let path = project
             .join(Self::TESTS)
             .join(format!("{}.hpp", unit.setup));
@@ -132,7 +142,8 @@ impl CppClientUnit {
         })?;
         let answers = file.class.members.iter().any(Self::is_configure);
         let lowered = CppLowering::model(&file, &source);
-        Ok((CppProgram::located(&relative, &lowered), answers))
+        let fresh = [unit.fresh, Self::starts_fresh(&file.class)].contains(&true);
+        Ok((CppProgram::located(&relative, &lowered), answers, fresh))
     }
 
     fn is_configure(member: &CppMember) -> bool {
@@ -154,8 +165,9 @@ impl CppClientUnit {
         )
     }
 
-    fn main(&self, answers: bool) -> String {
-        let prepared = self.prepared(answers);
+    fn main(&self, answers: bool, fresh: bool) -> String {
+        let started = ["", "tachyon::TacFreshStart::next(); "][usize::from(fresh)];
+        let prepared = format!("{started}{}", self.prepared(answers));
         let mut cases = String::new();
         for case in &self.cases {
             let _ = writeln!(

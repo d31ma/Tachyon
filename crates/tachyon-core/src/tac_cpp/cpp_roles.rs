@@ -1,5 +1,6 @@
 use super::{CppFile, CppLifetime};
 use crate::Failure;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 pub(crate) struct CppRoles;
@@ -55,5 +56,20 @@ impl CppRoles {
                     .collect()
             },
         )
+    }
+
+    pub(crate) fn stored(path: &Path, source: &str) -> Result<BTreeMap<String, String>, Failure> {
+        let file = CppFile::read(path, source)?;
+        let mut fields = BTreeMap::new();
+        for member in &file.class.members {
+            let area = [("LocalState", "local"), ("SessionState", "session")]
+                .into_iter()
+                .find(|(marker, _)| member.marked(marker))
+                .map(|(_, area)| area);
+            if let Some(area) = area {
+                fields.insert(crate::companion::camel_case(&member.name), area.to_owned());
+            }
+        }
+        Ok(fields)
     }
 }
