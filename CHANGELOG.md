@@ -542,6 +542,14 @@ machine contracts have their own, independent major versions.
   Before, a test double that one case assigned was still there in the next
   case, and `construct<Role>()` passed it on.
 
+- A Dart test unit now clears every `@Fake` field before each case: a
+  nullable or `dynamic` field becomes `null`, a `bool` becomes `false` and
+  an `int`, `double` or `num` becomes zero. Before, a test double that one
+  case assigned was still there in the next case, and
+  `construct<Role>(Role)` passed it on. A Fake with another non-nullable
+  type, such as a `late` field, has no empty value, so the build now refuses
+  it and asks for a nullable declaration.
+
 - The `lua/THIRD_PARTY_NOTICES.txt` that a build writes beside the Lua web
   runtime now also holds the Emscripten, musl and compiler-rt licenses, as
   the Ruby notices do. The runtime is linked with Emscripten, which adds its

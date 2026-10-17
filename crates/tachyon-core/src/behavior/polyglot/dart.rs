@@ -37,7 +37,7 @@ pub(super) fn lower(module: &Module) -> Result<String, String> {
         if let Some(unit) = polyglot_unit(type_declaration) {
             edits.push(Edit {
                 range: type_declaration.body.start..type_declaration.body.start,
-                replacement: test_members(module, type_declaration, &unit),
+                replacement: test_members(module, type_declaration, &unit)?,
             });
         }
         let methods = lower_methods(module, type_declaration, &mut edits)?;
@@ -364,7 +364,7 @@ fn quote(value: &str) -> String {
     StringLiteral::DART.of(value)
 }
 
-fn test_members(module: &Module, owner: &Type, unit: &Unit) -> String {
+fn test_members(module: &Module, owner: &Type, unit: &Unit) -> Result<String, String> {
     let calls = super::super::ValueSource::calls(&unit.cases, &unit.inputs, &CallStyle::DART);
     let names = joined(&calls, |(name, _)| format!("{}, ", quote(name)));
     let dispatch = joined(&calls, |(name, call)| {
@@ -374,14 +374,15 @@ fn test_members(module: &Module, owner: &Type, unit: &Unit) -> String {
     let properties = property_list(unit);
     let construction =
         super::dart_test_construction::DartTestConstruction::members(module, owner, unit);
-    format!(
+    let cleared_fakes = super::typed_fake_reset::TypedFakeReset::DART.statements(owner, unit)?;
+    Ok(format!(
         "\n  BehaviorContext? behaviors;\n{construction}\
          \n  void startBehaviors() {{\n    stopBehaviors();\n    \
          behaviors = Behaviors.create({}, partition: {}, signal: BehaviorSignal(), profiles: [{profiles}], properties: {{{properties}}});\n  }}\n\
          \n  void stopBehaviors() {{\n    behaviors?.dispose();\n    behaviors = null;\n  }}\n\
          \n  Future<void> runCase(String name) async {{\n    switch (name) {{\n{dispatch}    }}\n  }}\n\
          \n  Future<Object?> POST() async {{\n    final cases = <Object?>[];\n    \
-         for (final name in [{names}]) {{\n      try {{\n        startBehaviors();\n        BehaviorCalls.take();\n        await runCase(name);\n        \
+         for (final name in [{names}]) {{\n      try {{\n{cleared_fakes}        startBehaviors();\n        BehaviorCalls.take();\n        await runCase(name);\n        \
          cases.add({{'name': name, 'passed': true, 'called': BehaviorCalls.take()}});\n      }} on BehaviorError catch (error) {{\n        \
          cases.add({{'name': name, 'passed': false, 'error': error.code, 'called': BehaviorCalls.take()}});\n      }} catch (error) {{\n        \
          cases.add({{'name': name, 'passed': false, 'error': '$error', 'called': BehaviorCalls.take()}});\n      }}\n      stopBehaviors();\n    }}\n    \
@@ -389,7 +390,7 @@ fn test_members(module: &Module, owner: &Type, unit: &Unit) -> String {
         unit.configuration,
         quote(&unit.partition),
         quote(&unit.name),
-    )
+    ))
 }
 
 fn profile_list(unit: &Unit) -> String {

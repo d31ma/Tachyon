@@ -30,6 +30,19 @@ impl TypedFakeReset {
         end: "",
     };
 
+    pub(super) const DART: Self = Self {
+        language: "Dart",
+        untyped: &["", "var", "dynamic"],
+        empty_values: &[
+            ("bool", "false"),
+            ("int", "0"),
+            ("num", "0"),
+            ("double", "0.0"),
+        ],
+        indent: "        ",
+        end: ";",
+    };
+
     pub(super) fn statements(&self, owner: &Type, unit: &Unit) -> Result<String, String> {
         unit.mocks
             .iter()

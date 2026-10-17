@@ -57,3 +57,30 @@ fn a_type_argument_mismatch_is_refused_before_a_constructor_call() {
     assert!(guard < factory);
     assert!(source.contains("Test.construct needs a target matching its type argument."));
 }
+
+#[test]
+fn every_dart_fake_is_cleared_before_each_case() {
+    let source =
+        lowered("@Fake\n String? value;\n @Fake\n int count = 0;\n @Fake\n bool seen = false;");
+    assert!(
+        source.contains(
+            "      try {\n        this.value = null;\n        this.count = 0;\n        this.seen = false;\n        startBehaviors();"
+        ),
+        "{source}"
+    );
+}
+
+#[test]
+fn a_dart_fake_that_cannot_be_cleared_is_refused() {
+    let source = "@Test(ChoiceTestSetup)\nclass ChoiceServiceTest {\n @Fake\n late String value;\n Future<void> testChoice() async {}\n}\n";
+    let failure = crate::behavior::lower(
+        Path::new("client/tests/ChoiceServiceTest.dart"),
+        source,
+        "tac",
+    )
+    .expect_err("a Fake without an empty value");
+    assert!(
+        format!("{failure:?}").contains("Dart Fake value has the type String"),
+        "{failure:?}"
+    );
+}
