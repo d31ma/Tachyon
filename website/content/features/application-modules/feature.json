@@ -1,7 +1,8 @@
 {
   "id": "application-modules",
   "title": "Ordinary application modules",
-  "summary": "Controllers and services call plain helper classes in server/shared/. The helpers need no annotation, registration or required role name. JavaScript and TypeScript use ordinary imports. Go shares package main with the controller, and imports its own native packages from the Go module in server/packages/ by module path (ADR 0095). Tachyon composes same-language shared classes before the managed roles and controller in the other Yon languages. Shared files contain one class and its imports, with no file-level variables. Annotated controllers and providers follow their role suffixes, exact file names and plural folders. Discovery uses a captured, bounded source snapshot and never scans at run time. Each invocation keeps its own provider scope.",
+  "notApplicable": ["hpp"],
+  "summary": "Controllers and services call plain helper classes in server/shared/. The helpers need no annotation, registration or required role name. JavaScript and TypeScript use ordinary imports. Go shares package main with the controller, and imports its own native packages from the Go module in server/packages/ by module path (ADR 0095). Tachyon composes same-language shared classes before the managed roles and controller in the other Yon languages. Shared files contain one class and its imports, with no file-level variables. Annotated controllers and providers follow their role suffixes, exact file names and plural folders. Discovery uses a captured, bounded source snapshot and never scans at run time. Each invocation keeps its own provider scope. C++ has no tab here: a C++ controller reads only its models so far, so a C++ file in `server/shared/` fails with `TY1310` (ADR 0099).",
   "group": "Yon server",
   "files": [
     {

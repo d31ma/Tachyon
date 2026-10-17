@@ -164,6 +164,18 @@
       "code": {
         "file": "server/controllers/ItemsController.lua"
       }
+    },
+    {
+      "name": "server/models/Item.hpp",
+      "code": {
+        "file": "server/models/Item.hpp"
+      }
+    },
+    {
+      "name": "server/controllers/ItemsController.hpp",
+      "code": {
+        "file": "server/controllers/ItemsController.hpp"
+      }
     }
   ]
 }

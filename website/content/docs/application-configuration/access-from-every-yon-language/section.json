@@ -3,7 +3,7 @@
   "notApplicable": [
     "lua"
   ],
-  "body": "Code in every language reads the private YON_APPLICATION_JSON snapshot. Your code passes it to behavior binding; this does not happen automatically. Settings turns its prefixed names into nested paths. Setting names the full standard path directly. Return data, not a response object or a JSON string that you serialized yourself. This example returns only some fields, and none of them are secret. Never return the complete snapshot. Lua has no tab here: a Lua model cannot carry Settings or Setting yet, so the build refuses it with TY1310.",
+  "body": "Code in every language reads the private YON_APPLICATION_JSON snapshot. Your code passes it to behavior binding; this does not happen automatically. Settings turns its prefixed names into nested paths. Setting names the full standard path directly. Return data, not a response object or a JSON string that you serialized yourself. This example returns only some fields, and none of them are secret. Never return the complete snapshot. Lua has no tab here: a Lua model cannot carry Settings or Setting yet, so the build refuses it with TY1310.\n\nC++ has no tab here, because C++ Yon code has only route controllers so far: the build refuses `Settings` in C++ with `TY1308` (ADR 0099).",
   "axis": "language",
   "files": [
     {

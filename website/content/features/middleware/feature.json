@@ -1,7 +1,8 @@
 {
   "id": "middleware",
   "title": "Middleware",
-  "summary": "Middleware is code that runs around every request. One middleware file at the project root runs before every request and again after the response. It can reject a request, or change or replace the response of the controller. Who may call a route is decided by the route itself (`Public`, `SignedIn`, `Allow(Role)`) and the one identity provider, not by middleware.",
+  "notApplicable": ["hpp"],
+  "summary": "Middleware is code that runs around every request. One middleware file at the project root runs before every request and again after the response. It can reject a request, or change or replace the response of the controller. Who may call a route is decided by the route itself (`Public`, `SignedIn`, `Allow(Role)`) and the one identity provider, not by middleware. C++ has no tab here, because C++ gets root middleware in a later step: a C++ project writes its middleware in another Yon language for now (ADR 0099).",
   "group": "Yon server",
   "files": [
     {

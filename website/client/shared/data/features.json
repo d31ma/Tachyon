@@ -202,6 +202,14 @@
         {
           "name": "server/controllers/ItemsController.lua",
           "code": "-- @RequestRoute(\"/items\")\n-- @Public\n---@class ItemsController\nItemsController = {}\n\n---@param id integer\n---@return Item\n-- @GetRoute(\"/{id}\")\nfunction ItemsController:get_item(\n  -- @FromPath\n  id\n)\n  return { id = id }\nend\n"
+        },
+        {
+          "name": "server/models/Item.hpp",
+          "code": "#pragma once\n#include <cstdint>\n\nstruct Item {\n    std::int64_t id = 0;\n};\n"
+        },
+        {
+          "name": "server/controllers/ItemsController.hpp",
+          "code": "#pragma once\n#include <cstdint>\n#include \"../models/Item.hpp\"\n\nclass [[RequestRoute(\"/items\")]] [[Public]] ItemsController {\npublic:\n    [[GetRoute(\"/{id}\")]]\n    Item getItem([[FromPath]] std::int64_t id) {\n        Item item;\n        item.id = id;\n        return item;\n    }\n};\n"
         }
       ],
       "verify": "yon",
@@ -1996,7 +2004,7 @@
     {
       "id": "handlers",
       "title": "REST controllers",
-      "summary": "A controller is a class in `server/controllers/` that answers HTTP requests. `RequestRoute` on the class gives its path, and `Public`, `SignedIn` or `Allow(Role)` says who may call it. `GetRoute`, `PostRoute` and the other route annotations mark the methods that answer. Each method name starts with its verb, such as `getProducts`. A returned model, or a list of models, becomes JSON with the model's field names. `ResponseStatus(201)` sets the status code. `FromBody` reads the JSON body into a model (a data type in `server/models/`). A body that does not fit the model gets 400 before the method runs. To set the status, headers and body yourself, answer with the language's own response: a Fetch `Response` in JavaScript and TypeScript, an `(HTTPStatus, headers, body)` tuple in Python, a `[status, headers, body]` array in Ruby, a `{ status, headers, body }` table in Lua, `http_response_code()`, `header()` and `echo` in PHP, the same `HttpExchange` in Java, Groovy and Kotlin, `HttpResponseMessage` in C# and F#, `http::Response` in Rust, a shelf `Response` in Dart and `*http.Response` in Go. If you return `text/html` yourself, Yon passes it through unchanged. Yon never renders it. A controller needs no framework import, base class, registration call or package.",
+      "summary": "A controller is a class in `server/controllers/` that answers HTTP requests. `RequestRoute` on the class gives its path, and `Public`, `SignedIn` or `Allow(Role)` says who may call it. `GetRoute`, `PostRoute` and the other route annotations mark the methods that answer. Each method name starts with its verb, such as `getProducts`. A returned model, or a list of models, becomes JSON with the model's field names. `ResponseStatus(201)` sets the status code. `FromBody` reads the JSON body into a model (a data type in `server/models/`). A body that does not fit the model gets 400 before the method runs. To set the status, headers and body yourself, answer with the language's own response: a Fetch `Response` in JavaScript and TypeScript, an `(HTTPStatus, headers, body)` tuple in Python, a `[status, headers, body]` array in Ruby, a `{ status, headers, body }` table in Lua, `http_response_code()`, `header()` and `echo` in PHP, the same `HttpExchange` in Java, Groovy and Kotlin, `HttpResponseMessage` in C# and F#, `http::Response` in Rust, a shelf `Response` in Dart and `*http.Response` in Go. If you return `text/html` yourself, Yon passes it through unchanged. Yon never renders it. A controller needs no framework import, base class, registration call or package. C++ has no tab here, because this example sets its status with `ResponseStatus`, which C++ route controllers do not have yet: the build refuses it in C++ with `TY2015` (ADR 0099).",
       "group": "Yon server",
       "files": [
         {
@@ -2117,7 +2125,7 @@
     {
       "id": "any-language",
       "title": "Many server languages",
-      "summary": "Yon supports controllers in JavaScript, TypeScript, Python, Java, Groovy, C#, F#, Kotlin, PHP, Rust, Dart, Go, Ruby and Lua. Every language uses the same annotations, such as `RequestRoute`, `PostRoute` and `FromBody`. Tachyon reads the method signature and checks the request before the method runs. Here a body without `name` or with a text `level` gets 400. A model (a data type in `server/models/`) describes the body. JavaScript uses a JSDoc `@typedef` instead, Ruby types its method with YARD tags, and Lua with LuaCATS comments. Tachyon prepares each controller, adapts it to the protocol and runs it under supervision. Under supervision, Tachyon watches the process and applies limits. A service in one of these languages uses `@Gateway` to call a class in another language. Every route also says who may call it, with `Public`, `SignedIn` or `Allow(Role)`, in every language.",
+      "summary": "Yon supports controllers in JavaScript, TypeScript, Python, Java, Groovy, C#, F#, Kotlin, PHP, Rust, Dart, Go, Ruby, Lua and C++. Every language uses the same annotations, such as `RequestRoute`, `PostRoute` and `FromBody`. Tachyon reads the method signature and checks the request before the method runs. Here a body without `name` or with a text `level` gets 400. A model (a data type in `server/models/`) describes the body. JavaScript uses a JSDoc `@typedef` instead, Ruby types its method with YARD tags, Lua with LuaCATS comments, and C++ with its own types in `server/models/<Name>.hpp`. Tachyon prepares each controller, adapts it to the protocol and runs it under supervision. Under supervision, Tachyon watches the process and applies limits. A service in one of these languages uses `@Gateway` to call a class in another language. Every route also says who may call it, with `Public`, `SignedIn` or `Allow(Role)`, in every language.",
       "group": "Yon server",
       "files": [
         {
@@ -2231,6 +2239,14 @@
         {
           "name": "server/controllers/EchoController.lua",
           "code": "-- @RequestRoute(\"/echo\")\n-- @Public\n---@class EchoController\nEchoController = {}\n\n---@param message Message\n---@return Message\n-- @PostRoute\nfunction EchoController:post_echo(\n  -- @FromBody\n  message\n)\n  return message\nend\n"
+        },
+        {
+          "name": "server/models/Message.hpp",
+          "code": "#pragma once\n#include <cstdint>\n#include <string>\n\nstruct Message {\n    std::string name;\n    std::int64_t level = 0;\n};\n"
+        },
+        {
+          "name": "server/controllers/EchoController.hpp",
+          "code": "#pragma once\n#include \"../models/Message.hpp\"\n\nclass [[RequestRoute(\"/echo\")]] [[Public]] EchoController {\npublic:\n    [[PostRoute]]\n    Message postEcho([[FromBody]] Message message) {\n        return message;\n    }\n};\n"
         }
       ],
       "verify": "yon-direct"
@@ -2238,9 +2254,10 @@
     {
       "id": "relays",
       "title": "Relaying to Perl and other programs",
-      "summary": "Yon supports controllers in many languages. A route method can return `relay(command, request)` to call another program that implements Handler Protocol v1. `request` is the method parameter without a marker. It is the request in the language's own type, and `relay` answers with the language's own response. In PHP, `Yon::relay(command)` forwards the current request. The application gives the command at the call site. Tachyon supervises the program. It limits the program to the time left in the request and to the process limits. It gives the program only the baseline environment and the names on the allowlist (a list of allowed names). No shell execution is needed. To call one method and get a value back, use `@Gateway`. Lua has no tab here, because the build refuses `relay` in Lua Yon code with `TY2015` (ADR 0085): write the controller that relays in another Yon language.",
+      "summary": "Yon supports controllers in many languages. A route method can return `relay(command, request)` to call another program that implements Handler Protocol v1. `request` is the method parameter without a marker. It is the request in the language's own type, and `relay` answers with the language's own response. In PHP, `Yon::relay(command)` forwards the current request. The application gives the command at the call site. Tachyon supervises the program. It limits the program to the time left in the request and to the process limits. It gives the program only the baseline environment and the names on the allowlist (a list of allowed names). No shell execution is needed. To call one method and get a value back, use `@Gateway`. Lua has no tab here, because the build refuses `relay` in Lua Yon code with `TY2015` (ADR 0085): write the controller that relays in another Yon language. C++ has no tab either, because a C++ route method cannot take the request yet, so it has no request to relay (ADR 0099).",
       "notApplicable": [
-        "lua"
+        "lua",
+        "hpp"
       ],
       "group": "Polyglot",
       "files": [
@@ -2310,7 +2327,7 @@
     {
       "id": "gateways",
       "title": "Calling a method in another language",
-      "summary": "`@Gateway` declares a method that code in another language answers. The target is a class in another Yon language, such as `server/services/ReportService.java`. It can also be a program, such as `python3 server/helpers/forecast.py`. The arguments are sent as JSON, within fixed limits. The answer becomes the result of the method. A failure becomes a `BehaviorError` with a fixed message. The build checks every target. Only one hop (one call from one language to another) is allowed. In the example, JavaScript and TypeScript call the Java class `ReportService.java`, and Python calls it too. Java, Groovy and every other language call the Python class `LedgerService.py`, and every language also runs the program `forecast.py`. Lua cannot declare a gateway yet: the build refuses `@Gateway` in Lua with `TY1308`.",
+      "summary": "`@Gateway` declares a method that code in another language answers. The target is a class in another Yon language, such as `server/services/ReportService.java`. It can also be a program, such as `python3 server/helpers/forecast.py`. The arguments are sent as JSON, within fixed limits. The answer becomes the result of the method. A failure becomes a `BehaviorError` with a fixed message. The build checks every target. Only one hop (one call from one language to another) is allowed. In the example, JavaScript and TypeScript call the Java class `ReportService.java`, and Python calls it too. Java, Groovy and every other language call the Python class `LedgerService.py`, and every language also runs the program `forecast.py`. Lua cannot declare a gateway yet: the build refuses `@Gateway` in Lua with `TY1308`. C++ has no tab here, because C++ Yon code has only route controllers so far: the build refuses `Service` in C++ with `TY1308` (ADR 0099).",
       "group": "Polyglot",
       "files": [
         {
@@ -2495,7 +2512,10 @@
     {
       "id": "middleware",
       "title": "Middleware",
-      "summary": "Middleware is code that runs around every request. One middleware file at the project root runs before every request and again after the response. It can reject a request, or change or replace the response of the controller. Who may call a route is decided by the route itself (`Public`, `SignedIn`, `Allow(Role)`) and the one identity provider, not by middleware.",
+      "notApplicable": [
+        "hpp"
+      ],
+      "summary": "Middleware is code that runs around every request. One middleware file at the project root runs before every request and again after the response. It can reject a request, or change or replace the response of the controller. Who may call a route is decided by the route itself (`Public`, `SignedIn`, `Allow(Role)`) and the one identity provider, not by middleware. C++ has no tab here, because C++ gets root middleware in a later step: a C++ project writes its middleware in another Yon language for now (ADR 0099).",
       "group": "Yon server",
       "files": [
         {
@@ -2685,6 +2705,14 @@
         {
           "name": "server/controllers/ItemsController.lua",
           "code": "-- @RequestRoute(\"/items\")\n-- @Public\n---@class ItemsController\nItemsController = {}\n\n---@param id integer\n---@return Item\n-- @GetRoute(\"/{id}\")\nfunction ItemsController:get_item(\n  -- @FromPath\n  id\n)\n  return { name = \"anvil\", level = id }\nend\n\n---@param id integer\n---@param item Item\n---@return Item\n-- @PatchRoute(\"/{id}\")\nfunction ItemsController:patch_item(\n  -- @FromPath\n  id,\n  -- @FromBody\n  item\n)\n  return { name = item.name, level = id }\nend\n"
+        },
+        {
+          "name": "server/models/Item.hpp",
+          "code": "#pragma once\n#include <cstdint>\n#include <string>\n\nstruct Item {\n    std::string name;\n    std::int64_t level = 0;\n};\n"
+        },
+        {
+          "name": "server/controllers/ItemsController.hpp",
+          "code": "#pragma once\n#include <cstdint>\n#include \"../models/Item.hpp\"\n\nclass [[RequestRoute(\"/items\")]] [[Public]] ItemsController {\npublic:\n    [[GetRoute(\"/{id}\")]]\n    Item getItem([[FromPath]] std::int64_t id) {\n        return Item{\"anvil\", id};\n    }\n\n    [[PatchRoute(\"/{id}\")]]\n    Item patchItem([[FromPath]] std::int64_t id, [[FromBody]] Item item) {\n        return Item{item.name, id};\n    }\n};\n"
         }
       ]
     },
@@ -2987,7 +3015,10 @@
     {
       "id": "application-modules",
       "title": "Ordinary application modules",
-      "summary": "Controllers and services call plain helper classes in server/shared/. The helpers need no annotation, registration or required role name. JavaScript and TypeScript use ordinary imports. Go shares package main with the controller, and imports its own native packages from the Go module in server/packages/ by module path (ADR 0095). Tachyon composes same-language shared classes before the managed roles and controller in the other Yon languages. Shared files contain one class and its imports, with no file-level variables. Annotated controllers and providers follow their role suffixes, exact file names and plural folders. Discovery uses a captured, bounded source snapshot and never scans at run time. Each invocation keeps its own provider scope.",
+      "notApplicable": [
+        "hpp"
+      ],
+      "summary": "Controllers and services call plain helper classes in server/shared/. The helpers need no annotation, registration or required role name. JavaScript and TypeScript use ordinary imports. Go shares package main with the controller, and imports its own native packages from the Go module in server/packages/ by module path (ADR 0095). Tachyon composes same-language shared classes before the managed roles and controller in the other Yon languages. Shared files contain one class and its imports, with no file-level variables. Annotated controllers and providers follow their role suffixes, exact file names and plural folders. Discovery uses a captured, bounded source snapshot and never scans at run time. Each invocation keeps its own provider scope. C++ has no tab here: a C++ controller reads only its models so far, so a C++ file in `server/shared/` fails with `TY1310` (ADR 0099).",
       "group": "Yon server",
       "files": [
         {

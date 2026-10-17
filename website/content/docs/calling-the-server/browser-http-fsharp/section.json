@@ -14,9 +14,10 @@
     "go",
     "dart",
     "rb",
-    "lua"
+    "lua",
+    "hpp"
   ],
-  "summary": "F# does not inject an HTTPClient yet. The service makes its own BehaviorContext from `BrowserHttpSetup` and asks the REST client of that context for `/api/greeting`. `BrowserHttpSetup` returns empty `BehaviorAdapters`, so the request goes through the browser to the server of the page, without cookies; an adapter of the same name in the Setup answers instead. `Read` is a `task { }` that waits for the answer, a `BehaviorJSON` value, and then saves its message in `Last`. The service owns its context and its signal, so `Close`, marked `OnStop`, disposes both; this also cancels a request that is still waiting. Today an F# service can wait for `Task` and `Task<BehaviorJSON>` only: an F# model, a list or `ValueTask` as the answer is not supported yet. The server half of this example is a plain JavaScript controller. A controller in TypeScript, Python, PHP, Java, Groovy, C#, F#, Kotlin, Rust, Go, Dart, Ruby or Lua answers in the same way (see Controllers), so this section shows only the browser side in other languages.",
+  "summary": "F# does not inject an HTTPClient yet. The service makes its own BehaviorContext from `BrowserHttpSetup` and asks the REST client of that context for `/api/greeting`. `BrowserHttpSetup` returns empty `BehaviorAdapters`, so the request goes through the browser to the server of the page, without cookies; an adapter of the same name in the Setup answers instead. `Read` is a `task { }` that waits for the answer, a `BehaviorJSON` value, and then saves its message in `Last`. The service owns its context and its signal, so `Close`, marked `OnStop`, disposes both; this also cancels a request that is still waiting. Today an F# service can wait for `Task` and `Task<BehaviorJSON>` only: an F# model, a list or `ValueTask` as the answer is not supported yet. The server half of this example is a plain JavaScript controller. A controller in TypeScript, Python, PHP, Java, Groovy, C#, F#, Kotlin, Rust, Go, Dart, Ruby, Lua or C++ answers in the same way (see Controllers), so this section shows only the browser side in other languages.",
   "files": [
     {
       "name": "client/manifest.json",

@@ -110,7 +110,7 @@ describe('annotation routes and clients in published examples', () => {
     const examples = glossary.sections.find(section => section.axis === 'language')
     assert.ok(examples)
     const controllers = examples.files.filter(file => file.name.startsWith('server/controllers/'))
-    expect(controllers.map(file => file.name.split('.').pop()).sort()).toEqual(PublishedData.withRuby)
+    expect(controllers.map(file => file.name.split('.').pop()).sort()).toEqual(PublishedData.withCpp)
   })
 
   test('compiled HTTP examples declare a client contract that the service builds', async () => {

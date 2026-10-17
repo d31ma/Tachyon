@@ -1,7 +1,7 @@
 {
   "heading": "Step 3: Add a controller that returns a model",
   "axis": "language",
-  "body": "Yon is the server part of Tachyon. A controller is a class in `server/controllers` that answers HTTP requests. `RequestRoute(\"/api/greeting\")` gives its path. `Public` says that anyone may call it: every route must say who may call it, or the build stops (see Who may call a route). `GetRoute` makes the method `getGreeting` answer GET requests on that path. Each language writes the name in its own style, such as `get_greeting` in Python or `GetGreeting` in C#. A Rust controller also has `fn new()`, because Tachyon makes the controller with it.\n\nA model is a data type that describes the shape of a value. Here the model `Greeting` has one text field, `message`. The model lives in `server/models`, in a file named after it, such as `Greeting.ts` or `Greeting.py`. JavaScript reads the TypeScript model with `/** @import { Greeting } from '/models/Greeting.ts' */`. The method returns a Greeting, and Yon turns it into JSON. The same `ty preview` serves the pages and the controller on one port.\n\nResult: open /api/greeting. It shows {\"message\":\"Hello from Yon\"}.",
+  "body": "Yon is the server part of Tachyon. A controller is a class in `server/controllers` that answers HTTP requests. `RequestRoute(\"/api/greeting\")` gives its path. `Public` says that anyone may call it: every route must say who may call it, or the build stops (see Who may call a route). `GetRoute` makes the method `getGreeting` answer GET requests on that path. Each language writes the name in its own style, such as `get_greeting` in Python or `GetGreeting` in C#. A Rust controller also has `fn new()`, because Tachyon makes the controller with it. A C++ controller is a header-only class in `GreetingController.hpp` that writes the markers as attributes, such as `class [[RequestRoute(\"/api/greeting\")]] [[Public]] GreetingController`.\n\nA model is a data type that describes the shape of a value. Here the model `Greeting` has one text field, `message`. The model lives in `server/models`, in a file named after it, such as `Greeting.ts`, `Greeting.py` or `Greeting.hpp`; a C++ controller includes its model with `#include \"../models/Greeting.hpp\"`. JavaScript reads the TypeScript model with `/** @import { Greeting } from '/models/Greeting.ts' */`. The method returns a Greeting, and Yon turns it into JSON. The same `ty preview` serves the pages and the controller on one port.\n\nResult: open /api/greeting. It shows {\"message\":\"Hello from Yon\"}.",
   "files": [
     {
       "name": "server/controllers/GreetingController.js",
@@ -163,6 +163,18 @@
       "name": "server/controllers/GreetingController.lua",
       "code": {
         "file": "server/controllers/GreetingController.lua"
+      }
+    },
+    {
+      "name": "server/models/Greeting.hpp",
+      "code": {
+        "file": "server/models/Greeting.hpp"
+      }
+    },
+    {
+      "name": "server/controllers/GreetingController.hpp",
+      "code": {
+        "file": "server/controllers/GreetingController.hpp"
       }
     }
   ]

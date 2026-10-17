@@ -1,7 +1,7 @@
 {
   "id": "any-language",
   "title": "Many server languages",
-  "summary": "Yon supports controllers in JavaScript, TypeScript, Python, Java, Groovy, C#, F#, Kotlin, PHP, Rust, Dart, Go, Ruby and Lua. Every language uses the same annotations, such as `RequestRoute`, `PostRoute` and `FromBody`. Tachyon reads the method signature and checks the request before the method runs. Here a body without `name` or with a text `level` gets 400. A model (a data type in `server/models/`) describes the body. JavaScript uses a JSDoc `@typedef` instead, Ruby types its method with YARD tags, and Lua with LuaCATS comments. Tachyon prepares each controller, adapts it to the protocol and runs it under supervision. Under supervision, Tachyon watches the process and applies limits. A service in one of these languages uses `@Gateway` to call a class in another language. Every route also says who may call it, with `Public`, `SignedIn` or `Allow(Role)`, in every language.",
+  "summary": "Yon supports controllers in JavaScript, TypeScript, Python, Java, Groovy, C#, F#, Kotlin, PHP, Rust, Dart, Go, Ruby, Lua and C++. Every language uses the same annotations, such as `RequestRoute`, `PostRoute` and `FromBody`. Tachyon reads the method signature and checks the request before the method runs. Here a body without `name` or with a text `level` gets 400. A model (a data type in `server/models/`) describes the body. JavaScript uses a JSDoc `@typedef` instead, Ruby types its method with YARD tags, Lua with LuaCATS comments, and C++ with its own types in `server/models/<Name>.hpp`. Tachyon prepares each controller, adapts it to the protocol and runs it under supervision. Under supervision, Tachyon watches the process and applies limits. A service in one of these languages uses `@Gateway` to call a class in another language. Every route also says who may call it, with `Public`, `SignedIn` or `Allow(Role)`, in every language.",
   "group": "Yon server",
   "files": [
     {
@@ -170,6 +170,18 @@
       "name": "server/controllers/EchoController.lua",
       "code": {
         "file": "server/controllers/EchoController.lua"
+      }
+    },
+    {
+      "name": "server/models/Message.hpp",
+      "code": {
+        "file": "server/models/Message.hpp"
+      }
+    },
+    {
+      "name": "server/controllers/EchoController.hpp",
+      "code": {
+        "file": "server/controllers/EchoController.hpp"
       }
     }
   ],

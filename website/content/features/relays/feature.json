@@ -1,8 +1,8 @@
 {
   "id": "relays",
   "title": "Relaying to Perl and other programs",
-  "summary": "Yon supports controllers in many languages. A route method can return `relay(command, request)` to call another program that implements Handler Protocol v1. `request` is the method parameter without a marker. It is the request in the language's own type, and `relay` answers with the language's own response. In PHP, `Yon::relay(command)` forwards the current request. The application gives the command at the call site. Tachyon supervises the program. It limits the program to the time left in the request and to the process limits. It gives the program only the baseline environment and the names on the allowlist (a list of allowed names). No shell execution is needed. To call one method and get a value back, use `@Gateway`. Lua has no tab here, because the build refuses `relay` in Lua Yon code with `TY2015` (ADR 0085): write the controller that relays in another Yon language.",
-  "notApplicable": ["lua"],
+  "summary": "Yon supports controllers in many languages. A route method can return `relay(command, request)` to call another program that implements Handler Protocol v1. `request` is the method parameter without a marker. It is the request in the language's own type, and `relay` answers with the language's own response. In PHP, `Yon::relay(command)` forwards the current request. The application gives the command at the call site. Tachyon supervises the program. It limits the program to the time left in the request and to the process limits. It gives the program only the baseline environment and the names on the allowlist (a list of allowed names). No shell execution is needed. To call one method and get a value back, use `@Gateway`. Lua has no tab here, because the build refuses `relay` in Lua Yon code with `TY2015` (ADR 0085): write the controller that relays in another Yon language. C++ has no tab either, because a C++ route method cannot take the request yet, so it has no request to relay (ADR 0099).",
+  "notApplicable": ["lua", "hpp"],
   "group": "Polyglot",
   "files": [
     {

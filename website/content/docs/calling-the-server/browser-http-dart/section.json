@@ -13,9 +13,10 @@
     "go",
     "dart",
     "rb",
-    "lua"
+    "lua",
+    "hpp"
   ],
-  "summary": "A Dart service receives an HTTPClient with Needs. The empty GreetingSetup uses Tachyon’s default same-origin asynchronous browser transport; the typed Greeting answer is rendered after Yon replies. Credentials are omitted. Cached GETs may use the browser cache, and a successful ClearCache forces revalidation. OverrideSetup shows that a matching custom adapter still wins. This compiled Dart example is checked in Chromium, Firefox and WebKit (ADR 0090). Rust, Go, Kotlin, Swift, Java, Ruby, C#, F# and C++ use the same browser transport; their sections follow. The server half of this example is a plain JavaScript controller. A controller in TypeScript, Python, PHP, Java, Groovy, C#, F#, Kotlin, Rust, Go, Dart, Ruby or Lua answers in the same way (see Controllers), so this section shows only the browser side in other languages.",
+  "summary": "A Dart service receives an HTTPClient with Needs. The empty GreetingSetup uses Tachyon’s default same-origin asynchronous browser transport; the typed Greeting answer is rendered after Yon replies. Credentials are omitted. Cached GETs may use the browser cache, and a successful ClearCache forces revalidation. OverrideSetup shows that a matching custom adapter still wins. This compiled Dart example is checked in Chromium, Firefox and WebKit (ADR 0090). Rust, Go, Kotlin, Swift, Java, Ruby, C#, F# and C++ use the same browser transport; their sections follow. The server half of this example is a plain JavaScript controller. A controller in TypeScript, Python, PHP, Java, Groovy, C#, F#, Kotlin, Rust, Go, Dart, Ruby, Lua or C++ answers in the same way (see Controllers), so this section shows only the browser side in other languages.",
   "files": [
     {
       "name": "client/components/greeting/panel/tac.html",

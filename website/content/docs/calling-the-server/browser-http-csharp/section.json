@@ -14,9 +14,10 @@
     "go",
     "dart",
     "rb",
-    "lua"
+    "lua",
+    "hpp"
   ],
-  "summary": "In C#, the client is an interface marked with `HTTPClient`. Its method `read` returns `Task<Models.Greeting>`, and Tachyon writes it. The service gets the client through a private readonly `Needs` field. `GreetingSetup` returns empty `BehaviorAdapters`, so the request goes through the browser to the server of the page, without cookies; a Setup that gives the client an adapter of the same name answers instead. `ask` passes the pending task to the private method `_accept`, which awaits it and saves the message. `Greeting` is a record with one text field. Today the answer can be a record of text, number and true or false fields; a list or a nested record is not read yet. Removing the component cancels a pending request. The server half of this example is a plain JavaScript controller. A controller in TypeScript, Python, PHP, Java, Groovy, C#, F#, Kotlin, Rust, Go, Dart, Ruby or Lua answers in the same way (see Controllers), so this section shows only the browser side in other languages.",
+  "summary": "In C#, the client is an interface marked with `HTTPClient`. Its method `read` returns `Task<Models.Greeting>`, and Tachyon writes it. The service gets the client through a private readonly `Needs` field. `GreetingSetup` returns empty `BehaviorAdapters`, so the request goes through the browser to the server of the page, without cookies; a Setup that gives the client an adapter of the same name answers instead. `ask` passes the pending task to the private method `_accept`, which awaits it and saves the message. `Greeting` is a record with one text field. Today the answer can be a record of text, number and true or false fields; a list or a nested record is not read yet. Removing the component cancels a pending request. The server half of this example is a plain JavaScript controller. A controller in TypeScript, Python, PHP, Java, Groovy, C#, F#, Kotlin, Rust, Go, Dart, Ruby, Lua or C++ answers in the same way (see Controllers), so this section shows only the browser side in other languages.",
   "files": [
     {
       "name": "client/manifest.json",
