@@ -342,3 +342,68 @@ fn a_checked_argument_is_refused_before_the_method_runs() {
     assert_eq!(answers[9]["value"], 36, "{answers:?}");
     assert_eq!(answers[10]["value"], 2, "{answers:?}");
 }
+
+#[test]
+fn a_converter_fills_a_model_and_a_json_value_from_its_plan() {
+    if !PageProject::has_compiler() {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    PageProject::write(
+        root.path(),
+        &[
+            (
+                "client/models/Detail.hpp",
+                "struct Detail {\n    std::string id;\n};\n",
+            ),
+            (
+                "client/models/Label.hpp",
+                "struct Label {\n    std::string text;\n    int size = 0;\n};\n",
+            ),
+            (
+                "client/models/Badge.hpp",
+                "struct Badge {\n    std::string text;\n};\n",
+            ),
+            (
+                "client/models/Product.hpp",
+                "struct Product {\n    std::string name;\n    int price = 0;\n    Detail detail;\n    std::optional<std::string> note;\n    std::vector<Label> labels;\n};\n",
+            ),
+            (
+                "client/models/Summary.hpp",
+                "struct Summary {\n    std::string name;\n    double price = 0;\n    std::string productId;\n    std::string kind;\n    std::optional<std::string> note;\n    std::vector<Badge> labels;\n};\n",
+            ),
+            (
+                "client/converters/ProductConverter.hpp",
+                "class [[Converter]] ProductConverter {\npublic:\n    [[Convert({\"fields\":[{\"source\":\"detail.id\",\"target\":\"productId\"},{\"target\":\"kind\",\"constant\":\"product\"}]})]]\n    Summary toSummary(const Product& product);\n    [[Convert({\"fields\":[{\"source\":\"a.b\",\"target\":\"value\"},{\"source\":\"a.missing\",\"target\":\"gone\"},{\"target\":\"fixed\",\"constant\":3}]})]]\n    tachyon::json::JsonNode reshape(const tachyon::json::JsonNode& input);\n};\n",
+            ),
+            (
+                "client/services/ShopService.hpp",
+                "class [[Service]] ShopService {\npublic:\n    [[Needs]] ProductConverter& converter;\n    std::string summary() {\n        Product product{\"Lamp\", 12, Detail{\"p-7\"}, std::nullopt, {Label{\"new\", 2}}};\n        return tachyon::json::JsonSerializer::serialize(converter.toSummary(product));\n    }\n    std::string reshaped() {\n        return converter.reshape(tachyon::json::JsonNode::parse(R\"({\"a\":{\"b\":[1,2]}})\")).toJsonString();\n    }\n};\n",
+            ),
+        ],
+    );
+    let services = [("shop", "ShopService")];
+    let answers = PageProject::answers(
+        root.path(),
+        &services,
+        &[
+            PageProject::init("shop", 1, &json!({})),
+            PageProject::call("shop", 1, "summary", &json!([])),
+            PageProject::call("shop", 1, "reshaped", &json!([])),
+        ],
+    );
+    let summary: Value =
+        serde_json::from_str(answers[1]["value"].as_str().expect("summary")).expect("json");
+    assert_eq!(
+        summary,
+        json!({"name": "Lamp", "price": 12, "productId": "p-7", "kind": "product", "note": null, "labels": [{"text": "new"}]}),
+        "{answers:?}"
+    );
+    let reshaped: Value =
+        serde_json::from_str(answers[2]["value"].as_str().expect("reshaped")).expect("json");
+    assert_eq!(
+        reshaped,
+        json!({"value": [1, 2], "gone": null, "fixed": 3}),
+        "{answers:?}"
+    );
+}

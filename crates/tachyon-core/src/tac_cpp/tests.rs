@@ -594,3 +594,91 @@ fn a_description_is_one_plain_line_beside_another_marker() {
         "{alone}"
     );
 }
+
+#[test]
+fn a_converter_is_bodyless_and_its_plan_is_checked() {
+    let converter = "client/converters/ProductConverter.hpp";
+    for (source, expected) in [
+        (
+            "class [[Converter]] ProductConverter {\npublic:\n    Summary toSummary(const Product& product) { return {}; }\n};\n",
+            "A Converter has no implementation",
+        ),
+        (
+            "class [[Converter]] ProductConverter {\npublic:\n    int count = 0;\n};\n",
+            "A Converter has no implementation",
+        ),
+        (
+            "class [[Converter]] ProductConverter {\npublic:\n    Summary toSummary(const Product& product, int extra);\n};\n",
+            "exactly one named parameter",
+        ),
+        (
+            "class [[Converter]] ProductConverter {\npublic:\n    [[Convert({\"fields\":[{\"target\":\"kind\"}]})]]\n    Summary toSummary(const Product& product);\n};\n",
+            "[[Convert]] takes nothing, or one JSON object",
+        ),
+        (
+            "class [[Converter]] ProductConverter {\npublic:\n    [[Convert({\"fields\":[{\"target\":\"kind\",\"constant\":1},{\"target\":\"kind\",\"constant\":2}]})]]\n    Summary toSummary(const Product& product);\n};\n",
+            "each target appears once",
+        ),
+    ] {
+        let refused = Sources::refusal(converter, source);
+        assert!(refused.contains(expected), "{source}: {refused}");
+    }
+    let misplaced = Sources::refusal(
+        "client/services/TallyService.hpp",
+        "class [[Service]] TallyService {\npublic:\n    [[Convert]] int add(int amount) { return amount; }\n};\n",
+    );
+    assert!(misplaced.contains("[[Converter]] class"), "{misplaced}");
+}
+
+#[test]
+fn a_converter_names_the_target_fields_it_cannot_fill() {
+    let product = "struct Product {\n    std::string name;\n    std::optional<std::string> note;\n    int price = 0;\n};\n";
+    for (summary, plan, expected) in [
+        (
+            "struct Summary {\n    std::string name;\n    std::string code;\n};\n",
+            "",
+            "no source for Summary fields code",
+        ),
+        (
+            "struct Summary {\n    std::string note;\n};\n",
+            "",
+            "Summary.note: its source may be empty",
+        ),
+        (
+            "struct Summary {\n    std::string price;\n};\n",
+            "",
+            "Summary.price: int cannot fill std::string",
+        ),
+        (
+            "struct Summary {\n    std::string name;\n};\n",
+            "[[Convert({\"fields\":[{\"target\":\"title\",\"source\":\"name\"}]})]] ",
+            "Summary has no field title",
+        ),
+        (
+            "struct Summary {\n    int name = 0;\n};\n",
+            "[[Convert({\"fields\":[{\"target\":\"name\",\"constant\":\"x\"}]})]] ",
+            "the constant \"x\" cannot fill int",
+        ),
+    ] {
+        let root = tempfile::tempdir().expect("project");
+        let converter = format!(
+            "class [[Converter]] ProductConverter {{\npublic:\n    {plan}Summary toSummary(const Product& product);\n}};\n"
+        );
+        for (relative, source) in [
+            ("client/models/Product.hpp", product),
+            ("client/models/Summary.hpp", summary),
+            ("client/converters/ProductConverter.hpp", converter.as_str()),
+        ] {
+            let path = root.path().join(relative);
+            std::fs::create_dir_all(path.parent().expect("folder")).expect("folder");
+            std::fs::write(path, source).expect("file");
+        }
+        let Err(failure) = super::CppProgram::tested(root.path()) else {
+            panic!("{summary} was accepted");
+        };
+        assert!(
+            failure.to_string().contains(expected),
+            "{summary}: {failure}"
+        );
+    }
+}

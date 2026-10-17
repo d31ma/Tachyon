@@ -11,13 +11,15 @@ pub(crate) struct CppServiceGraph<'a> {
 }
 
 impl<'a> CppServiceGraph<'a> {
-    const FOLDERS: [&'static str; 2] = ["client/services", "client/remotes"];
+    const FOLDERS: [&'static str; 3] = ["client/services", "client/remotes", "client/converters"];
     const CIRCLE: &'static str =
         "C++ services need each other in a circle; break the circle with an event";
 
     pub(crate) fn new(root: &'a Path) -> Result<Self, Failure> {
-        let mut files = CppFolder::files(root, Self::FOLDERS[0])?;
-        files.extend(CppFolder::files(root, Self::FOLDERS[1])?);
+        let mut files = Vec::new();
+        for folder in Self::FOLDERS {
+            files.extend(CppFolder::files(root, folder)?);
+        }
         Ok(Self {
             root,
             available: Self::by_class(files),
@@ -95,7 +97,7 @@ impl<'a> CppServiceGraph<'a> {
     ) -> Result<PathBuf, Failure> {
         self.available.get(needed).cloned().ok_or_else(|| {
             CppFailure::pending(relative, service.field_at(field), &format!(
-                "A C++ [[Needs]] field names another C++ service in client/services or a C++ [[HTTPClient]] in client/remotes; there is no {needed}.hpp in either. Other C++ roles come later (ADR 0099)"
+                "A C++ [[Needs]] field names another C++ service in client/services, a C++ [[HTTPClient]] in client/remotes or a C++ [[Converter]] in client/converters; there is no {needed}.hpp in any of them. Other C++ roles come later (ADR 0099)"
             ))
         })
     }

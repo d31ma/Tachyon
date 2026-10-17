@@ -466,13 +466,13 @@ impl AnnotationRules {
             "marks a class whose methods copy one model into another",
         )
         .bare()
-        .reach(Self::TAC_EXCEPT_CPP, Self::YON_BEHAVIOR),
+        .reach(Self::TAC, Self::YON_BEHAVIOR),
         Rule::new(
             "Convert",
             Self::METHOD,
             "copies the fields of one model into a new model",
         )
-        .reach(Self::TAC_EXCEPT_CPP, Self::YON_BEHAVIOR),
+        .reach(Self::TAC, Self::YON_BEHAVIOR),
         Rule::new(
             "Needs",
             Self::FIELD_OR_TYPE,

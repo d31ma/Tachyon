@@ -1,4 +1,7 @@
-use super::{CppChecks, CppFolder, CppLowering, CppModel, CppPrelude, CppService, CppServiceGraph};
+use super::{
+    CppChecks, CppConverter, CppFolder, CppLowering, CppModel, CppPrelude, CppService,
+    CppServiceGraph,
+};
 use crate::Failure;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -48,6 +51,9 @@ impl CppProgram {
         for service in &self.services {
             for (type_name, at) in CppChecks::checked_types(service.class()) {
                 CppChecks::require_checked(&service.path, at, &type_name, &checked)?;
+            }
+            if service.is_converter() {
+                CppConverter::new(&service.path, &self.models).check_methods(service.class())?;
             }
         }
         Ok(self)
@@ -157,8 +163,18 @@ impl CppProgram {
         let mut text = String::new();
         for service in &self.services {
             text.push_str(&Self::located(&service.path, &self.lowered(service)));
+            text.push_str(&self.conversions(service));
         }
         text
+    }
+
+    fn conversions(&self, service: &CppService) -> String {
+        if !service.is_converter() {
+            return String::new();
+        }
+        let definitions =
+            CppConverter::new(&service.path, &self.models).definitions(service.class());
+        format!("{}{definitions}", Self::GENERATED)
     }
 
     fn lowered(&self, service: &CppService) -> String {

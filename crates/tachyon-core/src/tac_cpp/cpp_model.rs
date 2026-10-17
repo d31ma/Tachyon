@@ -72,7 +72,7 @@ impl CppModel {
         CppChecks::is_checked(&self.file.class)
     }
 
-    fn fields(&self) -> Vec<(String, String)> {
+    pub(crate) fn fields(&self) -> Vec<(String, String)> {
         self.file
             .class
             .members
@@ -92,7 +92,11 @@ impl CppModel {
         self.struct_codec()
     }
 
-    fn is_abstract(&self) -> bool {
+    pub(crate) fn is_enum(&self) -> bool {
+        self.file.class.is_enum
+    }
+
+    pub(crate) fn is_abstract(&self) -> bool {
         let body = &self.source[self.file.class.body.clone()];
         let squeezed: String = body
             .chars()

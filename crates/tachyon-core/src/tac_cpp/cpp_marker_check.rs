@@ -14,7 +14,7 @@ pub(crate) struct CppMarkerCheck<'a> {
 impl<'a> CppMarkerCheck<'a> {
     const NEAR_MISS: usize = 2;
     const DESCRIPTION: &'static str = "Description";
-    const DESCRIPTION_FORM: &'static str = "[[Description]] takes one quoted line of at most 256 characters, without quotes, escapes or control characters,, for example `class [[Service, Description(\"Keeps the score\")]] TallyService`";
+    const DESCRIPTION_FORM: &'static str = "[[Description]] takes one quoted line of at most 256 characters, without quotes, escapes or control characters, for example `class [[Service, Description(\"Keeps the score\")]] TallyService`";
 
     pub(crate) fn check_source(path: &'a Path, source: &str) -> Result<(), Failure> {
         let file = CppFile::read(path, source)?;

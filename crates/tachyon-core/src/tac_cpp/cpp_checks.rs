@@ -18,7 +18,7 @@ impl CppChecks {
         "std::map<",
         "std::set<",
     ];
-    const NUMBERS: [&'static str; 23] = [
+    pub(crate) const NUMBERS: [&'static str; 23] = [
         "int",
         "unsigned",
         "unsigned int",
