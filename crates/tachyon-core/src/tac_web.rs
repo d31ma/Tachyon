@@ -1894,6 +1894,28 @@ mod tests {
     }
 
     #[test]
+    fn a_cpp_topic_model_gets_its_stream_path() {
+        let root = tempfile::tempdir().expect("project");
+        let models = root.path().join("client/models");
+        std::fs::create_dir_all(&models).expect("models");
+        std::fs::write(
+            models.join("OrderPlaced.hpp"),
+            "struct [[Topic]] OrderPlaced {\n    int total = 0;\n};\n",
+        )
+        .expect("topic");
+        std::fs::write(
+            models.join("Order.hpp"),
+            "struct Order {\n    int total = 0;\n};\n",
+        )
+        .expect("model");
+        let topics = TopicStreams::read(root.path(), "hpp").expect("topics");
+        assert_eq!(
+            topics,
+            serde_json::json!({ "OrderPlaced": "/.tachyon/topics/order-placed" })
+        );
+    }
+
+    #[test]
     fn a_service_module_addresses_its_instance() {
         let topics = serde_json::json!({ "ClockTicked": "/.tachyon/topics/clock-ticked" });
         let source = module("clock", "ClockService", "tachyon-rust.js", &topics);

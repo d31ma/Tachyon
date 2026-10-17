@@ -613,7 +613,7 @@ impl AnnotationRules {
             "sends each published event of this model to the listeners in every Yon language and in open pages",
         )
         .bare()
-        .reach(Self::TAC_EXCEPT_CPP, Self::YON),
+        .reach(Self::TAC, Self::YON),
         Rule::new(
             "Table",
             Self::TYPE,

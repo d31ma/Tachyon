@@ -23,6 +23,7 @@ impl CppService {
     const ONE_FIELD: &'static str = "Declare one C++ field per line";
     const OVERLOADED: &'static str = "A C++ service method that the page calls has one name; C++ overloads cannot reach the page. Rename one of the methods";
     const NAMED: &'static str = "A C++ class is named after its file";
+    const TOPIC: &'static str = "[[Topic]] goes on a C++ model in client/models, for example `struct [[Topic]] OrderPlaced { int total = 0; };`";
     const STORED: &'static str = "A C++ [[LocalState]] or [[SessionState]] field is a page field that the browser keeps: public, not static, not const and not a reference, for example `[[LocalState]] int count = 0;`";
 
     pub(crate) fn read(relative: &Path, source: &str) -> Result<Self, Failure> {
@@ -35,6 +36,9 @@ impl CppService {
             .then_some(())
             .ok_or_else(|| CppFailure::unreadable(relative, class.name_at, Self::NAMED))?;
         CppMarkerCheck::check(relative, class)?;
+        if let Some(topic) = class.markers.iter().find(|marker| marker.name == "Topic") {
+            return Err(CppFailure::unreadable(relative, topic.at, Self::TOPIC));
+        }
         CppLifetime::check(relative, class)?;
         CppChecks::check_service(relative, class)?;
         CppConverter::check(relative, source, class)?;

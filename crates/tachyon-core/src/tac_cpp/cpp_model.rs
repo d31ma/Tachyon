@@ -1,4 +1,6 @@
-use super::{CppChecks, CppFailure, CppFile, CppLowering, CppMarkerCheck, CppMemberKind};
+use super::{
+    CppChecks, CppFailure, CppFile, CppFolder, CppLowering, CppMarkerCheck, CppMemberKind,
+};
 use crate::Failure;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -12,6 +14,9 @@ pub(crate) struct CppModel {
 impl CppModel {
     const NAMED: &'static str = "A C++ model is named after its file";
     const CLIENT: &'static str = "client";
+    const MODELS: &'static str = "client/models";
+    const TOPIC: &'static str = "Topic";
+    const TOPIC_FORM: &'static str = "[[Topic]] goes on a C++ struct or class model with fields, for example `struct [[Topic]] OrderPlaced { int total = 0; };`";
     const DESCRIBED_ALONE: &'static str =
         "[[Description]] describes a model that has another Tachyon marker, such as [[Checked]]";
     const PURE_ENDS: [&'static str; 4] = [")=0;", ")const=0;", ")noexcept=0;", ")constnoexcept=0;"];
@@ -31,6 +36,18 @@ impl CppModel {
             .ok_or_else(|| CppFailure::pending(relative, 0, Self::CLIENT_ONLY))?;
         CppMarkerCheck::check(relative, &file.class)?;
         CppChecks::check_model(relative, &file.class)?;
+        let topic = file
+            .class
+            .markers
+            .iter()
+            .find(|marker| marker.name == Self::TOPIC);
+        if let Some(marker) = topic {
+            let abstract_model = Self::abstract_body(source, &file);
+            let record = [file.class.is_enum, abstract_model] == [false, false];
+            record
+                .then_some(())
+                .ok_or_else(|| CppFailure::unreadable(relative, marker.at, Self::TOPIC_FORM))?;
+        }
         if let Some(at) = CppMarkerCheck::described_alone(&file.class) {
             return Err(CppFailure::unreadable(relative, at, Self::DESCRIBED_ALONE));
         }
@@ -96,8 +113,32 @@ impl CppModel {
         self.file.class.is_enum
     }
 
+    pub(crate) fn topics(root: &Path) -> Result<Vec<String>, Failure> {
+        let mut names = Vec::new();
+        for path in CppFolder::files(root, Self::MODELS)? {
+            let (relative, source) = CppFolder::read(root, &path)?;
+            let model = Self::read(&relative, &source)?;
+            if model.is_topic() {
+                names.push(model.name().to_owned());
+            }
+        }
+        Ok(names)
+    }
+
+    pub(crate) fn is_topic(&self) -> bool {
+        self.file
+            .class
+            .markers
+            .iter()
+            .any(|marker| marker.name == Self::TOPIC)
+    }
+
     pub(crate) fn is_abstract(&self) -> bool {
-        let body = &self.source[self.file.class.body.clone()];
+        Self::abstract_body(&self.source, &self.file)
+    }
+
+    fn abstract_body(source: &str, file: &CppFile) -> bool {
+        let body = &source[file.class.body.clone()];
         let squeezed: String = body
             .chars()
             .filter(|character| !character.is_whitespace())

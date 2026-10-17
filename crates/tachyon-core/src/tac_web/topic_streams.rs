@@ -12,6 +12,10 @@ impl TopicStreams {
     const TOPIC_PATH: &'static str = "/.tachyon/topics/";
 
     pub(super) fn read(snapshot_root: &Path, extension: &str) -> Result<Value, Failure> {
+        if extension == crate::tac_cpp::CppSource::EXTENSION {
+            let names = crate::tac_cpp::CppModel::topics(snapshot_root)?;
+            return Ok(Self::paths(&names));
+        }
         let models = ModelTable::read_realm(snapshot_root, Self::REALM, extension)
             .map_err(|message| Self::unreadable(&message))?;
         Ok(Self::paths(&models.topic_names()))

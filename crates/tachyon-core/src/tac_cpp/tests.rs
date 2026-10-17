@@ -699,3 +699,34 @@ fn a_helper_lives_in_client_helpers() {
         "a helper outside client/helpers was accepted"
     );
 }
+
+#[test]
+fn a_topic_goes_on_a_model_with_fields() {
+    let model = super::CppModel::read(
+        Path::new("client/models/OrderPlaced.hpp"),
+        "struct [[Topic]] OrderPlaced {\n    int total = 0;\n};\n",
+    )
+    .expect("topic model");
+    assert!(model.is_topic());
+    assert!(!model.lowered().contains("Topic"), "{}", model.lowered());
+    let Err(enumerated) = super::CppModel::read(
+        Path::new("client/models/Status.hpp"),
+        "enum class [[Topic]] Status { Open, Closed };\n",
+    ) else {
+        panic!("an enum topic was accepted");
+    };
+    assert!(
+        enumerated
+            .to_string()
+            .contains("[[Topic]] goes on a C++ struct"),
+        "{enumerated}"
+    );
+    let service = Sources::refusal(
+        "client/services/TallyService.hpp",
+        "class [[Service, Topic]] TallyService {};\n",
+    );
+    assert!(
+        service.contains("[[Topic]] goes on a C++ model"),
+        "{service}"
+    );
+}
