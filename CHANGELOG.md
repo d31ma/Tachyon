@@ -517,6 +517,12 @@ machine contracts have their own, independent major versions.
   assigned was still there in the next case, and `construct(Role)` passed
   it on.
 
+- A Go test unit now sets every `// @Fake` field to its zero value before
+  each case: `nil` for a pointer, slice, map, function or interface, zero
+  for a number, `false` for a `bool` and `""` for a `string`. Before, a test
+  double that one case assigned was still there in the next case, and a Tac
+  unit's `construct` passed it on.
+
 - The `lua/THIRD_PARTY_NOTICES.txt` that a build writes beside the Lua web
   runtime now also holds the Emscripten, musl and compiler-rt licenses, as
   the Ruby notices do. The runtime is linked with Emscripten, which adds its

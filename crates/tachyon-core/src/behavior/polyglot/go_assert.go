@@ -45,6 +45,11 @@ func behaviorAssertThrown(action func() error) (thrown error) {
 	return action()
 }
 
+func behaviorClearFake[T any](field *T) {
+	var empty T
+	*field = empty
+}
+
 func behaviorAssertRecovered(recovered any) error {
 	if err, isError := recovered.(error); isError {
 		return err

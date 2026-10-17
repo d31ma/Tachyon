@@ -334,6 +334,59 @@ async fn every_compiled_language_runs_its_test_unit() {
 }
 
 #[tokio::test]
+async fn every_typed_language_clears_its_fakes_before_each_case() {
+    for (extension, probe, configuration, unit) in [
+        (
+            "go",
+            "go",
+            "// @TestSetup\ntype CatalogTestSetup struct{}\n\nfunc (CatalogTestSetup) Configure(execution *BehaviorExecution) (*BehaviorConfiguration, error) {\n\treturn NewBehaviorConfiguration(), nil\n}\n",
+            "// @Test(CatalogTestSetup, {\"partition\":\"tests\"})\ntype CatalogServiceTest struct {\n\tbehaviors *BehaviorContext\n\t// @Fake\n\tnames []string\n\t// @Fake\n\tcount int\n\t// @Fake\n\tseen bool\n}\n\nfunc (test *CatalogServiceTest) TestStartsWithEmptyFakes() {\n\tAssert.IsTrue(test.names == nil, \"the slice fake is nil\")\n\tAssert.Equals(0, test.count, \"the number fake is zero\")\n\tAssert.IsTrue(!test.seen, \"the boolean fake is false\")\n\ttest.names = []string{\"assigned\"}\n\ttest.count = 3\n\ttest.seen = true\n}\n\nfunc (test *CatalogServiceTest) TestStartsWithEmptyFakesAgain() {\n\tAssert.IsTrue(test.names == nil, \"the slice fake is nil again\")\n\tAssert.Equals(0, test.count, \"the number fake is zero again\")\n\tAssert.IsTrue(!test.seen, \"the boolean fake is false again\")\n\ttest.names = []string{\"assigned\"}\n\ttest.count = 3\n\ttest.seen = true\n}\n",
+        ),
+    ] {
+        if !tool_available(probe) {
+            assert_ne!(
+                std::env::var("TAC_TEST_UNITS_REQUIRE_TOOLCHAINS").as_deref(),
+                Ok("1"),
+                "Required test unit toolchain {probe} is unavailable"
+            );
+            eprintln!("skipping {extension}: {probe} is unavailable");
+            continue;
+        }
+        let root = tempfile::tempdir().expect("project");
+        write(
+            root.path(),
+            &format!("server/tests/CatalogTestSetup.{extension}"),
+            configuration,
+        );
+        let relative = format!("server/tests/CatalogServiceTest.{extension}");
+        write(root.path(), &relative, unit);
+        let source = HandlerSource::discover(root.path(), &relative)
+            .unwrap_or_else(|error| panic!("{extension} discovery: {error:?}"));
+        let supervisor =
+            HandlerSupervisor::new(HandlerSupervisorOptions::default()).expect("supervisor");
+        let response = supervisor
+            .invoke(
+                &source,
+                &HandlerRequest::route("test_unit", "/", HttpMethod::Post),
+                &HandlerCancellation::default(),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{extension} invocation: {error:?}"));
+        assert!(
+            response.error.is_none(),
+            "{extension}: {:?}",
+            response.error
+        );
+        let body = response.body.expect("body").data;
+        let value: serde_json::Value = serde_json::from_str(&body).expect("JSON report");
+        let cases = value["cases"].as_array().expect("cases");
+        assert_eq!(cases.len(), 2, "{extension}: {body}");
+        assert_eq!(cases[0]["passed"], true, "{extension}: {body}");
+        assert_eq!(cases[1]["passed"], true, "{extension}: {body}");
+    }
+}
+
+#[tokio::test]
 async fn a_tac_test_unit_runs_in_its_own_realm() {
     for (extension, probe, configuration, service, unit) in [
         (
