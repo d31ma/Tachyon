@@ -88,10 +88,7 @@ impl CppChecks {
     }
 
     pub(crate) fn check_service(path: &Path, class: &CppClass) -> Result<(), Failure> {
-        let field_marker = class
-            .members
-            .iter()
-            .flat_map(Self::constraints);
+        let field_marker = class.members.iter().flat_map(Self::constraints);
         let misplaced = class
             .markers
             .iter()

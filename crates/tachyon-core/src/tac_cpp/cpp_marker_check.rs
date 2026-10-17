@@ -13,6 +13,8 @@ pub(crate) struct CppMarkerCheck<'a> {
 
 impl<'a> CppMarkerCheck<'a> {
     const NEAR_MISS: usize = 2;
+    const DESCRIPTION: &'static str = "Description";
+    const DESCRIPTION_FORM: &'static str = "[[Description]] takes one quoted line of at most 256 characters, without quotes, escapes or control characters,, for example `class [[Service, Description(\"Keeps the score\")]] TallyService`";
 
     pub(crate) fn check_source(path: &'a Path, source: &str) -> Result<(), Failure> {
         let file = CppFile::read(path, source)?;
@@ -56,8 +58,51 @@ impl<'a> CppMarkerCheck<'a> {
         CppSpelling::is_standard(name)
     }
 
+    pub(crate) fn description(class: &CppClass) -> Option<String> {
+        let marker = class
+            .markers
+            .iter()
+            .find(|marker| marker.name == Self::DESCRIPTION)?;
+        serde_json::from_str::<String>(&marker.arguments).ok()
+    }
+
+    fn check_description(&self, class: &CppClass) -> Result<(), Failure> {
+        let Some(marker) = class
+            .markers
+            .iter()
+            .find(|marker| marker.name == Self::DESCRIPTION)
+        else {
+            return Ok(());
+        };
+        let plain = Self::description(class).is_some_and(|text| {
+            let bounded = [!text.trim().is_empty(), text.chars().count() <= 256] == [true, true];
+            let clean = !text
+                .chars()
+                .any(|character| character.is_control() || matches!(character, '"' | '\'' | '\\'));
+            [bounded, clean] == [true, true]
+        });
+        plain
+            .then_some(())
+            .ok_or_else(|| self.refused(marker, Self::DESCRIPTION_FORM))
+    }
+
+    pub(crate) fn described_alone(class: &CppClass) -> Option<usize> {
+        let marker = class
+            .markers
+            .iter()
+            .find(|marker| marker.name == Self::DESCRIPTION)?;
+        let accompanied = class.markers.iter().any(|other| {
+            [
+                other.name != Self::DESCRIPTION,
+                CppSpelling::of(&other.name) == CppSpelling::Exact,
+            ] == [true, true]
+        });
+        (!accompanied).then_some(marker.at)
+    }
+
     fn check_class(&self, class: &CppClass) -> Result<(), Failure> {
         self.declaration(&class.markers, Target::Type)?;
+        self.check_description(class)?;
         for member in &class.members {
             self.check_member(member)?;
         }

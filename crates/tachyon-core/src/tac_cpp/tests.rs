@@ -566,3 +566,31 @@ fn a_check_parameter_needs_a_checked_model() {
         "{failure}"
     );
 }
+
+#[test]
+fn a_description_is_one_plain_line_beside_another_marker() {
+    let described =
+        Sources::service("class [[Service, Description(\"Keeps the score\")]] TallyService {};\n");
+    assert_eq!(described.metadata()["description"], "Keeps the score");
+    for source in [
+        "class [[Service, Description(\"Keeps \\\"the\\\" score\")]] TallyService {};\n",
+        "class [[Service, Description(\"\")]] TallyService {};\n",
+        "class [[Service, Description(score)]] TallyService {};\n",
+    ] {
+        let refused = Sources::refusal("client/services/TallyService.hpp", source);
+        assert!(
+            refused.contains("[[Description]] takes one quoted line"),
+            "{source}: {refused}"
+        );
+    }
+    let Err(alone) = super::CppModel::read(
+        Path::new("client/models/Score.hpp"),
+        "struct [[Description(\"A score\")]] Score {\n    int value = 0;\n};\n",
+    ) else {
+        panic!("a model with only a description was accepted");
+    };
+    assert!(
+        alone.to_string().contains("another Tachyon marker"),
+        "{alone}"
+    );
+}

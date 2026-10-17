@@ -128,6 +128,7 @@ impl CppService {
             "starts": self.hooks("OnStart"),
             "stops": self.hooks("OnStop"),
             "listeners": self.listeners.iter().map(CppListener::program).collect::<Vec<_>>(),
+            "description": CppMarkerCheck::description(self.class()),
         })
     }
 

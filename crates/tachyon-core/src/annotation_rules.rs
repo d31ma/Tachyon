@@ -499,7 +499,8 @@ impl AnnotationRules {
             Self::TYPE,
             "gives the class a short description for tools and documents",
         )
-        .needs_arguments(),
+        .needs_arguments()
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new(
             "Schedule",
             Self::TYPE,

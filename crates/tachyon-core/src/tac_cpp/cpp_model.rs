@@ -12,6 +12,8 @@ pub(crate) struct CppModel {
 impl CppModel {
     const NAMED: &'static str = "A C++ model is named after its file";
     const CLIENT: &'static str = "client";
+    const DESCRIBED_ALONE: &'static str =
+        "[[Description]] describes a model that has another Tachyon marker, such as [[Checked]]";
     const PURE_ENDS: [&'static str; 4] = [")=0;", ")const=0;", ")noexcept=0;", ")constnoexcept=0;"];
     const CLIENT_ONLY: &'static str = "C++ is a Tac language only for now: a C++ model goes in client/models. Yon C++ comes later (ADR 0099)";
 
@@ -29,6 +31,9 @@ impl CppModel {
             .ok_or_else(|| CppFailure::pending(relative, 0, Self::CLIENT_ONLY))?;
         CppMarkerCheck::check(relative, &file.class)?;
         CppChecks::check_model(relative, &file.class)?;
+        if let Some(at) = CppMarkerCheck::described_alone(&file.class) {
+            return Err(CppFailure::unreadable(relative, at, Self::DESCRIBED_ALONE));
+        }
         Ok(Self {
             file,
             path: relative.to_path_buf(),
