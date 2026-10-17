@@ -17,6 +17,12 @@ impl<'a> RustTestConstruction<'a> {
     const NO_SETUP: &'static str = "Test.construct needs an active test setup.";
     const CONSTRUCT_TRAIT: &'static str =
         "pub trait BehaviorConstruct<T> { fn construct(&self) -> T; }\n";
+    const CELL_STARTS: [&'static str; 4] = [
+        "std::cell::RefCell<",
+        "std::cell::Cell<",
+        "RefCell<",
+        "Cell<",
+    ];
 
     pub(super) fn members(module: &'a Module, owner: &'a Type, unit: &'a Unit) -> String {
         Self {
@@ -25,6 +31,24 @@ impl<'a> RustTestConstruction<'a> {
             unit,
         }
         .source()
+    }
+
+    pub(super) fn cleared_fakes(owner: &Type, unit: &Unit) -> String {
+        let lines: Vec<String> = owner
+            .fields
+            .iter()
+            .filter(|field| unit.mocks.contains(&field.name))
+            .filter(|field| Self::is_cell(&field.type_source))
+            .map(|field| format!("self.{}.take();\n", field.name))
+            .collect();
+        lines.concat()
+    }
+
+    fn is_cell(kind: &str) -> bool {
+        let kind = kind.trim();
+        Self::CELL_STARTS
+            .iter()
+            .any(|start| kind.starts_with(start))
     }
 
     pub(super) fn wrapped_call(module: &Module, name: &str, call: &str) -> String {

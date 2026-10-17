@@ -79,7 +79,7 @@ fn lower_type(
         });
     }
     if let Some(unit) = super::super::testing::polyglot_unit(declaration) {
-        generated.push_str(&test_members(&unit, module));
+        generated.push_str(&test_members(&unit, module, declaration));
         if module.environment == "tac" {
             generated.push_str(&RustTestConstruction::members(module, declaration, &unit));
         }
@@ -962,8 +962,9 @@ fn number(value: &Value, field: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("Invalid Rust behavior integer policy {field}"))
 }
 
-fn test_members(unit: &super::super::testing::Unit, module: &Module) -> String {
+fn test_members(unit: &super::super::testing::Unit, module: &Module, owner: &Type) -> String {
     let environment = module.environment.as_str();
+    let cleared_fakes = RustTestConstruction::cleared_fakes(owner, unit);
     let (report, answer) = if environment == "tac" {
         ("BehaviorResult<String>", "body.to_json(1048576)")
     } else {
@@ -1009,6 +1010,7 @@ fn test_members(unit: &super::super::testing::Unit, module: &Module) -> String {
          fn POST(&self) -> {report} {{\n\
          let mut cases = Vec::new();\n\
          for name in [{names}] {{\n\
+         {cleared_fakes}\
          let failure = match self.start_behaviors() {{ Ok(()) => {{ BehaviorCalls::take(); self.run_case(name) }} Err(error) => Some(error.message.to_owned()) }};\n\
          cases.push(match failure {{\n\
          None => BehaviorValue::object([(\"name\", name.into()), (\"passed\", BehaviorValue::Bool(true)), (\"called\", BehaviorCalls::take())]),\n\

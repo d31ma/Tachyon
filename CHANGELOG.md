@@ -523,6 +523,13 @@ machine contracts have their own, independent major versions.
   double that one case assigned was still there in the next case, and a Tac
   unit's `construct` passed it on.
 
+- A Rust test unit now resets every `#[Fake]` field that is a `RefCell` or
+  a `Cell` to its `Default` value before each case, so a
+  `RefCell<Option<T>>` becomes `None` and a `Cell<i64>` becomes zero.
+  Before, a test double that one case assigned was still there in the next
+  case, and a Tac unit's `construct()` passed it on. A case reads the unit
+  through `&self`, so a Fake in a plain field cannot change between cases.
+
 - The `lua/THIRD_PARTY_NOTICES.txt` that a build writes beside the Lua web
   runtime now also holds the Emscripten, musl and compiler-rt licenses, as
   the Ruby notices do. The runtime is linked with Emscripten, which adds its
