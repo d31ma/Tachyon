@@ -717,6 +717,7 @@ pub struct __YonAnswer {
     status: u16,
     headers: Vec<(String, String)>,
     body: String,
+    streamed: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1051,6 +1052,7 @@ impl __YonAnswer {
                 String::from("application/json"),
             )],
             body: body.into(),
+            streamed: false,
         }
     }
 
@@ -1060,6 +1062,7 @@ impl __YonAnswer {
             status,
             headers: Vec::new(),
             body: String::new(),
+            streamed: false,
         }
     }
 
@@ -1465,16 +1468,23 @@ impl YonSocket {
         String::from_utf8(payload).ok()
     }
 
-    fn write(request_id: &str, mut fields: Vec<(String, Json)>) {
-        use std::io::Write as _;
+    fn write(request_id: &str, fields: Vec<(String, Json)>) {
+        let _ = Self::write_payload(&Self::payload(request_id, fields));
+    }
+
+    fn payload(request_id: &str, mut fields: Vec<(String, Json)>) -> Vec<u8> {
         fields.push((String::from("protocol_version"), Json::from(1_i64)));
         fields.push((String::from("request_id"), Json::from(request_id)));
-        let payload = Json::Map(fields).write().into_bytes();
+        Json::Map(fields).write().into_bytes()
+    }
+
+    fn write_payload(payload: &[u8]) -> bool {
+        use std::io::Write as _;
         let length = u32::try_from(payload.len()).unwrap_or(u32::MAX);
         let mut output = std::io::stdout().lock();
-        let _ = output.write_all(&length.to_be_bytes());
-        let _ = output.write_all(&payload);
-        let _ = output.flush();
+        output.write_all(&length.to_be_bytes()).is_ok()
+            && output.write_all(payload).is_ok()
+            && output.flush().is_ok()
     }
 
     fn send(request_id: &str, message: Json, to: Option<&str>) {
@@ -1527,6 +1537,92 @@ impl YonSocket {
     }
 }
 
+pub trait YonStreamItem {
+    fn into_item(self) -> Option<Json>;
+}
+
+impl<T: Into<Json>> YonStreamItem for T {
+    fn into_item(self) -> Option<Json> {
+        Some(self.into())
+    }
+}
+
+impl<T: Into<Json>, Failure> YonStreamItem for Result<T, Failure> {
+    fn into_item(self) -> Option<Json> {
+        self.ok().map(Into::into)
+    }
+}
+
+pub struct YonStream;
+
+impl YonStream {
+    fn answer<Items>(request: &__YonFrame, items: Items) -> __YonAnswer
+    where
+        Items: IntoIterator,
+        Items::Item: YonStreamItem,
+    {
+        let request_id = request.parsed().get("request_id").text();
+        let sent = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Self::send_all(&request_id, items)
+        }));
+        match sent {
+            Ok(Ok(())) => {}
+            Ok(Err(code)) => Self::fail(&request_id, code),
+            Err(_) => Self::fail(&request_id, "TY2204"),
+        }
+        let mut answer = __YonAnswer::empty(200);
+        answer.streamed = true;
+        answer
+    }
+
+    fn send_all<Items>(request_id: &str, items: Items) -> Result<(), &'static str>
+    where
+        Items: IntoIterator,
+        Items::Item: YonStreamItem,
+    {
+        for item in items {
+            let data = item.into_item().ok_or("TY2204")?;
+            let data = data.stringify().map_err(|_| "TY2204")?;
+            let body = Json::map([("encoding", Json::from("utf8")), ("data", Json::from(data))]);
+            let fields = vec![(String::from("kind"), Json::from("event")), (String::from("body"), body)];
+            let payload = YonSocket::payload(request_id, fields);
+            if payload.len() > YonSocket::MAX_FRAME_BYTES {
+                return Err("TY2203");
+            }
+            if !YonSocket::write_payload(&payload) {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    fn fail(request_id: &str, code: &str) {
+        let message = match code {
+            "TY2203" => "Streamed event exceeds the protocol frame limit.",
+            _ => "The handler stream failed.",
+        };
+        let error = Json::map([
+            ("code", Json::from(code)),
+            ("message", Json::from(message)),
+            ("retryable", Json::from(false)),
+        ]);
+        YonSocket::write(request_id, vec![
+            (String::from("kind"), Json::from("response")),
+            (String::from("status"), Json::from(500_i64)),
+            (String::from("headers"), Json::Map(Vec::new())),
+            (String::from("error"), error),
+        ]);
+    }
+}
+
+fn yon_stream<Items>(request: &__YonFrame, items: Items) -> __YonAnswer
+where
+    Items: IntoIterator,
+    Items::Item: YonStreamItem,
+{
+    YonStream::answer(request, items)
+}
+
 fn main() {
     use std::io::{Read as _, Write as _};
 
@@ -1545,5 +1641,8 @@ fn main() {
     let request = __YonFrame { raw, parsed };
 
     let response = yon_dispatch(&request);
+    if response.streamed {
+        return;
+    }
     let _ = std::io::stdout().write_all(response.write().as_bytes());
 }

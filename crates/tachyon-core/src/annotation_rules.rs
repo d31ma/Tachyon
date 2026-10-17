@@ -299,7 +299,7 @@ impl AnnotationRules {
     ];
     const YON_BACKGROUND: &'static [&'static str] = &["js", "ts", "py", "rs"];
     const YON_STREAM: &'static [&'static str] = &[
-        "js", "ts", "py", "php", "kt", "cs", "fs", "dart", "rb", "lua", "go",
+        "js", "ts", "py", "php", "kt", "cs", "fs", "dart", "rb", "lua", "go", "rs",
     ];
     const TAC_STREAM: &'static [&'static str] = &["js", "ts", "go"];
     const TAC_VALUE_SOURCE: &'static [&'static str] = &[

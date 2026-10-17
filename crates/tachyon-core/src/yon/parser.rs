@@ -1330,10 +1330,10 @@ fn validate_streaming_method(
             "Python async generators are not supported; use a synchronous generator for streaming",
         ));
     }
-    if streaming && matches!(input.extension, "rs" | "java") {
+    if streaming && input.extension == "java" {
         return Err(input.failure(
             start,
-            "@StreamRoute needs JavaScript, TypeScript, Python, PHP, Kotlin, C#, F#, Dart, Ruby, Lua or Go: Java, Groovy and Rust have no generator to produce the stream",
+            "@StreamRoute needs JavaScript, TypeScript, Python, PHP, Kotlin, C#, F#, Dart, Ruby, Lua, Go or Rust: Java and Groovy have no generator to produce the stream",
         ));
     }
     Ok(())
@@ -2156,6 +2156,10 @@ mod tests {
         assert!(first_route_streams(
             "py",
             "@request_route(\"/c\")\nclass C:\n @stream_route\n def stream_ticks(self):\n  yield 1\n"
+        ));
+        assert!(first_route_streams(
+            "rs",
+            "#[RequestRoute(\"/c\")]\nstruct C;\nimpl C { fn new() -> Self { Self }\n #[StreamRoute]\n fn stream_ticks(&self) -> impl Iterator<Item = u32> { 1..3 }\n}"
         ));
         rejects(
             "js",

@@ -1328,7 +1328,7 @@ mod tests {
     }
 
     impl FailingStream {
-        const CASES: [Self; 8] = [
+        const CASES: [Self; 9] = [
             Self {
                 extension: "kt",
                 program: "kotlinc",
@@ -1376,6 +1376,12 @@ mod tests {
                 program: "go",
                 version_flag: "version",
                 source: "import (\n\t\"errors\"\n\t\"iter\"\n)\n\n// @RequestRoute(\"/events\")\n// @Public\ntype EventsController struct{}\n\n// @StreamRoute\nfunc (controller *EventsController) StreamEvents() iter.Seq2[map[string]int, error] {\n\treturn func(yield func(map[string]int, error) bool) {\n\t\tif yield(map[string]int{\"tick\": 1}, nil) {\n\t\t\tyield(nil, errors.New(\"secret-canary\"))\n\t\t}\n\t}\n}\n",
+            },
+            Self {
+                extension: "rs",
+                program: "cargo",
+                version_flag: "--version",
+                source: "#[RequestRoute(\"/events\")]\n#[Public]\nstruct EventsController;\nimpl EventsController {\n    fn new() -> Self { Self }\n    #[StreamRoute]\n    fn stream_events(&self) -> impl Iterator<Item = Result<Json, String>> {\n        vec![Ok(Json::map([(\"tick\", Json::from(1_i64))])), Err(String::from(\"secret-canary\"))].into_iter()\n    }\n}\n",
             },
         ];
 

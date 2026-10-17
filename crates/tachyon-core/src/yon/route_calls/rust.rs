@@ -6,7 +6,9 @@ use std::fmt::Write as _;
 pub(super) struct RustRoutes;
 
 impl RustRoutes {
-    pub(super) fn functions(plan: &Plan) -> String {
+    pub(crate) const STREAM_SHAPE_HELP: &'static str = "A Rust @StreamRoute method returns impl Iterator<Item = Model>, or impl Iterator<Item = Result<Model, E>> when the stream can fail; Box<dyn Iterator<Item = Model>> works too";
+
+    pub(super) fn functions(plan: &Plan) -> Result<String, String> {
         let mut output = String::new();
         let parameters = ErrorCalls::parameters(plan, "rs");
         let error_arguments = ErrorCalls::arguments(plan, "rs");
@@ -17,6 +19,17 @@ impl RustRoutes {
                 plan.controller
             );
             for route in RouteCalls::routes_for(plan, verb) {
+                if route.streaming {
+                    Self::check_stream(plan, route)?;
+                    let _ = writeln!(
+                        output,
+                        "        {} => yon_stream(request, controller.{}({})),",
+                        RouteCalls::pattern(route),
+                        route.method,
+                        Self::arguments(route)
+                    );
+                    continue;
+                }
                 if let Some(error_type) =
                     RustErrors::result_error(&route.returns).filter(|_| !plan.errors.is_empty())
                 {
@@ -40,7 +53,27 @@ impl RustRoutes {
             }
             output.push_str("        _ => __YonAnswer::json(\"{\\\"error\\\":\\\"No controller method answers this route.\\\"}\").status(500),\n    }\n}\n");
         }
-        output
+        Ok(output)
+    }
+
+    pub(crate) fn is_stream_shape(returns: &str) -> bool {
+        let written: String = returns.split_whitespace().collect();
+        let iterator = written.contains("Iterator<Item=");
+        let opaque = written.starts_with("impl") || written.starts_with("Box<dyn");
+        iterator && opaque
+    }
+
+    fn check_stream(plan: &Plan, route: &Route) -> Result<(), String> {
+        if Self::is_stream_shape(&route.returns) {
+            return Ok(());
+        }
+        Err(format!(
+            "{}; {}::{} returns '{}'",
+            Self::STREAM_SHAPE_HELP,
+            plan.controller,
+            route.method,
+            route.returns.trim()
+        ))
     }
 
     fn arguments(route: &Route) -> String {
@@ -53,5 +86,28 @@ impl RustRoutes {
             }
         }
         arguments.join(", ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RustRoutes;
+
+    #[test]
+    fn a_rust_stream_returns_an_iterator_of_items() {
+        for returns in [
+            "impl Iterator<Item = Tick>",
+            "impl Iterator<Item = Result<Tick, String>> + '_",
+            "Box<dyn Iterator<Item = Tick>>",
+        ] {
+            assert!(RustRoutes::is_stream_shape(returns), "{returns}");
+        }
+    }
+
+    #[test]
+    fn other_rust_stream_results_are_refused() {
+        for returns in ["Vec<Tick>", "Json", "", "std::vec::IntoIter<Tick>"] {
+            assert!(!RustRoutes::is_stream_shape(returns), "{returns}");
+        }
     }
 }

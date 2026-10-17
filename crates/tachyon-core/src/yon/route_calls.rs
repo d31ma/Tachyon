@@ -111,7 +111,7 @@ impl RouteCalls {
             "java" => Ok(java::JavaRoutes::functions(plan)),
             "kt" => Ok(kotlin::KotlinRoutes::functions(plan)),
             "cs" => Ok(csharp::CSharpRoutes::functions(plan)),
-            "rs" => Ok(rust::RustRoutes::functions(plan)),
+            "rs" => rust::RustRoutes::functions(plan),
             "dart" => Ok(dart::DartRoutes::functions(plan)),
             "go" => go::GoRoutes::functions(plan, stripped),
             _ => Err(format!(

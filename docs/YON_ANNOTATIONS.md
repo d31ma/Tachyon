@@ -294,14 +294,16 @@ Tachyon rejects malformed JSON. It never silently replaces it with an empty
 object. See ADR 0026.
 
 Streaming uses native generator syntax in JS/TS/Python/PHP/Kotlin/C#/F#/Dart/Ruby,
-`coroutine.yield` in Lua, and a range-over-function iterator in Go: the method
-returns `iter.Seq[Model]`, or `iter.Seq2[Model, error]` when the stream can fail.
+`coroutine.yield` in Lua, a range-over-function iterator in Go: the method
+returns `iter.Seq[Model]`, or `iter.Seq2[Model, error]` when the stream can fail,
+and an `Iterator` in Rust: the method returns `impl Iterator<Item = Model>`, or
+`impl Iterator<Item = Result<Model, E>>` when the stream can fail.
 `StreamRoute` marks the method: it answers GET requests with server-sent events,
 and the method name starts with `stream` (`streamTicks`, `StreamTicks`,
 `stream_ticks`). A generator under `GetRoute` is refused, and so is the retired
 `Stream`; `ty migrate fix --write` converts `GetRoute` with `Stream`. The server
 sends `event: end` when the method finishes (ADR 0058). Python supports
-synchronous generators, not async generators. Java, Groovy and Rust stay single-response. The existing limits for
+synchronous generators, not async generators. Java and Groovy stay single-response. The existing limits for
 deadline, output, cancellation and process-tree cleanup apply. Helper
 grants no extra process permissions. Outside programs use explicit relay
 calls or a Gateway command.

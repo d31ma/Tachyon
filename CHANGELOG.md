@@ -10,6 +10,13 @@ machine contracts have their own, independent major versions.
 
 ### Added
 
+- Yon Rust controllers stream. A `#[StreamRoute]` method returns
+  `impl Iterator<Item = Model>`, or `impl Iterator<Item = Result<Model, E>>`
+  when the stream can fail; the prelude sends each item as one server-sent
+  event and `event: end` when the iterator ends. An `Err` item or a panic
+  sends the fixed TY2204 error frame without the error text. Any other
+  result is refused with TY2015, and TY2015 now refuses `@StreamRoute` only
+  in Java and Groovy (ADR 0058 amendment).
 - Yon Rust listeners accept `#[InBackground]`. The listener stays
   synchronous and runs after the other listeners of the event, as in
   JavaScript and Python, and its return value is never published again

@@ -1,7 +1,7 @@
 {
   "id": "realtime",
   "title": "Streaming controllers",
-  "summary": "StreamRoute marks a controller method that answers GET requests with a stream of server-sent events (SSE). The method produces many values, one at a time, with the language's own `yield` syntax, and its name starts with `stream`. It keeps the loop in a private generator method and only passes on that method's values. Tachyon sends each value as one limited event, and an end event when the method finishes. In the browser, StreamRequest on an HTTPClient method receives the stream. Tachyon opens it when a component first uses the client, opens it again after 1, 2, 4, 8 and 16 seconds when it fails (at most five tries in a row), and closes it with the component. Sixty seconds with no message also counts as a failure, so a silent stream is opened again. Each message is checked against the model type of the method's one parameter, passed to the method, and published as that model's event, so an OnEvent listener in any Tac language receives it. The StreamRequest client is JavaScript, TypeScript or Go. A Go client is an interface method such as `Receive(tick Tick)`; the page holds the stream for the Go service that keeps the client in a `// @Needs` field, and the service receives each message with `// @OnEvent`. Dart, Rust, Ruby, Python, Lua, Swift, Kotlin, Java, C#, F# and C++ refuse StreamRequest with TY1308. A Lua stream method sends each value with `coroutine.yield`, and a Go stream method returns an `iter.Seq` whose function calls `yield`. On the server, Java, Groovy and Rust cannot stream, because they have no native generator, so they refuse StreamRoute with TY2015. Like every route, a stream says who may call it with `Public`, `SignedIn` or `Allow(Role)`.",
+  "summary": "StreamRoute marks a controller method that answers GET requests with a stream of server-sent events (SSE). The method produces many values, one at a time, with the language's own `yield` syntax, and its name starts with `stream`. It keeps the loop in a private generator method and only passes on that method's values. Tachyon sends each value as one limited event, and an end event when the method finishes. In the browser, StreamRequest on an HTTPClient method receives the stream. Tachyon opens it when a component first uses the client, opens it again after 1, 2, 4, 8 and 16 seconds when it fails (at most five tries in a row), and closes it with the component. Sixty seconds with no message also counts as a failure, so a silent stream is opened again. Each message is checked against the model type of the method's one parameter, passed to the method, and published as that model's event, so an OnEvent listener in any Tac language receives it. The StreamRequest client is JavaScript, TypeScript or Go. A Go client is an interface method such as `Receive(tick Tick)`; the page holds the stream for the Go service that keeps the client in a `// @Needs` field, and the service receives each message with `// @OnEvent`. Dart, Rust, Ruby, Python, Lua, Swift, Kotlin, Java, C#, F# and C++ refuse StreamRequest with TY1308. A Lua stream method sends each value with `coroutine.yield`, a Go stream method returns an `iter.Seq` whose function calls `yield`, and a Rust stream method returns an `impl Iterator`. On the server, Java and Groovy cannot stream, because they have no native generator, so they refuse StreamRoute with TY2015. Like every route, a stream says who may call it with `Public`, `SignedIn` or `Allow(Role)`.",
   "group": "Yon server",
   "files": [
     {
@@ -194,6 +194,18 @@
       "name": "server/controllers/TicksController.go",
       "code": {
         "file": "server/controllers/TicksController.go"
+      }
+    },
+    {
+      "name": "server/models/Tick.rs",
+      "code": {
+        "file": "server/models/Tick.rs"
+      }
+    },
+    {
+      "name": "server/controllers/TicksController.rs",
+      "code": {
+        "file": "server/controllers/TicksController.rs"
       }
     }
   ]
