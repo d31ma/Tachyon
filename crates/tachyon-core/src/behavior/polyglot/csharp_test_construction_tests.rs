@@ -135,3 +135,16 @@ async fn csharp_test_http_client_fakes_compile_and_execute_per_construction() {
             .contains("PASS C# HTTPClient typed Test construction")
     );
 }
+
+#[test]
+fn every_csharp_fake_is_cleared_to_its_default_before_each_case() {
+    let source = CsharpConstructionFixture::lower(
+        "[Fake]\n public GreetingClient greetingClient;\n [Fake]\n public int count;",
+    );
+    assert!(
+        source.contains(
+            "foreach (var name in new string[] {\"testRead\"}) {\nthis.greetingClient = default;\nthis.count = default;\nstartBehaviors();"
+        ),
+        "{source}"
+    );
+}

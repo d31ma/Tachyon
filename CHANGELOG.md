@@ -537,6 +537,11 @@ machine contracts have their own, independent major versions.
   with another non-nullable type, such as a `lateinit var`, has no empty
   value, so the build now refuses it and asks for a nullable type.
 
+- A C# test unit now sets every `[Fake]` field to `default` before each
+  case: `null` for a reference, zero for a number and `false` for a `bool`.
+  Before, a test double that one case assigned was still there in the next
+  case, and `construct<Role>()` passed it on.
+
 - The `lua/THIRD_PARTY_NOTICES.txt` that a build writes beside the Lua web
   runtime now also holds the Emscripten, musl and compiler-rt licenses, as
   the Ruby notices do. The runtime is linked with Emscripten, which adds its
