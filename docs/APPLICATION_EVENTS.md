@@ -284,12 +284,14 @@ This is not an error, and nothing is republished for it.
   pass, so the publisher does not wait for it (ADR 0085).
 - Yon Ruby defers it in the same way. Ruby methods stay synchronous, so the
   listener runs after the other listeners of the event, inside the same drain.
+- PHP has no asynchronous methods. It runs the listener after the other
+  listeners of the same event, in the same request.
 
 An async listener never republishes its return value, as in Spring.
 
-`@InBackground` is a compile error in Yon PHP, Java, Groovy and Rust, because
+`@InBackground` is a compile error in Yon Java, Groovy and Rust, because
 their event runtimes do not defer listeners yet. The error is "InBackground
-listeners require a Yon language that defers them (js, ts, py, kt, dart, cs, fs, lua, rb)".
+listeners require a Yon language that defers them (js, ts, py, kt, dart, cs, fs, lua, rb, php)".
 
 ### Returned events
 
@@ -389,7 +391,7 @@ a request, or a background job API. The one exception is a `@Topic` model
   termination.
 - Yon JS/TS/Python/Dart support asynchronous hooks and event methods. PHP, Java,
   Kotlin, C#, F#, Ruby and Rust currently require synchronous methods. Kotlin,
-  C#, F# and Ruby still accept `@InBackground`, because their runtimes defer those
+  C#, F#, Ruby and PHP still accept `@InBackground`, because their runtimes defer those
   listeners, and a C# `@InBackground` listener may return `Task`; the others
   refuse it.
 - Streaming event containers and transient event providers are rejected. They

@@ -4,5 +4,6 @@ class Lifecycle {
         /** @var list<string> */
         public array $log,
         public int $settled,
+        public int $audited,
     ) {}
 }

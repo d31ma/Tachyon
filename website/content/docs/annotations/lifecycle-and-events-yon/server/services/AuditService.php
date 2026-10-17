@@ -4,6 +4,7 @@ class AuditService {
   /** @var list<string> */
   public array $log = [];
   public int $settled = 0;
+  public int $audited = 0;
 
   #[OnEvent({"id":"audit-log"})]
   #[Order(-10)]
@@ -15,4 +16,8 @@ class AuditService {
 
   #[OnEvent]
   function saveSettled(\Models\SettledOrder $settled): void { $this->settled = $settled->total; }
+
+  #[OnEvent]
+  #[InBackground]
+  function audit(\Models\SettledOrder $settled): void { $this->audited = $settled->total; }
 }

@@ -127,7 +127,8 @@ class __YonEvents {
             if (count($this->listeners) >= 1024) throw new RuntimeException('Local listener capacity exceeded');
             $this->listeners[] = ['name' => $name, 'callback' => $callback, 'order' => (int) ($options['order'] ?? 0),
                                   'condition' => $options['condition'] ?? null, 'models' => $options['models'] ?? null,
-                                  'returns' => $options['returns'] ?? null, 'sequence' => count($this->listeners)];
+                                  'returns' => $options['returns'] ?? null, 'background' => ($options['async'] ?? false) === true,
+                                  'sequence' => count($this->listeners)];
             if ($replay && array_key_exists($name, $this->retained)) $this->queue[] = [$name, $this->retained[$name]];
         }
         usort($this->listeners, fn($left, $right) => [$left['order'], $left['sequence']] <=> [$right['order'], $right['sequence']]);
@@ -143,11 +144,17 @@ class __YonEvents {
         while (count($this->queue)) {
             [$name, $encoded] = array_shift($this->queue);
             if (++$this->deliveries > 4096) { $this->queue = []; fwrite(STDERR, "Yon local event delivery bound exceeded.\n"); return; }
+            $deferred = [];
             foreach ($this->listeners as $listener) if ($listener['name'] === $name) {
                 $value = self::decode($encoded, 32);
                 if ($listener['models'] !== null && !self::fits($listener['models'], $name, $value)) { fwrite(STDERR, "Yon local event payload does not fit the listener model.\n"); continue; }
                 if ($listener['condition'] !== null && !self::matches($listener['condition'], $value, $name)) continue;
+                if ($listener['background']) { $deferred[] = [$listener, $value]; continue; }
                 try { self::republish(($listener['callback'])($value), $listener['returns']); }
+                catch (Throwable $failure) { fwrite(STDERR, "Yon local event listener failed.\n"); }
+            }
+            foreach ($deferred as [$listener, $value]) {
+                try { ($listener['callback'])($value); }
                 catch (Throwable $failure) { fwrite(STDERR, "Yon local event listener failed.\n"); }
             }
         }
