@@ -87,6 +87,14 @@ impl EventModule {
     const MAX_MARKERS: usize = 512;
     const MAX_EVENT_NAMES: usize = 128;
 
+    pub(crate) fn first_marker(source: &str, language: &str, names: &[&str]) -> Option<usize> {
+        scan(source, language)
+            .markers
+            .into_iter()
+            .find(|marker| names.contains(&marker.name.as_str()))
+            .map(|marker| marker.span.start)
+    }
+
     fn add_topic_streams(&mut self) {
         for event_type in &mut self.types {
             for listener in &event_type.listeners {
@@ -412,14 +420,6 @@ fn strip_field_modifier(declaration: &str) -> Option<&str> {
         }
     }
     None
-}
-
-pub(crate) fn first_marker(source: &str, language: &str, names: &[&str]) -> Option<usize> {
-    scan(source, language)
-        .markers
-        .into_iter()
-        .find(|marker| names.contains(&marker.name.as_str()))
-        .map(|marker| marker.span.start)
 }
 
 fn scan(source: &str, language: &str) -> EventScan {

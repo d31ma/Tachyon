@@ -586,9 +586,12 @@ impl HelperRole {
     const KOTLIN_UNMANAGED_ADVICE: &'static str = "A Kotlin Tac Helper is a new object for each class that names it in a @Needs field, so it takes no @NeedsAll, @Lifetime, @OnStart, @OnStop or @OnEvent. Mark each field it needs with @Needs, and move lifecycle and event methods to the Service that needs the Helper";
 
     fn refuse_kotlin_unmanaged(path: &Path, source: &str) -> Result<(), Failure> {
-        if !crate::declared_contract::DeclaredContract::is_kotlin_helper(path) {
-            return Ok(());
-        }
+        Some(path)
+            .filter(|path| crate::declared_contract::DeclaredContract::is_kotlin_helper(path))
+            .map_or(Ok(()), |path| Self::refuse_unmanaged_markers(path, source))
+    }
+
+    fn refuse_unmanaged_markers(path: &Path, source: &str) -> Result<(), Failure> {
         let mask = crate::lexical::code_mask(Self::KOTLIN, source);
         let input = Input {
             path,
@@ -599,7 +602,8 @@ impl HelperRole {
             .into_iter()
             .find(|marker| Self::KOTLIN_UNMANAGED.contains(&marker.name.as_str()))
             .map(|marker| marker.span.start);
-        let hook = crate::events::first_marker(source, Self::KOTLIN, &Self::KOTLIN_UNMANAGED);
+        let hook =
+            crate::events::EventModule::first_marker(source, Self::KOTLIN, &Self::KOTLIN_UNMANAGED);
         role.or(hook).map_or(Ok(()), |at| {
             Err(input.failure(at, Self::KOTLIN_UNMANAGED_ADVICE))
         })

@@ -164,7 +164,7 @@ impl<'a> ConcreteContract<'a> {
         let held_by_the_page = [self.tac, self.form.language == Self::KOTLIN] == [true, true];
         members
             .iter()
-            .filter(|member| !held_by_the_page || !member.is_marked_with(&Self::HELD))
+            .filter(|member| [held_by_the_page, member.is_marked_with(&Self::HELD)] != [true, true])
             .cloned()
             .collect()
     }

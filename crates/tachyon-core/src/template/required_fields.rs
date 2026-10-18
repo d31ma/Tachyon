@@ -398,7 +398,7 @@ impl RequiredFields {
         })
     }
 
-    fn class_body<'a>(code: &'a str, class: &str) -> Option<(usize, &'a str)> {
+    pub(crate) fn class_body<'a>(code: &'a str, class: &str) -> Option<(usize, &'a str)> {
         let mut search = 0;
         while let Some(found) = code[search..].find(class) {
             let at = search + found;

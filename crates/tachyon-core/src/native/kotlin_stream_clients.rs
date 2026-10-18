@@ -1,5 +1,6 @@
 use crate::Failure;
 use crate::events::{EventModule, EventStream, EventType};
+use crate::template::RequiredFields;
 use std::path::Path;
 
 pub(super) struct KotlinStreamClients;
@@ -63,34 +64,35 @@ impl KotlinStreamClients {
                     .map(|stream| (client.name.as_str(), stream))
             })
             .collect();
-        if streams.len() > Self::MOST_STREAMS {
-            return Err(super::host::native_tool_failure(
-                1405,
-                &format!(
-                    "{}: A Kotlin service holds at most 16 @StreamRequest and @SocketRequest methods through its clients.",
-                    path.display()
-                ),
-            ));
-        }
-        Ok(streams
-            .into_iter()
-            .map(|(client, stream)| Self::entry(client, stream))
-            .collect())
+        let within_limit = streams.len() <= Self::MOST_STREAMS;
+        within_limit
+            .then(|| {
+                streams
+                    .into_iter()
+                    .map(|(client, stream)| Self::entry(client, stream))
+                    .collect()
+            })
+            .ok_or_else(|| Self::too_many_streams(path))
+    }
+
+    fn too_many_streams(path: &Path) -> Failure {
+        super::host::native_tool_failure(
+            1405,
+            &format!(
+                "{}: A Kotlin service holds at most 16 @StreamRequest and @SocketRequest methods through its clients.",
+                path.display()
+            ),
+        )
     }
 
     fn held_types(module: &EventModule, owner: &str, path: &Path) -> Vec<String> {
-        let Ok(code) = crate::annotation_layout::masked_source(path, &module.source) else {
-            return Vec::new();
-        };
-        let Some(body) = crate::companion::class_body(&code, owner) else {
-            return Vec::new();
-        };
+        let code =
+            crate::annotation_layout::masked_source(path, &module.source).unwrap_or_default();
+        let body = RequiredFields::class_body(&code, owner).map_or("", |(_, body)| body);
         let mut depth = 0usize;
         let mut held = Vec::new();
         for line in body.lines() {
-            if depth == 0 {
-                held.extend(Self::property_type(line));
-            }
+            held.extend((depth == 0).then(|| Self::property_type(line)).flatten());
             let opened = line.matches('{').count();
             let closed = line.matches('}').count();
             depth = (depth + opened).saturating_sub(closed);
@@ -99,19 +101,18 @@ impl KotlinStreamClients {
     }
 
     fn property_type(line: &str) -> Option<String> {
-        let mut rest = line.trim();
-        while let Some((word, after)) = rest.split_once(char::is_whitespace) {
-            if Self::PROPERTY_WORDS.contains(&word) {
-                let (_, typed) = after.split_once(':')?;
-                let type_name = typed.split(['=', '{']).next()?.trim();
-                return Some(type_name.trim_end_matches('?').to_owned());
-            }
-            if !Self::MODIFIERS.contains(&word) {
-                return None;
-            }
-            rest = after.trim_start();
-        }
-        None
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let keyword = words
+            .iter()
+            .position(|word| Self::PROPERTY_WORDS.contains(word))?;
+        let modified = words
+            .iter()
+            .take(keyword)
+            .all(|word| Self::MODIFIERS.contains(word));
+        let declared = words.get(keyword + 1..)?.join(" ");
+        let (_, typed) = declared.split_once(':')?;
+        let type_name = typed.split(['=', '{']).next()?.trim();
+        modified.then(|| type_name.trim_end_matches('?').to_owned())
     }
 
     fn entry(client: &str, stream: &EventStream) -> String {
