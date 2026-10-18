@@ -1,4 +1,5 @@
 use crate::Failure;
+use crate::behavior::HttpClientSource;
 use crate::events::{EventModule, EventStream, EventType};
 use crate::project::NativeCompanion;
 use std::path::Path;
@@ -26,25 +27,47 @@ impl SwiftStreams {
         language: NativeCompanion,
         web_assembly: bool,
         module: Option<&EventModule>,
-        (class, path): (&str, &Path),
+        owner: (&str, &Path),
     ) -> Result<Self, Failure> {
-        let unchanged = Self {
+        module
+            .filter(|_| language == NativeCompanion::Swift)
+            .map_or_else(
+                || Ok(Self::unchanged()),
+                |module| Self::of_module(module, web_assembly, owner),
+            )
+    }
+
+    fn unchanged() -> Self {
+        Self {
             module: None,
             entries: String::new(),
-        };
-        let Some(module) = module.filter(|_| language == NativeCompanion::Swift) else {
-            return Ok(unchanged);
-        };
+        }
+    }
+
+    fn of_module(
+        module: &EventModule,
+        web_assembly: bool,
+        (class, path): (&str, &Path),
+    ) -> Result<Self, Failure> {
         let clients: Vec<&EventType> = module
             .types
             .iter()
             .filter(|event_type| Self::is_stream_client(event_type, class))
             .collect();
-        if clients.is_empty() {
-            return Ok(unchanged);
-        }
         let held = Self::held_types(&module.source, class);
-        let streams: Vec<(&str, &EventStream)> = clients
+        let streams = Self::streams(&clients, &held);
+        Self::checked(&streams, web_assembly, path)?;
+        Ok(Self {
+            module: (!clients.is_empty()).then(|| Self::without_clients(module, &clients)),
+            entries: streams
+                .iter()
+                .map(|(client, stream)| Self::entry(client, stream))
+                .collect(),
+        })
+    }
+
+    fn streams<'a>(clients: &[&'a EventType], held: &[String]) -> Vec<(&'a str, &'a EventStream)> {
+        clients
             .iter()
             .filter(|client| held.contains(&client.name))
             .flat_map(|client| {
@@ -54,20 +77,25 @@ impl SwiftStreams {
                     .filter(|stream| !stream.topic)
                     .map(|stream| (client.name.as_str(), stream))
             })
-            .collect();
-        if [streams.is_empty(), web_assembly] == [false, false] {
-            return Err(Self::failure(path, Self::NATIVE));
-        }
-        if streams.len() > Self::MOST_STREAMS {
-            return Err(Self::failure(path, Self::TOO_MANY));
-        }
-        Ok(Self {
-            module: Some(Self::without_clients(module, &clients)),
-            entries: streams
-                .into_iter()
-                .map(|(client, stream)| Self::entry(client, stream))
-                .collect(),
-        })
+            .collect()
+    }
+
+    fn checked(
+        streams: &[(&str, &EventStream)],
+        web_assembly: bool,
+        path: &Path,
+    ) -> Result<(), Failure> {
+        let refusals = [
+            (
+                [streams.is_empty(), web_assembly] == [false, false],
+                Self::NATIVE,
+            ),
+            (streams.len() > Self::MOST_STREAMS, Self::TOO_MANY),
+        ];
+        refusals
+            .iter()
+            .find(|(refused, _)| *refused)
+            .map_or(Ok(()), |(_, message)| Err(Self::failure(path, message)))
     }
 
     fn is_stream_client(event_type: &EventType, class: &str) -> bool {
@@ -92,10 +120,36 @@ impl SwiftStreams {
     }
 
     fn held_types(source: &str, class: &str) -> Vec<String> {
-        let Some(body) = crate::companion::class_body(source, class) else {
-            return Vec::new();
-        };
-        body.lines().filter_map(Self::property_type).collect()
+        let code =
+            HttpClientSource::masked(source, &crate::lexical::code_mask("swift", source).code);
+        Self::owner_body(&code, class)
+            .map(|body| body.lines().filter_map(Self::property_type).collect())
+            .unwrap_or_default()
+    }
+
+    fn owner_body<'a>(code: &'a str, class: &str) -> Option<&'a str> {
+        let declared = format!("class {class}");
+        let start = code
+            .match_indices(&declared)
+            .map(|(at, _)| at)
+            .find(|at| Self::ends_name(&code[at + declared.len()..]))?;
+        let open = start + code[start..].find('{')?;
+        let mut depth = 0i64;
+        let length = code[open..].bytes().position(|byte| {
+            depth += Self::depth_change(byte);
+            depth == 0
+        })?;
+        Some(&code[open + 1..open + length])
+    }
+
+    fn ends_name(rest: &str) -> bool {
+        rest.chars()
+            .next()
+            .is_none_or(|next| [next.is_alphanumeric(), next == '_'] == [false, false])
+    }
+
+    fn depth_change(byte: u8) -> i64 {
+        i64::from(byte == b'{') - i64::from(byte == b'}')
     }
 
     fn property_type(line: &str) -> Option<String> {

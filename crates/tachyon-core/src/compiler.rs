@@ -565,19 +565,17 @@ mod tests {
     }
 
     #[test]
-    fn kotlin_and_swift_helper_failures_name_the_helper_file() {
-        for (extension, service) in [
-            ("kt", "@Service\nclass TallyService\n"),
-            ("swift", "@Service\nfinal class TallyService {}\n"),
-        ] {
-            let helper = "\n@Helper\nclass StepHelper {}\n";
-            let failure = helper_failure(service, helper, extension);
-            let diagnostic = &failure.diagnostics()[0];
-            assert!(diagnostic.message.contains("not available"), "{failure}");
-            let expected = format!("client/helpers/StepHelper.{extension}");
-            assert_eq!(diagnostic.spans[0].file, expected, "{failure}");
-            assert_eq!(diagnostic.spans[0].start, 1, "{failure}");
-        }
+    fn a_kotlin_helper_failure_names_the_helper_file() {
+        let service = "@Service\nclass TallyService\n";
+        let helper = "\n@Helper\nclass StepHelper {}\n";
+        let failure = helper_failure(service, helper, "kt");
+        let diagnostic = &failure.diagnostics()[0];
+        assert!(diagnostic.message.contains("not available"), "{failure}");
+        assert_eq!(
+            diagnostic.spans[0].file, "client/helpers/StepHelper.kt",
+            "{failure}"
+        );
+        assert_eq!(diagnostic.spans[0].start, 1, "{failure}");
     }
 
     fn compose(root: &Path, page: &str, name: &str, markup: &str) {

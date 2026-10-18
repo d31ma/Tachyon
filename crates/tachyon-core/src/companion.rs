@@ -634,10 +634,6 @@ fn declares_table(language: CompanionLanguage, source: &str) -> bool {
     false
 }
 
-pub(crate) fn class_body<'a>(source: &'a str, name: &str) -> Option<&'a str> {
-    class_body_named(source, Some(name)).map(|(_, body)| body)
-}
-
 fn class_body_named<'a>(source: &'a str, wanted: Option<&str>) -> Option<(String, &'a str)> {
     let Some(wanted) = wanted else {
         return class_body_at(source);
