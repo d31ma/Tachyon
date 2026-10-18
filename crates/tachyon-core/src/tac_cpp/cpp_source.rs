@@ -15,6 +15,28 @@ impl CppSource {
             .is_some_and(|extension| extension == Self::EXTENSION)
     }
 
+    pub(crate) fn either<T>(
+        path: &Path,
+        source: &str,
+        cpp: impl FnOnce(&Path, &str) -> T,
+        other: impl FnOnce(&Path, &str) -> T,
+    ) -> T {
+        Self::routed(Self::is_cpp(path), path, source, cpp, other)
+    }
+
+    fn routed<T>(
+        is_cpp: bool,
+        path: &Path,
+        source: &str,
+        cpp: impl FnOnce(&Path, &str) -> T,
+        other: impl FnOnce(&Path, &str) -> T,
+    ) -> T {
+        if is_cpp {
+            return cpp(path, source);
+        }
+        other(path, source)
+    }
+
     pub(crate) fn read(source: &str) -> Result<Self, &'static str> {
         let mask = crate::lexical::code_mask(Self::EXTENSION, source);
         let code = Self::visible(source, &mask.code);

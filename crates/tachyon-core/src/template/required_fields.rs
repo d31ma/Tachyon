@@ -83,13 +83,30 @@ impl RequiredFields {
         class: &str,
         injectable: &BTreeSet<String>,
     ) -> (Vec<String>, Vec<String>) {
+        let readers = [Self::written_injected_and_props, Self::cpp_props];
+        let cpp = crate::tac_cpp::CppSource::is_cpp(path);
+        readers[usize::from(cpp)](path, source, class, injectable)
+    }
+
+    fn cpp_props(
+        path: &Path,
+        source: &str,
+        _class: &str,
+        _injectable: &BTreeSet<String>,
+    ) -> (Vec<String>, Vec<String>) {
+        (Vec::new(), crate::tac_cpp::CppRoles::props(path, source))
+    }
+
+    fn written_injected_and_props(
+        path: &Path,
+        source: &str,
+        class: &str,
+        injectable: &BTreeSet<String>,
+    ) -> (Vec<String>, Vec<String>) {
         let extension = path
             .extension()
             .and_then(|value| value.to_str())
             .unwrap_or("");
-        if extension == crate::tac_cpp::CppSource::EXTENSION {
-            return (Vec::new(), crate::tac_cpp::CppRoles::props(path, source));
-        }
         let local_classes = crate::annotation_layout::declaration_names(path, source)
             .unwrap_or_default()
             .into_iter()

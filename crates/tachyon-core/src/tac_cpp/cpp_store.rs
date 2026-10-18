@@ -2,6 +2,7 @@ use super::{CppAttribute, CppClass, CppFailure, CppMember, CppMemberKind};
 use crate::Failure;
 use crate::behavior::{WrittenMarker, WrittenPolicies, WrittenQuery};
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -42,56 +43,15 @@ impl CppStore {
         source: &str,
         class: &CppClass,
     ) -> Result<Option<Value>, Failure> {
-        let Some(marker) = Self::marker(class, Self::ENTITY) else {
-            return Ok(None);
-        };
-        let written = WrittenPolicies::new(path, source, super::CppSource::EXTENSION);
-        let mut entity = written.entity(&Self::written(marker))?;
-        if entity["adapter"] != Self::ADAPTER {
-            return Err(CppFailure::pending(path, marker.at, Self::ADAPTERS));
-        }
-        let table = Self::marker(class, Self::TABLE)
-            .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::NEEDS_TABLE))?;
-        let table = written.table(&Self::written(table))?;
-        let ids: Vec<&CppMember> = class
-            .members
-            .iter()
-            .filter(|member| member.marked("Id"))
-            .collect();
-        let [id] = ids.as_slice() else {
-            return Err(CppFailure::unreadable(path, marker.at, Self::ONE_ID));
-        };
-        if !id.is_public_instance(CppMemberKind::Field) {
-            return Err(CppFailure::unreadable(path, id.name_at, Self::ONE_ID));
-        }
-        entity["name"] = json!(class.name);
-        entity["id"] = json!(id.name);
-        entity["table"] = json!(table);
-        Ok(Some(entity))
+        Self::marker(class, Self::ENTITY)
+            .map(|marker| Self::entity_of(path, source, class, marker))
+            .transpose()
     }
 
     pub(crate) fn check(path: &Path, source: &str, class: &CppClass) -> Result<(), Failure> {
-        let Some(marker) = Self::marker(class, Self::STORE) else {
-            return Ok(());
-        };
-        let written = WrittenPolicies::new(path, source, super::CppSource::EXTENSION);
-        written.store(&Self::written(marker))?;
-        let mut names: Vec<&str> = Vec::new();
-        for member in &class.members {
-            Self::check_member(path, source, member)?;
-            if names.contains(&member.name.as_str()) {
-                return Err(CppFailure::unreadable(
-                    path,
-                    member.name_at,
-                    Self::OVERLOADED,
-                ));
-            }
-            names.push(&member.name);
-            if let Some(query) = Self::marker_of(&member.markers, Self::QUERY) {
-                written.query(&Self::written(query))?;
-            }
-        }
-        Ok(())
+        Self::marker(class, Self::STORE).map_or(Ok(()), |marker| {
+            Self::check_store(path, source, class, marker)
+        })
     }
 
     pub(crate) fn definitions(
@@ -100,9 +60,88 @@ impl CppStore {
         class: &CppClass,
         entities: &[Value],
     ) -> Result<Option<(String, String)>, Failure> {
-        let Some(marker) = Self::marker(class, Self::STORE) else {
-            return Ok(None);
-        };
+        Self::marker(class, Self::STORE)
+            .map(|marker| Self::store_definitions(path, source, class, entities, marker))
+            .transpose()
+    }
+
+    fn entity_of(
+        path: &Path,
+        source: &str,
+        class: &CppClass,
+        marker: &CppAttribute,
+    ) -> Result<Value, Failure> {
+        let written = WrittenPolicies::new(path, source, super::CppSource::EXTENSION);
+        let mut entity = written.entity(&Self::written(marker))?;
+        (entity["adapter"] == Self::ADAPTER)
+            .then_some(())
+            .ok_or_else(|| CppFailure::pending(path, marker.at, Self::ADAPTERS))?;
+        let table = Self::marker(class, Self::TABLE)
+            .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::NEEDS_TABLE))?;
+        let table = written.table(&Self::written(table))?;
+        let id = Self::id_field(path, class, marker)?;
+        entity["name"] = json!(class.name);
+        entity["id"] = json!(id.name);
+        entity["table"] = json!(table);
+        Ok(entity)
+    }
+
+    fn id_field<'c>(
+        path: &Path,
+        class: &'c CppClass,
+        marker: &CppAttribute,
+    ) -> Result<&'c CppMember, Failure> {
+        let ids: Vec<&CppMember> = class
+            .members
+            .iter()
+            .filter(|member| member.marked("Id"))
+            .collect();
+        ids.first()
+            .copied()
+            .filter(|_| ids.len() == 1)
+            .filter(|id| id.is_public_instance(CppMemberKind::Field))
+            .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::ONE_ID))
+    }
+
+    fn check_store(
+        path: &Path,
+        source: &str,
+        class: &CppClass,
+        marker: &CppAttribute,
+    ) -> Result<(), Failure> {
+        let written = WrittenPolicies::new(path, source, super::CppSource::EXTENSION);
+        written.store(&Self::written(marker))?;
+        class.members.iter().try_for_each(|member| {
+            Self::check_member(path, source, member)?;
+            Self::marker_of(&member.markers, Self::QUERY)
+                .map(|query| written.query(&Self::written(query)))
+                .transpose()
+                .map(drop)
+        })?;
+        Self::named_once(path, &class.members)
+    }
+
+    fn named_once(path: &Path, members: &[CppMember]) -> Result<(), Failure> {
+        let mut names = BTreeSet::new();
+        members
+            .iter()
+            .find(|member| !names.insert(member.name.as_str()))
+            .map_or(Ok(()), |member| {
+                Err(CppFailure::unreadable(
+                    path,
+                    member.name_at,
+                    Self::OVERLOADED,
+                ))
+            })
+    }
+
+    fn store_definitions(
+        path: &Path,
+        source: &str,
+        class: &CppClass,
+        entities: &[Value],
+        marker: &CppAttribute,
+    ) -> Result<(String, String), Failure> {
         let written = WrittenPolicies::new(path, source, super::CppSource::EXTENSION);
         let store = written.store(&Self::written(marker))?;
         let entity = entities
@@ -111,30 +150,39 @@ impl CppStore {
             .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::NO_ENTITY))?;
         let mut text = Self::plan(&written, marker.at, &store, entity)?;
         for member in &class.members {
-            let query = Self::marker_of(&member.markers, Self::QUERY)
-                .map(|query| written.query(&Self::written(query)))
-                .transpose()?;
-            let page = member
-                .parameters
-                .iter()
-                .position(|parameter| Self::marker_of(&parameter.markers, Self::PAGE).is_some())
-                .map(|index| json!(index));
-            let resolved = written.resolve_query(
-                &store,
-                entity,
-                &WrittenQuery {
-                    at: member.name_at,
-                    method: &member.name,
-                    arity: member.parameters.len(),
-                    query: query.as_ref(),
-                    page: page.as_ref(),
-                },
-            )?;
-            Self::check_returns(path, member, &resolved, entity)?;
-            text.push_str(&Self::definition(&class.name, member, &resolved));
+            let query = Self::member_query(&written, &store, entity, member)?;
+            Self::check_returns(path, member, &query, entity)?;
+            text.push_str(&Self::definition(&class.name, member, &query));
         }
         let name = entity["name"].as_str().unwrap_or_default().to_owned();
-        Ok(Some((name, text)))
+        Ok((name, text))
+    }
+
+    fn member_query(
+        written: &WrittenPolicies<'_>,
+        store: &Value,
+        entity: &Value,
+        member: &CppMember,
+    ) -> Result<Value, Failure> {
+        let query = Self::marker_of(&member.markers, Self::QUERY)
+            .map(|query| written.query(&Self::written(query)))
+            .transpose()?;
+        let page = member
+            .parameters
+            .iter()
+            .position(|parameter| Self::marker_of(&parameter.markers, Self::PAGE).is_some())
+            .map(|index| json!(index));
+        written.resolve_query(
+            store,
+            entity,
+            &WrittenQuery {
+                at: member.name_at,
+                method: &member.name,
+                arity: member.parameters.len(),
+                query: query.as_ref(),
+                page: page.as_ref(),
+            },
+        )
     }
 
     fn check_member(path: &Path, source: &str, member: &CppMember) -> Result<(), Failure> {
@@ -210,7 +258,31 @@ impl CppStore {
     ) -> Result<(), Failure> {
         let name = entity["name"].as_str().unwrap_or_default();
         let operation = plan["operation"].as_str().unwrap_or_default();
-        let wanted: Vec<String> = match operation {
+        let wanted = Self::wanted(operation, name);
+        let written: String = member
+            .plain_type()
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect();
+        let shown = wanted
+            .iter()
+            .map(|text| text.replace("longlong", "long long"))
+            .collect::<Vec<_>>()
+            .join(" or ");
+        wanted.contains(&written).then_some(()).ok_or_else(|| {
+            CppFailure::unreadable(
+                path,
+                member.name_at,
+                &format!(
+                    "The C++ Store method {} runs a {operation} query, so it returns {shown}",
+                    member.name
+                ),
+            )
+        })
+    }
+
+    fn wanted(operation: &str, name: &str) -> Vec<String> {
+        match operation {
             "find" => vec![format!("std::vector<{name}>")],
             "findOne" => vec![format!("std::optional<{name}>")],
             "exists" => vec![String::from("bool")],
@@ -218,28 +290,7 @@ impl CppStore {
                 .iter()
                 .map(|text| (*text).to_owned())
                 .collect(),
-        };
-        let written: String = member
-            .plain_type()
-            .chars()
-            .filter(|character| !character.is_whitespace())
-            .collect();
-        if wanted.contains(&written) {
-            return Ok(());
         }
-        let shown = wanted
-            .iter()
-            .map(|text| text.replace("longlong", "long long"))
-            .collect::<Vec<_>>()
-            .join(" or ");
-        Err(CppFailure::unreadable(
-            path,
-            member.name_at,
-            &format!(
-                "The C++ Store method {} runs a {operation} query, so it returns {shown}",
-                member.name
-            ),
-        ))
     }
 
     fn definition(class: &str, member: &CppMember, plan: &Value) -> String {

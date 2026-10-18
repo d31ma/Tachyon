@@ -55,16 +55,24 @@ impl CppProgram {
             .filter(|model| model.is_checked())
             .map(|model| model.name().to_owned())
             .collect();
-        for service in &self.services {
-            for (type_name, at) in CppChecks::checked_types(service.class()) {
-                CppChecks::require_checked(&service.path, at, &type_name, &checked)?;
-            }
-            if service.is_converter() {
-                CppConverter::new(&service.path, &self.models).check_methods(service.class())?;
-            }
-        }
+        self.services
+            .iter()
+            .try_for_each(|service| self.check_service(service, &checked))?;
         self.stores = self.store_definitions()?;
         Ok(self)
+    }
+
+    fn check_service(&self, service: &CppService, checked: &[String]) -> Result<(), Failure> {
+        CppChecks::checked_types(service.class())
+            .into_iter()
+            .try_for_each(|(type_name, at)| {
+                CppChecks::require_checked(&service.path, at, &type_name, checked)
+            })?;
+        service
+            .is_converter()
+            .then(|| CppConverter::new(&service.path, &self.models).check_methods(service.class()))
+            .transpose()
+            .map(drop)
     }
 
     fn store_definitions(&self) -> Result<BTreeMap<String, String>, Failure> {
@@ -73,26 +81,33 @@ impl CppProgram {
             .iter()
             .filter_map(|model| model.entity.clone())
             .collect();
+        let written = self
+            .services
+            .iter()
+            .map(|service| {
+                CppStore::definitions(&service.path, &service.source, service.class(), &entities)
+                    .map(|found| found.map(|(entity, text)| (service, entity, text)))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let mut kept: Vec<String> = Vec::new();
         let mut stores = BTreeMap::new();
-        for service in &self.services {
-            let class = service.class();
-            let Some((entity, text)) =
-                CppStore::definitions(&service.path, &service.source, class, &entities)?
-            else {
-                continue;
-            };
-            if kept.contains(&entity) {
-                return Err(CppFailure::unreadable(
-                    &service.path,
-                    class.name_at,
-                    Self::SHARED_ENTITY,
-                ));
-            }
-            kept.push(entity);
-            stores.insert(class.name.clone(), text);
+        for (service, entity, text) in written.into_iter().flatten() {
+            Self::keep_once(&mut kept, service, entity)?;
+            stores.insert(service.class().name.clone(), text);
         }
         Ok(stores)
+    }
+
+    fn keep_once(
+        kept: &mut Vec<String>,
+        service: &CppService,
+        entity: String,
+    ) -> Result<(), Failure> {
+        let repeated = kept.contains(&entity);
+        kept.push(entity);
+        (!repeated).then_some(()).ok_or_else(|| {
+            CppFailure::unreadable(&service.path, service.class().name_at, Self::SHARED_ENTITY)
+        })
     }
 
     pub(crate) fn has_class(&self, name: &str) -> bool {
@@ -133,13 +148,14 @@ impl CppProgram {
     }
 
     fn models(root: &Path) -> Result<Vec<CppModel>, Failure> {
-        let mut models = Vec::new();
-        for folder in Self::MODELS {
-            for path in CppFolder::files(root, folder)? {
-                let (relative, source) = CppFolder::read(root, &path)?;
-                models.push(CppModel::read(&relative, &source)?);
-            }
-        }
+        let models = Self::MODELS
+            .iter()
+            .map(|folder| CppFolder::files(root, folder))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .map(|path| CppModel::read_in(root, &path))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self::ordered_models(models))
     }
 
@@ -202,12 +218,17 @@ impl CppProgram {
         for service in &self.services {
             text.push_str(&Self::located(&service.path, &self.lowered(service)));
             text.push_str(&self.conversions(service));
-            if let Some(definitions) = self.stores.get(&service.class().name) {
-                text.push_str(Self::GENERATED);
-                text.push_str(definitions);
-            }
+            text.push_str(&self.store_text(service));
         }
         text
+    }
+
+    fn store_text(&self, service: &CppService) -> String {
+        self.stores
+            .get(&service.class().name)
+            .map_or_else(String::new, |definitions| {
+                format!("{}{definitions}", Self::GENERATED)
+            })
     }
 
     fn conversions(&self, service: &CppService) -> String {

@@ -1,6 +1,6 @@
 use super::{
-    CppAttribute, CppBehaviors, CppChecks, CppClass, CppCoverage, CppFile, CppLifetime,
-    CppMarkerCheck, CppMember, CppRemote, CppService,
+    CppAttribute, CppBehaviors, CppChecks, CppClass, CppCoverage, CppFile, CppInjection,
+    CppLifetime, CppMarkerCheck, CppMember, CppRemote, CppService,
 };
 use std::fmt::Write as _;
 use std::ops::Range;
@@ -66,10 +66,13 @@ impl CppLowering {
     }
 
     fn wrap_behaviors(&mut self, service: &CppService) {
-        for member in &service.class().members {
-            let Some(policy) = service.behaviors.get(&member.name) else {
-                continue;
-            };
+        let wrapped = service.class().members.iter().filter_map(|member| {
+            service
+                .behaviors
+                .get(&member.name)
+                .map(|policy| (member, policy))
+        });
+        for (member, policy) in wrapped {
             let (opening, closing) = CppBehaviors::wrapping(member, policy);
             self.insertions.push((member.body_end, closing));
             self.insertions.push((member.terminator + 1, opening));
@@ -78,12 +81,19 @@ impl CppLowering {
 
     fn guard_checked(&mut self, service: &CppService) {
         let bytes = service.source.as_bytes();
-        for member in &service.class().members {
-            let guards = CppChecks::guards(member);
-            let has_body = bytes.get(member.terminator) == Some(&b'{');
-            if [guards.is_empty(), has_body] == [false, true] {
-                self.insertions.push((member.terminator + 1, guards));
-            }
+        let guarded = service
+            .class()
+            .members
+            .iter()
+            .map(|member| (member, CppChecks::guards(member)))
+            .filter(|(member, guards)| {
+                [
+                    guards.is_empty(),
+                    bytes.get(member.terminator) == Some(&b'{'),
+                ] == [false, true]
+            });
+        for (member, guards) in guarded {
+            self.insertions.push((member.terminator + 1, guards));
         }
     }
 
@@ -111,20 +121,24 @@ impl CppLowering {
 
     fn fill_needs(&mut self, class: &CppClass, prototypes: &[String]) {
         for injection in CppLifetime::injections(class) {
-            let provider = &injection.provider;
-            if !prototypes.contains(provider) {
-                let shared = format!(" = ::tachyon::TacNeeds::of<{provider}>()");
-                self.insertions.push((injection.terminator, shared));
-                continue;
-            }
-            let owned = format!("tachyonOwned{}", Self::capitalized(&injection.field));
-            let holder = format!(
-                " std::shared_ptr<{provider}> {owned} = ::tachyon::TacNeeds::fresh<{provider}>();"
-            );
-            self.insertions.push((class.body.start + 1, holder));
-            self.insertions
-                .push((injection.terminator, format!(" = *{owned}")));
+            self.fill_need(class, prototypes, &injection);
         }
+    }
+
+    fn fill_need(&mut self, class: &CppClass, prototypes: &[String], injection: &CppInjection) {
+        let provider = &injection.provider;
+        if !prototypes.contains(provider) {
+            let shared = format!(" = ::tachyon::TacNeeds::of<{provider}>()");
+            self.insertions.push((injection.terminator, shared));
+            return;
+        }
+        let owned = format!("tachyonOwned{}", Self::capitalized(&injection.field));
+        let holder = format!(
+            " std::shared_ptr<{provider}> {owned} = ::tachyon::TacNeeds::fresh<{provider}>();"
+        );
+        self.insertions.push((class.body.start + 1, holder));
+        self.insertions
+            .push((injection.terminator, format!(" = *{owned}")));
     }
 
     fn capitalized(name: &str) -> String {

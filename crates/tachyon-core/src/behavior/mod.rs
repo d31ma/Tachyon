@@ -57,8 +57,14 @@ mod unit_table;
 pub(crate) use unit_table::UnitTable;
 mod validation;
 mod value_source;
+mod written_field;
+mod written_marker;
 mod written_policies;
-pub(crate) use written_policies::{WrittenField, WrittenMarker, WrittenPolicies, WrittenQuery};
+mod written_query;
+pub(crate) use written_field::WrittenField;
+pub(crate) use written_marker::WrittenMarker;
+pub(crate) use written_policies::WrittenPolicies;
+pub(crate) use written_query::WrittenQuery;
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic)]
 mod value_source_tests;

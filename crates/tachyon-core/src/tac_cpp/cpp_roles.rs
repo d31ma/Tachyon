@@ -1,4 +1,4 @@
-use super::{CppFile, CppLifetime};
+use super::{CppFile, CppLifetime, CppMember};
 use crate::Failure;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -34,11 +34,10 @@ impl CppRoles {
         source: &str,
     ) -> Result<crate::behavior::ServiceRoles, Failure> {
         let file = CppFile::read(path, source)?;
-        let required = if CppLifetime::needs_all(&file.class) {
-            vec![String::from("*")]
-        } else {
-            Vec::new()
-        };
+        let needs_all = CppLifetime::needs_all(&file.class);
+        let required = std::iter::once(String::from("*"))
+            .filter(|_| needs_all)
+            .collect();
         Ok(crate::behavior::ServiceRoles::declared(
             source,
             CppLifetime::is_prototype(&file.class),
@@ -60,16 +59,21 @@ impl CppRoles {
 
     pub(crate) fn stored(path: &Path, source: &str) -> Result<BTreeMap<String, String>, Failure> {
         let file = CppFile::read(path, source)?;
-        let mut fields = BTreeMap::new();
-        for member in &file.class.members {
-            let area = [("LocalState", "local"), ("SessionState", "session")]
-                .into_iter()
-                .find(|(marker, _)| member.marked(marker))
-                .map(|(_, area)| area);
-            if let Some(area) = area {
-                fields.insert(crate::companion::camel_case(&member.name), area.to_owned());
-            }
-        }
-        Ok(fields)
+        Ok(file
+            .class
+            .members
+            .iter()
+            .filter_map(|member| {
+                Self::area(member)
+                    .map(|area| (crate::companion::camel_case(&member.name), area.to_owned()))
+            })
+            .collect())
+    }
+
+    fn area(member: &CppMember) -> Option<&'static str> {
+        [("LocalState", "local"), ("SessionState", "session")]
+            .into_iter()
+            .find(|(marker, _)| member.marked(marker))
+            .map(|(_, area)| area)
     }
 }

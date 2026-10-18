@@ -67,23 +67,30 @@ impl<'a> CppMarkerCheck<'a> {
     }
 
     fn check_description(&self, class: &CppClass) -> Result<(), Failure> {
-        let Some(marker) = class
+        let plain = Self::description(class).is_some_and(|text| Self::plain_description(&text));
+        class
             .markers
             .iter()
             .find(|marker| marker.name == Self::DESCRIPTION)
-        else {
-            return Ok(());
-        };
-        let plain = Self::description(class).is_some_and(|text| {
-            let bounded = [!text.trim().is_empty(), text.chars().count() <= 256] == [true, true];
-            let clean = !text
-                .chars()
-                .any(|character| character.is_control() || matches!(character, '"' | '\'' | '\\'));
-            [bounded, clean] == [true, true]
-        });
-        plain
-            .then_some(())
-            .ok_or_else(|| self.refused(marker, Self::DESCRIPTION_FORM))
+            .map_or(Ok(()), |marker| {
+                plain
+                    .then_some(())
+                    .ok_or_else(|| self.refused(marker, Self::DESCRIPTION_FORM))
+            })
+    }
+
+    fn plain_description(text: &str) -> bool {
+        let bounded = [!text.trim().is_empty(), text.chars().count() <= 256] == [true, true];
+        let clean = !text.chars().any(Self::quoting);
+        [bounded, clean] == [true, true]
+    }
+
+    fn quoting(character: char) -> bool {
+        [
+            character.is_control(),
+            ['"', '\'', '\\'].contains(&character),
+        ]
+        .contains(&true)
     }
 
     pub(crate) fn described_alone(class: &CppClass) -> Option<usize> {

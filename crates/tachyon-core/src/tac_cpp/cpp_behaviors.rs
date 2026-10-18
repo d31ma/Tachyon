@@ -8,6 +8,10 @@ use std::path::Path;
 pub(crate) struct CppBehaviors;
 
 impl CppBehaviors {
+    const CACHE: &'static str = "CacheSettings";
+    const PARTITION: &'static str = "default";
+    const SYNCHRONOUS: &'static str = "A C++ method with [[Cached]], [[UpdateCache]], [[ClearCache]], [[Retry]], [[MaxAtOnce]], [[AllOrNothing]] or a [[PageDefaults]] parameter is a synchronous instance method with a body that returns a value or void, not a reference, like the Rust ones: Tachyon wraps the body. A Task method or an [[HTTPClient]] method cannot carry these markers yet";
+    const NEEDS_CACHE: &'static str = "[[Cached]], [[UpdateCache]] and [[ClearCache]] need [[CacheSettings]] on their C++ class, for example `class [[Service, CacheSettings({\"name\":\"prices\",\"ttlMs\":60000,\"maxBytes\":65536,\"maxEntries\":100})]] PriceService`";
     const METHOD_MARKERS: [&'static str; 6] = [
         "Cached",
         "ClearCache",
@@ -16,10 +20,6 @@ impl CppBehaviors {
         "MaxAtOnce",
         "AllOrNothing",
     ];
-    const CACHE: &'static str = "CacheSettings";
-    const PARTITION: &'static str = "default";
-    const SYNCHRONOUS: &'static str = "A C++ method with [[Cached]], [[UpdateCache]], [[ClearCache]], [[Retry]], [[MaxAtOnce]], [[AllOrNothing]] or a [[PageDefaults]] parameter is a synchronous instance method with a body that returns a value or void, not a reference, like the Rust ones: Tachyon wraps the body. A Task method or an [[HTTPClient]] method cannot carry these markers yet";
-    const NEEDS_CACHE: &'static str = "[[Cached]], [[UpdateCache]] and [[ClearCache]] need [[CacheSettings]] on their C++ class, for example `class [[Service, CacheSettings({\"name\":\"prices\",\"ttlMs\":60000,\"maxBytes\":65536,\"maxEntries\":100})]] PriceService`";
     const NEEDS_CACHED: &'static str =
         "[[CacheKey]] marks a key parameter of a [[Cached]] method; add [[Cached]] to the method";
     const RETURNS: &'static str = "A C++ [[Cached]] or [[UpdateCache]] method returns the value that Tachyon keeps, so it cannot return void";
@@ -40,48 +40,53 @@ impl CppBehaviors {
             .find(|marker| marker.name == Self::CACHE)
             .map(|marker| written.cache(&Self::written(marker)))
             .transpose()?;
-        let mut methods = BTreeMap::new();
-        for member in &class.members {
-            if let Some(metadata) = Self::metadata(&written, source, member)? {
-                methods.insert(member.name.clone(), metadata);
-            }
-        }
-        if methods.is_empty() {
-            return Ok(BTreeMap::new());
-        }
+        let found = class
+            .members
+            .iter()
+            .map(|member| {
+                Self::metadata(&written, source, member)
+                    .map(|metadata| metadata.map(|metadata| (member.name.clone(), metadata)))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut methods: BTreeMap<String, Map<String, Value>> =
+            found.into_iter().flatten().collect();
         written.resolve_mutations(class.name_at, &mut methods)?;
         let module = path.to_string_lossy().replace('\\', "/");
-        let mut policies = BTreeMap::new();
-        for (name, metadata) in methods {
-            let policy = Self::policy(&written, class, &name, &metadata, cache.as_ref(), &module)?;
-            policies.insert(name, policy);
-        }
-        Ok(policies)
+        methods
+            .iter()
+            .map(|(name, metadata)| {
+                Self::policy(&written, class, name, metadata, cache.as_ref(), &module)
+                    .map(|policy| (name.clone(), policy))
+            })
+            .collect()
     }
 
     pub(crate) fn wrapping(member: &CppMember, policy: &Value) -> (String, String) {
         let result = member.plain_type();
         let literal = Value::String(policy.to_string()).to_string();
-        let encoded = if Self::needs_arguments(policy) {
-            member
-                .parameters
-                .iter()
-                .map(|parameter| {
-                    format!(
-                        "::tachyon::json::JsonCodec<std::decay_t<decltype({0})>>::toJson({0})",
-                        parameter.name
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ")
-        } else {
-            String::new()
-        };
+        let encoded: String = Self::needs_arguments(policy)
+            .then(|| Self::encoded(member))
+            .into_iter()
+            .collect();
         let page = Self::page_parameter(member, policy);
         let opening = format!(
             " static const ::tachyon::json::JsonNode tachyonPolicy = ::tachyon::json::JsonNode::parse({literal}); return ::tachyon::TacBehaviors::run<{result}>(tachyonPolicy, [&]() {{ return std::vector<::tachyon::json::JsonNode>{{{encoded}}}; }}, [&](const std::vector<::tachyon::json::JsonNode>& tachyonArguments) -> {result} {{ (void)tachyonArguments;{page}"
         );
         (opening, String::from(" }); "))
+    }
+
+    fn encoded(member: &CppMember) -> String {
+        member
+            .parameters
+            .iter()
+            .map(|parameter| {
+                format!(
+                    "::tachyon::json::JsonCodec<std::decay_t<decltype({0})>>::toJson({0})",
+                    parameter.name
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     fn needs_arguments(policy: &Value) -> bool {
@@ -134,47 +139,111 @@ impl CppBehaviors {
                     .map(move |marker| (index, marker))
             })
             .collect();
-        if [method_markers.is_empty(), parameter_markers.is_empty()] == [true, true] {
-            return Ok(None);
-        }
+        let marked = [method_markers.is_empty(), parameter_markers.is_empty()] != [true, true];
+        marked
+            .then(|| {
+                Self::marked_metadata(written, source, member, &method_markers, &parameter_markers)
+            })
+            .transpose()
+    }
+
+    fn marked_metadata(
+        written: &WrittenPolicies<'_>,
+        source: &str,
+        member: &CppMember,
+        method_markers: &[&CppAttribute],
+        parameter_markers: &[(usize, &CppAttribute)],
+    ) -> Result<Map<String, Value>, Failure> {
         Self::check_shape(written, source, member)?;
         let mut metadata = Map::new();
-        for marker in method_markers {
-            let (key, value) = written.method(&Self::written(marker), member.parameters.len())?;
-            if metadata.insert(key.to_owned(), value).is_some() {
-                return Err(written.failure(marker.at, Self::TWICE));
-            }
-        }
-        let mut keys = Vec::new();
-        for (index, marker) in parameter_markers {
-            if marker.name == "CacheKey" {
-                if marker.has_arguments() {
-                    return Err(written.failure(marker.at, Self::KEY_FORM));
-                }
-                keys.push(json!(index));
-                continue;
-            }
-            if !marker.has_arguments() {
-                return Err(written.failure(marker.at, Self::BARE_PAGE));
-            }
-            let page = written.page(&Self::written(marker), index)?;
-            if metadata.insert(String::from("pageable"), page).is_some() {
-                return Err(written.failure(marker.at, Self::TWICE));
-            }
-        }
-        if !keys.is_empty() {
-            let Some(cacheable) = metadata.get_mut("cacheable") else {
-                return Err(written.failure(member.name_at, Self::NEEDS_CACHED));
-            };
-            cacheable["keyArgs"] = Value::Array(keys);
-        }
+        method_markers.iter().try_for_each(|marker| {
+            Self::add_method_marker(written, &mut metadata, member, marker)
+        })?;
+        let keys: Vec<Value> = parameter_markers
+            .iter()
+            .map(|(index, marker)| {
+                Self::add_parameter_marker(written, &mut metadata, *index, marker)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        Self::add_keys(written, &mut metadata, member, keys)?;
         let names: Vec<Value> = member
             .parameters
             .iter()
             .map(|parameter| Value::String(parameter.name.clone()))
             .collect();
         metadata.insert(String::from("parameterNames"), Value::Array(names));
-        Ok(Some(metadata))
+        Ok(metadata)
+    }
+
+    fn add_method_marker(
+        written: &WrittenPolicies<'_>,
+        metadata: &mut Map<String, Value>,
+        member: &CppMember,
+        marker: &CppAttribute,
+    ) -> Result<(), Failure> {
+        let (key, value) = written.method(&Self::written(marker), member.parameters.len())?;
+        let fresh = metadata.insert(key.to_owned(), value).is_none();
+        fresh
+            .then_some(())
+            .ok_or_else(|| written.failure(marker.at, Self::TWICE))
+    }
+
+    fn add_parameter_marker(
+        written: &WrittenPolicies<'_>,
+        metadata: &mut Map<String, Value>,
+        index: usize,
+        marker: &CppAttribute,
+    ) -> Result<Option<Value>, Failure> {
+        if marker.name == "CacheKey" {
+            return Self::cache_key(written, index, marker).map(Some);
+        }
+        Self::page_marker(written, metadata, index, marker).map(|()| None)
+    }
+
+    fn cache_key(
+        written: &WrittenPolicies<'_>,
+        index: usize,
+        marker: &CppAttribute,
+    ) -> Result<Value, Failure> {
+        (!marker.has_arguments())
+            .then(|| json!(index))
+            .ok_or_else(|| written.failure(marker.at, Self::KEY_FORM))
+    }
+
+    fn page_marker(
+        written: &WrittenPolicies<'_>,
+        metadata: &mut Map<String, Value>,
+        index: usize,
+        marker: &CppAttribute,
+    ) -> Result<(), Failure> {
+        marker
+            .has_arguments()
+            .then_some(())
+            .ok_or_else(|| written.failure(marker.at, Self::BARE_PAGE))?;
+        let page = written.page(&Self::written(marker), index)?;
+        let fresh = metadata.insert(String::from("pageable"), page).is_none();
+        fresh
+            .then_some(())
+            .ok_or_else(|| written.failure(marker.at, Self::TWICE))
+    }
+
+    fn add_keys(
+        written: &WrittenPolicies<'_>,
+        metadata: &mut Map<String, Value>,
+        member: &CppMember,
+        keys: Vec<Value>,
+    ) -> Result<(), Failure> {
+        if keys.is_empty() {
+            return Ok(());
+        }
+        let cacheable = metadata
+            .get_mut("cacheable")
+            .ok_or_else(|| written.failure(member.name_at, Self::NEEDS_CACHED))?;
+        cacheable["keyArgs"] = Value::Array(keys);
+        Ok(())
     }
 
     fn check_shape(
@@ -214,9 +283,9 @@ impl CppBehaviors {
         let caching = ["cacheable", "cachePut", "cacheEvict"]
             .iter()
             .any(|key| metadata.contains_key(*key));
-        if [caching, cache.is_none()] == [true, true] {
-            return Err(written.failure(at, Self::NEEDS_CACHE));
-        }
+        ([caching, cache.is_none()] != [true, true])
+            .then_some(())
+            .ok_or_else(|| written.failure(at, Self::NEEDS_CACHE))?;
         let returns_void = class
             .members
             .iter()
@@ -224,9 +293,9 @@ impl CppBehaviors {
         let keeps_value = ["cacheable", "cachePut"]
             .iter()
             .any(|key| metadata.contains_key(*key));
-        if [keeps_value, returns_void] == [true, true] {
-            return Err(written.failure(at, Self::RETURNS));
-        }
+        ([keeps_value, returns_void] != [true, true])
+            .then_some(())
+            .ok_or_else(|| written.failure(at, Self::RETURNS))?;
         let mutation = ["cachePut", "cacheEvict"]
             .iter()
             .find_map(|key| metadata.get(*key).map(|policy| (*key, policy)))

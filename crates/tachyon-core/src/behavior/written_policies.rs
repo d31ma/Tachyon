@@ -1,28 +1,8 @@
-use super::{Input, Marker};
+use super::{Input, Marker, WrittenField, WrittenMarker, WrittenQuery};
 use crate::Failure;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
-
-pub(crate) struct WrittenMarker<'m> {
-    pub(crate) name: &'m str,
-    pub(crate) arguments: &'m str,
-    pub(crate) at: usize,
-}
-
-pub(crate) struct WrittenQuery<'q> {
-    pub(crate) at: usize,
-    pub(crate) method: &'q str,
-    pub(crate) arity: usize,
-    pub(crate) query: Option<&'q Value>,
-    pub(crate) page: Option<&'q Value>,
-}
-
-pub(crate) struct WrittenField<'f> {
-    pub(crate) name: &'f str,
-    pub(crate) type_source: &'f str,
-    pub(crate) initializer: Option<&'f str>,
-}
 
 pub(crate) struct WrittenPolicies<'a> {
     input: Input<'a>,
@@ -50,6 +30,14 @@ impl<'a> WrittenPolicies<'a> {
         written: &WrittenMarker<'_>,
         parameter_count: usize,
     ) -> Result<(&'static str, Value), Failure> {
+        self.chosen(written, parameter_count)
+    }
+
+    fn chosen(
+        &self,
+        written: &WrittenMarker<'_>,
+        parameter_count: usize,
+    ) -> Result<(&'static str, Value), Failure> {
         let marker = Self::marker(written);
         match written.name {
             "Cached" => Ok((
@@ -66,6 +54,10 @@ impl<'a> WrittenPolicies<'a> {
     }
 
     pub(crate) fn page(&self, written: &WrittenMarker<'_>, index: usize) -> Result<Value, Failure> {
+        self.page_policy(written, index)
+    }
+
+    fn page_policy(&self, written: &WrittenMarker<'_>, index: usize) -> Result<Value, Failure> {
         let marker = Self::marker(written);
         match super::parameters::policy(&self.input, &marker, index, "")? {
             super::parameters::ParameterPolicy::Page(value) => Ok(value),

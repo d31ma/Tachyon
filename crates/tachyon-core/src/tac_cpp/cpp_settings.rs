@@ -26,43 +26,77 @@ impl CppSettings {
 
     pub(crate) fn plans(path: &Path, source: &str, class: &CppClass) -> Result<String, Failure> {
         let written = WrittenPolicies::new(path, source, super::CppSource::EXTENSION);
-        let mut text = String::new();
-        if let Some(marker) = class
+        let settings = class
             .markers
             .iter()
             .find(|marker| marker.name == Self::SETTINGS)
-        {
-            if class.markers.iter().any(|other| other.name == "Checked") {
-                return Err(CppFailure::unreadable(path, marker.at, Self::BOTH));
-            }
-            let plan = Self::settings(&written, path, source, class, marker)?;
-            text.push_str(&Self::specialization("TacSettingsPlan", &class.name, &plan));
-        }
-        let mut values = Map::new();
-        for member in &class.members {
-            let Some(marker) = member
+            .map(|marker| Self::settings_plan(&written, path, source, class, marker))
+            .transpose()?
+            .unwrap_or_default();
+        let values = Self::values_plan(&written, path, class)?;
+        Ok(format!("{settings}{values}"))
+    }
+
+    fn settings_plan(
+        written: &WrittenPolicies<'_>,
+        path: &Path,
+        source: &str,
+        class: &CppClass,
+        marker: &CppAttribute,
+    ) -> Result<String, Failure> {
+        let checked = class.markers.iter().any(|other| other.name == "Checked");
+        (!checked)
+            .then_some(())
+            .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::BOTH))?;
+        let plan = Self::settings(written, path, source, class, marker)?;
+        Ok(Self::specialization("TacSettingsPlan", &class.name, &plan))
+    }
+
+    fn values_plan(
+        written: &WrittenPolicies<'_>,
+        path: &Path,
+        class: &CppClass,
+    ) -> Result<String, Failure> {
+        let marked = class.members.iter().filter_map(|member| {
+            member
                 .markers
                 .iter()
                 .find(|marker| marker.name == Self::SETTING)
-            else {
-                continue;
-            };
-            if !member.is_public_instance(CppMemberKind::Field) {
-                return Err(CppFailure::unreadable(path, marker.at, Self::SETTING_FIELD));
-            }
-            if values.len() >= Self::MAX_VALUES {
-                return Err(CppFailure::unreadable(path, marker.at, Self::TOO_MANY));
-            }
-            values.insert(
-                member.name.clone(),
-                written.setting(&Self::written(marker))?,
-            );
+                .map(|marker| (member, marker))
+        });
+        let mut values = Map::new();
+        for (member, marker) in marked {
+            Self::add_value(written, path, &mut values, member, marker)?;
         }
-        if !values.is_empty() {
-            let plan = json!({ "fields": values });
-            text.push_str(&Self::specialization("TacValuesPlan", &class.name, &plan));
-        }
-        Ok(text)
+        Ok(Self::values_text(&class.name, &values))
+    }
+
+    fn add_value(
+        written: &WrittenPolicies<'_>,
+        path: &Path,
+        values: &mut Map<String, Value>,
+        member: &CppMember,
+        marker: &CppAttribute,
+    ) -> Result<(), Failure> {
+        member
+            .is_public_instance(CppMemberKind::Field)
+            .then_some(())
+            .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::SETTING_FIELD))?;
+        (values.len() < Self::MAX_VALUES)
+            .then_some(())
+            .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::TOO_MANY))?;
+        values.insert(
+            member.name.clone(),
+            written.setting(&Self::written(marker))?,
+        );
+        Ok(())
+    }
+
+    fn values_text(name: &str, values: &Map<String, Value>) -> String {
+        (!values.is_empty())
+            .then(|| Self::specialization("TacValuesPlan", name, &json!({ "fields": values })))
+            .into_iter()
+            .collect()
     }
 
     fn settings(
@@ -86,10 +120,10 @@ impl CppSettings {
                 type_source,
                 initializer: Self::initializer(source, member),
             });
-            let limits = Self::bounds(path, member)?;
-            if !limits.is_empty() {
-                bounds.insert(member.name.clone(), Value::Object(limits));
-            }
+            bounds.insert(
+                member.name.clone(),
+                Value::Object(Self::bounds(path, member)?),
+            );
         }
         written.settings(&Self::written(marker), &fields, bounds)
     }
@@ -97,22 +131,42 @@ impl CppSettings {
     fn bounds(path: &Path, member: &CppMember) -> Result<Map<String, Value>, Failure> {
         let mut limits = Map::new();
         for marker in &member.markers {
-            if Self::OTHER_CHECKS.contains(&marker.name.as_str()) {
-                return Err(CppFailure::unreadable(path, marker.at, Self::BOUND_FORM));
-            }
-            if !Self::BOUNDS.contains(&marker.name.as_str()) {
-                continue;
-            }
-            let number = serde_json::from_str::<Value>(&marker.arguments)
-                .ok()
-                .filter(Value::is_number)
-                .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::BOUND_FORM))?;
-            let key = marker.name.to_ascii_lowercase();
-            if limits.insert(key, number).is_some() {
-                return Err(CppFailure::unreadable(path, marker.at, Self::BOUND_FORM));
-            }
+            Self::add_bound(path, &mut limits, marker)?;
         }
         Ok(limits)
+    }
+
+    fn add_bound(
+        path: &Path,
+        limits: &mut Map<String, Value>,
+        marker: &CppAttribute,
+    ) -> Result<(), Failure> {
+        let refused = Self::OTHER_CHECKS.contains(&marker.name.as_str());
+        (!refused)
+            .then_some(())
+            .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::BOUND_FORM))?;
+        Self::BOUNDS
+            .contains(&marker.name.as_str())
+            .then(|| Self::insert_bound(path, limits, marker))
+            .transpose()
+            .map(drop)
+    }
+
+    fn insert_bound(
+        path: &Path,
+        limits: &mut Map<String, Value>,
+        marker: &CppAttribute,
+    ) -> Result<(), Failure> {
+        let number = serde_json::from_str::<Value>(&marker.arguments)
+            .ok()
+            .filter(Value::is_number)
+            .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::BOUND_FORM))?;
+        let fresh = limits
+            .insert(marker.name.to_ascii_lowercase(), number)
+            .is_none();
+        fresh
+            .then_some(())
+            .ok_or_else(|| CppFailure::unreadable(path, marker.at, Self::BOUND_FORM))
     }
 
     fn initializer<'s>(source: &'s str, member: &CppMember) -> Option<&'s str> {

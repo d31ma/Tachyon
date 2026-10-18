@@ -23,10 +23,14 @@ impl StoredState {
     }
 
     pub(crate) fn fields(path: &Path, source: &str) -> Result<BTreeMap<String, String>, Failure> {
-        if crate::tac_cpp::CppSource::is_cpp(path) {
-            return crate::tac_cpp::CppRoles::stored(path, source);
-        }
-        crate::fsharp_source::FsharpView::either(path, source, Self::written_fields)
+        crate::tac_cpp::CppSource::either(
+            path,
+            source,
+            crate::tac_cpp::CppRoles::stored,
+            |path, source| {
+                crate::fsharp_source::FsharpView::either(path, source, Self::written_fields)
+            },
+        )
     }
 
     fn written_fields(path: &Path, source: &str) -> Result<BTreeMap<String, String>, Failure> {

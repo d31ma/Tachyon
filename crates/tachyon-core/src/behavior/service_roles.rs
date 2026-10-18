@@ -16,12 +16,16 @@ impl ServiceRoles {
     ];
 
     pub(crate) fn read(path: &Path, source: &str) -> Result<Self, Failure> {
-        if crate::tac_cpp::CppSource::is_cpp(path) {
-            return crate::tac_cpp::CppRoles::service_roles(path, source);
-        }
-        crate::lua_source::LuaView::either(path, source, |path, source| {
-            Self::scan(path, source, false)
-        })
+        crate::tac_cpp::CppSource::either(
+            path,
+            source,
+            crate::tac_cpp::CppRoles::service_roles,
+            |path, source| {
+                crate::lua_source::LuaView::either(path, source, |path, source| {
+                    Self::scan(path, source, false)
+                })
+            },
+        )
     }
 
     pub(crate) fn declared(source: &str, prototype: bool, required: Vec<String>) -> Self {

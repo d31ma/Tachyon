@@ -289,15 +289,9 @@ impl AnnotationRules {
     const TAC_FAKE: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "py", "hpp",
     ];
-    const TAC_BEHAVIOR_AND_CPP: &'static [&'static str] = &[
-        "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "py", "hpp",
-    ];
-    const TAC_ADAPTER_AND_CPP: &'static [&'static str] = &[
-        "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "hpp",
-    ];
-    const TAC_STORED_STATE: &'static [&'static str] = &[
-        "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "hpp",
-    ];
+    const TAC_BEHAVIOR_AND_CPP: &'static [&'static str] = Self::TAC_FAKE;
+    const TAC_ADAPTER_AND_CPP: &'static [&'static str] = Self::TAC_REMOTE;
+    const TAC_STORED_STATE: &'static [&'static str] = Self::TAC_REMOTE;
     const TAC_HELPER: &'static [&'static str] =
         &["js", "ts", "dart", "rs", "py", "cs", "fs", "hpp"];
     const TAC_NEEDS_ALL: &'static [&'static str] = &[

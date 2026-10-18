@@ -38,9 +38,13 @@ impl CppService {
             .then_some(())
             .ok_or_else(|| CppFailure::unreadable(relative, class.name_at, Self::NAMED))?;
         CppMarkerCheck::check(relative, class)?;
-        if let Some(topic) = class.markers.iter().find(|marker| marker.name == "Topic") {
-            return Err(CppFailure::unreadable(relative, topic.at, Self::TOPIC));
-        }
+        class
+            .markers
+            .iter()
+            .find(|marker| marker.name == "Topic")
+            .map_or(Ok(()), |topic| {
+                Err(CppFailure::unreadable(relative, topic.at, Self::TOPIC))
+            })?;
         CppLifetime::check(relative, class)?;
         CppChecks::check_service(relative, class)?;
         CppConverter::check(relative, source, class)?;
@@ -53,11 +57,7 @@ impl CppService {
             .filter(|member| member.marked("OnEvent"))
             .map(|member| CppListener::read(relative, member))
             .collect::<Result<Vec<_>, _>>()?;
-        let behaviors = if CppStore::is_store(class) {
-            BTreeMap::new()
-        } else {
-            CppBehaviors::policies(relative, source, class)?
-        };
+        let behaviors = Self::behaviors(relative, source, class)?;
         Ok(Self {
             file,
             path: relative.to_path_buf(),
@@ -65,6 +65,17 @@ impl CppService {
             listeners,
             behaviors,
         })
+    }
+
+    fn behaviors(
+        relative: &Path,
+        source: &str,
+        class: &CppClass,
+    ) -> Result<BTreeMap<String, Value>, Failure> {
+        if CppStore::is_store(class) {
+            return Ok(BTreeMap::new());
+        }
+        CppBehaviors::policies(relative, source, class)
     }
 
     pub(crate) fn class(&self) -> &CppClass {
@@ -215,13 +226,15 @@ impl CppService {
     }
 
     fn check_members(relative: &Path, class: &CppClass) -> Result<(), Failure> {
-        for member in &class.members {
-            Self::check_member(relative, member)?;
-        }
-        if [CppConverter::is_converter(class), CppStore::is_store(class)].contains(&true) {
-            return Ok(());
-        }
-        Self::check_overloads(relative, class)
+        class
+            .members
+            .iter()
+            .try_for_each(|member| Self::check_member(relative, member))?;
+        let named_once = [CppConverter::is_converter(class), CppStore::is_store(class)];
+        (!named_once.contains(&true))
+            .then(|| Self::check_overloads(relative, class))
+            .transpose()
+            .map(drop)
     }
 
     fn check_member(relative: &Path, member: &CppMember) -> Result<(), Failure> {

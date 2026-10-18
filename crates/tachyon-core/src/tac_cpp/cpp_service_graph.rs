@@ -22,10 +22,13 @@ impl<'a> CppServiceGraph<'a> {
         "C++ services need each other in a circle; break the circle with an event";
 
     pub(crate) fn new(root: &'a Path) -> Result<Self, Failure> {
-        let mut files = Vec::new();
-        for folder in Self::FOLDERS {
-            files.extend(CppFolder::files(root, folder)?);
-        }
+        let files = Self::FOLDERS
+            .iter()
+            .map(|folder| CppFolder::files(root, folder))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect();
         Ok(Self {
             root,
             available: Self::by_class(files),

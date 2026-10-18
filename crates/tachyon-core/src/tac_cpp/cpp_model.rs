@@ -39,24 +39,14 @@ impl CppModel {
             .then_some(())
             .ok_or_else(|| CppFailure::pending(relative, 0, Self::CLIENT_ONLY))?;
         CppMarkerCheck::check(relative, &file.class)?;
-        if !CppSettings::is_settings(&file.class) {
-            CppChecks::check_model(relative, &file.class)?;
-        }
-        let topic = file
-            .class
-            .markers
-            .iter()
-            .find(|marker| marker.name == Self::TOPIC);
-        if let Some(marker) = topic {
-            let abstract_model = Self::abstract_body(source, &file);
-            let record = [file.class.is_enum, abstract_model] == [false, false];
-            record
-                .then_some(())
-                .ok_or_else(|| CppFailure::unreadable(relative, marker.at, Self::TOPIC_FORM))?;
-        }
-        if let Some(at) = CppMarkerCheck::described_alone(&file.class) {
-            return Err(CppFailure::unreadable(relative, at, Self::DESCRIBED_ALONE));
-        }
+        (!CppSettings::is_settings(&file.class))
+            .then(|| CppChecks::check_model(relative, &file.class))
+            .transpose()
+            .map(drop)?;
+        Self::check_topic(relative, source, &file)?;
+        CppMarkerCheck::described_alone(&file.class).map_or(Ok(()), |at| {
+            Err(CppFailure::unreadable(relative, at, Self::DESCRIBED_ALONE))
+        })?;
         let entity = CppStore::entity(relative, source, &file.class)?;
         let plans = CppSettings::plans(relative, source, &file.class)?;
         Ok(Self {
@@ -66,6 +56,19 @@ impl CppModel {
             plans,
             source: source.to_owned(),
         })
+    }
+
+    fn check_topic(relative: &Path, source: &str, file: &CppFile) -> Result<(), Failure> {
+        let record = [file.class.is_enum, Self::abstract_body(source, file)] == [false, false];
+        file.class
+            .markers
+            .iter()
+            .find(|marker| marker.name == Self::TOPIC)
+            .map_or(Ok(()), |marker| {
+                record
+                    .then_some(())
+                    .ok_or_else(|| CppFailure::unreadable(relative, marker.at, Self::TOPIC_FORM))
+            })
     }
 
     pub(crate) fn check(relative: &Path, source: &str) -> Result<(), Failure> {
@@ -111,13 +114,13 @@ impl CppModel {
     }
 
     fn codec_text(&self) -> String {
-        if self.file.class.is_enum {
-            return self.enum_codec();
-        }
-        if self.is_abstract() {
-            return String::new();
-        }
-        self.struct_codec()
+        let writers = [Self::struct_codec, Self::enum_codec];
+        let is_enum = self.file.class.is_enum;
+        let abstract_model = [is_enum, self.is_abstract()] == [false, true];
+        std::iter::once(self)
+            .filter(|_| !abstract_model)
+            .map(writers[usize::from(is_enum)])
+            .collect()
     }
 
     pub(crate) fn is_enum(&self) -> bool {
@@ -125,15 +128,20 @@ impl CppModel {
     }
 
     pub(crate) fn topics(root: &Path) -> Result<Vec<String>, Failure> {
-        let mut names = Vec::new();
-        for path in CppFolder::files(root, Self::MODELS)? {
-            let (relative, source) = CppFolder::read(root, &path)?;
-            let model = Self::read(&relative, &source)?;
-            if model.is_topic() {
-                names.push(model.name().to_owned());
-            }
-        }
-        Ok(names)
+        let models = CppFolder::files(root, Self::MODELS)?
+            .iter()
+            .map(|path| Self::read_in(root, path))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(models
+            .iter()
+            .filter(|model| model.is_topic())
+            .map(|model| model.name().to_owned())
+            .collect())
+    }
+
+    pub(crate) fn read_in(root: &Path, path: &Path) -> Result<Self, Failure> {
+        let (relative, source) = CppFolder::read(root, path)?;
+        Self::read(&relative, &source)
     }
 
     pub(crate) fn is_topic(&self) -> bool {
