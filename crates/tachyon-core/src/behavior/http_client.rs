@@ -57,34 +57,14 @@ impl HttpClientSource {
     }
 
     fn classes_in(path: &Path, source: &str) -> Result<Vec<ClientClass>, Failure> {
-        let extension = path
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("");
-        let mask = crate::lexical::code_mask(extension, source);
-        let code = Self::masked(source, &mask.code);
-        let input = SourceText {
-            path,
-            source,
-            code: &code,
-            extension,
-        };
+        let code = Self::code(path, source);
+        let input = SourceText::of(path, source, &code);
         input.classes(&input.marker_lines())
     }
 
     pub(crate) fn rewrite(path: &Path, source: &str) -> Result<Option<String>, Failure> {
-        let extension = path
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("");
-        let mask = crate::lexical::code_mask(extension, source);
-        let code = Self::masked(source, &mask.code);
-        let input = SourceText {
-            path,
-            source,
-            code: &code,
-            extension,
-        };
+        let code = Self::code(path, source);
+        let input = SourceText::of(path, source, &code);
         let lines = input.marker_lines();
         if !lines.iter().any(|line| Self::is_name(&line.name)) {
             return Ok(None);
@@ -101,7 +81,10 @@ impl HttpClientSource {
         }
         for class in &classes {
             let streams = streaming.contains(&class.name);
-            edits.push((class.marker.clone(), class.replacement(extension, streams)));
+            edits.push((
+                class.marker.clone(),
+                class.replacement(input.extension, streams),
+            ));
         }
         for line in &lines {
             let Some((verb, written)) = Self::request(&Self::normalized(&line.name)) else {
@@ -123,6 +106,17 @@ impl HttpClientSource {
             })
             .collect();
         Ok((!edits.is_empty()).then(|| Self::apply(source, edits)))
+    }
+
+    fn extension(path: &Path) -> &str {
+        path.extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+    }
+
+    fn code(path: &Path, source: &str) -> String {
+        let mask = crate::lexical::code_mask(Self::extension(path), source);
+        Self::masked(source, &mask.code)
     }
 
     fn apply(source: &str, mut edits: Vec<(Range<usize>, String)>) -> String {
@@ -258,7 +252,16 @@ struct SourceText<'a> {
     extension: &'a str,
 }
 
-impl SourceText<'_> {
+impl<'a> SourceText<'a> {
+    fn of(path: &'a Path, source: &'a str, code: &'a str) -> Self {
+        Self {
+            path,
+            source,
+            code,
+            extension: HttpClientSource::extension(path),
+        }
+    }
+
     fn failure(&self, at: usize, message: impl Into<String>) -> Failure {
         let portable = self.path.to_string_lossy().replace('\\', "/");
         Failure::one(diagnostic(
