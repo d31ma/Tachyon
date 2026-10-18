@@ -188,8 +188,8 @@ the runtime files; `ty doctor` names the folder.
   lowerCamelCase name.
 - `ValueSource` works in Python Tac test units, which run under native
   CPython as in Yon.
-- `StreamRequest` and `SocketRequest` stay refused with `TY1308`. Only
-  JavaScript, TypeScript and Go hold a browser stream or socket in a Tac
-  service.
+- `StreamRequest` and `SocketRequest` stay refused with `TY1308`. The
+  page's JavaScript holds a browser stream or socket, and the Python
+  runtime has no adapter that hands its messages to a Python client yet.
 - This amendment replaces the 2026-10-04 limits on behaviors, saved fields
   and `HTTPClient`, and the `async def` limit in "Limits" above.

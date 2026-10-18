@@ -130,4 +130,4 @@ accepted, and `@Order` without `@OnEvent` was accepted in some languages.
   Python to the Tac lists of the behavior, storage, `Store`, `Query`,
   `HTTPClient` and request annotations, to `LocalState` and
   `SessionState`, and to `ValueSource`. `StreamRequest` and `SocketRequest`
-  keep their JavaScript, TypeScript and Go list.
+  still leave Python out.
