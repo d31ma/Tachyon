@@ -10,6 +10,14 @@ pub(crate) struct WrittenMarker<'m> {
     pub(crate) at: usize,
 }
 
+pub(crate) struct WrittenQuery<'q> {
+    pub(crate) at: usize,
+    pub(crate) method: &'q str,
+    pub(crate) arity: usize,
+    pub(crate) query: Option<&'q Value>,
+    pub(crate) page: Option<&'q Value>,
+}
+
 pub(crate) struct WrittenPolicies<'a> {
     input: Input<'a>,
     language: &'a str,
@@ -57,6 +65,42 @@ impl<'a> WrittenPolicies<'a> {
             super::parameters::ParameterPolicy::Page(value) => Ok(value),
             _ => Err(self.input.failure(written.at, "PageDefaults takes one JSON object, for example [[PageDefaults({\"defaultSize\":20,\"maxSize\":100,\"sort\":[\"id\"]})]]")),
         }
+    }
+
+    pub(crate) fn store(&self, written: &WrittenMarker<'_>) -> Result<Value, Failure> {
+        super::queries::repository(&self.input, &Self::marker(written))
+    }
+
+    pub(crate) fn query(&self, written: &WrittenMarker<'_>) -> Result<Value, Failure> {
+        super::queries::explicit(&self.input, &Self::marker(written))
+    }
+
+    pub(crate) fn entity(&self, written: &WrittenMarker<'_>) -> Result<Value, Failure> {
+        super::entity(&self.input, &Self::marker(written))
+    }
+
+    pub(crate) fn table(&self, written: &WrittenMarker<'_>) -> Result<String, Failure> {
+        super::single_string(&self.input, &Self::marker(written))
+    }
+
+    pub(crate) fn resolve_query(
+        &self,
+        store: &Value,
+        entity: &Value,
+        written: &WrittenQuery<'_>,
+    ) -> Result<Value, Failure> {
+        super::queries::resolve(
+            &self.input,
+            written.at,
+            store,
+            entity["name"].as_str().unwrap_or_default(),
+            entity,
+            entity["table"].as_str().unwrap_or_default(),
+            written.method,
+            written.arity,
+            written.query,
+            written.page,
+        )
     }
 
     pub(crate) fn resolve_mutations(

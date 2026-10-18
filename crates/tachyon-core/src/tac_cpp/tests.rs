@@ -193,7 +193,7 @@ fn needs_fields_are_references_without_a_value() {
 fn markers_follow_the_shared_rule_table() {
     let refused = Sources::refusal(
         "client/services/TallyService.hpp",
-        "class TallyService {\npublic:\n    [[AllOrNothing]] void save() {}\n};\n",
+        "class [[Setup]] TallyService {};\n",
     );
     assert!(
         refused.contains("TY1308") && refused.contains("is not available in C++ Tac code"),
@@ -201,7 +201,7 @@ fn markers_follow_the_shared_rule_table() {
     );
     let pending = Sources::refusal(
         "client/services/TallyService.hpp",
-        "class [[Store]] TallyService {};\n",
+        "class [[WhenProfile(\"dev\")]] TallyService {};\n",
     );
     assert!(
         pending.contains("C++ gets it in a later step (ADR 0099)"),
@@ -762,5 +762,70 @@ fn behavior_markers_wrap_only_synchronous_cpp_methods() {
     ] {
         let refused = Sources::refusal("client/services/TallyService.hpp", &source);
         assert!(refused.contains(expected), "{source}: {refused}");
+    }
+}
+
+#[test]
+fn a_store_and_its_entity_are_checked_when_tachyon_writes_the_queries() {
+    let entity = "struct [[Entity({\"adapter\":\"indexeddb\"}), Table(\"notes\")]] NoteEntity {\n    [[Id]] std::string id;\n    std::string text;\n};\n";
+    let options = "{\"fields\":[\"id\",\"text\"],\"defaultSize\":20,\"maxSize\":100}";
+    for (entity, store, expected) in [
+        (
+            entity.to_owned(),
+            "int countByText(const std::string& text) { return 0; }",
+            "A C++ Store holds only queries",
+        ),
+        (
+            entity.to_owned(),
+            "std::vector<NoteEntity> findByText(const std::string& text);\n    std::vector<NoteEntity> findByText(int text);",
+            "A C++ Store method has one name",
+        ),
+        (
+            entity.to_owned(),
+            "[[Retry({\"maxRetries\":2})]] std::vector<NoteEntity> findByText(const std::string& text);",
+            "carries only [[Query]]",
+        ),
+        (
+            entity.to_owned(),
+            "int findByText(const std::string& text);",
+            "runs a find query, so it returns std::vector<NoteEntity>",
+        ),
+        (
+            entity.to_owned(),
+            "std::vector<NoteEntity> findByTitle(const std::string& title);",
+            "Derived query is unknown or ambiguous",
+        ),
+        (
+            entity.replace("indexeddb", "ledger"),
+            "",
+            "IndexedDB for now",
+        ),
+        (
+            entity.replace(", Table(\"notes\")", ""),
+            "",
+            "names its table",
+        ),
+        (
+            entity.replace("[[Id]] ", ""),
+            "",
+            "exactly one public field marked [[Id]]",
+        ),
+    ] {
+        let root = tempfile::tempdir().expect("project");
+        let store = format!(
+            "class [[Store(NoteEntity, {options})]] NoteStore : public tachyon::Repository<NoteEntity, std::string> {{\npublic:\n    {store}\n}};\n"
+        );
+        for (relative, source) in [
+            ("client/entities/NoteEntity.hpp", entity.as_str()),
+            ("client/stores/NoteStore.hpp", store.as_str()),
+        ] {
+            let path = root.path().join(relative);
+            std::fs::create_dir_all(path.parent().expect("folder")).expect("folder");
+            std::fs::write(path, source).expect("file");
+        }
+        let Err(failure) = super::CppProgram::tested(root.path()) else {
+            panic!("{store} was accepted");
+        };
+        assert!(failure.to_string().contains(expected), "{store}: {failure}");
     }
 }

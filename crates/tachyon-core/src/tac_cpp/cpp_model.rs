@@ -1,13 +1,15 @@
 use super::{
-    CppChecks, CppFailure, CppFile, CppFolder, CppLowering, CppMarkerCheck, CppMemberKind,
+    CppChecks, CppFailure, CppFile, CppFolder, CppLowering, CppMarkerCheck, CppMemberKind, CppStore,
 };
 use crate::Failure;
+use serde_json::Value;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 pub(crate) struct CppModel {
     pub(crate) file: CppFile,
     pub(crate) path: PathBuf,
+    pub(crate) entity: Option<Value>,
     source: String,
 }
 
@@ -51,9 +53,11 @@ impl CppModel {
         if let Some(at) = CppMarkerCheck::described_alone(&file.class) {
             return Err(CppFailure::unreadable(relative, at, Self::DESCRIBED_ALONE));
         }
+        let entity = CppStore::entity(relative, source, &file.class)?;
         Ok(Self {
             file,
             path: relative.to_path_buf(),
+            entity,
             source: source.to_owned(),
         })
     }

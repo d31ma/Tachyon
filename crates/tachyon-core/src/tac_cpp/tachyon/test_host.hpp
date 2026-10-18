@@ -5,6 +5,9 @@ public:
     static std::string storage(const std::string& text) {
         json::JsonNode request = json::JsonNode::parse(text);
         std::string operation = request["op"].getValueKind() == json::JsonValueKind::String ? request["op"].getValue<std::string>() : std::string();
+        if (operation == "entity") {
+            return entity(request["command"]);
+        }
         if (operation.rfind("cache.", 0) != 0) {
             return missing();
         }
@@ -33,6 +36,7 @@ public:
 
     static void reset() {
         cached().clear();
+        TacMemoryEntities::reset();
     }
 
     static std::string web(const std::string&) {
@@ -48,6 +52,16 @@ public:
     static void httpCancel(std::uint32_t) {}
 
 private:
+    static std::string entity(const json::JsonNode& command) {
+        json::JsonObject answer;
+        try {
+            answer["value"] = TacMemoryEntities::execute(command);
+        } catch (const std::exception& problem) {
+            answer["error"] = problem.what();
+        }
+        return answer.toJsonString();
+    }
+
     static std::map<std::string, json::JsonNode>& cached() {
         static std::map<std::string, json::JsonNode> entries;
         return entries;

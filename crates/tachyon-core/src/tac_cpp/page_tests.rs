@@ -18,6 +18,14 @@ char* tac_host_storage(const char* text, int length) {
     tachyon::json::JsonNode request = tachyon::json::JsonNode::parse(std::string_view(text, length));
     std::fprintf(stderr, "storage %s\n", request.toJsonString().c_str());
     std::string operation = request["op"].getValue<std::string>();
+    if (operation == "entity") {
+        tachyon::json::JsonObject answer;
+        answer["value"] = tachyon::TacMemoryEntities::execute(request["command"]);
+        std::string written = answer.toJsonString();
+        char* copied = static_cast<char*>(std::malloc(written.size() + 1));
+        std::memcpy(copied, written.c_str(), written.size() + 1);
+        return copied;
+    }
     std::string key = request["cache"].toJsonString() + request["key"].toJsonString();
     tachyon::json::JsonObject answer;
     if (operation == "cache.get") {
@@ -122,8 +130,9 @@ int main() {
 
     fn answered_lines(root: &Path, services: &[(&str, &str)], lines: &[String]) -> Vec<Value> {
         let source = format!(
-            "#include <iostream>\nstatic double tachyonPageClock = 0;\n{}{}",
+            "#include <iostream>\nstatic double tachyonPageClock = 0;\n{}{}{}",
             Self::program(root, services),
+            super::CppPrelude::MEMORY_ENTITIES,
             Self::HOST
         );
         let staged = tempfile::tempdir().expect("staged");
@@ -530,4 +539,73 @@ fn behavior_markers_wrap_a_synchronous_method() {
     assert_eq!(answers[8]["code"], "capacity", "{answers:?}");
     assert_eq!(answers[9]["value"], 20, "{answers:?}");
     assert_eq!(answers[10]["code"], "invalid", "{answers:?}");
+}
+
+#[test]
+fn a_store_saves_and_finds_entities_and_all_or_nothing_rolls_back() {
+    if !PageProject::has_compiler() {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    PageProject::write(
+        root.path(),
+        &[
+            (
+                "client/entities/NoteEntity.hpp",
+                "struct [[Entity({\"adapter\":\"indexeddb\"}), Table(\"notes\")]] NoteEntity {\n    [[Id]] std::string id;\n    std::string text;\n    int stars = 0;\n};\n",
+            ),
+            (
+                "client/stores/NoteStore.hpp",
+                "class [[Store(NoteEntity, {\"fields\":[\"id\",\"text\",\"stars\"],\"defaultSize\":2,\"maxSize\":10})]] NoteStore : public tachyon::Repository<NoteEntity, std::string> {\npublic:\n    std::vector<NoteEntity> findByText(const std::string& text);\n    long long countByStarsGreaterThan(int stars);\n    bool existsByText(const std::string& text);\n    [[Query({\"operation\":\"find\",\"where\":[{\"field\":\"stars\",\"operator\":\"gte\",\"argument\":0}],\"orderBy\":[{\"field\":\"stars\",\"direction\":\"desc\"}]})]] std::vector<NoteEntity> starred(int least, [[PageDefaults]] tachyon::json::JsonNode page);\n};\n",
+            ),
+            (
+                "client/services/NotesService.hpp",
+                "class [[Service]] NotesService {\npublic:\n    [[Needs]] NoteStore& notes;\n    std::string save(std::string id, std::string text, int stars) { return notes.save(NoteEntity{id, text, stars}).text; }\n    std::string one(std::string id) { auto found = notes.findById(id); return found ? found->text : std::string(\"none\"); }\n    int listed() { return static_cast<int>(notes.findAll().size()); }\n    int byText(std::string text) { return static_cast<int>(notes.findByText(text).size()); }\n    long long starredOver(int stars) { return notes.countByStarsGreaterThan(stars); }\n    std::string best(int least) { auto rows = notes.starred(least, tachyon::json::JsonObject()); return rows.empty() ? std::string() : rows.front().id; }\n    long long forget(std::string id) { return notes.deleteById(id); }\n    [[AllOrNothing({\"adapter\":\"indexeddb\"})]] int refuse(std::string id) { notes.save(NoteEntity{id, \"draft\", 0}); throw std::runtime_error(\"refused\"); }\n    bool drafted() { return notes.existsByText(\"draft\"); }\n};\n",
+            ),
+        ],
+    );
+    let services = [("notes", "NotesService")];
+    let answers = PageProject::answers(
+        root.path(),
+        &services,
+        &[
+            PageProject::init("notes", 1, &json!({})),
+            PageProject::call("notes", 1, "save", &json!(["a", "first", 1])),
+            PageProject::call("notes", 1, "save", &json!(["b", "second", 5])),
+            PageProject::call("notes", 1, "save", &json!(["c", "second", 3])),
+            PageProject::call("notes", 1, "one", &json!(["b"])),
+            PageProject::call("notes", 1, "one", &json!(["z"])),
+            PageProject::call("notes", 1, "listed", &json!([])),
+            PageProject::call("notes", 1, "byText", &json!(["second"])),
+            PageProject::call("notes", 1, "starredOver", &json!([2])),
+            PageProject::call("notes", 1, "best", &json!([2])),
+            PageProject::call("notes", 1, "forget", &json!(["a"])),
+            PageProject::call("notes", 1, "refuse", &json!(["d"])),
+            PageProject::call("notes", 1, "drafted", &json!([])),
+            PageProject::call("notes", 1, "byText", &json!(["first"])),
+        ],
+    );
+    let values: Vec<Value> = answers
+        .iter()
+        .map(|answer| answer["value"].clone())
+        .collect();
+    assert_eq!(
+        values[1..11],
+        [
+            json!("first"),
+            json!("second"),
+            json!("second"),
+            json!("second"),
+            json!("none"),
+            json!(2),
+            json!(2),
+            json!(2),
+            json!("b"),
+            json!(1)
+        ],
+        "{answers:?}"
+    );
+    assert!(answers[11].get("value").is_none(), "{answers:?}");
+    assert_eq!(values[12], json!(false), "{answers:?}");
+    assert_eq!(values[13], json!(0), "{answers:?}");
 }

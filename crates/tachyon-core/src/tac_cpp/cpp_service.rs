@@ -1,6 +1,6 @@
 use super::{
     CppBehaviors, CppChecks, CppClass, CppConverter, CppFailure, CppFile, CppInjection,
-    CppLifetime, CppListener, CppMarkerCheck, CppMember, CppMemberKind, CppRemote,
+    CppLifetime, CppListener, CppMarkerCheck, CppMember, CppMemberKind, CppRemote, CppStore,
 };
 use crate::Failure;
 use serde_json::{Value, json};
@@ -44,6 +44,7 @@ impl CppService {
         CppLifetime::check(relative, class)?;
         CppChecks::check_service(relative, class)?;
         CppConverter::check(relative, source, class)?;
+        CppStore::check(relative, source, class)?;
         Self::check_members(relative, class)?;
         Self::check_remote(relative, class)?;
         let listeners = class
@@ -52,7 +53,11 @@ impl CppService {
             .filter(|member| member.marked("OnEvent"))
             .map(|member| CppListener::read(relative, member))
             .collect::<Result<Vec<_>, _>>()?;
-        let behaviors = CppBehaviors::policies(relative, source, class)?;
+        let behaviors = if CppStore::is_store(class) {
+            BTreeMap::new()
+        } else {
+            CppBehaviors::policies(relative, source, class)?
+        };
         Ok(Self {
             file,
             path: relative.to_path_buf(),
@@ -72,6 +77,10 @@ impl CppService {
 
     pub(crate) fn is_converter(&self) -> bool {
         CppConverter::is_converter(self.class())
+    }
+
+    pub(crate) fn is_store(&self) -> bool {
+        CppStore::is_store(self.class())
     }
 
     pub(crate) fn field_at(&self, field: &str) -> usize {
@@ -150,7 +159,7 @@ impl CppService {
     }
 
     fn binding_text(&self) -> String {
-        if [self.is_remote(), self.is_converter()].contains(&true) {
+        if [self.is_remote(), self.is_converter(), self.is_store()].contains(&true) {
             return String::new();
         }
         self.binding_class()
@@ -209,7 +218,7 @@ impl CppService {
         for member in &class.members {
             Self::check_member(relative, member)?;
         }
-        if CppConverter::is_converter(class) {
+        if [CppConverter::is_converter(class), CppStore::is_store(class)].contains(&true) {
             return Ok(());
         }
         Self::check_overloads(relative, class)

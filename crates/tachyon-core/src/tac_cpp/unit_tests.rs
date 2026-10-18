@@ -403,3 +403,45 @@ fn a_cached_method_keeps_its_value_within_one_case() {
         "{report:?}"
     );
 }
+
+#[test]
+fn a_store_keeps_its_rows_in_memory_within_one_case() {
+    if !UnitProject::has_compiler() {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    UnitProject::write(
+        root.path(),
+        &[
+            (
+                "client/entities/NoteEntity.hpp",
+                "struct [[Entity({\"adapter\":\"indexeddb\"}), Table(\"notes\")]] NoteEntity {\n    [[Id]] std::string id;\n    std::string text;\n};\n",
+            ),
+            (
+                "client/stores/NoteStore.hpp",
+                "class [[Store(NoteEntity, {\"fields\":[\"id\",\"text\"],\"defaultSize\":20,\"maxSize\":100})]] NoteStore : public tachyon::Repository<NoteEntity, std::string> {\npublic:\n    long long countByText(const std::string& text);\n};\n",
+            ),
+            (
+                "client/services/NotesService.hpp",
+                "class [[Service]] NotesService {\npublic:\n    [[Needs]] NoteStore& notes;\n    long long keep(std::string text) { notes.save(NoteEntity{text, text}); return notes.countByText(text); }\n    [[AllOrNothing({\"adapter\":\"indexeddb\"})]] void refuse() { notes.save(NoteEntity{\"draft\", \"draft\"}); throw std::runtime_error(\"refused\"); }\n};\n",
+            ),
+            (
+                "client/tests/NotesTestSetup.hpp",
+                "class [[TestSetup]] NotesTestSetup {};\n",
+            ),
+            (
+                "client/tests/NotesServiceTest.hpp",
+                "class [[Test(NotesTestSetup), FreshStart]] NotesServiceTest {\npublic:\n    NotesService service;\n    NoteStore store;\n    void testKeepsANote() { Assert::equals(1LL, service.keep(\"a\")); Assert::equals(1LL, service.keep(\"a\")); }\n    void testRollsBack() { try { service.refuse(); } catch (const std::exception&) {} Assert::equals(0LL, store.countByText(\"draft\")); Assert::equals(0LL, store.countByText(\"a\")); }\n};\n",
+            ),
+        ],
+    );
+    let report = UnitProject::report(root.path(), "client/tests/NotesServiceTest.hpp");
+    assert_eq!(
+        UnitProject::outcomes(&report),
+        [
+            (String::from("testKeepsANote"), true),
+            (String::from("testRollsBack"), true),
+        ],
+        "{report:?}"
+    );
+}

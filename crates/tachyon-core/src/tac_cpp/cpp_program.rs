@@ -1,8 +1,10 @@
 use super::{
-    CppChecks, CppConverter, CppFolder, CppLowering, CppModel, CppPrelude, CppService,
-    CppServiceGraph,
+    CppChecks, CppConverter, CppFailure, CppFolder, CppLowering, CppModel, CppPrelude, CppService,
+    CppServiceGraph, CppStore,
 };
 use crate::Failure;
+use serde_json::Value;
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -11,10 +13,13 @@ pub(crate) struct CppProgram {
     services: Vec<CppService>,
     registered: Vec<(String, String)>,
     records_calls: bool,
+    stores: BTreeMap<String, String>,
 }
 
 impl CppProgram {
-    const MODELS: &'static str = "client/models";
+    const MODELS: [&'static str; 2] = ["client/models", "client/entities"];
+    const SHARED_ENTITY: &'static str =
+        "One C++ [[Store]] keeps each [[Entity]]; another Store already names this one";
     const GENERATED: &'static str = "#line 1 \"tachyon-generated.cpp\"\n";
 
     pub(crate) fn read(root: &Path, chosen: &[(String, String, PathBuf)]) -> Result<Self, Failure> {
@@ -25,6 +30,7 @@ impl CppProgram {
             services: graph.finish(),
             registered,
             records_calls: false,
+            stores: BTreeMap::new(),
         }
         .checked()
     }
@@ -37,11 +43,12 @@ impl CppProgram {
             services: graph.finish(),
             registered: Vec::new(),
             records_calls: true,
+            stores: BTreeMap::new(),
         }
         .checked()
     }
 
-    fn checked(self) -> Result<Self, Failure> {
+    fn checked(mut self) -> Result<Self, Failure> {
         let checked: Vec<String> = self
             .models
             .iter()
@@ -56,7 +63,36 @@ impl CppProgram {
                 CppConverter::new(&service.path, &self.models).check_methods(service.class())?;
             }
         }
+        self.stores = self.store_definitions()?;
         Ok(self)
+    }
+
+    fn store_definitions(&self) -> Result<BTreeMap<String, String>, Failure> {
+        let entities: Vec<Value> = self
+            .models
+            .iter()
+            .filter_map(|model| model.entity.clone())
+            .collect();
+        let mut kept: Vec<String> = Vec::new();
+        let mut stores = BTreeMap::new();
+        for service in &self.services {
+            let class = service.class();
+            let Some((entity, text)) =
+                CppStore::definitions(&service.path, &service.source, class, &entities)?
+            else {
+                continue;
+            };
+            if kept.contains(&entity) {
+                return Err(CppFailure::unreadable(
+                    &service.path,
+                    class.name_at,
+                    Self::SHARED_ENTITY,
+                ));
+            }
+            kept.push(entity);
+            stores.insert(class.name.clone(), text);
+        }
+        Ok(stores)
     }
 
     pub(crate) fn has_class(&self, name: &str) -> bool {
@@ -98,9 +134,11 @@ impl CppProgram {
 
     fn models(root: &Path) -> Result<Vec<CppModel>, Failure> {
         let mut models = Vec::new();
-        for path in CppFolder::files(root, Self::MODELS)? {
-            let (relative, source) = CppFolder::read(root, &path)?;
-            models.push(CppModel::read(&relative, &source)?);
+        for folder in Self::MODELS {
+            for path in CppFolder::files(root, folder)? {
+                let (relative, source) = CppFolder::read(root, &path)?;
+                models.push(CppModel::read(&relative, &source)?);
+            }
         }
         Ok(Self::ordered_models(models))
     }
@@ -164,6 +202,10 @@ impl CppProgram {
         for service in &self.services {
             text.push_str(&Self::located(&service.path, &self.lowered(service)));
             text.push_str(&self.conversions(service));
+            if let Some(definitions) = self.stores.get(&service.class().name) {
+                text.push_str(Self::GENERATED);
+                text.push_str(definitions);
+            }
         }
         text
     }

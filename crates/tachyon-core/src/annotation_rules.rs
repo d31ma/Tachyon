@@ -280,8 +280,6 @@ impl AnnotationRules {
     const TAC_ROLE: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "lua", "py", "java", "fs", "hpp",
     ];
-    pub(crate) const TAC_RESOURCE: &'static [&'static str] =
-        &["js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb"];
     const TAC_REMOTE: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "hpp",
     ];
@@ -294,8 +292,6 @@ impl AnnotationRules {
     const TAC_BEHAVIOR_AND_CPP: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "py", "hpp",
     ];
-    const TAC_BEHAVIOR_ADAPTER: &'static [&'static str] =
-        &["js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb"];
     const TAC_ADAPTER_AND_CPP: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "hpp",
     ];
@@ -441,6 +437,7 @@ impl AnnotationRules {
             "marks the field that identifies each saved record",
         )
         .bare()
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR)
         .class_needs(&["Entity"]),
         Rule::new(
             "Service",
@@ -604,12 +601,13 @@ impl AnnotationRules {
             "saves all of the method's changes, or none of them when it fails",
         )
         .instance()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::YON_BEHAVIOR),
+        .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new(
             "Entity",
             Self::TYPE,
             "marks a model that is saved as a record",
-        ),
+        )
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new(
             "Topic",
             Self::TYPE,
@@ -623,6 +621,7 @@ impl AnnotationRules {
             "names the table that stores this Entity",
         )
         .needs_arguments()
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR)
         .class_needs(&["Entity"]),
         Rule::retired(
             "WebCall",
@@ -642,13 +641,13 @@ impl AnnotationRules {
             Self::TYPE,
             "marks a class that saves and finds records",
         )
-        .reach(Self::TAC_RESOURCE, Self::YON),
+        .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON),
         Rule::new(
             "Query",
             Self::METHOD,
             "turns an empty method into a query of the Store's records",
         )
-        .reach(Self::TAC_RESOURCE, Self::YON_BEHAVIOR)
+        .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON_BEHAVIOR)
         .instance()
         .class_needs(&["Store"]),
         Rule::new(
