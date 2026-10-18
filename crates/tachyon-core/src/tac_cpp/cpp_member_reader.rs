@@ -107,8 +107,19 @@ impl<'a> CppMemberReader<'a> {
             declarators: shape.commas.len() + 1,
             markers,
             terminator: self.tokens.start(declaration.end).min(self.source.len()),
+            body_end: self.body_end(declaration.end),
             is_const: false,
         }
+    }
+
+    fn body_end(&self, end: usize) -> usize {
+        let close = self
+            .tokens
+            .is(end, "{")
+            .then(|| self.tokens.partner(end))
+            .flatten()
+            .unwrap_or(end);
+        self.tokens.start(close).min(self.source.len())
     }
 
     fn specifiers(&self, declaration: &Range<usize>) -> usize {

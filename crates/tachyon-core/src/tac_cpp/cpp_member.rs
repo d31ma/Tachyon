@@ -14,6 +14,7 @@ pub(crate) struct CppMember {
     pub(crate) declarators: usize,
     pub(crate) markers: Vec<CppAttribute>,
     pub(crate) terminator: usize,
+    pub(crate) body_end: usize,
     pub(crate) is_const: bool,
 }
 

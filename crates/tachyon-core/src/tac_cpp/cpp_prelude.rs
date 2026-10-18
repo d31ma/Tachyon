@@ -6,6 +6,7 @@ impl CppPrelude {
     const TASK: &'static str = include_str!("tachyon/task.hpp");
     const CHECKS: &'static str = include_str!("tachyon/checks.hpp");
     const CONVERT: &'static str = include_str!("tachyon/convert.hpp");
+    const BEHAVIORS: &'static str = include_str!("tachyon/behaviors.hpp");
     const PAGE: &'static str = include_str!("tachyon/page.hpp");
     const TICKETS: &'static str = include_str!("tachyon/tickets.hpp");
     const PAGE_TASKS: &'static str = include_str!("tachyon/page_tasks.hpp");
@@ -29,6 +30,7 @@ impl CppPrelude {
             Self::CHECKS,
             Self::CONVERT,
             Self::PAGE,
+            Self::BEHAVIORS,
             Self::TICKETS,
             Self::PAGE_TASKS,
             Self::HTTP,
@@ -48,6 +50,7 @@ impl CppPrelude {
             Self::CHECKS,
             Self::CONVERT,
             Self::TEST_HOST,
+            Self::BEHAVIORS,
             Self::TICKETS,
             Self::TEST_EVENTS,
             Self::HTTP,

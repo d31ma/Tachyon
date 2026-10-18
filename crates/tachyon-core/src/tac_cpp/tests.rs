@@ -730,3 +730,37 @@ fn a_topic_goes_on_a_model_with_fields() {
         "{service}"
     );
 }
+
+#[test]
+fn behavior_markers_wrap_only_synchronous_cpp_methods() {
+    let cache = "CacheSettings({\"name\":\"prices\",\"ttlMs\":60000,\"maxBytes\":65536,\"maxEntries\":100})";
+    for (source, expected) in [
+        (
+            "class [[Service]] TallyService {\npublic:\n    [[Retry({\"maxRetries\":2})]] Task<int> read() { co_return 1; }\n};\n".to_owned(),
+            "is a synchronous instance method",
+        ),
+        (
+            "class [[Service]] TallyService {\npublic:\n    [[Cached]] int read(int item) { return item; }\n};\n".to_owned(),
+            "belongs in a class marked [[CacheSettings]]",
+        ),
+        (
+            format!("class [[Service, {cache}]] TallyService {{\npublic:\n    [[Cached]] void read(int item) {{}}\n}};\n"),
+            "cannot return void",
+        ),
+        (
+            "class [[Service]] TallyService {\npublic:\n    int read([[CacheKey]] int item) { return item; }\n};\n".to_owned(),
+            "add [[Cached]] to the method",
+        ),
+        (
+            format!("class [[Service, {cache}]] TallyService {{\npublic:\n    [[Cached]] int read(int item) {{ return item; }}\n    [[ClearCache({{\"method\":\"read\"}})]] void forget() {{}}\n}};\n"),
+            "needs a parameter named 'item'",
+        ),
+        (
+            "class [[Service]] TallyService {\npublic:\n    [[Retry({\"maxRetries\":20})]] int read() { return 1; }\n};\n".to_owned(),
+            "Retry.maxRetries must be an integer from 1 to 8",
+        ),
+    ] {
+        let refused = Sources::refusal("client/services/TallyService.hpp", &source);
+        assert!(refused.contains(expected), "{source}: {refused}");
+    }
+}

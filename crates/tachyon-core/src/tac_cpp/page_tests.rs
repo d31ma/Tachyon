@@ -12,7 +12,37 @@ impl PageProject {
 #line 1 "tachyon-page-host.cpp"
 extern "C" {
 void tac_host_emit(const char* text, int length) { std::fprintf(stderr, "event %.*s\n", length, text); }
-char* tac_host_storage(const char*, int) { return nullptr; }
+double tac_host_monotonic_ms() { static double ticks = 0; ticks += 1; return ticks; }
+char* tac_host_storage(const char* text, int length) {
+    static std::map<std::string, tachyon::json::JsonNode> entries;
+    tachyon::json::JsonNode request = tachyon::json::JsonNode::parse(std::string_view(text, length));
+    std::fprintf(stderr, "storage %s\n", request.toJsonString().c_str());
+    std::string operation = request["op"].getValue<std::string>();
+    std::string key = request["cache"].toJsonString() + request["key"].toJsonString();
+    tachyon::json::JsonObject answer;
+    if (operation == "cache.get") {
+        tachyon::json::JsonObject entry;
+        auto found = entries.find(key);
+        entry["hit"] = found != entries.end();
+        if (found != entries.end()) {
+            entry["value"] = found->second["value"];
+            entry["expiresAt"] = found->second["expiresAt"];
+        }
+        answer["value"] = entry;
+    } else if (operation == "cache.set") {
+        entries[key] = request;
+        answer["value"] = nullptr;
+    } else if (operation == "cache.delete") {
+        entries.erase(key);
+        answer["value"] = nullptr;
+    } else {
+        answer["error"] = "no such storage request";
+    }
+    std::string written = answer.toJsonString();
+    char* copied = static_cast<char*>(std::malloc(written.size() + 1));
+    std::memcpy(copied, written.c_str(), written.size() + 1);
+    return copied;
+}
 char* tac_host_web(const char*, int) { return nullptr; }
 double tac_host_epoch_ms() { return tachyonPageClock; }
 void tac_host_http_start(std::uint32_t, const char*, int) {}
@@ -441,4 +471,63 @@ fn a_helper_does_part_of_a_service_s_work() {
         ],
     );
     assert_eq!(answers[1]["value"], 12, "{answers:?}");
+}
+
+#[test]
+fn behavior_markers_wrap_a_synchronous_method() {
+    if !PageProject::has_compiler() {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    PageProject::write(
+        root.path(),
+        &[
+            (
+                "client/models/Page.hpp",
+                "struct Page {\n    int page = 0;\n    std::optional<int> size;\n    std::vector<std::string> sort;\n};\n",
+            ),
+            (
+                "client/services/PriceService.hpp",
+                "class [[Service, CacheSettings({\"name\":\"prices\",\"ttlMs\":60000,\"maxBytes\":65536,\"maxEntries\":100})]] PriceService {\npublic:\n    int calls = 0;\n    int failures = 2;\n    [[Cached]] int price([[CacheKey]] int item, int ignored) { calls += 1; return item * 10 + calls; }\n    [[UpdateCache({\"method\":\"price\"})]] int reprice(int item) { return item * 100; }\n    [[ClearCache({\"method\":\"price\"})]] void forget(int item) {}\n    [[Retry({\"maxRetries\":3})]] int flaky() {\n        if (failures > 0) {\n            failures -= 1;\n            throw std::runtime_error(\"try again\");\n        }\n        return 7;\n    }\n    [[MaxAtOnce({\"limit\":1,\"policy\":\"reject\"})]] int nested(int depth) { return depth == 0 ? 0 : nested(depth - 1); }\n    int pageSize([[PageDefaults({\"defaultSize\":20,\"maxSize\":100,\"sort\":[\"id\"]})]] const Page& page) { return page.size.value_or(-1); }\n};\n",
+            ),
+        ],
+    );
+    let services = [("prices", "PriceService")];
+    let answers = PageProject::answers(
+        root.path(),
+        &services,
+        &[
+            PageProject::init("prices", 1, &json!({})),
+            PageProject::call("prices", 1, "price", &json!([2, 0])),
+            PageProject::call("prices", 1, "price", &json!([2, 9])),
+            PageProject::call("prices", 1, "reprice", &json!([2])),
+            PageProject::call("prices", 1, "price", &json!([2, 0])),
+            PageProject::call("prices", 1, "forget", &json!([2])),
+            PageProject::call("prices", 1, "price", &json!([2, 0])),
+            PageProject::call("prices", 1, "flaky", &json!([])),
+            PageProject::call("prices", 1, "nested", &json!([1])),
+            PageProject::call("prices", 1, "pageSize", &json!([{}])),
+            PageProject::call("prices", 1, "pageSize", &json!([{"size": 500}])),
+        ],
+    );
+    let values: Vec<Value> = answers
+        .iter()
+        .map(|answer| answer["value"].clone())
+        .collect();
+    assert_eq!(
+        values[1..8],
+        [
+            json!(21),
+            json!(21),
+            json!(200),
+            json!(200),
+            Value::Null,
+            json!(22),
+            json!(7)
+        ],
+        "{answers:?}"
+    );
+    assert_eq!(answers[8]["code"], "capacity", "{answers:?}");
+    assert_eq!(answers[9]["value"], 20, "{answers:?}");
+    assert_eq!(answers[10]["code"], "invalid", "{answers:?}");
 }

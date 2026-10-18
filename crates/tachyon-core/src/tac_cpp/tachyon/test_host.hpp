@@ -2,8 +2,37 @@ namespace tachyon {
 
 class TacHost {
 public:
-    static std::string storage(const std::string&) {
-        return missing();
+    static std::string storage(const std::string& text) {
+        json::JsonNode request = json::JsonNode::parse(text);
+        std::string operation = request["op"].getValueKind() == json::JsonValueKind::String ? request["op"].getValue<std::string>() : std::string();
+        if (operation.rfind("cache.", 0) != 0) {
+            return missing();
+        }
+        std::string key = request["cache"].toJsonString() + request["key"].toJsonString();
+        json::JsonObject answer;
+        if (operation == "cache.get") {
+            json::JsonObject entry;
+            auto found = cached().find(key);
+            entry["hit"] = found != cached().end();
+            if (found != cached().end()) {
+                entry["value"] = found->second["value"];
+                entry["expiresAt"] = found->second["expiresAt"];
+            }
+            answer["value"] = entry;
+        } else if (operation == "cache.set") {
+            cached()[key] = request;
+            answer["value"] = nullptr;
+        } else {
+            cached().erase(key);
+            answer["value"] = nullptr;
+        }
+        return answer.toJsonString();
+    }
+
+    static void waitMilliseconds(double) {}
+
+    static void reset() {
+        cached().clear();
     }
 
     static std::string web(const std::string&) {
@@ -19,6 +48,11 @@ public:
     static void httpCancel(std::uint32_t) {}
 
 private:
+    static std::map<std::string, json::JsonNode>& cached() {
+        static std::map<std::string, json::JsonNode> entries;
+        return entries;
+    }
+
     static std::string missing() {
         json::JsonObject failure;
         failure["error"] = "Browser APIs are not in C++ test units yet (ADR 0099).";

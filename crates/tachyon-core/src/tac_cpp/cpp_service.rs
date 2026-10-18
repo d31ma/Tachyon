@@ -1,9 +1,10 @@
 use super::{
-    CppChecks, CppClass, CppConverter, CppFailure, CppFile, CppInjection, CppLifetime, CppListener,
-    CppMarkerCheck, CppMember, CppMemberKind, CppRemote,
+    CppBehaviors, CppChecks, CppClass, CppConverter, CppFailure, CppFile, CppInjection,
+    CppLifetime, CppListener, CppMarkerCheck, CppMember, CppMemberKind, CppRemote,
 };
 use crate::Failure;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -12,6 +13,7 @@ pub(crate) struct CppService {
     pub(crate) path: PathBuf,
     pub(crate) source: String,
     pub(crate) listeners: Vec<CppListener>,
+    pub(crate) behaviors: BTreeMap<String, Value>,
 }
 
 impl CppService {
@@ -50,11 +52,13 @@ impl CppService {
             .filter(|member| member.marked("OnEvent"))
             .map(|member| CppListener::read(relative, member))
             .collect::<Result<Vec<_>, _>>()?;
+        let behaviors = CppBehaviors::policies(relative, source, class)?;
         Ok(Self {
             file,
             path: relative.to_path_buf(),
             source: source.to_owned(),
             listeners,
+            behaviors,
         })
     }
 

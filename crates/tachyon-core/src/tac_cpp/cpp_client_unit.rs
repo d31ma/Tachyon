@@ -166,7 +166,10 @@ impl CppClientUnit {
     }
 
     fn main(&self, answers: bool, fresh: bool) -> String {
-        let started = ["", "tachyon::TacFreshStart::next(); "][usize::from(fresh)];
+        let started = [
+            "tachyon::TacHost::reset(); tachyon::TacBehaviors::reset(); ",
+            "tachyon::TacHost::reset(); tachyon::TacBehaviors::reset(); tachyon::TacFreshStart::next(); ",
+        ][usize::from(fresh)];
         let prepared = format!("{started}{}", self.prepared(answers));
         let mut cases = String::new();
         for case in &self.cases {

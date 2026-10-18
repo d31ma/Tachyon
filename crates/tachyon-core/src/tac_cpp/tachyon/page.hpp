@@ -3,6 +3,7 @@ __attribute__((import_module("tachyon"), import_name("tac_host_emit"))) void tac
 __attribute__((import_module("tachyon"), import_name("tac_host_storage"))) char* tac_host_storage(const char* text, int length);
 __attribute__((import_module("tachyon"), import_name("tac_host_web"))) char* tac_host_web(const char* text, int length);
 __attribute__((import_module("tachyon"), import_name("tac_host_epoch_ms"))) double tac_host_epoch_ms();
+__attribute__((import_module("tachyon"), import_name("tac_host_monotonic_ms"))) double tac_host_monotonic_ms();
 __attribute__((import_module("tachyon"), import_name("tac_host_http_start"))) void tac_host_http_start(std::uint32_t ticket, const char* text, int length);
 __attribute__((import_module("tachyon"), import_name("tac_host_task_done"))) void tac_host_task_done(std::uint32_t task, const char* text, int length);
 __attribute__((import_module("tachyon"), import_name("tac_host_http_cancel"))) void tac_host_http_cancel(std::uint32_t ticket);
@@ -26,6 +27,12 @@ public:
 
     static double epochMilliseconds() {
         return tac_host_epoch_ms();
+    }
+
+    static void waitMilliseconds(double milliseconds) {
+        double until = tac_host_monotonic_ms() + milliseconds;
+        while (tac_host_monotonic_ms() < until) {
+        }
     }
 
     static void httpStart(std::uint32_t ticket, const std::string& request) {

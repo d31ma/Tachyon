@@ -1,6 +1,6 @@
 use super::{
-    CppAttribute, CppChecks, CppClass, CppCoverage, CppFile, CppLifetime, CppMarkerCheck,
-    CppMember, CppRemote, CppService,
+    CppAttribute, CppBehaviors, CppChecks, CppClass, CppCoverage, CppFile, CppLifetime,
+    CppMarkerCheck, CppMember, CppRemote, CppService,
 };
 use std::fmt::Write as _;
 use std::ops::Range;
@@ -60,8 +60,20 @@ impl CppLowering {
         let friend = format!(" friend class {};", service.binding_name());
         lowering.insertions.push((class.body.start + 1, friend));
         lowering.fill_needs(class, prototypes);
+        lowering.wrap_behaviors(service);
         lowering.guard_checked(service);
         lowering
+    }
+
+    fn wrap_behaviors(&mut self, service: &CppService) {
+        for member in &service.class().members {
+            let Some(policy) = service.behaviors.get(&member.name) else {
+                continue;
+            };
+            let (opening, closing) = CppBehaviors::wrapping(member, policy);
+            self.insertions.push((member.body_end, closing));
+            self.insertions.push((member.terminator + 1, opening));
+        }
     }
 
     fn guard_checked(&mut self, service: &CppService) {

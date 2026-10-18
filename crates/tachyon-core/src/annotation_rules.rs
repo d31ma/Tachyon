@@ -296,6 +296,9 @@ impl AnnotationRules {
     ];
     const TAC_BEHAVIOR_ADAPTER: &'static [&'static str] =
         &["js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb"];
+    const TAC_ADAPTER_AND_CPP: &'static [&'static str] = &[
+        "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "hpp",
+    ];
     const TAC_STORED_STATE: &'static [&'static str] = &[
         "js", "ts", "rs", "cs", "dart", "go", "swift", "kt", "rb", "hpp",
     ];
@@ -543,7 +546,7 @@ impl AnnotationRules {
             "names the cache that this class's Cached methods use, and sets its limits",
         )
         .needs_arguments()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::YON_BEHAVIOR),
+        .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new(
             "Cached",
             Self::METHOD,
@@ -551,7 +554,7 @@ impl AnnotationRules {
         )
         .bare()
         .instance()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::YON_BEHAVIOR)
+        .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON_BEHAVIOR)
         .clashes(Self::CACHE_CHANGES)
         .class_needs(&["CacheSettings"]),
         Rule::new(
@@ -560,7 +563,7 @@ impl AnnotationRules {
             "makes this argument part of the key of a cached answer",
         )
         .bare()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::YON_BEHAVIOR),
+        .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new(
             "ClearCache",
             Self::METHOD,
@@ -568,7 +571,7 @@ impl AnnotationRules {
         )
         .needs_arguments()
         .instance()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::YON_BEHAVIOR)
+        .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON_BEHAVIOR)
         .clashes(Self::CACHE_CHANGES),
         Rule::new(
             "UpdateCache",
@@ -577,24 +580,24 @@ impl AnnotationRules {
         )
         .needs_arguments()
         .instance()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::YON_BEHAVIOR)
+        .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON_BEHAVIOR)
         .clashes(Self::CACHE_CHANGES),
         Rule::new(
             "PageDefaults",
             Self::PARAMETER,
             "gives the page size and sort order that a page argument uses when the caller leaves them out",
         )
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::YON_BEHAVIOR),
+        .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new("Retry", Self::METHOD, "runs the method again when it fails")
             .instance()
-            .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::YON_BEHAVIOR),
+            .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new(
             "MaxAtOnce",
             Self::METHOD,
             "limits how many calls of this method run at the same time",
         )
         .instance()
-        .reach(Self::TAC_BEHAVIOR_ADAPTER, Self::YON_BEHAVIOR),
+        .reach(Self::TAC_ADAPTER_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new(
             "AllOrNothing",
             Self::METHOD,

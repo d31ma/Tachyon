@@ -19,8 +19,8 @@ impl RequiredFields {
         "SessionState",
         "Fake",
     ];
-    const LANGUAGES: [&'static str; 13] = [
-        "js", "ts", "dart", "cs", "kt", "swift", "rs", "go", "rb", "lua", "java", "fs", "py",
+    const LANGUAGES: [&'static str; 14] = [
+        "js", "ts", "dart", "cs", "kt", "swift", "rs", "go", "rb", "lua", "java", "fs", "py", "hpp",
     ];
     const NOT_FIELD_WORDS: [&'static str; 19] = [
         "static",
@@ -123,6 +123,7 @@ impl RequiredFields {
             "go" => Self::go_fields(source, class),
             "rs" => Self::rust_fields(&code, class),
             "fs" => Self::fsharp_fields(path, source, class),
+            "hpp" => Vec::new(),
             _ => Self::declared_fields(extension, &code, class),
         }
     }

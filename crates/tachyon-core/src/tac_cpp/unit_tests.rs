@@ -369,3 +369,37 @@ fn a_checked_request_body_is_refused_before_the_request_leaves() {
         "{report:?}"
     );
 }
+
+#[test]
+fn a_cached_method_keeps_its_value_within_one_case() {
+    if !UnitProject::has_compiler() {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    UnitProject::write(
+        root.path(),
+        &[
+            (
+                "client/services/PriceService.hpp",
+                "class [[Service, CacheSettings({\"name\":\"prices\",\"ttlMs\":60000,\"maxBytes\":65536,\"maxEntries\":100})]] PriceService {\npublic:\n    int calls = 0;\n    [[Cached]] int price(int item) { calls += 1; return item + calls; }\n};\n",
+            ),
+            (
+                "client/tests/PriceTestSetup.hpp",
+                "class [[TestSetup]] PriceTestSetup {};\n",
+            ),
+            (
+                "client/tests/PriceServiceTest.hpp",
+                "class [[Test(PriceTestSetup), FreshStart]] PriceServiceTest {\npublic:\n    PriceService prices;\n    void testFirstCallIsKept() { Assert::equals(3, prices.price(2)); Assert::equals(3, prices.price(2)); }\n    void testNextCaseStartsEmpty() { Assert::equals(3, prices.price(2)); }\n};\n",
+            ),
+        ],
+    );
+    let report = UnitProject::report(root.path(), "client/tests/PriceServiceTest.hpp");
+    assert_eq!(
+        UnitProject::outcomes(&report),
+        [
+            (String::from("testFirstCallIsKept"), true),
+            (String::from("testNextCaseStartsEmpty"), true),
+        ],
+        "{report:?}"
+    );
+}
