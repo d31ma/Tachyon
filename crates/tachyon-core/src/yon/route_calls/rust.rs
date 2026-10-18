@@ -23,8 +23,9 @@ impl RustRoutes {
                     Self::check_stream(plan, route)?;
                     let _ = writeln!(
                         output,
-                        "        {} => yon_stream(request, controller.{}({})),",
+                        "        {} => {}(request, controller.{}({})),",
                         RouteCalls::pattern(route),
+                        Self::stream_call(&route.returns),
                         route.method,
                         Self::arguments(route)
                     );
@@ -56,11 +57,18 @@ impl RustRoutes {
         Ok(output)
     }
 
-    pub(crate) fn is_stream_shape(returns: &str) -> bool {
+    fn is_stream_shape(returns: &str) -> bool {
         let written: String = returns.split_whitespace().collect();
-        let iterator = written.contains("Iterator<Item=");
-        let opaque = written.starts_with("impl") || written.starts_with("Box<dyn");
-        iterator && opaque
+        let opaque = written.starts_with("impl") | written.starts_with("Box<dyn");
+        [written.contains("Iterator<Item="), opaque] == [true, true]
+    }
+
+    fn stream_call(returns: &str) -> &'static str {
+        let written: String = returns.split_whitespace().collect();
+        if written.contains("Item=Result<") {
+            return "YonSocket::stream_failing";
+        }
+        "YonSocket::stream"
     }
 
     fn check_stream(plan: &Plan, route: &Route) -> Result<(), String> {

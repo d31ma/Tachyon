@@ -14,6 +14,7 @@ impl EventLowering {
         "This Yon language supports synchronous local event and lifecycle completion only";
     const BACKGROUND_NEEDS_ASYNC: &str =
         "InBackground listeners require a Yon language with deferred listeners (js, ts, py, rs)";
+    const DEFERRED_LISTENER_LANGUAGES: [&str; 4] = ["js", "ts", "py", "rs"];
     const NO_STREAMS: &str = "Local event containers do not support streaming endpoints; use a separate non-streaming event controller";
 
     pub(crate) fn check(plan: &Plan, events: &EventModule, extension: &str) -> Result<(), String> {
@@ -35,7 +36,7 @@ impl EventLowering {
             ),
             (
                 has_async_listener(events),
-                defers_background_listeners(extension),
+                Self::DEFERRED_LISTENER_LANGUAGES.contains(&extension),
                 Self::BACKGROUND_NEEDS_ASYNC,
             ),
         ];
@@ -81,10 +82,6 @@ pub(crate) fn lower(
 
 fn is_async_language(extension: &str) -> bool {
     matches!(extension, "js" | "ts" | "py")
-}
-
-fn defers_background_listeners(extension: &str) -> bool {
-    matches!(extension, "js" | "ts" | "py" | "rs")
 }
 
 fn is_asynchronous_method(method: &EventMethod) -> bool {
