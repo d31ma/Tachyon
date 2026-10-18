@@ -1,6 +1,8 @@
 use crate::Failure;
 use crate::companion::go::{GoResults, masked_code, parameter_types};
-use crate::events::{EventListener, EventMethod, EventModule, EventStream, EventType};
+use crate::events::{
+    BrowserStreams, EventListener, EventMethod, EventModule, EventStream, EventType,
+};
 use crate::go_source::{self, GoMethod};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -14,33 +16,6 @@ pub(super) struct GoEvents {
 
 impl GoEvents {
     const MOST_STREAMS: usize = 16;
-
-    fn holds_only_streams(event_type: &EventType) -> bool {
-        [
-            event_type.listeners.is_empty(),
-            event_type.resources.is_empty(),
-            event_type.post_construct.is_none(),
-            event_type.pre_destroy.is_none(),
-            !event_type.streams.is_empty(),
-        ]
-        .iter()
-        .all(|holds| *holds)
-    }
-
-    fn is_stream_client(event_type: &EventType, class: &str) -> bool {
-        [
-            event_type.name != class,
-            Self::holds_only_streams(event_type),
-        ] == [true, true]
-    }
-
-    fn stream_clients<'a>(module: &'a EventModule, class: &str) -> Vec<&'a EventType> {
-        module
-            .types
-            .iter()
-            .filter(|event_type| Self::is_stream_client(event_type, class))
-            .collect()
-    }
 
     fn held_clients(code: &str, class: &str) -> Vec<String> {
         let Some(declared) = go_source::types(code)
@@ -60,17 +35,7 @@ impl GoEvents {
         held: &[String],
         path: &Path,
     ) -> Result<String, Failure> {
-        let streams: Vec<(&str, &EventStream)> = clients
-            .iter()
-            .filter(|client| held.contains(&client.name))
-            .flat_map(|client| {
-                client
-                    .streams
-                    .iter()
-                    .filter(|stream| !stream.topic)
-                    .map(|stream| (client.name.as_str(), stream))
-            })
-            .collect();
+        let streams = BrowserStreams::held(clients, held);
         if streams.len() > Self::MOST_STREAMS {
             return Err(failure(
                 path,
@@ -121,7 +86,7 @@ pub(super) fn entries(
         return Ok(events);
     };
     let code = masked_code(&module.source, &path.to_string_lossy())?;
-    let clients = GoEvents::stream_clients(module, class);
+    let clients = BrowserStreams::clients(module, class);
     let held = GoEvents::held_clients(&code, class);
     events.entries = GoEvents::stream_entries(&clients, &held, path)?;
     let Some(metadata) = owned_metadata(module, class, path)? else {
@@ -159,10 +124,9 @@ fn owned_metadata<'a>(
     class: &str,
     path: &Path,
 ) -> Result<Option<&'a EventType>, Failure> {
-    let unowned = module
-        .types
-        .iter()
-        .any(|event_type| event_type.name != class && !GoEvents::holds_only_streams(event_type));
+    let unowned = module.types.iter().any(|event_type| {
+        event_type.name != class && !BrowserStreams::holds_only_streams(event_type)
+    });
     if unowned {
         return Err(failure(
             path,

@@ -108,8 +108,7 @@ impl CsharpBrowserConstruction {
         index: usize,
     ) -> Result<String, String> {
         Self::canonical(captured, kind)?;
-        let declared = Self::declared(module, kind)?;
-        Self::zero_argument(declared)?;
+        Self::declared(module, kind)?.map_or(Ok(()), Self::zero_argument)?;
         Ok(format!("var __tacClient{index} = new {kind}();"))
     }
 
@@ -120,7 +119,7 @@ impl CsharpBrowserConstruction {
             .map(|_| ())
     }
 
-    fn declared<'a>(module: &'a Module, kind: &str) -> Result<&'a Type, String> {
+    fn declared<'a>(module: &'a Module, kind: &str) -> Result<Option<&'a Type>, String> {
         let declarations = module
             .types
             .iter()
@@ -129,12 +128,10 @@ impl CsharpBrowserConstruction {
         Self::unique(&declarations, kind)
     }
 
-    fn unique<'a>(declarations: &[&'a Type], kind: &str) -> Result<&'a Type, String> {
+    fn unique<'a>(declarations: &[&'a Type], kind: &str) -> Result<Option<&'a Type>, String> {
         match declarations {
-            [declared] => Ok(declared),
-            [] => Err(format!(
-                "C# browser HTTPClient {kind} has no same-language declaration."
-            )),
+            [declared] => Ok(Some(declared)),
+            [] => Ok(None),
             _ => Err(format!(
                 "C# browser HTTPClient {kind} has ambiguous same-language declarations."
             )),

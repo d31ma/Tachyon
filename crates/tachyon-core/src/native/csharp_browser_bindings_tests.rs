@@ -38,3 +38,15 @@ fn fsharp_detached_http_bindings_keep_captured_namespace_indices_and_identity() 
     assert!(!bindings.contains("TachyonService7.BehaviorBrowserHttp"));
     assert!(!bindings.contains("GetType"));
 }
+
+#[test]
+fn csharp_socket_bindings_reach_only_namespaces_that_declare_the_socket_sender() {
+    let authored = "namespace TachyonService0 { internal static class BehaviorBrowserHttp {} internal static class BehaviorBrowserSocket {} }\nnamespace TachyonService1 { internal static class BehaviorBrowserHttp {} }";
+    let bindings = CsharpBrowserBindings::read(authored);
+    assert!(bindings.contains("TachyonService0.BehaviorBrowserSocket.Host ??= Tac.SendSocket;"));
+    assert!(!bindings.contains("TachyonService1.BehaviorBrowserSocket"));
+    assert!(
+        bindings
+            .contains("TachyonService1.BehaviorBrowserHttp.Capture ??= Tac.CaptureHttpTransport")
+    );
+}

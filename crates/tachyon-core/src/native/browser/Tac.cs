@@ -123,3 +123,25 @@ public partial class Tac
         lock (OwnerLock) { owner.PendingTasks--; }
     }
 }
+
+public partial class Tac
+{
+    internal static System.Threading.Tasks.Task<string> SendSocket(string client, object message)
+    {
+        string owner;
+        lock (OwnerLock) { owner = LiveSocketOwner(); }
+        if (owner == null || TacSocketTransport.Send == null) return System.Threading.Tasks.Task.FromResult(TacSocketTransport.Missing);
+        string text;
+        try { text = Encode(TacModels.Plain(message)); }
+        catch (Exception) { return System.Threading.Tasks.Task.FromResult(TacSocketTransport.TooLarge); }
+        if (Encoding.UTF8.GetByteCount(text) > TacSocketTransport.MessageLimit) return System.Threading.Tasks.Task.FromResult(TacSocketTransport.TooLarge);
+        return TacSocketTransport.Send(owner, "{\"client\":" + Encode(client) + ",\"message\":" + text + "}");
+    }
+
+    private static string LiveSocketOwner()
+    {
+        var owner = EventOwner();
+        var live = owner != null && !owner.Disposed && Activations.TryGetValue(owner.Owner, out var current) && current == owner;
+        return live ? owner.Owner : null;
+    }
+}

@@ -57,6 +57,7 @@ public sealed class TacMember
     public Func<object, object> Listen;
     public bool Destroy;
     public Action Lifecycle;
+    public JsonNode Stream;
 
     public static TacMember Field(Func<object> read, Action<object> write = null) =>
         new TacMember { Read = read, Write = write };
@@ -83,6 +84,7 @@ public sealed class TacMember
         catch (Exception) { return null; }
     }
     public static TacMember Hook(bool destroy, Action invoke) => new() { Destroy = destroy, Lifecycle = invoke };
+    public static TacMember ClientStream(string description) => new() { Stream = Parse(description) };
 }
 
 public sealed class ApplicationEventPublisher
@@ -551,6 +553,8 @@ public partial class Tac
     private const int MemberRequestLimit = 65536;
     private static string TooLarge(string subject, int size, int limit) =>
         "{\"error\":" + Encode($"The {subject} is {size} bytes. The limit is {limit} bytes. Pass less data to the service.") + "}";
+    private static string DescribeStreams(List<string> streams) =>
+        streams.Count == 0 ? "" : ",\"streams\":[" + string.Join(",", streams) + "]";
     private static string DescribeTaskMethods(List<string> methods) =>
         methods.Count == 0 ? "" : ",\"asyncMethods\":" + Encode(methods);
     private static Dictionary<string, TacMember> CreateMembers(string capabilities, string service, System.Threading.CancellationTokenSource lifetime)
@@ -617,6 +621,7 @@ public partial class Tac
                 var fields = new List<string>();
                 var methods = new List<string>();
                 var listeners = new List<string>();
+                var streams = new List<string>();
                 var asynchronous = new List<string>();
                 foreach (var member in members)
                 {
@@ -624,9 +629,11 @@ public partial class Tac
                     else if (member.Value.Invoke != null) methods.Add(member.Key);
                     else if (member.Value.InvokeAsync != null) { methods.Add(member.Key); asynchronous.Add(member.Key); }
                     else if (member.Value.Listen != null) listeners.Add(DescribeListener(member.Key, member.Value));
+                    else if (member.Value.Stream != null) streams.Add(member.Value.Stream.ToJsonString());
                 }
                 return "{\"value\":{\"fields\":" + Encode(fields) + ",\"methods\":"
-                    + Encode(methods) + DescribeTaskMethods(asynchronous) + ",\"listeners\":[" + string.Join(",", listeners) + "]}}";
+                    + Encode(methods) + DescribeTaskMethods(asynchronous) + ",\"listeners\":[" + string.Join(",", listeners) + "]"
+                    + DescribeStreams(streams) + "}}";
             }
             var name = parsed?["name"]?.GetValue<string>();
             if (name == null || !members.TryGetValue(name, out var found))

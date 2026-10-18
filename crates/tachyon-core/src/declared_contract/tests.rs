@@ -435,6 +435,25 @@ fn a_go_socket_client_needs_no_context_and_gets_a_send_method() {
 }
 
 #[test]
+fn a_csharp_socket_client_needs_no_context_and_gets_a_send_method() {
+    let source = "[HTTPClient(\"/chat\")]\npublic interface ChatClient {\n    [SocketRequest]\n    void Receive(ChatMessage message);\n}\n";
+    let path = Path::new("client/remotes/ChatClient.cs");
+    let lowered = DeclaredContract::concrete(path, source, "tac").expect("lowered");
+    for part in [
+        "public class ChatClient {\n",
+        "    [SocketRequest]\n    public void Receive(ChatMessage message) {}\n",
+        "    public System.Threading.Tasks.Task Send(object message) => BehaviorBrowserSocket.Send(\"ChatClient\", message);\n}",
+    ] {
+        assert!(lowered.contains(part), "{part:?}:\n{lowered}");
+    }
+    assert!(!lowered.contains("BehaviorContext"), "{lowered}");
+    let stream = source.replace("SocketRequest", "StreamRequest");
+    let lowered = DeclaredContract::concrete(path, &stream, "tac").expect("lowered");
+    assert!(!lowered.contains("Send("), "{lowered}");
+    assert!(!lowered.contains("BehaviorContext"), "{lowered}");
+}
+
+#[test]
 fn tac_browser_clients_stay_as_written() {
     let source = Samples::CONTRACTS[10].1;
     assert!(

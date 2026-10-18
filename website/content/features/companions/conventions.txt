@@ -14,5 +14,5 @@ Spring has the same ideas: Service, Scope, lifecycle, ApplicationEventPublisher
 and named resources, through Jakarta annotations. Tachyon uses plain English
 names for them (ADR 0047). The browser resource contracts are Tachyon-specific.
 An OnEvent listener for a Topic model opens the topic stream itself;
-StreamRequest on an HTTPClient method (JavaScript, TypeScript and Go) reads
+StreamRequest on an HTTPClient method (JavaScript, TypeScript, Go and C#) reads
 any other stream.

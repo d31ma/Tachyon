@@ -500,3 +500,43 @@ second, aborts every pending fetch, starts no new one, runs both `OnStop`
 hooks before any woken call, and settles each call with `CANCELLED`. Before
 the change every standard-Go case hung past 30 seconds, and under TinyGo the
 "asks again" cases started fetches that were never aborted.
+
+## C# streams and sockets — 2026-10-17
+
+A C# HTTPClient interface method may carry `[StreamRequest]` or
+`[SocketRequest]`, as in Go. The method takes one parameter whose model type
+says what each message holds, for example `void Receive(Models.Tick tick);`,
+and returns nothing. The generated client keeps an empty method. A C# client
+with only stream or socket methods needs no Setup: it has no behavior context,
+and the browser Service factory creates it with `new TicksClient()`.
+
+The page's JavaScript still holds the connection, through the same event bus
+and the same page-shell entries as Go. A browser C# service that keeps the
+client in a `[Needs]` field gets one `TacMember.ClientStream` entry for each
+stream or socket method, and its `init` answer lists them as `streams` next to
+its listeners. A C# service that does not hold the client opens nothing, and
+the build leaves an unheld stream-only client out of that service's
+namespace. The limits are the ones of ADR 0058, ADR 0060 and the Go section
+above, and a service holds at most 16 such methods through its clients.
+
+A socket client gets a generated `System.Threading.Tasks.Task Send(object
+message)`. It turns the message into JSON with the model codec, waits for the
+page through the `socketSend` import of the .NET runtime, and throws a
+`BehaviorError` whose `Code` is `HTTP_NETWORK` (for example, 16 messages
+already wait for the socket to open), `HTTP_MISSING` (no page or no live
+owner), `HTTP_BODY` (more than 64 KiB, or a value the codec cannot write) or
+`CANCELLED`. An asynchronous service method that awaits `Send` passes that
+code to the page, so the rejected promise carries it as `error.code`.
+
+A natively linked C# service has no page, so its build refuses a stream or
+socket client with `TY1405`. A C# test unit has no page either: `Send` throws
+`HTTP_MISSING` there.
+
+Evidence: `tac_web::csharp_stream_tests` builds two real C# services with the
+.NET wasm-tools workload and runs them under Node with the real event bus and
+fake `EventSource` and `WebSocket` classes, with the same checks as the Go
+test, and a list of the message model reaches the view as objects.
+`declared_contract::tests::a_csharp_socket_client_needs_no_context_and_gets_a_send_method`,
+`native::csharp_stream_clients::tests` and
+`native::csharp_browser_bindings_tests::csharp_socket_bindings_reach_only_namespaces_that_declare_the_socket_sender`
+cover the lowering, the stream entries, the native refusal and the binding.

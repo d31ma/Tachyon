@@ -154,3 +154,13 @@ client in a field; the Go service receives each message with `// @OnEvent`,
 and the generated `Send(message any) error` writes to the socket and returns
 an error code instead of a rejected promise. See ADR 0090, "Go streams and
 sockets". The other compiled Tac languages still refuse `@SocketRequest`.
+
+## Amendment (2026-10-17): C# socket clients
+
+`[SocketRequest]` is also written on a C# HTTPClient interface method. The
+page's event bus holds the `WebSocket` for the browser C# service that keeps
+the client in a `[Needs]` field; the service receives each message with
+`[OnEvent]`, and the generated `Task Send(object message)` writes to the socket
+and throws a `BehaviorError` with a code instead of rejecting a promise. A
+natively linked C# service refuses the client. See ADR 0090, "C# streams and
+sockets".

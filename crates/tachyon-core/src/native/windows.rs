@@ -100,7 +100,8 @@ impl WindowsHostGenerator {
         include_str!("browser/TacTaskAnswer.cs"),
         include_str!("browser/TacTaskInvocation.cs"),
         include_str!("browser/TacHttpTransport.cs"),
-        include_str!("browser/TacHttpInvocation.cs")
+        include_str!("browser/TacHttpInvocation.cs"),
+        include_str!("browser/TacSocketTransport.cs")
     );
     const CSHARP_COMPANION_USING: &str = "using System;\nusing System.Collections;\n\
                                       using System.Collections.Generic;\n\
@@ -158,7 +159,7 @@ impl WindowsHostGenerator {
 
     const CSHARP_WEB_ENTRY: &str = "public static partial class TacWeb\n{\n    \
     [JSExport]\n    public static string Invoke(string request)\n    {\n        \
-    Tac.WebEmit ??= Emit;\n        TacHttpTransport.Start ??= HttpStart;\n        TacHttpTransport.Answer ??= HttpAnswer;\n        TacHttpTransport.Cancel ??= HttpCancel;\n        TacWebHost.Ask ??= Web;\n        return Tac.Invoke(request);\n    }\n\n    \
+    Tac.WebEmit ??= Emit;\n        TacHttpTransport.Start ??= HttpStart;\n        TacHttpTransport.Answer ??= HttpAnswer;\n        TacHttpTransport.Cancel ??= HttpCancel;\n        TacSocketTransport.Send ??= SocketSend;\n        TacWebHost.Ask ??= Web;\n        return Tac.Invoke(request);\n    }\n\n    \
     [JSExport]\n    public static System.Threading.Tasks.Task<string> InvokeAsync(string request) => Tac.InvokeAsync(request);\n\n    \
     [JSImport(\"emit\", \"tachyon\")]\n    internal static partial void Emit(string payload);\n\n    \
     [JSImport(\"storage\", \"tachyon\")]\n    internal static partial string Storage(string request);\n\n    \
@@ -166,6 +167,7 @@ impl WindowsHostGenerator {
     [JSImport(\"httpStart\", \"tachyon\")]\n    internal static partial string HttpStart(string request);\n\n    \
     [JSImport(\"httpAnswer\", \"tachyon\")]\n    [return: JSMarshalAs<JSType.Promise<JSType.String>>]\n    internal static partial System.Threading.Tasks.Task<string> HttpAnswer(string ticket);\n\n    \
     [JSImport(\"httpCancel\", \"tachyon\")]\n    internal static partial void HttpCancel(string ticket);\n\n    \
+    [JSImport(\"socketSend\", \"tachyon\")]\n    [return: JSMarshalAs<JSType.Promise<JSType.String>>]\n    internal static partial System.Threading.Tasks.Task<string> SocketSend(string owner, string request);\n\n    \
     public static void Main() { }\n}\n";
 }
 

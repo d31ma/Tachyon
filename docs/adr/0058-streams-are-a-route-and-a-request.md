@@ -133,3 +133,11 @@ the client in a field declares the stream, the page's event bus opens it with
 the same rules, and the Go service receives each message with `// @OnEvent`
 on a method whose parameter is the message model. See ADR 0090, "Go streams
 and sockets". The other compiled Tac languages still refuse `@StreamRequest`.
+
+## Amendment (2026-10-17): C# stream clients
+
+`[StreamRequest]` is also written on a C# HTTPClient interface method. The
+page's JavaScript holds the `EventSource` for the browser C# service that keeps
+the client in a `[Needs]` field, as for Go, and the service receives each
+message with `[OnEvent]`. A natively linked C# service refuses the client. See
+ADR 0090, "C# streams and sockets".

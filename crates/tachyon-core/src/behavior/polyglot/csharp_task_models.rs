@@ -21,15 +21,26 @@ impl CsharpTaskModels {
     }
 
     fn prepared(path: &Path, source: &str, models: &ModelTable) -> Result<Option<String>, Failure> {
-        let rewritten = crate::behavior::HttpClientSource::rewrite(path, source)?
-            .unwrap_or_else(|| source.to_owned());
-        let roles = crate::behavior::ServiceRoles::read(path, &rewritten)?.source;
-        super::prepare(path, &roles, "tac")?
+        let rewritten = crate::behavior::HttpClientSource::rewrite(path, source)?;
+        let written = rewritten.as_deref().unwrap_or(source);
+        let roles = crate::behavior::ServiceRoles::read(path, written)?.source;
+        let lowered = super::prepare(path, &roles, "tac")?
             .map(|prepared| {
                 Self::lower_prepared(prepared, models)
                     .map_err(|message| super::module_failure(path, source, message))
             })
-            .transpose()
+            .transpose()?;
+        lowered.map_or_else(
+            || Self::unheld_streams(path, source, rewritten.is_some()),
+            |text| Ok(Some(text)),
+        )
+    }
+
+    fn unheld_streams(path: &Path, source: &str, clients: bool) -> Result<Option<String>, Failure> {
+        if !clients {
+            return Ok(None);
+        }
+        crate::behavior::HttpClientSource::without_clients(path, source)
     }
 
     fn lower_prepared(prepared: Prepared, models: &ModelTable) -> Result<String, String> {

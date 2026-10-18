@@ -50,6 +50,13 @@ impl HttpClientSource {
         source: &str,
         class: &str,
     ) -> Result<Option<String>, Failure> {
+        Ok(Self::classes_in(path, source)?
+            .into_iter()
+            .find(|client| client.name == class)
+            .map(|client| client.path))
+    }
+
+    fn classes_in(path: &Path, source: &str) -> Result<Vec<ClientClass>, Failure> {
         let extension = path
             .extension()
             .and_then(|value| value.to_str())
@@ -62,11 +69,7 @@ impl HttpClientSource {
             code: &code,
             extension,
         };
-        let classes = input.classes(&input.marker_lines())?;
-        Ok(classes
-            .into_iter()
-            .find(|client| client.name == class)
-            .map(|client| client.path))
+        input.classes(&input.marker_lines())
     }
 
     pub(crate) fn rewrite(path: &Path, source: &str) -> Result<Option<String>, Failure> {
@@ -109,6 +112,17 @@ impl HttpClientSource {
             edits.extend(request.blanks);
         }
         Ok(Some(Self::apply(source, edits)))
+    }
+
+    pub(crate) fn without_clients(path: &Path, source: &str) -> Result<Option<String>, Failure> {
+        let edits: Vec<(Range<usize>, String)> = Self::classes_in(path, source)?
+            .iter()
+            .map(|class| {
+                let end = (class.body.end + 1).min(source.len());
+                (class.marker.start..end, String::new())
+            })
+            .collect();
+        Ok((!edits.is_empty()).then(|| Self::apply(source, edits)))
     }
 
     fn apply(source: &str, mut edits: Vec<(Range<usize>, String)>) -> String {

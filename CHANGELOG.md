@@ -10,6 +10,14 @@ machine contracts have their own, independent major versions.
 
 ### Added
 
+- A C# Tac `@HTTPClient` interface method may carry `[StreamRequest]` or
+  `[SocketRequest]`. The page's event bus holds the stream or socket for the
+  browser C# service that keeps the client in a `[Needs]` field, with the
+  same rules as JavaScript and Go, and the service receives each message
+  with `[OnEvent]` on a method whose parameter is the message model. A socket
+  client gets `Task Send(object message)`, which throws a `BehaviorError`
+  with a code such as `HTTP_NETWORK`. A natively linked C# service refuses
+  these clients (ADR 0058, ADR 0060 and ADR 0090 amendments).
 - C++ Tac test units can now replace and answer what a service needs. A
   `[[Fake]] GreetingClient greetingClient;` field reaches the `[[Needs]]`
   fields of the service that `construct<CounterService>()` makes. A static

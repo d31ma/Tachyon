@@ -1,4 +1,5 @@
 use super::csharp_browser_factory::CsharpBrowserFactory;
+use super::csharp_stream_clients::CsharpStreamClients;
 use crate::Failure;
 use crate::annotation_layout::NativeWebApis;
 use crate::project::NativeCompanion;
@@ -235,7 +236,9 @@ fn lowered_body(
         (relative, &models.assembled(relative, authored)?),
         events.as_ref(),
     )?;
-    let prepared = super::events::prepare(language, authored, events.as_ref(), &identity)?;
+    let streams = CsharpStreamClients::take(item, language, events.as_mut(), &identity)?;
+    let mut prepared = super::events::prepare(language, authored, events.as_ref(), &identity)?;
+    prepared.entries.push_str(&streams);
     let (native_source, native_fields) =
         native_service(language, item, &prepared.source, &identity);
     let authored = native_source.as_str();

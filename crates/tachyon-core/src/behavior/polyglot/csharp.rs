@@ -70,7 +70,8 @@ pub(super) fn runtime(
         include_str!("csharp_runtime.cs"),
         include_str!("csharp_browser_http/BehaviorBrowserHttp.cs"),
         include_str!("csharp_browser_http/BehaviorBrowserHttpAdapter.cs"),
-        include_str!("csharp_browser_http/BehaviorHttpRevalidation.cs")
+        include_str!("csharp_browser_http/BehaviorHttpRevalidation.cs"),
+        include_str!("csharp_browser_http/BehaviorBrowserSocket.cs")
     )
     .replace("__TAC_BEHAVIOR_MODULE__", &quote(module_id))
     .replace("__TAC_BEHAVIOR_ENVIRONMENT__", &quote(environment))

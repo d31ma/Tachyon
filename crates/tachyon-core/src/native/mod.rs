@@ -209,6 +209,7 @@ mod csharp_browser_client_tests;
 mod csharp_browser_factory;
 #[cfg(test)]
 mod csharp_page_lifetime_tests;
+mod csharp_stream_clients;
 mod csharp_task_inventory;
 
 #[cfg(test)]
