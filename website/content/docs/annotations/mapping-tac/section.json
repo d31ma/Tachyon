@@ -2,7 +2,7 @@
   "heading": "Mapping: Tac",
   "axis": "language",
   "summary": "Converter signatures generate mappings from a literal JSON field plan or from declared source and target model types. Explicit fields override inferred same-named model fields.",
-  "body": "Select a language tab and copy the page, the component view and the two role files. JavaScript, TypeScript and Dart bundle for the web. Go, F#, Java, Ruby and Lua bundle for the web as WebAssembly. Swift, Kotlin, C# and Rust stage their native hosts. The view reads {catalog.title} from the service. A view reads its services and the built-in `data` and `page` roots, nothing else (ADR 0036). The browser services ask for the converter with Needs: a Needs field, a `#[Needs]` `attr_reader` in Ruby, a `-- @Needs` field in Lua, or a constructor parameter in F#. A converter needs no behavior context and no Setup, so Tachyon builds it and the service only maps. The Swift, Kotlin, C# and Rust services carry the Service marker, like every class in client/services (TY1363), and only show the title. The compiler finds the annotated converter file and adds it to the same compile unit. Lua writes the converter as a table with an empty method under `-- @Converter` and `-- @Convert(...)`. Python has no tab here, because a Python service cannot ask for a converter yet: a Python Needs field must name a Python service or Helper, and the build stops with TY1605.\n\nThe annotation and its options are the same as in Yon. The converter is the same contract too, with a protocol in Swift, and a method body fails the build with TY1308. The previous section runs them in a full example. Only the realm is different. The role folder is client/converters (ADR 0031). A mapping reaches no adapter and needs no authorization, because it reads only the argument that it was given. It is the only data annotation that cannot leave the running process. Tac stays client-rendered. It uses only public TAC_ configuration, never private Yon credentials.\n\nTyped model signatures may omit Convert: Tachyon infers exact same-named target fields from models in the realm models folder and projects nested models and lists. Explicit Convert fields override their named targets; missing or incompatible target fields fail the build. JavaScript uses JSDoc parameter, return and typedef model types. JSON-value signatures keep the complete literal field plan shown here. In the page, a converter runs in JavaScript, in TypeScript and in the WebAssembly of each compiled service language. The next section shows converters with typed models. C++ has no tab here, because the build refuses Converter in C++ Tac code with TY1308 (ADR 0099).",
+  "body": "Select a language tab and copy the page, the component view and the two role files. JavaScript, TypeScript and Dart bundle for the web. Go, F#, Java, Ruby and Lua bundle for the web as WebAssembly. Swift, Kotlin, C# and Rust stage their native hosts. The view reads {catalog.title} from the service. A view reads its services and the built-in `data` and `page` roots, nothing else (ADR 0036). The browser services ask for the converter with Needs: a Needs field, a `#[Needs]` `attr_reader` in Ruby, a `-- @Needs` field in Lua, or a constructor parameter in F#. A converter needs no behavior context and no Setup, so Tachyon builds it and the service only maps. The Swift, Kotlin, C# and Rust services carry the Service marker, like every class in client/services (TY1363), and only show the title. The compiler finds the annotated converter file and adds it to the same compile unit. Lua writes the converter as a table with an empty method under `-- @Converter` and `-- @Convert(...)`. Python has no tab here, because a Python service cannot ask for a converter yet: a Python Needs field must name a Python service or Helper, and the build stops with TY1605.\n\nThe annotation and its options are the same as in Yon. The converter is the same contract too, with a protocol in Swift, and a method body fails the build with TY1308. The previous section runs them in a full example. Only the realm is different. The role folder is client/converters (ADR 0031). A mapping reaches no adapter and needs no authorization, because it reads only the argument that it was given. It is the only data annotation that cannot leave the running process. Tac stays client-rendered. It uses only public TAC_ configuration, never private Yon credentials.\n\nTyped model signatures may omit Convert: Tachyon infers exact same-named target fields from models in the realm models folder and projects nested models and lists. Explicit Convert fields override their named targets; missing or incompatible target fields fail the build. JavaScript uses JSDoc parameter, return and typedef model types. JSON-value signatures keep the complete literal field plan shown here. In the page, a converter runs in JavaScript, in TypeScript and in the WebAssembly of each compiled service language. The next section shows converters with typed models.",
   "files": [
     {
       "name": "client/pages/tac.html",
@@ -158,6 +158,18 @@
       "name": "client/services/CatalogService.lua",
       "code": {
         "file": "client/services/CatalogService.lua"
+      }
+    },
+    {
+      "name": "client/converters/ProductConverter.hpp",
+      "code": {
+        "file": "client/converters/ProductConverter.hpp"
+      }
+    },
+    {
+      "name": "client/services/CatalogService.hpp",
+      "code": {
+        "file": "client/services/CatalogService.hpp"
       }
     }
   ],

@@ -2,7 +2,7 @@
   "heading": "Validation: Tac",
   "axis": "language",
   "summary": "The same seven markers work in Tac, on a service instead of a controller. The data transfer object (DTO) that `Check` names is a model: a data class in its own file, `client/models/OrderInput.<ext>` (ADR 0092). Discovery composes its rules into the service that it protects (ADR 0044), and the model itself compiles once, without its markers. A service reaches it the way the language reaches any model: C# and F# open `Models`, Rust uses `crate::models::OrderInput`, Kotlin imports `models.OrderInput` and Dart imports `models/OrderInput.dart`; Swift, Go and Ruby need no import. A Swift model is a struct, and a Rust model and its fields are `pub`. JavaScript, TypeScript and Dart keep Service without an import, as their Yon services do. The compiled languages mark the service with Service too: the build refuses a service in client/services without its marker with TY1363. Swift and C# take checked parameters as BehaviorJSON, Rust and Go take them as BehaviorValue, and Java takes them as Object, as its Yon service does; Check names the class, as in Yon. Tac validation protects only the user experience (UX). It is not authorization, so Yon must validate the same payload again.",
-  "body": "Lua has no tab here, because the build refuses Check in Lua Tac code with TY1308. Python has no tab either: Python Tac does not read a Checked model from client/models yet, so the build stops a Python Check with TY1308. C++ has no tab here, because the build refuses Check in C++ Tac code with TY1308 (ADR 0099).",
+  "body": "Lua has no tab here, because the build refuses Check in Lua Tac code with TY1308. Python has no tab either: Python Tac does not read a Checked model from client/models yet, so the build stops a Python Check with TY1308.",
   "files": [
     {
       "name": "client/pages/tac.html",
@@ -146,6 +146,18 @@
       "name": "client/models/OrderInput.rb",
       "code": {
         "file": "client/models/OrderInput.rb"
+      }
+    },
+    {
+      "name": "client/services/OrderService.hpp",
+      "code": {
+        "file": "client/services/OrderService.hpp"
+      }
+    },
+    {
+      "name": "client/models/OrderInput.hpp",
+      "code": {
+        "file": "client/models/OrderInput.hpp"
       }
     }
   ],

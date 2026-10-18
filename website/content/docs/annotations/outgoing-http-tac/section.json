@@ -202,5 +202,5 @@
       }
     }
   ],
-  "body": "Python and Lua have no tab here, because the build refuses HTTPClient in Python and Lua Tac code with TY1308. C++ has an HTTPClient but no tab here, because the build refuses CacheSettings and Setup in C++ Tac code with TY1308 (ADR 0099)."
+  "body": "Python and Lua have no tab here, because the build refuses HTTPClient in Python and Lua Tac code with TY1308. C++ has an HTTPClient but no tab here, because the build refuses Setup in C++ Tac code with TY1308, and a C++ HTTPClient method cannot carry the cache markers yet (ADR 0099)."
 }

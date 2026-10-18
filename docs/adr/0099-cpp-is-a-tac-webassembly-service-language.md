@@ -63,12 +63,11 @@ header-only types, shaped like .NET's `System.Text.Json.Nodes` and
   `[[maybe_unused]]`, ...) and vendor attributes (`[[gnu::...]]`) pass
   through.
 - The rule table lists C++ (`hpp`) as a Tac language and is the one place
-  that decides where each marker works. Today C++ reaches `Service`, `Needs`,
-  `OnEvent`, `OnStart`, `OnStop`, `Order`, `InBackground`, `Test`,
-  `TestSetup`, `Fake`, `ValueSource`, `HTTPClient`, the request markers and
-  the request-part markers. Every other marker fails with the rule's own code (most often
-  `TY1308`) and the message names the languages where it works and says that
-  C++ gets it in a later step. The same shared checker (`PlacedMarker`) reports
+  that decides where each marker works. Today C++ reaches every Tac marker
+  except `Setup`, `WhenProfile`, `WhenSetting`, `UseProfiles`,
+  `TestSettings`, `StreamRequest` and `SocketRequest`. Those fail with the
+  rule's own code (most often `TY1308`), and the message names the languages
+  where they work. The same shared checker (`PlacedMarker`) reports
   a wrong target, missing or extra arguments, a missing partner, a clash and a
   class requirement, in the C++ spelling. A `[[Needs]]` field whose type is
   neither a C++ service nor a C++ HTTP client fails with `TY1372`.
@@ -225,6 +224,56 @@ header-only types, shaped like .NET's `System.Text.Json.Nodes` and
   is not `std::optional`, and a value of another kind fail the build and
   name the field. A service gets the converter with `[[Needs]]`.
 
+### Helpers, topics and behaviors
+
+- A `[[Helper]]` class in `client/helpers` is a plain C++ class that a
+  service gets with `[[Needs]]`, like another service.
+- A `[[Topic]]` model in `client/models` gives each page listener of that
+  model its topic stream, as in the other WebAssembly Tac languages.
+- `[[Cached]]`, `[[UpdateCache]]`, `[[ClearCache]]` (with `[[CacheKey]]`
+  parameters and `[[CacheSettings]]` on the class), `[[Retry]]`,
+  `[[MaxAtOnce]]`, `[[AllOrNothing]]` and a `[[PageDefaults]]` parameter go on
+  a synchronous instance method with a body that returns a value or `void`.
+  Tachyon wraps the body: the shared planner checks the options, and a small
+  C++ runtime runs the policy and keeps cached values in the page's built-in
+  cache through the storage host. A `Task` method and an `[[HTTPClient]]`
+  method cannot carry these markers yet, because the policies run around a
+  synchronous body.
+
+### Stores
+
+- `struct [[Entity({"adapter":"indexeddb"}), Table("notes")]] NoteEntity` in
+  `client/entities` (or `client/models`) has exactly one public `[[Id]]`
+  field. `class [[Store(NoteEntity)]] NoteStore : public
+  tachyon::Repository<NoteEntity, std::string>` in `client/stores` declares
+  query methods without a body, such as
+  `std::vector<NoteEntity> findByText(const std::string& text);`, and
+  `[[Query(...)]]` for the explicit form. The shared query planner reads the
+  method names, so a C++ Store builds the same plans as the other languages.
+  Tachyon writes each method, and the `Repository` base gives `findById`,
+  `findAll`, `deleteById` and `save`. The return type
+  must fit the query: `std::vector<T>` for find, `std::optional<T>` for
+  findOne, `bool` for exists and a whole number for count and delete.
+- The rows live in the browser's IndexedDB through the page's entity mirror.
+  `[[AllOrNothing]]` on a service method collects the writes and commits them
+  in one transaction, or rolls them back when the method throws.
+- Only the `"indexeddb"` adapter builds. Another adapter needs a C++
+  `[[Setup]]`, which is still pending, so it fails with `TY1372`. A project
+  has one Store for each Entity, and a Store method has one name.
+
+### Settings
+
+- `struct [[Settings({"prefix":"TAC_SHOP_"})]] ShopSettings` binds its public
+  fields from `TAC_` values; `[[Min]]` and `[[Max]]` bound a number field and
+  an initializer is its default. `[[Setting("${tac.app.title:Shop}")]]` binds
+  one field of a model from the application configuration.
+- C++ has no `[[Setup]]` yet, so a service binds an explicit snapshot:
+  `Behaviors::properties<ShopSettings>(values)` from a
+  `std::map<std::string, std::string>` or from the application `JsonNode`,
+  and `Behaviors::values<Model>(application)`. The shared rules check the
+  plan at build time and the same limits at run time; a bad value fails with
+  the `configuration-properties` code.
+
 ### Test units
 
 - A test unit is `client/tests/<Name>Test.hpp` with one class marked
@@ -287,12 +336,17 @@ header-only types, shaped like .NET's `System.Text.Json.Nodes` and
 
 - Yon C++ handlers (controllers, routes, middleware, error handlers, sockets,
   relays, Yon test units), compiled per handler with clang++.
-- `@Cached` / `@ClearCache` / `@UpdateCache` on HTTP clients, `@Store`, browser
-  storage markers (`@LocalState`, `@SessionState`), the curated web APIs
-  (Clock, Preferences, ...), behaviors (`@Retry`, ...), `@Lifetime`, `@Named`,
-  `@NeedsAll`, converters, helpers, topics, streams and sockets. The rule table
-  refuses each of them for C++ (most with `TY1308`, naming ADR 0099) until it
-  lands.
+- A C++ `[[Setup]]` with a behavior context, and with it `[[WhenProfile]]`,
+  `[[WhenSetting]]`, `[[UseProfiles]]` and `[[TestSettings]]`, Store adapters
+  other than `"indexeddb"`, and the behavior markers on `Task` and
+  `[[HTTPClient]]` methods. The rule table refuses these for C++ until they
+  land.
+- The curated web APIs (Clock, Preferences, ...) for C++ `[[Needs]]` fields.
+- `[[StreamRequest]]` and `[[SocketRequest]]` stay JavaScript, TypeScript and
+  Go only, as in the other WebAssembly languages; a C++ service receives the
+  messages with `[[OnEvent]]`.
+- Lifetime `"application"` stays refused: a C++ service runs in the page and
+  has no native host.
 - `ty migrate` rewriting the legacy C++ Yon handlers.
 
 ## Consequences

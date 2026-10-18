@@ -1682,7 +1682,11 @@ such as `[[tachyon::Service]]` and unknown PascalCase names fail with
 `TY1371`; standard attributes such as `[[nodiscard]]` and vendor attributes
 such as `[[gnu::cold]]` pass through. Tachyon removes its markers before
 `em++` compiles, so no line number changes. C++ is a Tac language only for
-now; the rule table lists where each marker works in C++.
+now. Behavior markers go on synchronous service methods with a body, and a
+C++ Store keeps its rows in IndexedDB. C++ has no `[[Setup]]` yet, so
+`Behaviors::properties<T>(...)` and `Behaviors::values<T>(...)` bind an
+explicit configuration snapshot. The rule table lists where each marker
+works in C++.
 
 ## Verification surfaces
 

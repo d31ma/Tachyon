@@ -1,7 +1,7 @@
 {
   "id": "persisted",
   "title": "Saved service fields",
-  "summary": "Tachyon restores a service field marked `@SessionState` from `sessionStorage`. This works only for the current tab. It restores a field marked `@LocalState` from `localStorage`, so the value is shared across tabs. The value in the declaration is the default. Tachyon writes the field on every assignment, as JSON of at most 64 KiB, under a key named after the page, the service and the field. A field has one of the two markers, never both, and never together with `Needs`. The old field prefixes `$name` and `$$name` are refused; `ty migrate fix --write` changes them to the markers, and a value saved under the old key moves to the new key once. Python has no tab here, because the Python runtime has no browser storage adapter, so the build refuses `@SessionState` and `@LocalState` in Python Tac code with `TY1308` (ADR 0093). Lua has no tab here, because the build refuses `@SessionState` and `@LocalState` in Lua Tac code with `TY1308`. C++ has no tab here, because the build refuses SessionState in C++ Tac code with TY1308 (ADR 0099).",
+  "summary": "Tachyon restores a service field marked `@SessionState` from `sessionStorage`. This works only for the current tab. It restores a field marked `@LocalState` from `localStorage`, so the value is shared across tabs. The value in the declaration is the default. Tachyon writes the field on every assignment, as JSON of at most 64 KiB, under a key named after the page, the service and the field. A field has one of the two markers, never both, and never together with `Needs`. The old field prefixes `$name` and `$$name` are refused; `ty migrate fix --write` changes them to the markers, and a value saved under the old key moves to the new key once. Python has no tab here, because the Python runtime has no browser storage adapter, so the build refuses `@SessionState` and `@LocalState` in Python Tac code with `TY1308` (ADR 0093). Lua has no tab here, because the build refuses `@SessionState` and `@LocalState` in Lua Tac code with `TY1308`.",
   "notApplicable": ["py"],
   "group": "Browser storage",
   "files": [
@@ -56,6 +56,10 @@
     {
       "name": "client/components/draft/editor/tac.html",
       "code": { "file": "client/components/draft/editor/tac.html" }
+    },
+    {
+      "name": "client/services/EditorService.hpp",
+      "code": { "file": "client/services/EditorService.hpp" }
     }
   ],
   "verify": "tac"

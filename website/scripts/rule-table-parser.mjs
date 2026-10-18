@@ -5,6 +5,7 @@
 
 export class RuleTableParser {
   static listConstant = /const (\w+): &'static \[&'static str\]\s*=\s*&\[([^\]]*)\]/g
+  static listAlias = /const (\w+): &'static \[&'static str\]\s*=\s*Self::(\w+);/g
   static quoted = /"([^"]*)"/g
   static ruleList = /const \w+: &'static \[Rule\] = &\[([\s\S]*?)\n {4}\];/g
   static ruleStart = /Rule::(?=new\(|retired\()/
@@ -43,6 +44,7 @@ export class RuleTableParser {
   static listConstants(source) {
     const lists = new Map()
     for (const match of source.matchAll(RuleTableParser.listConstant)) lists.set(match[1], RuleTableParser.quotedWords(match[2]))
+    for (const match of source.matchAll(RuleTableParser.listAlias)) lists.set(match[1], lists.get(match[2]) ?? [])
     return lists
   }
 
