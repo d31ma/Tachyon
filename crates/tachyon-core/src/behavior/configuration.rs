@@ -282,6 +282,20 @@ fn settings_type(
             &["float32", "float64"],
             &["bool"],
         ),
+        "hpp" => (
+            &["std::string"],
+            &[
+                "int",
+                "long",
+                "long long",
+                "unsigned",
+                "std::int32_t",
+                "std::int64_t",
+                "std::size_t",
+            ],
+            &["double", "float"],
+            &["bool"],
+        ),
         _ => return None,
     };
     if texts.contains(&written) {

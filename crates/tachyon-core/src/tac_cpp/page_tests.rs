@@ -609,3 +609,72 @@ fn a_store_saves_and_finds_entities_and_all_or_nothing_rolls_back() {
     assert_eq!(values[12], json!(false), "{answers:?}");
     assert_eq!(values[13], json!(0), "{answers:?}");
 }
+
+#[test]
+fn settings_and_setting_bind_an_explicit_snapshot() {
+    if !PageProject::has_compiler() {
+        return;
+    }
+    let root = tempfile::tempdir().expect("project");
+    PageProject::write(
+        root.path(),
+        &[
+            (
+                "client/models/ShopSettings.hpp",
+                "struct [[Settings({\"prefix\":\"TAC_SHOP_\",\"names\":{\"pageSize\":\"SIZE\"}})]] ShopSettings {\n    [[Min(1)]] [[Max(50)]] int pageSize = 20;\n    std::string title = \"Shop\";\n    bool open = true;\n};\n",
+            ),
+            (
+                "client/models/Endpoint.hpp",
+                "struct Endpoint {\n    [[Setting(\"${tac.shop.host:localhost}\")]] std::string host;\n    [[Setting({\"path\":\"tac.shop.retries\",\"type\":\"integer\",\"default\":2,\"min\":0,\"max\":5})]] int retries = 0;\n    std::string untouched = \"kept\";\n};\n",
+            ),
+            (
+                "client/services/ShopService.hpp",
+                "class [[Service]] ShopService {\npublic:\n    int size(tachyon::json::JsonNode application) { return tachyon::Behaviors::properties<ShopSettings>(application).pageSize; }\n    std::string title(std::string size) { return tachyon::Behaviors::properties<ShopSettings>(std::map<std::string, std::string>{{\"TAC_SHOP_SIZE\", size}}).title; }\n    std::string endpoint(tachyon::json::JsonNode application) { Endpoint bound = tachyon::Behaviors::values<Endpoint>(application); return bound.host + \":\" + std::to_string(bound.retries) + \":\" + bound.untouched; }\n};\n",
+            ),
+        ],
+    );
+    let services = [("shop", "ShopService")];
+    let answers = PageProject::answers(
+        root.path(),
+        &services,
+        &[
+            PageProject::init("shop", 1, &json!({})),
+            PageProject::call("shop", 1, "size", &json!([{"tac": {"shop": {"size": 30}}}])),
+            PageProject::call("shop", 1, "size", &json!([{"tac": {}}])),
+            PageProject::call("shop", 1, "size", &json!([{"tac": {"shop": {"size": 99}}}])),
+            PageProject::call("shop", 1, "title", &json!(["7"])),
+            PageProject::call("shop", 1, "title", &json!(["7.5"])),
+            PageProject::call(
+                "shop",
+                1,
+                "endpoint",
+                &json!([{"tac": {"shop": {"host": "example.org"}}}]),
+            ),
+            PageProject::call(
+                "shop",
+                1,
+                "endpoint",
+                &json!([{"tac": {"shop": {"retries": 9}}}]),
+            ),
+        ],
+    );
+    let values: Vec<Value> = answers
+        .iter()
+        .map(|answer| answer["value"].clone())
+        .collect();
+    assert_eq!(values[1..3], [json!(30), json!(20)], "{answers:?}");
+    assert_eq!(
+        answers[3]["code"], "configuration-properties",
+        "{answers:?}"
+    );
+    assert_eq!(values[4], json!("Shop"), "{answers:?}");
+    assert_eq!(
+        answers[5]["code"], "configuration-properties",
+        "{answers:?}"
+    );
+    assert_eq!(values[6], json!("example.org:2:kept"), "{answers:?}");
+    assert_eq!(
+        answers[7]["code"], "configuration-properties",
+        "{answers:?}"
+    );
+}

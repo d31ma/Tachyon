@@ -655,7 +655,8 @@ impl AnnotationRules {
             Self::TYPE,
             "fills the class's fields from the settings whose names share a prefix",
         )
-        .needs_arguments(),
+        .needs_arguments()
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new(
             "WhenProfile",
             Self::TYPE,
@@ -675,7 +676,8 @@ impl AnnotationRules {
             Self::FIELD,
             "fills this field with one setting value",
         )
-        .needs_arguments(),
+        .needs_arguments()
+        .reach(Self::TAC_BEHAVIOR_AND_CPP, Self::YON_BEHAVIOR),
         Rule::new(
             "Checked",
             Self::TYPE,

@@ -1,5 +1,6 @@
 use super::{
-    CppChecks, CppFailure, CppFile, CppFolder, CppLowering, CppMarkerCheck, CppMemberKind, CppStore,
+    CppChecks, CppFailure, CppFile, CppFolder, CppLowering, CppMarkerCheck, CppMemberKind,
+    CppSettings, CppStore,
 };
 use crate::Failure;
 use serde_json::Value;
@@ -10,6 +11,7 @@ pub(crate) struct CppModel {
     pub(crate) file: CppFile,
     pub(crate) path: PathBuf,
     pub(crate) entity: Option<Value>,
+    plans: String,
     source: String,
 }
 
@@ -37,7 +39,9 @@ impl CppModel {
             .then_some(())
             .ok_or_else(|| CppFailure::pending(relative, 0, Self::CLIENT_ONLY))?;
         CppMarkerCheck::check(relative, &file.class)?;
-        CppChecks::check_model(relative, &file.class)?;
+        if !CppSettings::is_settings(&file.class) {
+            CppChecks::check_model(relative, &file.class)?;
+        }
         let topic = file
             .class
             .markers
@@ -54,10 +58,12 @@ impl CppModel {
             return Err(CppFailure::unreadable(relative, at, Self::DESCRIBED_ALONE));
         }
         let entity = CppStore::entity(relative, source, &file.class)?;
+        let plans = CppSettings::plans(relative, source, &file.class)?;
         Ok(Self {
             file,
             path: relative.to_path_buf(),
             entity,
+            plans,
             source: source.to_owned(),
         })
     }
@@ -83,9 +89,10 @@ impl CppModel {
 
     pub(crate) fn codec(&self) -> String {
         format!(
-            "{}{}",
+            "{}{}{}",
             self.codec_text(),
-            CppChecks::specialization(&self.file.class)
+            CppChecks::specialization(&self.file.class),
+            self.plans
         )
     }
 

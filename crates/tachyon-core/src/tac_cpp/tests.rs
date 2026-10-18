@@ -829,3 +829,43 @@ fn a_store_and_its_entity_are_checked_when_tachyon_writes_the_queries() {
         assert!(failure.to_string().contains(expected), "{store}: {failure}");
     }
 }
+
+#[test]
+fn settings_models_follow_the_shared_settings_rules() {
+    for (source, expected) in [
+        (
+            "struct [[Settings({\"prefix\":\"APP_\"})]] ShopSettings {\n    int size = 20;\n};\n",
+            "Settings prefix must be a bounded TAC_/YON_ environment prefix",
+        ),
+        (
+            "struct [[Settings({\"prefix\":\"TAC_SHOP_\"}), Checked]] ShopSettings {\n    int size = 20;\n};\n",
+            "either [[Settings]] or [[Checked]]",
+        ),
+        (
+            "struct [[Settings({\"prefix\":\"TAC_SHOP_\"})]] ShopSettings {\n    std::vector<int> sizes;\n};\n",
+            "must be text, a whole number, a number or true/false",
+        ),
+        (
+            "struct [[Settings({\"prefix\":\"TAC_SHOP_\"})]] ShopSettings {\n    [[NotEmpty]] std::string title;\n};\n",
+            "takes only [[Min]] and [[Max]]",
+        ),
+        (
+            "struct [[Settings({\"prefix\":\"TAC_SHOP_\"})]] ShopSettings {\n    [[Min(30)]] int size = 20;\n};\n",
+            "its default must match its type and sit inside its @Min/@Max range",
+        ),
+        (
+            "struct ShopSettings {\n    [[Setting(\"${shop.size}\")]] int size = 0;\n};\n",
+            "Setting path must start with tac. or yon.",
+        ),
+    ] {
+        let Err(failure) =
+            super::CppModel::check(Path::new("client/models/ShopSettings.hpp"), source)
+        else {
+            panic!("{source} was accepted");
+        };
+        assert!(
+            failure.to_string().contains(expected),
+            "{source}: {failure}"
+        );
+    }
+}

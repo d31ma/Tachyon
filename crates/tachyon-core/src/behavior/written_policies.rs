@@ -18,6 +18,12 @@ pub(crate) struct WrittenQuery<'q> {
     pub(crate) page: Option<&'q Value>,
 }
 
+pub(crate) struct WrittenField<'f> {
+    pub(crate) name: &'f str,
+    pub(crate) type_source: &'f str,
+    pub(crate) initializer: Option<&'f str>,
+}
+
 pub(crate) struct WrittenPolicies<'a> {
     input: Input<'a>,
     language: &'a str,
@@ -101,6 +107,38 @@ impl<'a> WrittenPolicies<'a> {
             written.query,
             written.page,
         )
+    }
+
+    pub(crate) fn settings(
+        &self,
+        written: &WrittenMarker<'_>,
+        fields: &[WrittenField<'_>],
+        bounds: Map<String, Value>,
+    ) -> Result<Value, Failure> {
+        let marker = Self::marker(written);
+        let mut policies = Map::new();
+        policies.insert(
+            String::from("configurationProperties"),
+            super::configuration::properties(&self.input, &marker)?,
+        );
+        policies.insert(String::from("settingsBounds"), Value::Object(bounds));
+        let fields: Vec<super::configuration::SettingsField> = fields
+            .iter()
+            .map(|field| super::configuration::SettingsField {
+                name: field.name.to_owned(),
+                type_source: field.type_source.to_owned(),
+                initializer: field.initializer.map(str::to_owned),
+                is_static: false,
+            })
+            .collect();
+        super::configuration::derive(&self.input, written.at, &mut policies, &fields)?;
+        Ok(policies
+            .remove("configurationProperties")
+            .unwrap_or(Value::Null))
+    }
+
+    pub(crate) fn setting(&self, written: &WrittenMarker<'_>) -> Result<Value, Failure> {
+        super::configuration::value(&self.input, &Self::marker(written))
     }
 
     pub(crate) fn resolve_mutations(
