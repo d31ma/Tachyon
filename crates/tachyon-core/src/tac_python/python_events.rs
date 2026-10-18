@@ -1,5 +1,5 @@
 use crate::Failure;
-use crate::events::{EventListener, EventModule, EventType};
+use crate::events::{EventListener, EventMethod, EventModule, EventType};
 use crate::route_types::ModelTable;
 use serde_json::{Map, Value, json};
 use std::path::Path;
@@ -123,11 +123,18 @@ impl PythonEvents {
     }
 
     fn pending_module(module: &EventModule) -> bool {
-        module.types.iter().any(Self::pending_owner)
-            || module
-                .methods
-                .iter()
-                .any(|method| method.asynchronous && !Self::starts_owner(module, &method.name))
+        module.types.iter().any(Self::pending_owner) || Self::has_pending_method(module)
+    }
+
+    fn has_pending_method(module: &EventModule) -> bool {
+        module
+            .methods
+            .iter()
+            .any(|method| Self::pending_method(module, method))
+    }
+
+    fn pending_method(module: &EventModule, method: &EventMethod) -> bool {
+        method.asynchronous && !Self::starts_owner(module, &method.name)
     }
 
     fn starts_owner(module: &EventModule, method: &str) -> bool {

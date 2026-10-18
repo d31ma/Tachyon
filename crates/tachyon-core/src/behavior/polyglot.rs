@@ -61,6 +61,8 @@ pub(crate) use native_storage::NativeStorage;
 mod parser_tests;
 mod php;
 mod python;
+mod python_annotated_type;
+use python_annotated_type::PythonAnnotatedType;
 mod python_fields;
 use python_fields::PythonFields;
 mod python_members;

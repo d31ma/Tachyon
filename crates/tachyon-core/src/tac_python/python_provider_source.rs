@@ -30,11 +30,7 @@ impl PythonProviderSource {
         PythonBrowserApis::refuse(path, source)?;
         let roles = ServiceRoles::read(path, source)?;
         let plain = ServiceRoles::without_roles(path, source)?;
-        let members = if Self::contract(path) {
-            json!({ "fields": [], "methods": [], "constructor": [], "qualifiers": {} })
-        } else {
-            PythonMembers::read(path, &plain, &class)?
-        };
+        let members = Self::members(path, &plain, &class)?;
         let module = crate::events::extract(path, &plain, "tac")?;
         let events = PythonEvents::read(path, module, &class)?;
         let source = events.source().map_or(plain, str::to_owned);
@@ -47,6 +43,13 @@ impl PythonProviderSource {
             helper: path.starts_with("client/helpers"),
             events,
         })
+    }
+
+    fn members(path: &Path, plain: &str, class: &str) -> Result<Value, Failure> {
+        if Self::contract(path) {
+            return Ok(json!({ "fields": [], "methods": [], "constructor": [], "qualifiers": {} }));
+        }
+        PythonMembers::read(path, plain, class)
     }
 
     fn contract(path: &Path) -> bool {
