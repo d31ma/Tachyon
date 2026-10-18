@@ -33,6 +33,8 @@ impl<'a> ConcreteContract<'a> {
     const FUTURE: &'static str = "Future";
     const GO_FIELDS: [&'static str; 2] = ["struct{}", "struct {\n\tbehaviors *BehaviorContext\n}"];
     const RUBY: &'static str = "rb";
+    const DART: &'static str = "dart";
+    const DART_SEND: &'static str = "{indent}Future<void> Function(Object? message) _tachyonSocket = (message) async => throw StateError('HTTP_MISSING: only a browser page holds the socket');\n{indent}Future<void> send(Object? message) => _tachyonSocket(message);\n";
     const HELD: [&'static str; 2] = ["streamrequest", "socketrequest"];
     const SOCKET: [&'static str; 1] = ["socketrequest"];
     const GO_SEND: &'static str = "\nfunc ({receiver} *{owner}) Send(message any) error {\n\treturn behaviorSocketSend(\"{owner}\", message)\n}\n";
@@ -160,7 +162,21 @@ impl<'a> ConcreteContract<'a> {
         );
         edits.extend(self.context_edits(declaration, &members, needs_context));
         edits.extend(self.ruby_held_edit(declaration, &members, needs_context));
+        edits.extend(self.dart_send(declaration, &members));
         edits
+    }
+
+    fn dart_send(
+        &self,
+        declaration: &ContractDeclaration,
+        members: &[ContractMember],
+    ) -> Option<SourceEdit> {
+        let socket = members
+            .iter()
+            .any(|member| member.is_marked_with(&Self::SOCKET));
+        let wanted = [self.tac, self.form.language == Self::DART, socket] == [true, true, true];
+        let text = Self::DART_SEND.replace("{indent}", &self.indent(members));
+        wanted.then_some((declaration.close..declaration.close, text))
     }
 
     fn holds_in_ruby_page(&self) -> bool {
@@ -169,7 +185,8 @@ impl<'a> ConcreteContract<'a> {
 
     fn exchanged(&self, members: &[ContractMember]) -> Vec<ContractMember> {
         let rust_page = [self.tac, self.form.language == Self::RUST] == [true, true];
-        let pages = [self.holds_in_ruby_page(), rust_page];
+        let dart_page = [self.tac, self.form.language == Self::DART] == [true, true];
+        let pages = [self.holds_in_ruby_page(), rust_page, dart_page];
         let held_in_page = [pages.contains(&true), self.form.language == Self::GO].contains(&true);
         let held: [&[&str]; 2] = [&[], &Self::HELD];
         let held = held[usize::from(held_in_page)];

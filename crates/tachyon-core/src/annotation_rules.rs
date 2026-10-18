@@ -304,7 +304,7 @@ impl AnnotationRules {
     const YON_STREAM: &'static [&'static str] = &[
         "js", "ts", "py", "php", "kt", "cs", "fs", "dart", "rb", "lua", "go",
     ];
-    const TAC_STREAM: &'static [&'static str] = &["js", "ts", "go", "rb", "rs"];
+    const TAC_STREAM: &'static [&'static str] = &["js", "ts", "go", "rb", "rs", "dart"];
     const TAC_VALUE_SOURCE: &'static [&'static str] = &[
         "js", "ts", "rs", "kt", "cs", "go", "rb", "dart", "swift", "lua", "hpp",
     ];
@@ -924,7 +924,7 @@ impl AnnotationRules {
         .request()
         .instance()
         .reach(Self::TAC_STREAM, Self::NOWHERE)
-        .advice("The browser's JavaScript holds the stream, so write the @StreamRequest client in JavaScript, TypeScript, Go, Ruby or Rust. Each message is also published as a typed event, so a service in any Tac language receives it with @OnEvent on a method whose parameter is the message model"),
+        .advice("The browser's JavaScript holds the stream, so write the @StreamRequest client in JavaScript, TypeScript, Go, Ruby, Rust or Dart. Each message is also published as a typed event, so a service in any Tac language receives it with @OnEvent on a method whose parameter is the message model"),
         Rule::new(
             "StreamRoute",
             Self::METHOD,
@@ -940,7 +940,7 @@ impl AnnotationRules {
         .request()
         .instance()
         .reach(Self::TAC_STREAM, Self::NOWHERE)
-        .advice("The browser's JavaScript holds the socket, so write the @SocketRequest client in JavaScript, TypeScript, Go, Ruby or Rust. Each message is also published as a typed event, so a service in any Tac language receives it with @OnEvent on a method whose parameter is the message model"),
+        .advice("The browser's JavaScript holds the socket, so write the @SocketRequest client in JavaScript, TypeScript, Go, Ruby, Rust or Dart. Each message is also published as a typed event, so a service in any Tac language receives it with @OnEvent on a method whose parameter is the message model"),
         Rule::new(
             "SocketRoute",
             Self::TYPE,

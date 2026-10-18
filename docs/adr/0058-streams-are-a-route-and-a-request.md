@@ -148,3 +148,14 @@ page's JavaScript still holds the `EventSource` for the Rust service that
 keeps the client in a field, and the service receives each message with
 `#[OnEvent]`. See ADR 0090, "Rust streams and sockets". C#, F#, Dart, Swift,
 Kotlin, Java, Python, Lua and C++ still refuse `@StreamRequest`.
+
+## Amendment (2026-10-17): Dart stream clients
+
+`@StreamRequest` is also written on a Dart HTTPClient method, in the
+`abstract interface class` client. The page's JavaScript still holds the
+`EventSource`: the Dart service that keeps the client in a `@Needs` field
+declares the stream in its module's event plan, the page's event bus opens it
+with the same rules, and the Dart service receives each message with
+`@OnEvent` on a method whose parameter is the message model. See ADR 0090,
+"Dart streams and sockets". Go, Ruby and Rust clients are held the same way
+(see their amendments above).

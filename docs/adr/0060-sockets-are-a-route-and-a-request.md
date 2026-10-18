@@ -171,3 +171,13 @@ the generated `send(message).await` writes to the socket and returns a
 `BehaviorError` code instead of a rejected promise. See ADR 0090, "Rust
 streams and sockets". C#, F#, Dart, Swift, Kotlin, Java, Python, Lua and
 C++ still refuse `@SocketRequest`.
+
+## Amendment (2026-10-17): Dart socket clients
+
+`@SocketRequest` is also written on a Dart HTTPClient method. The page's
+event bus holds the `WebSocket` for the Dart service that keeps the client in
+a `@Needs` field; the Dart service receives each message with `@OnEvent`, and
+the generated `Future<void> send(Object? message)` writes to the socket and
+fails with a `TacSocketError` code. See ADR 0090, "Dart streams and
+sockets". Go, Ruby and Rust socket clients are held the same way (see
+their amendments above).

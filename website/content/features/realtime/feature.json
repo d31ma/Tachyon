@@ -1,7 +1,7 @@
 {
   "id": "realtime",
   "title": "Streaming controllers",
-  "summary": "StreamRoute marks a controller method that answers GET requests with a stream of server-sent events (SSE). The method produces many values, one at a time, with the language's own `yield` syntax, and its name starts with `stream`. It keeps the loop in a private generator method and only passes on that method's values. Tachyon sends each value as one limited event, and an end event when the method finishes. In the browser, StreamRequest on an HTTPClient method receives the stream. Tachyon opens it when a component first uses the client, opens it again after 1, 2, 4, 8 and 16 seconds when it fails (at most five tries in a row), and closes it with the component. Sixty seconds with no message also counts as a failure, so a silent stream is opened again. Each message is checked against the model type of the method's one parameter, passed to the method, and published as that model's event, so an OnEvent listener in any Tac language receives it. The StreamRequest client is JavaScript, TypeScript, Go, Ruby or Rust (a Rust client is a trait method such as `fn receive(&self, tick: Tick)`, held by the page for the Rust service that keeps it in a `#[Needs]` field). A Go client is an interface method such as `Receive(tick Tick)`; the page holds the stream for the Go service that keeps the client in a `// @Needs` field, and the service receives each message with `// @OnEvent`. Dart, Python, Lua, Swift, Kotlin, Java, C#, F# and C++ refuse StreamRequest with TY1308. A Lua stream method sends each value with `coroutine.yield`, and a Go stream method returns an `iter.Seq` whose function calls `yield`. On the server, Java, Groovy and Rust cannot stream, because they have no native generator, so they refuse StreamRoute with TY2015. Like every route, a stream says who may call it with `Public`, `SignedIn` or `Allow(Role)`.",
+  "summary": "StreamRoute marks a controller method that answers GET requests with a stream of server-sent events (SSE). The method produces many values, one at a time, with the language's own `yield` syntax, and its name starts with `stream`. It keeps the loop in a private generator method and only passes on that method's values. Tachyon sends each value as one limited event, and an end event when the method finishes. In the browser, StreamRequest on an HTTPClient method receives the stream. Tachyon opens it when a component first uses the client, opens it again after 1, 2, 4, 8 and 16 seconds when it fails (at most five tries in a row), and closes it with the component. Sixty seconds with no message also counts as a failure, so a silent stream is opened again. Each message is checked against the model type of the method's one parameter, passed to the method, and published as that model's event, so an OnEvent listener in any Tac language receives it. The StreamRequest client is JavaScript, TypeScript, Go, Ruby, Rust or Dart (a Dart client is a method of an abstract interface class such as `void receive(Tick tick);`, held by the page for the Dart service that keeps it in a `@Needs` field; a Rust client is a trait method such as `fn receive(&self, tick: Tick)`, held by the page for the Rust service that keeps it in a `#[Needs]` field). A Go client is an interface method such as `Receive(tick Tick)`; the page holds the stream for the Go service that keeps the client in a `// @Needs` field, and the service receives each message with `// @OnEvent`. Python, Lua, Swift, Kotlin, Java, C#, F# and C++ refuse StreamRequest with TY1308. A Lua stream method sends each value with `coroutine.yield`, and a Go stream method returns an `iter.Seq` whose function calls `yield`. On the server, Java, Groovy and Rust cannot stream, because they have no native generator, so they refuse StreamRoute with TY2015. Like every route, a stream says who may call it with `Public`, `SignedIn` or `Allow(Role)`.",
   "group": "Yon server",
   "files": [
     {
@@ -128,6 +128,24 @@
       "name": "client/services/StreamService.ts",
       "code": {
         "file": "client/services/StreamService.ts"
+      }
+    },
+    {
+      "name": "client/remotes/TicksClient.dart",
+      "code": {
+        "file": "client/remotes/TicksClient.dart"
+      }
+    },
+    {
+      "name": "client/services/StreamService.dart",
+      "code": {
+        "file": "client/services/StreamService.dart"
+      }
+    },
+    {
+      "name": "client/models/Tick.dart",
+      "code": {
+        "file": "client/models/Tick.dart"
       }
     },
     {

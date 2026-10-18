@@ -540,3 +540,46 @@ clients' connections, receives a stream message and a socket message
 through `#[OnEvent]`, drops a message that does not fit its model, sends 16
 queued socket messages and one after the socket opens, gets `HTTP_NETWORK`
 for a 17th queued message, and closes both connections when it is disposed.
+
+## Dart streams and sockets — 2026-10-17
+
+A Dart HTTPClient method may carry `@StreamRequest` or `@SocketRequest`, as
+in JavaScript, TypeScript and Go (ADR 0058, ADR 0060). The method is written
+in the `abstract interface class` client with one parameter whose model type
+says what each message holds and a `void` result, for example
+`void receive(Tick tick);`. The generated client keeps an empty method. A
+client with only stream or socket methods needs no Setup: it has no behavior
+context.
+
+The page's JavaScript still holds the connection, as for Go. A Dart service
+that keeps the client in a field declares the client's streams in its
+module's event plan, next to its listeners. The page's event bus opens each
+`EventSource` or `WebSocket` when the service starts and closes it when the
+service's owner goes away. It checks each message against the model,
+publishes it as that model's event, and a Dart `@OnEvent` method whose
+parameter is the model receives it. A Dart service that does not hold the
+client opens nothing. The limits are the ones of JavaScript and Go, and a
+service holds at most 16 such methods through its clients.
+
+A socket client gets a generated `Future<void> send(Object? message)`. It
+writes the message as JSON through the service's model writer and hands it
+to the page through a function that the service's module gives the Dart
+program when it creates the service, so each service sends on its own
+socket. The future completes when the page has sent or queued the message.
+Otherwise it fails with `TacSocketError`, whose code is `HTTP_NETWORK` (for
+example, 16 messages already wait for the socket to open), `HTTP_MISSING`
+(the service does not hold the client) or `HTTP_BODY` (a message larger than
+64 KiB). A service method that lets the error escape fails with that code on
+the page. In a Dart test unit there is no page, so `send` fails with a
+`StateError` that names `HTTP_MISSING`; a test can Fake the client instead.
+
+Evidence: `tac_dart::dart_stream_tests` compiles two real Dart services to
+WebAssembly and runs them under Node with the real event bus and fake
+`EventSource` and `WebSocket` classes. Only the service that needs the
+clients opens them; a valid tick reaches its `@OnEvent` method and an invalid
+one is refused; a socket message reaches its listener; sends queued before
+the socket opened are flushed in order and the seventeenth fails with
+`HTTP_NETWORK`; and disposing the owner closes both connections. The same
+module also builds and drives the Dart samples of the realtime and sockets
+feature pages. `client_tests::dart_construct_tests` runs a Dart test unit
+with a socket client in the Dart VM.

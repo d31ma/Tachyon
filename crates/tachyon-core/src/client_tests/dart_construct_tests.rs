@@ -137,3 +137,34 @@ fn first_app_dart_cumulative_service_test_uses_owned_fake_http() {
     }
     DartConstructionProject::passed(root.path(), "client/tests/CounterServiceTest.dart", 2);
 }
+
+#[test]
+#[ignore = "requires installed Dart; uses the supervised native Test runner"]
+fn a_dart_test_unit_sends_on_a_socket_client_without_a_page_and_fakes_it() {
+    let root = tempfile::tempdir().expect("project");
+    for (relative, source) in [
+        (
+            "client/models/ChatMessage.dart",
+            "class ChatMessage {\n  final String text;\n\n  const ChatMessage(this.text);\n}\n",
+        ),
+        (
+            "client/remotes/ChatClient.dart",
+            "@HTTPClient(\"/chat\")\nabstract interface class ChatClient {\n  @SocketRequest\n  void receive(ChatMessage message);\n}\n",
+        ),
+        (
+            "client/services/ChatService.dart",
+            "@Service\nclass ChatService {\n @Needs\n final ChatClient chatClient;\n String said = '';\n\n @OnEvent\n void answered(ChatMessage message) {\n  said = message.text;\n }\n\n Future<void> sayHello() => chatClient.send(ChatMessage('Hello'));\n}\n",
+        ),
+        (
+            "client/tests/ChatTestSetup.dart",
+            "@TestSetup\nclass ChatTestSetup {\n static BehaviorAdapters configure(BehaviorExecution execution) { return BehaviorAdapters(); }\n}\n",
+        ),
+        (
+            "client/tests/ChatServiceTest.dart",
+            "@Test(ChatTestSetup)\nclass ChatServiceTest {\n @Fake\n ChatClient? chatClient;\n\n Future<void> testSendWithoutAPageFails() async {\n  chatClient = ChatClient();\n  final service = construct<ChatService>(ChatService);\n  final error = await Assert.throws(() => service.sayHello());\n  Assert.isTrue('$error'.contains('HTTP_MISSING'));\n }\n\n Future<void> testAMessageArrivesAsAnEvent() async {\n  chatClient = ChatClient();\n  final service = construct<ChatService>(ChatService);\n  service.answered(const ChatMessage('hi'));\n  Assert.equals('hi', service.said);\n }\n}\n",
+        ),
+    ] {
+        DartConstructionProject::write(root.path(), relative, source);
+    }
+    DartConstructionProject::passed(root.path(), "client/tests/ChatServiceTest.dart", 2);
+}

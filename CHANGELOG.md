@@ -10,6 +10,17 @@ machine contracts have their own, independent major versions.
 
 ### Added
 
+- A Dart Tac `@HTTPClient` method may carry `@StreamRequest` or
+  `@SocketRequest`, written in the `abstract interface class` client as
+  `void receive(Tick tick);`. The page's event bus holds the stream or
+  socket for the Dart service that keeps the client in a `@Needs` field,
+  with the same origin, JSON, size and reconnect rules as JavaScript, and
+  closes it when the service's owner goes away. The service receives each
+  message with `@OnEvent`. A socket client gets
+  `Future<void> send(Object? message)`, which fails with `TacSocketError`
+  (`HTTP_NETWORK`, `HTTP_MISSING` or `HTTP_BODY`); the page sees that code
+  on the rejected call. A stream-only client needs no Setup (ADR 0058,
+  ADR 0060 and ADR 0090 amendments).
 - Yon Kotlin now accepts `@InBackground` on an `@OnEvent` method. The
   listener runs after the other listeners of the event, as in Yon JS, TS and
   Python, and its return value is never published again. Kotlin event methods
